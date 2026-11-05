@@ -1,5 +1,8 @@
 package mafisher.quasar.effect;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Objects;
 import java.util.function.Predicate;
 import net.minecraft.server.level.ServerLevel;
@@ -45,6 +48,23 @@ public final class EffectHitbox {
         DamageSource damageSource,
         Predicate<LivingEntity> targetPolicy
     ) {
+        return this.applyDetailed(
+            level, effectAgeTicks, owner, damageSource, targetPolicy, this.maxTargetsPerTick
+        ).damaged();
+    }
+
+    /**
+     * Applies damage with an additional per-call target limit. Candidates are ordered by UUID so the
+     * same world state always selects the same targets when a limit is reached.
+     */
+    public EffectHitResult applyDetailed(
+        ServerLevel level,
+        int effectAgeTicks,
+        Entity owner,
+        DamageSource damageSource,
+        Predicate<LivingEntity> targetPolicy,
+        int maxTargetsThisCall
+    ) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(damageSource, "damageSource");
         Objects.requireNonNull(targetPolicy, "targetPolicy");
@@ -54,6 +74,14 @@ public final class EffectHitbox {
         if (effectAgeTicks < 0) {
             throw new IllegalArgumentException("Effect age cannot be negative");
         }
+        if (maxTargetsThisCall < 0) {
+            throw new IllegalArgumentException("Per-call target limit cannot be negative");
+        }
+
+        int targetLimit = Math.min(maxTargetsThisCall, this.maxTargetsPerTick);
+        if (targetLimit == 0) {
+            return EffectHitResult.NONE;
+        }
 
         int examined = 0;
         int damaged = 0;
@@ -61,7 +89,11 @@ public final class EffectHitbox {
         AABB broadPhaseBounds = new AABB(
             bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(), bounds.maxY(), bounds.maxZ()
         );
-        for (LivingEntity target : level.getEntitiesOfClass(LivingEntity.class, broadPhaseBounds)) {
+        List<LivingEntity> candidates = new ArrayList<>(
+            level.getEntitiesOfClass(LivingEntity.class, broadPhaseBounds)
+        );
+        candidates.sort(Comparator.comparing(LivingEntity::getUUID));
+        for (LivingEntity target : candidates) {
             if (target == owner || !target.isAlive() || !this.shape.intersects(toEffectBounds(target.getBoundingBox()))
                 || !targetPolicy.test(target)
                 || !this.hitCooldowns.canHit(target.getUUID(), effectAgeTicks, this.rehitDelayTicks)) {
@@ -72,11 +104,11 @@ public final class EffectHitbox {
             if (target.hurt(damageSource, this.damage)) {
                 damaged++;
             }
-            if (examined >= this.maxTargetsPerTick) {
+            if (examined >= targetLimit) {
                 break;
             }
         }
-        return damaged;
+        return new EffectHitResult(examined, damaged);
     }
 
     private static EffectBounds toEffectBounds(AABB bounds) {

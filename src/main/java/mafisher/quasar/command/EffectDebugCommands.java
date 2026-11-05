@@ -7,21 +7,36 @@ import com.mojang.brigadier.context.CommandContext;
 import mafisher.quasar.QuasarLib;
 import mafisher.quasar.effect.EffectScope;
 import mafisher.quasar.effect.EffectAudience;
+import mafisher.quasar.effect.EffectDamageShape;
+import mafisher.quasar.effect.EffectHitbox;
 import mafisher.quasar.effect.EffectLifetimePolicy;
+import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectVisualIds;
 import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.VisualEffectSpec;
 import mafisher.quasar.effect.entity.EffectProbeEntity;
 import mafisher.quasar.effect.entity.QuasarEffectEntities;
+import mafisher.quasar.effect.gameplay.EffectPhase;
+import mafisher.quasar.effect.gameplay.EffectPhasePlan;
+import mafisher.quasar.effect.gameplay.EffectTickBudget;
+import mafisher.quasar.effect.gameplay.GameplayEffectContext;
+import mafisher.quasar.effect.gameplay.GameplayEffectController;
+import mafisher.quasar.effect.gameplay.GameplayEffectEndReason;
+import mafisher.quasar.effect.gameplay.GameplayEffectHandle;
+import mafisher.quasar.effect.gameplay.GameplayEffectService;
+import mafisher.quasar.effect.gameplay.GameplayEffectSpec;
+import mafisher.quasar.effect.gameplay.OwnerPolicy;
 import mafisher.quasar.effect.network.ArmScreenCompositorFailurePayload;
 import mafisher.quasar.sound.QuasarSounds;
 import java.util.function.ToIntFunction;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -32,6 +47,11 @@ import net.neoforged.neoforge.network.PacketDistributor;
 public final class EffectDebugCommands {
     private static final float ANGLE_LIMIT_DEGREES = 360.0F;
     private static final int DEBUG_EFFECT_LIFETIME_TICKS = 30 * 20;
+    private static final int GAMEPLAY_TELEGRAPH_TICKS = 20;
+    private static final int GAMEPLAY_STRIKE_TICKS = 10;
+    private static final int GAMEPLAY_FADE_TICKS = 20;
+    private static final int GAMEPLAY_DURATION_TICKS =
+        GAMEPLAY_TELEGRAPH_TICKS + GAMEPLAY_STRIKE_TICKS + GAMEPLAY_FADE_TICKS;
 
     private EffectDebugCommands() {
     }
@@ -80,6 +100,10 @@ public final class EffectDebugCommands {
                             )),
                             context -> testEntity(context.getSource(), readAngles(context))
                         ))
+                        .then(Commands.literal("gameplay-pulse")
+                            .executes(context -> testGameplayPulse(context.getSource())))
+                        .then(Commands.literal("gameplay-stop-all")
+                            .executes(context -> stopGameplayEffects(context.getSource())))
                         .then(withAngles(
                             Commands.literal("all").executes(context -> testAll(
                                 context.getSource(), defaultRingAngles(context.getSource()), EffectAngles.ZERO
@@ -216,6 +240,56 @@ public final class EffectDebugCommands {
         return 1;
     }
 
+    private static int testGameplayPulse(CommandSourceStack source) {
+        ServerLevel level = source.getLevel();
+        Vec3 position = effectPosition(source);
+        ServerPlayer player = source.getPlayer();
+        DamageSource damageSource = player == null
+            ? level.damageSources().magic()
+            : level.damageSources().playerAttack(player);
+        GameplayEffectSpec spec = new GameplayEffectSpec(
+            ResourceLocation.fromNamespaceAndPath(QuasarLib.MOD_ID, "debug_gameplay_pulse"),
+            player == null ? null : player.getUUID(),
+            position,
+            EffectPhasePlan.of(
+                new EffectPhase("telegraph", GAMEPLAY_TELEGRAPH_TICKS),
+                new EffectPhase("strike", GAMEPLAY_STRIKE_TICKS),
+                new EffectPhase("fade", GAMEPLAY_FADE_TICKS)
+            ),
+            level.getRandom().nextLong(),
+            new EffectTickBudget(8, GAMEPLAY_STRIKE_TICKS, 0),
+            OwnerPolicy.STOP_WHEN_UNAVAILABLE
+        );
+        GameplayEffectHandle handle;
+        try {
+            handle = GameplayEffectService.start(
+                level,
+                spec,
+                new GameplayPulseController(position, damageSource)
+            );
+        } catch (IllegalStateException exception) {
+            source.sendFailure(Component.literal(exception.getMessage()));
+            return 0;
+        }
+        source.sendSuccess(
+            () -> Component.literal("Started the debug gameplay pulse " + handle.sessionId() + "."),
+            false
+        );
+        return 1;
+    }
+
+    private static int stopGameplayEffects(CommandSourceStack source) {
+        int stopped = GameplayEffectService.stopAll(
+            source.getLevel(),
+            GameplayEffectEndReason.CANCELLED
+        );
+        source.sendSuccess(
+            () -> Component.literal("Stopped " + stopped + " gameplay effect session(s)."),
+            false
+        );
+        return 1;
+    }
+
     private static int testAll(CommandSourceStack source, EffectAngles ringAngles, EffectAngles entityAngles) {
         ServerLevel level = source.getLevel();
         Vec3 position = effectPosition(source);
@@ -282,6 +356,61 @@ public final class EffectDebugCommands {
     private static Vec3 effectPosition(CommandSourceStack source) {
         Vec3 position = source.getPosition();
         return new Vec3(position.x, position.y - 1.4, position.z);
+    }
+
+    private static final class GameplayPulseController implements GameplayEffectController {
+        private final Vec3 position;
+        private final DamageSource damageSource;
+        private final EffectHitbox hitbox;
+
+        private GameplayPulseController(Vec3 position, DamageSource damageSource) {
+            this.position = position;
+            this.damageSource = damageSource;
+            this.hitbox = new EffectHitbox(
+                new EffectDamageShape.Sphere(
+                    new EffectPoint(position.x, position.y, position.z),
+                    4.0
+                ),
+                4.0F,
+                0,
+                8
+            );
+        }
+
+        @Override
+        public void onStart(GameplayEffectContext context) {
+            context.scope().playVisual(new VisualEffectSpec(
+                EffectVisualIds.DEBUG_RUNE_CIRCLE,
+                this.position,
+                0.0F,
+                0.0F,
+                0.0F,
+                5.0F,
+                GAMEPLAY_DURATION_TICKS,
+                context.spec().seed(),
+                EffectAudience.nearby(128.0)
+            ));
+        }
+
+        @Override
+        public void onPhaseEnter(GameplayEffectContext context, int phaseIndex) {
+            if (phaseIndex == 1) {
+                context.scope().playSound(
+                    this.position,
+                    QuasarSounds.EFFECT_TEST.get(),
+                    SoundSource.PLAYERS,
+                    0.8F,
+                    1.0F
+                );
+            }
+        }
+
+        @Override
+        public void onTick(GameplayEffectContext context) {
+            if (context.phaseIndex() == 1) {
+                context.applyHitbox(this.hitbox, this.damageSource, target -> true);
+            }
+        }
     }
 
     private record EffectAngles(float yaw, float pitch, float roll) {
