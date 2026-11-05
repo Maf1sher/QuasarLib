@@ -2,6 +2,7 @@ package mafisher.quasar.effect;
 
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
 import mafisher.quasar.effect.network.StopVisualEffectPayload;
+import mafisher.quasar.effect.network.UpdateVisualEffectPayload;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -16,7 +17,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.network.PacketDistributor;
 
-/** Server-thread service for starting, tracking, and cancelling transient client-rendered effects. */
+/** Server-thread service for starting, moving, tracking, and cancelling transient client-rendered effects. */
 public final class VisualEffectService {
     private static final int MAX_ACTIVE_EFFECTS_PER_LEVEL = 128;
     private static final Map<ServerLevel, Map<UUID, ActiveEffect>> ACTIVE_EFFECTS = new WeakHashMap<>();
@@ -38,12 +39,13 @@ public final class VisualEffectService {
             position.z,
             spec.yaw(),
             spec.pitch(),
+            spec.roll(),
             spec.scale(),
             spec.durationTicks(),
             level.getGameTime(),
             spec.seed()
         );
-        ActiveEffect active = new ActiveEffect(payload, spec.audience());
+        ActiveEffect active = new ActiveEffect(payload, spec.audience(), spec.transform());
         Map<UUID, ActiveEffect> effects = activeEffects(level);
         effects.put(instanceId, active);
         for (ServerPlayer player : level.players()) {
@@ -56,6 +58,31 @@ public final class VisualEffectService {
             stop(level, new VisualEffectHandle(oldest));
         }
         return new VisualEffectHandle(instanceId);
+    }
+
+    /** Updates the world transform of an active visual and sends it to its current observers. */
+    public static void update(ServerLevel level, VisualEffectHandle handle, EffectTransform transform) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(handle, "handle");
+        Objects.requireNonNull(transform, "transform");
+        Map<UUID, ActiveEffect> effects = ACTIVE_EFFECTS.get(level);
+        ActiveEffect active = effects == null ? null : effects.get(handle.instanceId());
+        if (active == null || EffectTimeline.isFinished(
+            level.getGameTime(), active.payload().startGameTime(), active.payload().durationTicks()
+        )) {
+            return;
+        }
+
+        active.setTransform(transform);
+        UpdateVisualEffectPayload payload = UpdateVisualEffectPayload.of(
+            active.payload().instanceId(), level.dimension().location(), transform, level.getGameTime()
+        );
+        for (UUID playerId : new ArrayList<>(active.trackingPlayers())) {
+            ServerPlayer player = level.getServer().getPlayerList().getPlayer(playerId);
+            if (player != null && player.level() == level) {
+                PacketDistributor.sendToPlayer(player, payload);
+            }
+        }
     }
 
     public static void stop(ServerLevel level, VisualEffectHandle handle) {
@@ -116,7 +143,7 @@ public final class VisualEffectService {
     }
 
     private static void sendStart(ServerPlayer player, ActiveEffect active) {
-        PacketDistributor.sendToPlayer(player, active.payload());
+        PacketDistributor.sendToPlayer(player, active.currentPayload());
         active.trackingPlayers().add(player.getUUID());
     }
 
@@ -139,10 +166,12 @@ public final class VisualEffectService {
         private final StartVisualEffectPayload payload;
         private final EffectAudience audience;
         private final Set<UUID> trackingPlayers = new HashSet<>();
+        private EffectTransform transform;
 
-        private ActiveEffect(StartVisualEffectPayload payload, EffectAudience audience) {
+        private ActiveEffect(StartVisualEffectPayload payload, EffectAudience audience, EffectTransform transform) {
             this.payload = payload;
             this.audience = audience;
+            this.transform = transform;
         }
 
         private StartVisualEffectPayload payload() {
@@ -151,7 +180,8 @@ public final class VisualEffectService {
 
         private boolean includes(ServerPlayer player) {
             if (this.audience instanceof EffectAudience.Nearby nearby) {
-                return player.distanceToSqr(this.payload.x(), this.payload.y(), this.payload.z())
+                EffectPoint position = this.transform.position();
+                return player.distanceToSqr(position.x(), position.y(), position.z())
                     <= nearby.radius() * nearby.radius();
             }
             return true;
@@ -159,6 +189,29 @@ public final class VisualEffectService {
 
         private Set<UUID> trackingPlayers() {
             return this.trackingPlayers;
+        }
+
+        private void setTransform(EffectTransform transform) {
+            this.transform = transform;
+        }
+
+        private StartVisualEffectPayload currentPayload() {
+            EffectPoint position = this.transform.position();
+            return new StartVisualEffectPayload(
+                this.payload.effectId(),
+                this.payload.instanceId(),
+                this.payload.dimensionId(),
+                position.x(),
+                position.y(),
+                position.z(),
+                this.transform.yaw(),
+                this.transform.pitch(),
+                this.transform.roll(),
+                this.payload.scale(),
+                this.payload.durationTicks(),
+                this.payload.startGameTime(),
+                this.payload.seed()
+            );
         }
     }
 }

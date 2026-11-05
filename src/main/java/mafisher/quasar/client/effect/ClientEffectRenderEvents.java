@@ -13,8 +13,9 @@ public final class ClientEffectRenderEvents {
 
     @SubscribeEvent
     public static void renderEffects(RenderLevelStageEvent event) {
-        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_PARTICLES) {
-            ClientVisualEffectManager.render(event);
+        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_PARTICLES
+            || event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
+            ClientEffectRuntime.render(event);
         }
     }
 }

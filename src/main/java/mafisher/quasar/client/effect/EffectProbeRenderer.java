@@ -34,10 +34,14 @@ public final class EffectProbeRenderer extends EntityRenderer<EffectProbeEntity>
         float progress = entity.getEffectProgress(partialTick);
         float grow = EffectTimeline.easeOutCubic(Math.min(1.0F, progress / 0.22F));
         float alpha = EffectTimeline.fadeEnvelope(progress, 0.02F, 0.18F);
-        VertexConsumer vertices = bufferSource.getBuffer(RenderType.entityTranslucent(TEXTURE));
+        RenderType renderType = alpha >= 1.0F
+            ? RenderType.entityCutoutNoCull(TEXTURE)
+            : EffectRenderTypes.entityUnsorted(TEXTURE);
+        VertexConsumer vertices = bufferSource.getBuffer(renderType);
 
         poseStack.pushPose();
         poseStack.translate(0.0, 0.05, 0.0);
+        EffectRenderTransform.applyRotation(poseStack, entityYaw, entity.getXRot(), entity.getEffectRoll());
         poseStack.scale(1.15F * grow, 2.8F * grow, 1.0F);
         drawShardPlane(vertices, poseStack.last(), alpha, packedLight);
         poseStack.mulPose(com.mojang.math.Axis.YP.rotationDegrees(90.0F));
@@ -52,27 +56,8 @@ public final class EffectProbeRenderer extends EntityRenderer<EffectProbeEntity>
     }
 
     private static void drawShardPlane(VertexConsumer vertices, PoseStack.Pose pose, float alpha, int packedLight) {
-        vertex(vertices, pose, -0.5F, 0.0F, alpha, packedLight, 0.0F, 1.0F);
-        vertex(vertices, pose, 0.5F, 0.0F, alpha, packedLight, 1.0F, 1.0F);
-        vertex(vertices, pose, 0.5F, 1.0F, alpha, packedLight, 1.0F, 0.0F);
-        vertex(vertices, pose, -0.5F, 1.0F, alpha, packedLight, 0.0F, 0.0F);
-    }
-
-    private static void vertex(
-        VertexConsumer vertices,
-        PoseStack.Pose pose,
-        float x,
-        float y,
-        float alpha,
-        int packedLight,
-        float u,
-        float v
-    ) {
-        vertices.addVertex(pose, x, y, 0.0F)
-            .setColor(0.72F, 0.94F, 1.0F, alpha)
-            .setUv(u, v)
-            .setOverlay(net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY)
-            .setLight(Math.max(packedLight, LightTexture.FULL_BRIGHT))
-            .setNormal(pose, 0.0F, 0.0F, 1.0F);
+        EffectMeshes.verticalPlane().emit(vertices, pose, 0.72F, 0.94F, 1.0F, alpha,
+            net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY,
+            Math.max(packedLight, LightTexture.FULL_BRIGHT));
     }
 }

@@ -5,30 +5,41 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.packs.resources.ResourceManager;
 
 /** Client-only registry; visual effects do not need a gameplay registration. */
 public final class VisualEffectRendererRegistry {
-    private static final Map<ResourceLocation, VisualEffectRenderer> RENDERERS = new HashMap<>();
-    private static boolean initialized;
+    private final Map<ResourceLocation, VisualEffectRenderer> renderers = new HashMap<>();
+    private boolean initialized;
 
-    private VisualEffectRendererRegistry() {
+    public VisualEffectRendererRegistry() {
     }
 
-    public static void registerBuiltIns() {
-        if (initialized) {
+    public void registerBuiltIns() {
+        if (this.initialized) {
             return;
         }
-        initialized = true;
-        register(EffectVisualIds.DEBUG_RUNE_CIRCLE, new RuneCircleRenderer());
+        this.register(EffectVisualIds.DEBUG_RUNE_CIRCLE, new RuneCircleRenderer());
+        this.register(EffectVisualIds.DEBUG_WAVE_DISTORTION, new WaveDistortionRenderer());
+        this.register(EffectVisualIds.DEBUG_SCENE_BLUR, new SceneBlurRenderer());
+        this.register(EffectVisualIds.DEBUG_BLOOM, new BloomRenderer());
+        this.register(EffectVisualIds.DEBUG_BLACK_HOLE, new BlackHoleRenderer());
+        this.initialized = true;
     }
 
-    public static void register(ResourceLocation id, VisualEffectRenderer renderer) {
-        if (RENDERERS.putIfAbsent(id, renderer) != null) {
+    public void register(ResourceLocation id, VisualEffectRenderer renderer) {
+        if (this.renderers.putIfAbsent(id, renderer) != null) {
             throw new IllegalStateException("A visual effect renderer is already registered for " + id);
         }
     }
 
-    public static Optional<VisualEffectRenderer> find(ResourceLocation id) {
-        return Optional.ofNullable(RENDERERS.get(id));
+    public Optional<VisualEffectRenderer> find(ResourceLocation id) {
+        return Optional.ofNullable(this.renderers.get(id));
+    }
+
+    void onResourceReload(ResourceManager resourceManager) {
+        for (VisualEffectRenderer renderer : this.renderers.values()) {
+            renderer.onResourceReload(resourceManager);
+        }
     }
 }

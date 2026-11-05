@@ -1,6 +1,8 @@
 package mafisher.quasar.effect.network;
 
 import io.netty.buffer.ByteBuf;
+import mafisher.quasar.effect.EffectPoint;
+import mafisher.quasar.effect.EffectTransform;
 import java.util.Objects;
 import java.util.UUID;
 import net.minecraft.core.UUIDUtil;
@@ -18,6 +20,7 @@ public record StartVisualEffectPayload(
     double z,
     float yaw,
     float pitch,
+    float roll,
     float scale,
     int durationTicks,
     long startGameTime,
@@ -37,11 +40,33 @@ public record StartVisualEffectPayload(
         Objects.requireNonNull(instanceId, "instanceId");
         Objects.requireNonNull(dimensionId, "dimensionId");
         if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)
-            || !Float.isFinite(yaw) || !Float.isFinite(pitch)
+            || !Float.isFinite(yaw) || !Float.isFinite(pitch) || !Float.isFinite(roll)
             || !Float.isFinite(scale) || scale <= 0.0F
             || durationTicks < 1 || durationTicks > 72_000) {
             throw new IllegalArgumentException("Invalid visual effect payload");
         }
+    }
+
+    public StartVisualEffectPayload(
+        ResourceLocation effectId,
+        UUID instanceId,
+        ResourceLocation dimensionId,
+        double x,
+        double y,
+        double z,
+        float yaw,
+        float pitch,
+        float scale,
+        int durationTicks,
+        long startGameTime,
+        long seed
+    ) {
+        this(effectId, instanceId, dimensionId, x, y, z, yaw, pitch, 0.0F, scale, durationTicks, startGameTime, seed);
+    }
+
+    public EffectTransform transform() {
+        return new EffectTransform(new EffectPoint(this.x, this.y, this.z),
+            this.yaw, this.pitch, this.roll);
     }
 
     @Override
@@ -58,6 +83,7 @@ public record StartVisualEffectPayload(
         buffer.writeDouble(payload.z);
         buffer.writeFloat(payload.yaw);
         buffer.writeFloat(payload.pitch);
+        buffer.writeFloat(payload.roll);
         buffer.writeFloat(payload.scale);
         buffer.writeInt(payload.durationTicks);
         buffer.writeLong(payload.startGameTime);
@@ -72,6 +98,7 @@ public record StartVisualEffectPayload(
             buffer.readDouble(),
             buffer.readDouble(),
             buffer.readDouble(),
+            buffer.readFloat(),
             buffer.readFloat(),
             buffer.readFloat(),
             buffer.readFloat(),

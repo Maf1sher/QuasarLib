@@ -61,6 +61,17 @@ public final class EffectScope implements AutoCloseable {
         VisualEffectService.stop(this.level, handle);
     }
 
+    /** Updates a visual created by this scope without changing its lifetime or ownership. */
+    public void updateVisual(UUID instanceId, EffectTransform transform) {
+        this.ensureOpen();
+        Objects.requireNonNull(instanceId, "instanceId");
+        Objects.requireNonNull(transform, "transform");
+        VisualEffectHandle handle = this.activeVisuals.get(instanceId);
+        if (handle != null) {
+            VisualEffectService.update(this.level, handle, transform);
+        }
+    }
+
     /** Spawns a registered entity and optionally binds its removal to this scope. */
     public <T extends Entity> T spawnEntity(T entity) {
         return this.spawnEntity(entity, EffectLifetimePolicy.CANCEL_WITH_SCOPE);

@@ -1,0 +1,30 @@
+{
+  "vertex": "quasar_lib:screen_composite",
+  "fragment": "quasar_lib:screen_composite",
+  "samplers": [
+    { "name": "SceneSampler" },
+    { "name": "MaskSampler" },
+    { "name": "DepthSampler" },
+    { "name": "BlurSampler" }
+  ],
+  "attributes": [
+    "Position"
+  ],
+  "uniforms": [
+    { "name": "Operation", "type": "float", "count": 1, "values": [ 0.0 ] },
+    { "name": "MaskColor", "type": "float", "count": 3, "values": [ 0.2, 0.8, 1.0 ] },
+    { "name": "MaskStrength", "type": "float", "count": 1, "values": [ 0.45 ] },
+    { "name": "WaveAmplitudePixels", "type": "float", "count": 1, "values": [ 8.0 ] },
+    { "name": "WaveFrequency", "type": "float", "count": 1, "values": [ 12.0 ] },
+    { "name": "WaveSpeed", "type": "float", "count": 1, "values": [ 0.035 ] },
+    { "name": "WaveTime", "type": "float", "count": 1, "values": [ 0.0 ] },
+    { "name": "ViewportWidth", "type": "float", "count": 1, "values": [ 1.0 ] },
+    { "name": "ViewportHeight", "type": "float", "count": 1, "values": [ 1.0 ] },
+    { "name": "BlurRadiusPixels", "type": "float", "count": 1, "values": [ 8.0 ] },
+    { "name": "LensCenter", "type": "float", "count": 2, "values": [ 0.5, 0.5 ] },
+    { "name": "LensRadiusPixels", "type": "float", "count": 1, "values": [ 128.0 ] },
+    { "name": "LensDepth", "type": "float", "count": 1, "values": [ 0.5 ] },
+    { "name": "LensStrength", "type": "float", "count": 1, "values": [ 0.8 ] },
+    { "name": "MaxDistortionPixels", "type": "float", "count": 1, "values": [ 24.0 ] }
+  ]
+}

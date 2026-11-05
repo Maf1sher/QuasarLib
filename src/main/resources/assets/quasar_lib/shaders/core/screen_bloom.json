@@ -1,0 +1,22 @@
+{
+  "vertex": "quasar_lib:screen_bloom",
+  "fragment": "quasar_lib:screen_bloom",
+  "samplers": [
+    { "name": "SceneSampler" },
+    { "name": "MaskSampler" },
+    { "name": "BloomSampler" }
+  ],
+  "attributes": [
+    "Position"
+  ],
+  "uniforms": [
+    { "name": "Pass", "type": "float", "count": 1, "values": [ 0.0 ] },
+    { "name": "Threshold", "type": "float", "count": 1, "values": [ 0.35 ] },
+    { "name": "Intensity", "type": "float", "count": 1, "values": [ 1.5 ] },
+    { "name": "RadiusPixels", "type": "float", "count": 1, "values": [ 12.0 ] },
+    { "name": "MaskStrength", "type": "float", "count": 1, "values": [ 1.0 ] },
+    { "name": "Horizontal", "type": "float", "count": 1, "values": [ 1.0 ] },
+    { "name": "ViewportWidth", "type": "float", "count": 1, "values": [ 1.0 ] },
+    { "name": "ViewportHeight", "type": "float", "count": 1, "values": [ 1.0 ] }
+  ]
+}

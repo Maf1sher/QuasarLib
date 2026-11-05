@@ -9,6 +9,7 @@ public record VisualEffectSpec(
     Vec3 position,
     float yaw,
     float pitch,
+    float roll,
     float scale,
     int durationTicks,
     long seed,
@@ -19,10 +20,28 @@ public record VisualEffectSpec(
             throw new NullPointerException("Effect ID, position, and audience are required");
         }
         if (!Double.isFinite(position.x) || !Double.isFinite(position.y) || !Double.isFinite(position.z)
-            || !Float.isFinite(yaw) || !Float.isFinite(pitch)
+            || !Float.isFinite(yaw) || !Float.isFinite(pitch) || !Float.isFinite(roll)
             || !Float.isFinite(scale) || scale <= 0.0F || scale > 128.0F
             || durationTicks < 1 || durationTicks > 72_000) {
             throw new IllegalArgumentException("Invalid visual effect parameters");
         }
+    }
+
+    public VisualEffectSpec(
+        ResourceLocation effectId,
+        Vec3 position,
+        float yaw,
+        float pitch,
+        float scale,
+        int durationTicks,
+        long seed,
+        EffectAudience audience
+    ) {
+        this(effectId, position, yaw, pitch, 0.0F, scale, durationTicks, seed, audience);
+    }
+
+    public EffectTransform transform() {
+        return new EffectTransform(new EffectPoint(this.position.x, this.position.y, this.position.z),
+            this.yaw, this.pitch, this.roll);
     }
 }
