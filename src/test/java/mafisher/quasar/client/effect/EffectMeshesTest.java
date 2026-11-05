@@ -2,6 +2,7 @@ package mafisher.quasar.client.effect;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -16,6 +17,24 @@ class EffectMeshesTest {
         assertVertex(mesh.vertex(1), -1.0F, 0.0F, 1.0F, 0.0F, 1.0F, 0.0F, 1.0F, 0.0F);
         assertVertex(mesh.vertex(2), 1.0F, 0.0F, 1.0F, 1.0F, 1.0F, 0.0F, 1.0F, 0.0F);
         assertVertex(mesh.vertex(3), 1.0F, 0.0F, -1.0F, 1.0F, 0.0F, 0.0F, 1.0F, 0.0F);
+    }
+
+    @Test
+    void rejectsIncompleteQuads() {
+        assertThrows(IllegalStateException.class, () -> EffectMesh.builder(4).build());
+    }
+
+    @Test
+    void rejectsInvalidCapacity() {
+        assertThrows(IllegalArgumentException.class, () -> EffectMesh.builder(3));
+    }
+
+    @Test
+    void rejectsInvalidVertexAttributes() {
+        assertThrows(IllegalArgumentException.class,
+            () -> EffectMesh.builder(4).vertex(0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.1F));
+        assertThrows(IllegalArgumentException.class,
+            () -> EffectMesh.builder(4).vertex(Float.NaN, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F));
     }
 
     @Test

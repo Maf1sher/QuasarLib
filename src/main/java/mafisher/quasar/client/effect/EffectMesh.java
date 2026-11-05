@@ -5,27 +5,30 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Immutable local-space quad mesh whose per-draw material values remain dynamic. */
-final class EffectMesh {
+/**
+ * Immutable local-space quad mesh whose per-draw material values remain dynamic. Vertices target BLOCK or
+ * NEW_ENTITY-style formats with position, color, UV0, normal, overlay, and light; UV1 is not set.
+ */
+public final class EffectMesh {
     private final List<Vertex> vertices;
 
     private EffectMesh(List<Vertex> vertices) {
         this.vertices = List.copyOf(vertices);
     }
 
-    static Builder builder(int expectedVertexCount) {
+    public static Builder builder(int expectedVertexCount) {
         return new Builder(expectedVertexCount);
     }
 
-    int vertexCount() {
+    public int vertexCount() {
         return this.vertices.size();
     }
 
-    Vertex vertex(int index) {
+    public Vertex vertex(int index) {
         return this.vertices.get(index);
     }
 
-    void emit(VertexConsumer consumer, PoseStack.Pose pose, float red, float green, float blue, float alpha,
+    public void emit(VertexConsumer consumer, PoseStack.Pose pose, float red, float green, float blue, float alpha,
         int overlay, int light) {
         for (int index = 0; index < this.vertices.size(); index++) {
             Vertex vertex = this.vertices.get(index);
@@ -38,11 +41,11 @@ final class EffectMesh {
         }
     }
 
-    record Vertex(float x, float y, float z, float u, float v,
+    public record Vertex(float x, float y, float z, float u, float v,
         float normalX, float normalY, float normalZ, float alphaMultiplier) {
     }
 
-    static final class Builder {
+    public static final class Builder {
         private final List<Vertex> vertices;
 
         private Builder(int expectedVertexCount) {
@@ -52,12 +55,12 @@ final class EffectMesh {
             this.vertices = new ArrayList<>(expectedVertexCount);
         }
 
-        Builder vertex(float x, float y, float z, float u, float v,
+        public Builder vertex(float x, float y, float z, float u, float v,
             float normalX, float normalY, float normalZ) {
             return this.vertex(x, y, z, u, v, normalX, normalY, normalZ, 1.0F);
         }
 
-        Builder vertex(float x, float y, float z, float u, float v,
+        public Builder vertex(float x, float y, float z, float u, float v,
             float normalX, float normalY, float normalZ, float alphaMultiplier) {
             if (!Float.isFinite(x) || !Float.isFinite(y) || !Float.isFinite(z)
                 || !Float.isFinite(u) || !Float.isFinite(v)
@@ -69,7 +72,7 @@ final class EffectMesh {
             return this;
         }
 
-        EffectMesh build() {
+        public EffectMesh build() {
             if (this.vertices.isEmpty() || this.vertices.size() % 4 != 0) {
                 throw new IllegalStateException("Mesh must contain one or more complete quads");
             }

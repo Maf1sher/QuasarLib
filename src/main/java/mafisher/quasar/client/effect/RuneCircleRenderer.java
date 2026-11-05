@@ -18,7 +18,7 @@ final class RuneCircleRenderer implements ScreenEffectRenderer {
         QuasarLib.MOD_ID, "textures/effect/rune_circle.png"
     );
     private static final RenderType RENDER_TYPE = EffectRenderTypes.debugVisual(TEXTURE);
-    private static final RenderType SCREEN_MASK_RENDER_TYPE = EffectRenderTypes.screenMask(TEXTURE);
+    private static final RenderType SCREEN_MASK_RENDER_TYPE = QuasarRenderTypes.screenEffectMask(TEXTURE);
     private static final String OUTER_PASS = "outer";
     private static final String MIDDLE_PASS = "middle";
     private static final String INNER_PASS = "inner";

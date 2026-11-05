@@ -1,7 +1,7 @@
 package mafisher.quasar.client.effect;
 
 /** Shared immutable local-space meshes used by built-in effect renderers. */
-final class EffectMeshes {
+public final class EffectMeshes {
     private static final int SPHERE_LATITUDE_SEGMENTS = 32;
     private static final int SPHERE_LONGITUDE_SEGMENTS = 64;
     private static final EffectMesh HORIZONTAL_QUAD = createHorizontalQuad();
@@ -11,15 +11,15 @@ final class EffectMeshes {
     private EffectMeshes() {
     }
 
-    static EffectMesh horizontalQuad() {
+    public static EffectMesh horizontalQuad() {
         return HORIZONTAL_QUAD;
     }
 
-    static EffectMesh verticalPlane() {
+    public static EffectMesh verticalPlane() {
         return VERTICAL_PLANE;
     }
 
-    static EffectMesh unitSphere() {
+    public static EffectMesh unitSphere() {
         return UNIT_SPHERE;
     }
 

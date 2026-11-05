@@ -17,8 +17,8 @@ final class SceneBlurRenderer implements ScreenEffectRenderer {
         QuasarLib.MOD_ID, "textures/effect/rune_circle.png"
     );
     private static final String PASS_ID = "scene-blur-test";
-    private static final RenderType WORLD_RENDER_TYPE = EffectRenderTypes.visual(TEXTURE);
-    private static final RenderType SCREEN_MASK_RENDER_TYPE = EffectRenderTypes.screenMask(TEXTURE);
+    private static final RenderType WORLD_RENDER_TYPE = QuasarRenderTypes.worldVisual(TEXTURE);
+    private static final RenderType SCREEN_MASK_RENDER_TYPE = QuasarRenderTypes.screenEffectMask(TEXTURE);
     private static final List<EffectRenderPass> RENDER_PASSES = List.of(
         new EffectRenderPass(PASS_ID, WORLD_RENDER_TYPE)
     );

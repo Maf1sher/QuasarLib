@@ -7,11 +7,12 @@ import java.util.List;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
+import net.neoforged.neoforge.common.NeoForge;
 
 /** Client-lifetime owner and narrow entry point for effect event delegates. */
 public final class ClientEffectRuntime {
-    private static ClientVisualEffectManager manager;
-    private static ClientScreenCompositor screenCompositor;
+    private static volatile ClientVisualEffectManager manager;
+    private static volatile ClientScreenCompositor screenCompositor;
 
     private ClientEffectRuntime() {
     }
@@ -22,6 +23,8 @@ public final class ClientEffectRuntime {
         }
         VisualEffectRendererRegistry rendererRegistry = new VisualEffectRendererRegistry();
         rendererRegistry.registerBuiltIns();
+        NeoForge.EVENT_BUS.post(new RegisterVisualEffectRenderersEvent(rendererRegistry));
+        rendererRegistry.freeze();
         manager = new ClientVisualEffectManager(rendererRegistry);
         screenCompositor = new ClientScreenCompositor();
     }
