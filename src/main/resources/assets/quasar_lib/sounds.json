@@ -1,0 +1,10 @@
+{
+  "effect_test": {
+    "sounds": [
+      {
+        "name": "minecraft:block.amethyst_block.chime",
+        "type": "event"
+      }
+    ]
+  }
+}

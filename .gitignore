@@ -1,0 +1,50 @@
+# Gradle
+.gradle/
+build/
+!**/src/**/build/
+
+# Minecraft run directories
+run/
+run-*/
+!**/src/**/run/
+
+# Data generator cache (generated resources remain tracked by Git)
+src/generated/**/.cache/
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+.run/
+
+# Eclipse
+.apt_generated/
+.classpath
+.eclipse/
+.factorypath
+.project
+.settings/
+.springBeans
+.sts4-cache/
+bin/
+!**/src/**/bin/
+
+# Visual Studio Code
+.vscode/
+
+# Build outputs and local repositories
+out/
+repo/
+!**/src/**/repo/
+
+# Logs and crash reports
+logs/
+crash-reports/
+*.log
+hs_err_pid*.log
+
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
