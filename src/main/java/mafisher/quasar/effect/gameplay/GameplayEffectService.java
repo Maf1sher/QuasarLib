@@ -19,9 +19,14 @@ import org.slf4j.LoggerFactory;
 public final class GameplayEffectService {
     /** Provisional safety cap; it is not a balance budget and needs measurement before adoption. */
     public static final int MAX_ACTIVE_SESSIONS_PER_LEVEL = 128;
+    /** Provisional per-owner cap; it is a safety ceiling, not a measured balance target. */
+    public static final int MAX_ACTIVE_SESSIONS_PER_OWNER = OwnerAdmission.MAX_ACTIVE_SESSIONS_PER_OWNER;
+    /** Provisional per-owner start-rate cap; it is a safety ceiling, not a measured balance target. */
+    public static final int MAX_STARTS_PER_OWNER_PER_TICK = OwnerAdmission.MAX_STARTS_PER_OWNER_PER_TICK;
 
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
     private static final Map<ServerLevel, Map<UUID, ActiveSession>> ACTIVE_SESSIONS = new WeakHashMap<>();
+    private static final Map<ServerLevel, OwnerAdmission> OWNER_ADMISSIONS = new WeakHashMap<>();
 
     private GameplayEffectService() {
     }
@@ -53,14 +58,36 @@ public final class GameplayEffectService {
             throw new IllegalStateException("Too many active gameplay effects in this level");
         }
 
-        EffectScope scope = new EffectScope(level);
-        GameplayEffectContext context = new GameplayEffectContext(level, scope, spec, scope.sessionId());
+        OwnerAdmission admission = ownerAdmission(level);
+        OwnerAdmission.Result admissionResult = admission.tryStart(spec.ownerId(), level.getGameTime());
+        if (admissionResult != OwnerAdmission.Result.ACCEPTED) {
+            LOGGER.warn(
+                "Rejected gameplay effect {} in {} for owner {}: {}",
+                spec.typeId(),
+                level.dimension().location(),
+                spec.ownerId(),
+                admissionResult
+            );
+            throw new IllegalStateException(admissionResult == OwnerAdmission.Result.OWNER_SESSION_CAP
+                ? "Too many active gameplay effects for this owner"
+                : "Gameplay effect start rate exceeded for this owner");
+        }
+
+        EffectScope scope = null;
+        GameplayEffectContext context = null;
         try {
+            scope = new EffectScope(level);
+            context = new GameplayEffectContext(level, scope, spec, scope.sessionId());
             controller.onStart(context);
             controller.onPhaseEnter(context, 0);
         } catch (RuntimeException | Error exception) {
-            context.close();
-            scope.close();
+            admission.recordEnd(spec.ownerId());
+            if (context != null) {
+                context.close();
+            }
+            if (scope != null) {
+                scope.close();
+            }
             if (sessions.isEmpty()) {
                 ACTIVE_SESSIONS.remove(level);
             }
@@ -93,6 +120,7 @@ public final class GameplayEffectService {
         Objects.requireNonNull(reason, "reason");
         Map<UUID, ActiveSession> sessions = ACTIVE_SESSIONS.get(level);
         if (sessions == null) {
+            OWNER_ADMISSIONS.remove(level);
             return 0;
         }
         int count = sessions.size();
@@ -100,6 +128,7 @@ public final class GameplayEffectService {
             finish(level, session, reason);
         }
         ACTIVE_SESSIONS.remove(level);
+        OWNER_ADMISSIONS.remove(level);
         return count;
     }
 
@@ -190,6 +219,10 @@ public final class GameplayEffectService {
         } finally {
             session.context.close();
             session.scope.close();
+            OwnerAdmission admission = OWNER_ADMISSIONS.get(level);
+            if (admission != null) {
+                admission.recordEnd(session.spec.ownerId());
+            }
         }
         if (sessions.isEmpty()) {
             ACTIVE_SESSIONS.remove(level);
@@ -198,6 +231,10 @@ public final class GameplayEffectService {
 
     private static Map<UUID, ActiveSession> activeSessions(ServerLevel level) {
         return ACTIVE_SESSIONS.computeIfAbsent(level, ignored -> new LinkedHashMap<>());
+    }
+
+    private static OwnerAdmission ownerAdmission(ServerLevel level) {
+        return OWNER_ADMISSIONS.computeIfAbsent(level, ignored -> new OwnerAdmission());
     }
 
     private static final class ActiveSession {
