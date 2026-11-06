@@ -7,7 +7,6 @@ import java.util.function.Function;
 import net.minecraft.Util;
 import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
-import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.resources.ResourceLocation;
 
 /** Built-in render types and the shared shader-backed render-type factory. */
@@ -56,14 +55,6 @@ final class EffectRenderTypes {
 
     static RenderType blackHoleScreenMask(ResourceLocation texture) {
         return shaderMask(EffectShaders.BLACK_HOLE_SCREEN_MASK, texture, BLACK_HOLE_MASK_OPTIONS);
-    }
-
-    static ShaderInstance screenCompositeShader() {
-        return EffectShaders.SCREEN_COMPOSITE.shaderInstance();
-    }
-
-    static ShaderInstance screenBloomShader() {
-        return EffectShaders.SCREEN_BLOOM.shaderInstance();
     }
 
     static RenderType entityUnsorted(ResourceLocation texture) {

@@ -18,6 +18,10 @@ class ContentBoundaryTest {
     private static final List<String> ENGINE_INTERNAL_IMPORTS = List.of(
         "mafisher.quasar.client.effect.EffectRenderTypes",
         "mafisher.quasar.client.effect.EffectShaders",
+        "mafisher.quasar.client.effect.BuiltInScreenEffectOperations",
+        "mafisher.quasar.client.effect.ClientScreenCompositor",
+        "mafisher.quasar.client.effect.ScreenEffectOperationRegistry",
+        "mafisher.quasar.client.effect.ScreenEffectScratchTargetPool",
         "mafisher.quasar.client.effect.VisualEffectRendererRegistry",
         "mafisher.quasar.client.effect.ClientEffectRuntime",
         "mafisher.quasar.client.effect.ClientVisualEffectManager",

@@ -32,11 +32,15 @@ public final class ClientEffectRuntime {
         }
         synchronized (INIT_LOCK) {
             if (manager == null) {
+                ScreenEffectOperationRegistry operationRegistry = new ScreenEffectOperationRegistry();
+                operationRegistry.registerBuiltIns();
+                NeoForge.EVENT_BUS.post(new RegisterScreenEffectOperationsEvent(operationRegistry));
+                operationRegistry.freeze();
                 VisualEffectRendererRegistry rendererRegistry = new VisualEffectRendererRegistry();
                 rendererRegistry.registerBuiltIns();
                 NeoForge.EVENT_BUS.post(new RegisterVisualEffectRenderersEvent(rendererRegistry));
                 rendererRegistry.freeze();
-                screenCompositor = new ClientScreenCompositor();
+                screenCompositor = new ClientScreenCompositor(operationRegistry);
                 manager = new ClientVisualEffectManager(rendererRegistry);
             }
             return manager;
