@@ -16,7 +16,10 @@ import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.VisualEffectHandle;
 import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.VisualEffectSpec;
+import mafisher.quasar.effect.audio.EffectAudioPlan;
+import mafisher.quasar.effect.audio.EffectAudioService;
 import mafisher.quasar.effect.network.UpdateSegmentedVisualEffectPayload;
+import mafisher.quasar.effect.persistence.EffectAudioNbt;
 import mafisher.quasar.effect.persistence.EffectDescriptor;
 import mafisher.quasar.effect.persistence.EffectKind;
 import mafisher.quasar.effect.persistence.EffectPersistenceOptions;
@@ -223,6 +226,7 @@ public final class SegmentedVisualEffectService {
             ids.add(StringTag.valueOf(segmentId.toString()));
         }
         state.put("segment_ids", ids);
+        EffectAudioNbt.saveInto(state, spec.audio());
         EffectDescriptor descriptor = restoredDescriptor == null ? new EffectDescriptor(
             coordinatorId,
             EffectKind.SEGMENTED,
@@ -254,6 +258,7 @@ public final class SegmentedVisualEffectService {
         );
         activeSegments(level).put(coordinatorId, activeEffect);
         EffectPersistenceService.recordStart(level, descriptor);
+        startAudio(level, coordinatorId, spec, startGameTime);
         return new SegmentedVisualEffectHandle(coordinatorId);
     }
 
@@ -307,6 +312,7 @@ public final class SegmentedVisualEffectService {
             removed.close(true);
             EffectPersistenceService.recordStop(level, handle.coordinatorId());
         }
+        EffectAudioService.stop(level, handle.coordinatorId());
         if (active.isEmpty()) {
             ACTIVE_COORDINATORS.remove(level);
         }
@@ -329,6 +335,7 @@ public final class SegmentedVisualEffectService {
         }
         for (ActiveSegmentedEffect activeEffect : active.values()) {
             activeEffect.close(persistRemoval);
+            EffectAudioService.stop(level, activeEffect.descriptor.instanceId());
             if (persistRemoval) {
                 EffectPersistenceService.recordStop(level, activeEffect.descriptor.instanceId());
             }
@@ -353,6 +360,7 @@ public final class SegmentedVisualEffectService {
                 activeEffect.close(true);
                 iterator.remove();
                 EffectPersistenceService.recordStop(level, activeEffect.descriptor.instanceId());
+                EffectAudioService.stop(level, activeEffect.descriptor.instanceId());
             }
         }
         if (active.isEmpty()) {
@@ -364,6 +372,26 @@ public final class SegmentedVisualEffectService {
         Objects.requireNonNull(level, "level");
         Map<UUID, ActiveSegmentedEffect> active = ACTIVE_COORDINATORS.get(level);
         return active == null ? 0 : active.size();
+    }
+
+    private static void startAudio(
+        ServerLevel level,
+        UUID coordinatorId,
+        SegmentedVisualEffectSpec spec,
+        long startGameTime
+    ) {
+        if (spec.audio().isEmpty()) {
+            return;
+        }
+        EffectAudioPlan plan = EffectAudioPlan.from(
+            coordinatorId,
+            level.dimension().location(),
+            spec.center(),
+            startGameTime,
+            spec.durationTicks(),
+            spec.audio()
+        );
+        EffectAudioService.start(level, plan, spec.audience());
     }
 
     private static ActiveSegmentedEffect find(ServerLevel level, SegmentedVisualEffectHandle handle) {

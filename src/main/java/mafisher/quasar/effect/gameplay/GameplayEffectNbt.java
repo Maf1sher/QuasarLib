@@ -3,6 +3,8 @@ package mafisher.quasar.effect.gameplay;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import mafisher.quasar.effect.audio.EffectAudioSpec;
+import mafisher.quasar.effect.persistence.EffectAudioNbt;
 import mafisher.quasar.effect.persistence.EffectDescriptor;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -51,6 +53,9 @@ public final class GameplayEffectNbt {
         budget.putInt("max_block_changes", spec.budget().maxBlockChanges());
         tag.put("budget", budget);
         tag.putString("owner_policy", spec.ownerPolicy().name());
+        if (!spec.audio().isEmpty()) {
+            tag.put("audio", EffectAudioNbt.save(spec.audio()));
+        }
         return tag;
     }
 
@@ -66,6 +71,9 @@ public final class GameplayEffectNbt {
             phases.add(new EffectPhase(phaseTag.getString("name"), phaseTag.getInt("duration_ticks")));
         }
         CompoundTag budgetTag = tag.getCompound("budget");
+        EffectAudioSpec audio = tag.contains("audio", Tag.TAG_COMPOUND)
+            ? EffectAudioNbt.load(tag.getCompound("audio"))
+            : EffectAudioSpec.NONE;
         return new GameplayEffectSpec(
             descriptor.typeId(),
             tag.contains("owner_id") ? tag.getUUID("owner_id") : null,
@@ -78,7 +86,8 @@ public final class GameplayEffectNbt {
                 budgetTag.getInt("max_spawns"),
                 budgetTag.getInt("max_block_changes")
             ),
-            OwnerPolicy.valueOf(tag.getString("owner_policy"))
+            OwnerPolicy.valueOf(tag.getString("owner_policy")),
+            audio
         );
     }
 

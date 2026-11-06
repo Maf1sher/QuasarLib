@@ -157,7 +157,8 @@ public final class CinematicTimeline {
                     spec.scale(),
                     spec.durationTicks(),
                     spec.seed(),
-                    spec.audience()
+                    spec.audience(),
+                    spec.audio()
                 )
             );
         }
@@ -178,7 +179,8 @@ public final class CinematicTimeline {
                     spec.spacing(),
                     spec.durationTicks(),
                     spec.seed(),
-                    spec.audience()
+                    spec.audience(),
+                    spec.audio()
                 )
             );
         }

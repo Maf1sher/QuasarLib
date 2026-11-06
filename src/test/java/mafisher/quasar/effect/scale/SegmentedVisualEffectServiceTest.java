@@ -11,8 +11,12 @@ import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.VisualEffectService;
+import mafisher.quasar.effect.audio.EffectAudioAttenuation;
+import mafisher.quasar.effect.audio.EffectAudioService;
+import mafisher.quasar.effect.audio.EffectAudioSpec;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.AfterEach;
@@ -37,6 +41,7 @@ class SegmentedVisualEffectServiceTest {
     @AfterEach
     void tearDown() {
         SegmentedVisualEffectService.stopAll(this.level);
+        EffectAudioService.clear(this.level);
     }
 
     @Test
@@ -101,6 +106,19 @@ class SegmentedVisualEffectServiceTest {
     }
 
     @Test
+    void startsOneAudioPlanForTheCoordinator() {
+        SegmentedVisualEffectHandle handle = SegmentedVisualEffectService.start(
+            this.level, specWithAudio(2, 2, 200)
+        );
+
+        assertEquals(1, EffectAudioService.activeCount(this.level));
+
+        SegmentedVisualEffectService.stop(this.level, handle);
+
+        assertEquals(0, EffectAudioService.activeCount(this.level));
+    }
+
+    @Test
     void aSingleCellIsAllowed() {
         SegmentedVisualEffectHandle handle = SegmentedVisualEffectService.start(this.level, spec(1, 1, 200));
 
@@ -124,6 +142,35 @@ class SegmentedVisualEffectServiceTest {
             durationTicks,
             42L,
             EffectAudience.dimensionWide()
+        );
+    }
+
+    private static SegmentedVisualEffectSpec specWithAudio(int columns, int rows, int durationTicks) {
+        EffectAudioSpec audio = EffectAudioSpec.builder(durationTicks)
+            .cue(
+                0,
+                new Vec3(0.0, 64.0, 0.0),
+                ResourceLocation.withDefaultNamespace("test"),
+                SoundSource.MASTER,
+                1.0F,
+                1.0F,
+                EffectAudioAttenuation.distance(64.0F)
+            )
+            .build();
+        return new SegmentedVisualEffectSpec(
+            EFFECT_ID,
+            new Vec3(0.0, 64.0, 0.0),
+            0.0F,
+            0.0F,
+            0.0F,
+            4.0F,
+            columns,
+            rows,
+            columns * rows > 1 ? 8.0 : 0.0,
+            durationTicks,
+            42L,
+            EffectAudience.dimensionWide(),
+            audio
         );
     }
 }

@@ -1,5 +1,6 @@
 package mafisher.quasar.effect;
 
+import mafisher.quasar.effect.audio.EffectAudioSpec;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 
@@ -13,11 +14,12 @@ public record VisualEffectSpec(
     float scale,
     int durationTicks,
     long seed,
-    EffectAudience audience
+    EffectAudience audience,
+    EffectAudioSpec audio
 ) {
     public VisualEffectSpec {
-        if (effectId == null || position == null || audience == null) {
-            throw new NullPointerException("Effect ID, position, and audience are required");
+        if (effectId == null || position == null || audience == null || audio == null) {
+            throw new NullPointerException("Effect ID, position, audience, and audio are required");
         }
         if (!Double.isFinite(position.x) || !Double.isFinite(position.y) || !Double.isFinite(position.z)
             || !Float.isFinite(yaw) || !Float.isFinite(pitch) || !Float.isFinite(roll)
@@ -25,6 +27,21 @@ public record VisualEffectSpec(
             || durationTicks < 1 || durationTicks > 72_000) {
             throw new IllegalArgumentException("Invalid visual effect parameters");
         }
+        audio.requireFitsWithin(durationTicks);
+    }
+
+    public VisualEffectSpec(
+        ResourceLocation effectId,
+        Vec3 position,
+        float yaw,
+        float pitch,
+        float roll,
+        float scale,
+        int durationTicks,
+        long seed,
+        EffectAudience audience
+    ) {
+        this(effectId, position, yaw, pitch, roll, scale, durationTicks, seed, audience, EffectAudioSpec.NONE);
     }
 
     public VisualEffectSpec(
@@ -37,7 +54,7 @@ public record VisualEffectSpec(
         long seed,
         EffectAudience audience
     ) {
-        this(effectId, position, yaw, pitch, 0.0F, scale, durationTicks, seed, audience);
+        this(effectId, position, yaw, pitch, 0.0F, scale, durationTicks, seed, audience, EffectAudioSpec.NONE);
     }
 
     public EffectTransform transform() {

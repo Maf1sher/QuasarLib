@@ -6,12 +6,17 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.VisualEffectSpec;
+import mafisher.quasar.effect.audio.EffectAudioAttenuation;
+import mafisher.quasar.effect.audio.EffectAudioSpec;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectService;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectSpec;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 
@@ -25,6 +30,9 @@ final class ContentCommands {
     private static final int DEFAULT_COLUMNS = 4;
     private static final int DEFAULT_ROWS = 4;
     private static final double DEFAULT_SPACING = DEBUG_SCALE * 2.0;
+    private static final SoundEvent RUNE_CHIME = SoundEvent.createVariableRangeEvent(
+        ResourceLocation.withDefaultNamespace("block.amethyst_block.chime")
+    );
 
     private ContentCommands() {
     }
@@ -62,16 +70,44 @@ final class ContentCommands {
     private static int startRune(CommandSourceStack source) {
         ServerLevel level = source.getLevel();
         Vec3 position = source.getPosition();
+        Vec3 effectPosition = new Vec3(position.x, position.y - 1.4, position.z);
+        EffectAudioSpec audio = EffectAudioSpec.builder(DEBUG_LIFETIME_TICKS)
+            .cue(
+                0,
+                effectPosition,
+                RUNE_CHIME,
+                SoundSource.MASTER,
+                1.0F,
+                1.0F,
+                EffectAudioAttenuation.distance(64.0F)
+            )
+            .cue(
+                20,
+                effectPosition.add(0.0, 2.0, 0.0),
+                RUNE_CHIME,
+                SoundSource.MASTER,
+                0.8F,
+                1.2F,
+                EffectAudioAttenuation.directional(
+                    new Vec3(0.0, -1.0, 0.0),
+                    45.0F,
+                    90.0F,
+                    0.25F,
+                    64.0F
+                )
+            )
+            .build();
         VisualEffectService.start(level, new VisualEffectSpec(
             ContentEffectIds.RUNE_CIRCLE,
-            new Vec3(position.x, position.y - 1.4, position.z),
+            effectPosition,
             source.getRotation().y,
             0.0F,
             0.0F,
             DEBUG_SCALE,
             DEBUG_LIFETIME_TICKS,
             level.getRandom().nextLong(),
-            EffectAudience.nearby(DEBUG_AUDIENCE_RADIUS)
+            EffectAudience.nearby(DEBUG_AUDIENCE_RADIUS),
+            audio
         ));
         source.sendSuccess(() -> Component.literal("Started the content rune effect."), false);
         return 1;

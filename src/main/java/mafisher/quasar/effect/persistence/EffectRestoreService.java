@@ -13,6 +13,7 @@ import mafisher.quasar.effect.EffectScope;
 import mafisher.quasar.effect.VisualEffectHandle;
 import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.VisualEffectSpec;
+import mafisher.quasar.effect.audio.EffectAudioSpec;
 import mafisher.quasar.effect.cinematic.CinematicEffectService;
 import mafisher.quasar.effect.cinematic.CinematicTimeline;
 import mafisher.quasar.effect.cinematic.CinematicTimelineRegistry;
@@ -106,7 +107,6 @@ public final class EffectRestoreService {
             }
             try {
                 if (restore(level, descriptor)) {
-                    store.remove(descriptor.instanceId());
                     restored++;
                 } else {
                     unsupported++;
@@ -192,6 +192,7 @@ public final class EffectRestoreService {
 
     private static boolean restoreSegmented(ServerLevel level, EffectDescriptor descriptor) {
         CompoundTag state = descriptor.state();
+        EffectAudioSpec audio = EffectAudioNbt.loadFrom(state);
         SegmentedVisualEffectSpec spec = new SegmentedVisualEffectSpec(
             descriptor.typeId(),
             transformPosition(descriptor),
@@ -204,7 +205,8 @@ public final class EffectRestoreService {
             state.getDouble("spacing"),
             descriptor.durationTicks(),
             descriptor.seed(),
-            descriptor.audience()
+            descriptor.audience(),
+            audio
         );
         List<UUID> segmentIds = segmentIds(descriptor);
         return SegmentedVisualEffectService.restore(
@@ -227,7 +229,8 @@ public final class EffectRestoreService {
             descriptor.scale(),
             descriptor.durationTicks(),
             descriptor.seed(),
-            descriptor.audience()
+            descriptor.audience(),
+            EffectAudioNbt.loadFrom(descriptor.state())
         );
         VisualEffectHandle handle = VisualEffectService.restore(
             level,

@@ -10,6 +10,8 @@ import mafisher.quasar.effect.EffectScope;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectPoint;
+import mafisher.quasar.effect.audio.EffectAudioPlan;
+import mafisher.quasar.effect.audio.EffectAudioService;
 import mafisher.quasar.effect.persistence.BlockJournal;
 import mafisher.quasar.effect.persistence.BlockRollbackService;
 import mafisher.quasar.effect.persistence.EffectDescriptor;
@@ -143,6 +145,7 @@ public final class GameplayEffectService {
         if (options.capabilities().destructive()) {
             EffectPersistenceService.recordJournal(level, session.id, journal);
         }
+        startAudio(level, session);
         if (context.isStopRequested()) {
             finish(level, session, GameplayEffectEndReason.CANCELLED, true);
         }
@@ -250,6 +253,7 @@ public final class GameplayEffectService {
 
         ActiveSession session = new ActiveSession(spec, controller, scope, context, descriptor, startGameTime);
         sessions.put(session.id, session);
+        startAudio(level, session);
         if (context.isStopRequested()) {
             finish(level, session, GameplayEffectEndReason.CANCELLED, true);
         }
@@ -440,6 +444,21 @@ public final class GameplayEffectService {
         return owner == null || owner.isRemoved() || !owner.isAlive() || owner.level() != level;
     }
 
+    private static void startAudio(ServerLevel level, ActiveSession session) {
+        if (session.spec.audio().isEmpty()) {
+            return;
+        }
+        EffectAudioPlan plan = EffectAudioPlan.from(
+            session.id,
+            level.dimension().location(),
+            session.spec.anchor(),
+            session.startGameTime,
+            session.spec.phases().totalDurationTicks(),
+            session.spec.audio()
+        );
+        EffectAudioService.start(level, plan, EffectAudience.dimensionWide());
+    }
+
     private static void finish(
         ServerLevel level,
         ActiveSession session,
@@ -474,6 +493,7 @@ public final class GameplayEffectService {
         } finally {
             session.context.close();
             session.scope.close(persistRemoval);
+            EffectAudioService.stop(level, session.id);
             OwnerAdmission admission = OWNER_ADMISSIONS.get(level);
             if (admission != null) {
                 admission.recordEnd(session.spec.ownerId());

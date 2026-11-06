@@ -3,6 +3,7 @@ package mafisher.quasar.effect.scale;
 import java.util.Objects;
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.VisualEffectSpec;
+import mafisher.quasar.effect.audio.EffectAudioSpec;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 
@@ -25,7 +26,8 @@ public record SegmentedVisualEffectSpec(
     double spacing,
     int durationTicks,
     long seed,
-    EffectAudience audience
+    EffectAudience audience,
+    EffectAudioSpec audio
 ) {
     /** Shared per-level ceiling. A coordinator cannot reserve more than this many segments. */
     public static final int MAX_SEGMENTS = SegmentGridLayout.MAX_SEGMENTS;
@@ -34,6 +36,7 @@ public record SegmentedVisualEffectSpec(
         Objects.requireNonNull(effectId, "effectId");
         Objects.requireNonNull(center, "center");
         Objects.requireNonNull(audience, "audience");
+        Objects.requireNonNull(audio, "audio");
         long segmentCount = (long)columns * rows;
         if (!Double.isFinite(center.x) || !Double.isFinite(center.y) || !Double.isFinite(center.z)
             || !Float.isFinite(yaw) || !Float.isFinite(pitch) || !Float.isFinite(roll)
@@ -44,6 +47,25 @@ public record SegmentedVisualEffectSpec(
             || durationTicks < 1 || durationTicks > 72_000) {
             throw new IllegalArgumentException("Invalid segmented visual effect parameters");
         }
+        audio.requireFitsWithin(durationTicks);
+    }
+
+    public SegmentedVisualEffectSpec(
+        ResourceLocation effectId,
+        Vec3 center,
+        float yaw,
+        float pitch,
+        float roll,
+        float segmentScale,
+        int columns,
+        int rows,
+        double spacing,
+        int durationTicks,
+        long seed,
+        EffectAudience audience
+    ) {
+        this(effectId, center, yaw, pitch, roll, segmentScale, columns, rows, spacing, durationTicks, seed, audience,
+            EffectAudioSpec.NONE);
     }
 
     public VisualEffectSpec segmentSpec(int column, int row) {
@@ -58,7 +80,8 @@ public record SegmentedVisualEffectSpec(
             this.segmentScale,
             this.durationTicks,
             this.segmentSeed(column, row),
-            this.audience
+            this.audience,
+            EffectAudioSpec.NONE
         );
     }
 

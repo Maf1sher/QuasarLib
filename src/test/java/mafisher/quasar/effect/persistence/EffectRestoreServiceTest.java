@@ -16,6 +16,9 @@ import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.VisualEffectService;
+import mafisher.quasar.effect.audio.EffectAudioAttenuation;
+import mafisher.quasar.effect.audio.EffectAudioService;
+import mafisher.quasar.effect.audio.EffectAudioSpec;
 import mafisher.quasar.effect.block.BlockChange;
 import mafisher.quasar.effect.gameplay.EffectPhase;
 import mafisher.quasar.effect.gameplay.EffectPhasePlan;
@@ -25,12 +28,18 @@ import mafisher.quasar.effect.gameplay.GameplayEffectSpec;
 import mafisher.quasar.effect.gameplay.OwnerPolicy;
 import mafisher.quasar.effect.persistence.BlockJournal;
 import mafisher.quasar.effect.persistence.BlockRollbackService;
+import mafisher.quasar.effect.persistence.EffectAudioNbt;
+import mafisher.quasar.effect.persistence.EffectCapabilities;
+import mafisher.quasar.effect.persistence.EffectDescriptor;
+import mafisher.quasar.effect.persistence.EffectKind;
+import mafisher.quasar.effect.persistence.EffectPersistence;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectService;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectSpec;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -80,7 +89,7 @@ class EffectRestoreServiceTest {
 
         assertEquals(1, report.restored());
         assertEquals(1, VisualEffectService.activeCount(this.level));
-        assertTrue(this.store.descriptors().isEmpty());
+        assertEquals(1, this.store.descriptors().size());
     }
 
     @Test
@@ -92,6 +101,23 @@ class EffectRestoreServiceTest {
         assertEquals(1, report.expired());
         assertEquals(0, VisualEffectService.activeCount(this.level));
         assertTrue(this.store.descriptors().isEmpty());
+    }
+
+    @Test
+    void keepsRestoredDescriptorsAndAudioForTheNextRestart() {
+        EffectDescriptor descriptor = visualDescriptorWithAudio();
+        this.store.put(descriptor);
+
+        EffectRecoveryReport report = EffectRestoreService.restoreLevel(this.level);
+
+        assertEquals(1, report.restored());
+        assertTrue(this.store.contains(descriptor.instanceId()));
+
+        CompoundTag saved = this.store.save(new CompoundTag(), null);
+        EffectSavedData reloaded = EffectSavedData.load(saved, null);
+
+        assertTrue(reloaded.contains(descriptor.instanceId()));
+        assertEquals(1, EffectAudioNbt.loadFrom(reloaded.find(descriptor.instanceId()).state()).cueCount());
     }
 
     @Test
@@ -130,6 +156,22 @@ class EffectRestoreServiceTest {
         assertEquals(1, report.restored());
         assertEquals(1, SegmentedVisualEffectService.activeCount(this.level));
         assertEquals(4, VisualEffectService.activeCount(this.level));
+    }
+
+    @Test
+    void restoresSegmentedAudioPlan() {
+        SegmentedVisualEffectSpec spec = segmentedSpecWithAudio();
+        SegmentedVisualEffectService.start(this.level, spec);
+
+        SegmentedVisualEffectService.stopAll(this.level, false);
+        VisualEffectService.clear(this.level);
+        this.gameTime = 20L;
+
+        EffectRecoveryReport report = EffectRestoreService.restoreLevel(this.level);
+
+        assertEquals(1, report.restored());
+        assertEquals(1, SegmentedVisualEffectService.activeCount(this.level));
+        assertEquals(1, EffectAudioService.activeCount(this.level));
     }
 
     @Test
@@ -235,6 +277,62 @@ class EffectRestoreServiceTest {
             EffectPersistence.RESUMABLE,
             null,
             new CompoundTag()
+        );
+    }
+
+    private static SegmentedVisualEffectSpec segmentedSpecWithAudio() {
+        EffectAudioSpec audio = EffectAudioSpec.builder(200)
+            .cue(
+                0,
+                new net.minecraft.world.phys.Vec3(0.0, 64.0, 0.0),
+                ResourceLocation.withDefaultNamespace("test"),
+                SoundSource.MASTER,
+                1.0F,
+                1.0F,
+                EffectAudioAttenuation.distance(64.0F)
+            )
+            .build();
+        return new SegmentedVisualEffectSpec(
+            EFFECT,
+            new net.minecraft.world.phys.Vec3(0.0, 64.0, 0.0),
+            0.0F, 0.0F, 0.0F,
+            1.0F, 2, 2, 4.0,
+            200,
+            7L,
+            EffectAudience.nearby(64.0),
+            audio
+        );
+    }
+
+    private static EffectDescriptor visualDescriptorWithAudio() {
+        EffectAudioSpec audio = EffectAudioSpec.builder(200)
+            .cue(
+                10,
+                new net.minecraft.world.phys.Vec3(1.0, 64.0, 2.0),
+                ResourceLocation.withDefaultNamespace("test"),
+                SoundSource.MASTER,
+                1.0F,
+                1.0F,
+                EffectAudioAttenuation.distance(64.0F)
+            )
+            .build();
+        CompoundTag state = new CompoundTag();
+        EffectAudioNbt.saveInto(state, audio);
+        return new EffectDescriptor(
+            UUID.randomUUID(),
+            EffectKind.VISUAL,
+            EFFECT,
+            DIMENSION,
+            new EffectTransform(new EffectPoint(1.0, 64.0, 2.0), 0.0F, 0.0F, 0.0F),
+            1.0F,
+            11L,
+            0L,
+            200,
+            EffectAudience.nearby(64.0),
+            EffectCapabilities.NONE,
+            EffectPersistence.RESUMABLE,
+            null,
+            state
         );
     }
 }

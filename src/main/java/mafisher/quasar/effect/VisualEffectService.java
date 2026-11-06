@@ -1,8 +1,11 @@
 package mafisher.quasar.effect;
 
+import mafisher.quasar.effect.audio.EffectAudioPlan;
+import mafisher.quasar.effect.audio.EffectAudioService;
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
 import mafisher.quasar.effect.network.StopVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateVisualEffectPayload;
+import mafisher.quasar.effect.persistence.EffectAudioNbt;
 import mafisher.quasar.effect.persistence.EffectDescriptor;
 import mafisher.quasar.effect.persistence.EffectKind;
 import mafisher.quasar.effect.persistence.EffectPersistenceOptions;
@@ -20,6 +23,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.WeakHashMap;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
@@ -140,7 +144,7 @@ public final class VisualEffectService {
             options.capabilities(),
             options.persistence(),
             options.ownerSessionId(),
-            options.state()
+            descriptorState(options, spec)
         ) : null;
         ActiveEffect active = new ActiveEffect(payload, spec.audience(), spec.transform(), descriptor);
         Map<UUID, ActiveEffect> effects = activeEffects(level);
@@ -156,6 +160,9 @@ public final class VisualEffectService {
         }
         if (descriptor != null) {
             EffectPersistenceService.recordStart(level, descriptor);
+        }
+        if (segmentLink == null) {
+            startAudio(level, instanceId, spec, startGameTime);
         }
         return new VisualEffectHandle(instanceId);
     }
@@ -203,6 +210,7 @@ public final class VisualEffectService {
         for (ServerPlayer player : audience.values()) {
             sendStart(player, active);
         }
+        startAudio(level, instanceId, spec, startGameTime);
         return new VisualEffectHandle(instanceId);
     }
 
@@ -256,6 +264,9 @@ public final class VisualEffectService {
         collectAudience(level, active, null, audience);
         for (ServerPlayer player : audience.values()) {
             sendStart(player, active);
+        }
+        if (link == null) {
+            startAudio(level, instanceId, spec, startGameTime);
         }
         return new VisualEffectHandle(instanceId);
     }
@@ -347,6 +358,7 @@ public final class VisualEffectService {
         Objects.requireNonNull(handle, "handle");
         Map<UUID, ActiveEffect> effects = ACTIVE_EFFECTS.get(level);
         if (effects == null) {
+            EffectAudioService.stop(level, handle.instanceId());
             return;
         }
         ActiveEffect active = effects.remove(handle.instanceId());
@@ -356,6 +368,7 @@ public final class VisualEffectService {
                 EffectPersistenceService.recordStop(level, handle.instanceId());
             }
         }
+        EffectAudioService.stop(level, handle.instanceId());
         if (effects.isEmpty()) {
             ACTIVE_EFFECTS.remove(level);
         }
@@ -386,6 +399,7 @@ public final class VisualEffectService {
                 sendStop(level, active);
                 iterator.remove();
                 EffectPersistenceService.recordStop(level, active.payload().instanceId());
+                EffectAudioService.stop(level, active.payload().instanceId());
                 continue;
             }
 
@@ -447,6 +461,28 @@ public final class VisualEffectService {
     public static void clear(ServerLevel level) {
         Objects.requireNonNull(level, "level");
         ACTIVE_EFFECTS.remove(level);
+        EffectAudioService.clear(level);
+    }
+
+    private static CompoundTag descriptorState(EffectPersistenceOptions options, VisualEffectSpec spec) {
+        CompoundTag state = options.state().copy();
+        EffectAudioNbt.saveInto(state, spec.audio());
+        return state;
+    }
+
+    private static void startAudio(ServerLevel level, UUID instanceId, VisualEffectSpec spec, long startGameTime) {
+        if (spec.audio().isEmpty()) {
+            return;
+        }
+        EffectAudioPlan plan = EffectAudioPlan.from(
+            instanceId,
+            level.dimension().location(),
+            spec.position(),
+            startGameTime,
+            spec.durationTicks(),
+            spec.audio()
+        );
+        EffectAudioService.start(level, plan, spec.audience());
     }
 
     private static SpatialGrid<ServerPlayer> buildPlayerIndex(List<ServerPlayer> players) {
