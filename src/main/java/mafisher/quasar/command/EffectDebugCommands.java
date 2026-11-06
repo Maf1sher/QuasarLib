@@ -11,9 +11,14 @@ import mafisher.quasar.effect.EffectDamageShape;
 import mafisher.quasar.effect.EffectHitbox;
 import mafisher.quasar.effect.EffectLifetimePolicy;
 import mafisher.quasar.effect.EffectPoint;
+import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.EffectVisualIds;
 import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.VisualEffectSpec;
+import mafisher.quasar.effect.cinematic.CinematicEffectHandle;
+import mafisher.quasar.effect.cinematic.CinematicEffectService;
+import mafisher.quasar.effect.cinematic.CinematicTimeline;
+import mafisher.quasar.effect.cinematic.EffectEasing;
 import mafisher.quasar.effect.entity.EffectProbeEntity;
 import mafisher.quasar.effect.entity.QuasarEffectEntities;
 import mafisher.quasar.effect.gameplay.EffectPhase;
@@ -115,6 +120,14 @@ public final class EffectDebugCommands {
                         ))
                         .then(Commands.literal("compositor-fail-next")
                             .executes(context -> armCompositorFailure(context.getSource())))
+                )
+                .then(
+                    Commands.literal("cinematic")
+                        .requires(source -> source.hasPermission(2))
+                        .then(Commands.literal("demo")
+                            .executes(context -> testCinematic(context.getSource())))
+                        .then(Commands.literal("stop-all")
+                            .executes(context -> stopCinematics(context.getSource())))
                 )
         );
     }
@@ -288,6 +301,94 @@ public final class EffectDebugCommands {
             false
         );
         return 1;
+    }
+
+    private static int testCinematic(CommandSourceStack source) {
+        ServerLevel level = source.getLevel();
+        Vec3 position = effectPosition(source);
+        float yaw = source.getRotation().y;
+        long seed = level.getRandom().nextLong();
+        CinematicTimeline timeline = CinematicTimeline.builder(
+                ResourceLocation.fromNamespaceAndPath(QuasarLib.MOD_ID, "debug_cinematic_demo"),
+                240,
+                seed
+            )
+            .transformUpdateIntervalTicks(1)
+            .sound(0, position, QuasarSounds.EFFECT_TEST.get(), SoundSource.MASTER, 4.0F, 1.0F)
+            .visual("ring", 0, new VisualEffectSpec(
+                EffectVisualIds.DEBUG_RUNE_CIRCLE,
+                position,
+                yaw,
+                0.0F,
+                0.0F,
+                5.0F,
+                220,
+                seed + 1L,
+                EffectAudience.nearby(128.0)
+            ))
+            .transform("ring", 0, cinematicTransform(position, yaw), EffectEasing.EASE_OUT_CUBIC)
+            .transform("ring", 100, cinematicTransform(position.add(0.0, 3.0, 0.0), yaw + 180.0F),
+                EffectEasing.LINEAR)
+            .sound(20, position, QuasarSounds.EFFECT_TEST.get(), SoundSource.MASTER, 4.0F, 1.2F)
+            .visual("waves", 40, new VisualEffectSpec(
+                EffectVisualIds.DEBUG_WAVE_DISTORTION,
+                position,
+                yaw,
+                0.0F,
+                0.0F,
+                5.0F,
+                180,
+                seed + 2L,
+                EffectAudience.nearby(128.0)
+            ))
+            .sound(100, position, QuasarSounds.EFFECT_TEST.get(), SoundSource.MASTER, 4.0F, 0.8F)
+            .visual("bloom", 100, new VisualEffectSpec(
+                EffectVisualIds.DEBUG_BLOOM,
+                position,
+                yaw,
+                0.0F,
+                0.0F,
+                5.0F,
+                120,
+                seed + 3L,
+                EffectAudience.nearby(128.0)
+            ))
+            .stopVisual("ring", 160)
+            .build();
+
+        CinematicEffectHandle handle;
+        try {
+            handle = CinematicEffectService.start(level, timeline);
+        } catch (IllegalStateException exception) {
+            source.sendFailure(Component.literal(exception.getMessage()));
+            return 0;
+        }
+        source.sendSuccess(
+            () -> Component.literal(
+                "Started cinematic " + timeline.id() + " (" + timeline.cueCount() + " cues, "
+                    + timeline.durationTicks() + " ticks): " + handle.sessionId() + "."
+            ),
+            false
+        );
+        return 1;
+    }
+
+    private static int stopCinematics(CommandSourceStack source) {
+        int stopped = CinematicEffectService.stopAll(source.getLevel());
+        source.sendSuccess(
+            () -> Component.literal("Stopped " + stopped + " cinematic effect(s)."),
+            false
+        );
+        return 1;
+    }
+
+    private static EffectTransform cinematicTransform(Vec3 position, float yaw) {
+        return new EffectTransform(
+            new EffectPoint(position.x, position.y, position.z),
+            yaw,
+            0.0F,
+            0.0F
+        );
     }
 
     private static int testAll(CommandSourceStack source, EffectAngles ringAngles, EffectAngles entityAngles) {
