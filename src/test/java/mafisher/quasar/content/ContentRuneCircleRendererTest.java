@@ -53,6 +53,7 @@ class ContentRuneCircleRendererTest {
         assertTrue(bounds.maxX - bounds.minX > 10.0);
         assertTrue(bounds.maxY - bounds.minY > 10.0);
         assertTrue(bounds.maxZ - bounds.minZ > 10.0);
+        assertTrue(renderer.spatialRadius(context()) >= (bounds.maxX - bounds.minX) / 2.0);
     }
 
     private static EffectRenderContext context() {

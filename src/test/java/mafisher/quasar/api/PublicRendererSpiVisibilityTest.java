@@ -4,12 +4,17 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import java.util.UUID;
 import mafisher.quasar.client.effect.EffectMesh;
 import mafisher.quasar.client.effect.EffectMeshes;
+import mafisher.quasar.client.effect.EffectRenderContext;
 import mafisher.quasar.client.effect.EffectRenderTypeOptions;
 import mafisher.quasar.client.effect.EffectShader;
 import mafisher.quasar.client.effect.QuasarRenderTypes;
 import mafisher.quasar.client.effect.RegisterVisualEffectRenderersEvent;
+import mafisher.quasar.client.effect.VisualEffectInstance;
+import mafisher.quasar.client.effect.VisualEffectRenderer;
+import mafisher.quasar.effect.network.StartVisualEffectPayload;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 
@@ -52,5 +57,32 @@ class PublicRendererSpiVisibilityTest {
         assertNotNull(QuasarRenderTypes.screenEffectMask(shader, texture));
         assertNotNull(QuasarRenderTypes.screenEffectMask(shader, texture,
             EffectRenderTypeOptions.MASK_DEFAULT));
+    }
+
+    @Test
+    void exposesSpatialRadiusWithASafeDefault() {
+        ResourceLocation effectId = ResourceLocation.fromNamespaceAndPath("test", "effect");
+        StartVisualEffectPayload payload = new StartVisualEffectPayload(
+            effectId,
+            UUID.randomUUID(),
+            ResourceLocation.fromNamespaceAndPath("minecraft", "overworld"),
+            0.0,
+            64.0,
+            0.0,
+            0.0F,
+            0.0F,
+            0.0F,
+            1.0F,
+            100,
+            0L,
+            1L
+        );
+        VisualEffectInstance instance = new VisualEffectInstance(payload);
+        VisualEffectRenderer renderer = new VisualEffectRenderer() {
+        };
+
+        assertEquals(Double.POSITIVE_INFINITY, renderer.spatialRadius(
+            new EffectRenderContext(instance, payload.transform(), 0.0F, 0.0F, 0.0F)
+        ));
     }
 }

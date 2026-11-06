@@ -36,6 +36,19 @@ public interface VisualEffectRenderer {
     }
 
     /**
+     * Returns a conservative radius in blocks around the interpolated transform position that contains every pass
+     * this renderer can emit at any age. The client spatial index uses it as a broad phase before exact frustum
+     * culling. The value must not shrink with age; a renderer whose silhouette grows must return the largest radius it
+     * can reach. Returning {@link Double#POSITIVE_INFINITY} keeps the effect out of the index and always considered.
+     *
+     * <p>The default is infinite so existing renderers remain correct without changes.
+     */
+    default double spatialRadius(EffectRenderContext context) {
+        Objects.requireNonNull(context, "context");
+        return Double.POSITIVE_INFINITY;
+    }
+
+    /**
      * Returns a conservative world-space bound for culling. The default preserves the old scale-based bound.
      */
     default AABB cullingBounds(EffectRenderContext context) {

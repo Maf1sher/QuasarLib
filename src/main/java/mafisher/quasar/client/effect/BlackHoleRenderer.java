@@ -66,6 +66,11 @@ final class BlackHoleRenderer implements ScreenEffectRenderer {
     }
 
     @Override
+    public double spatialRadius(EffectRenderContext context) {
+        return context.scale() * 1.55;
+    }
+
+    @Override
     public ScreenEffectSettings screenEffectSettings(EffectRenderContext context) {
         BlackHoleScreenSettings adaptedSettings = BlackHoleLighting.screenSettings(
             SCREEN_SETTINGS, daylightFactor(context));

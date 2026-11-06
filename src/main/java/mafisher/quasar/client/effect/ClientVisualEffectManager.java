@@ -3,14 +3,14 @@ package mafisher.quasar.client.effect;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexSorting;
+import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectTimeline;
 import mafisher.quasar.effect.EffectTransform;
+import mafisher.quasar.effect.network.ResumeEffectsPayload;
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
 import mafisher.quasar.effect.network.StopVisualEffectPayload;
-import mafisher.quasar.effect.network.ResumeEffectsPayload;
 import mafisher.quasar.effect.network.UpdateSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateVisualEffectPayload;
-import mafisher.quasar.effect.scale.SegmentGridLayout;
 import mafisher.quasar.effect.scale.SegmentLink;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -30,12 +30,21 @@ import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Instance-owned state and rendering for transient client visual effects. */
 public final class ClientVisualEffectManager {
     private static final int MAX_ACTIVE_EFFECTS = 128;
+    private static final double INDEX_QUERY_MARGIN = 16.0;
+    private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
+
     private final Map<UUID, VisualEffectInstance> activeEffects = new LinkedHashMap<>();
-    private final Map<UUID, SegmentedGroup> segmentedGroups = new LinkedHashMap<>();
+    private final Map<UUID, ClientSegmentGroup> segmentedGroups = new LinkedHashMap<>();
+    private final Map<UUID, Double> instanceSpatialRadii = new LinkedHashMap<>();
+    private final ClientEffectSpatialIndex spatialIndex = new ClientEffectSpatialIndex();
+    private final Set<ClientEffectSpatialIndex.Key> unindexedInstances = new LinkedHashSet<>();
+    private final Set<ClientEffectSpatialIndex.Key> unindexedGroups = new LinkedHashSet<>();
     private final VisualEffectRendererRegistry rendererRegistry;
     private ClientLevel currentLevel;
 
@@ -50,14 +59,25 @@ public final class ClientVisualEffectManager {
         if (level == null || !level.dimension().location().equals(payload.dimensionId())) {
             return;
         }
-        if (this.rendererRegistry.find(payload.effectId()).isEmpty()) {
+        VisualEffectRenderer renderer = this.rendererRegistry.find(payload.effectId()).orElse(null);
+        if (renderer == null) {
             return;
         }
         this.removeInstance(payload.instanceId());
-        this.activeEffects.put(payload.instanceId(), new VisualEffectInstance(payload, level.getGameTime()));
+        VisualEffectInstance effect = new VisualEffectInstance(payload, level.getGameTime());
+        double radius = this.spatialRadius(renderer, effect);
+        this.activeEffects.put(payload.instanceId(), effect);
+        this.instanceSpatialRadii.put(payload.instanceId(), radius);
+
         SegmentLink segmentLink = payload.segmentLink();
         if (segmentLink != null) {
-            this.segmentedGroup(segmentLink).segmentIds.add(payload.instanceId());
+            ClientSegmentGroup group = this.segmentedGroup(segmentLink, payload, level.getGameTime());
+            group.add(new ClientSegmentGroup.SegmentMember(
+                payload.instanceId(), payload, segmentLink, radius
+            ));
+            this.indexGroup(segmentLink.coordinatorId());
+        } else {
+            this.indexInstance(payload.instanceId());
         }
         while (this.activeEffects.size() > MAX_ACTIVE_EFFECTS) {
             UUID oldest = this.activeEffects.keySet().iterator().next();
@@ -83,8 +103,7 @@ public final class ClientVisualEffectManager {
         if (level == null || !level.dimension().location().equals(payload.dimensionId())) {
             return;
         }
-        this.activeEffects.clear();
-        this.segmentedGroups.clear();
+        this.clearState();
         for (StartVisualEffectPayload effect : payload.effects()) {
             this.start(effect);
         }
@@ -98,13 +117,14 @@ public final class ClientVisualEffectManager {
             return;
         }
         VisualEffectInstance effect = this.activeEffects.get(payload.instanceId());
-        if (effect != null) {
+        if (effect != null && effect.payload().segmentLink() == null) {
             this.activeEffects.put(payload.instanceId(),
                 effect.withTransform(payload.transform(), payload.updateGameTime()));
+            this.indexInstance(payload.instanceId());
         }
     }
 
-    /** Applies one aggregated coordinator update to every segment this client currently holds. */
+    /** Stores one aggregated coordinator update; segment transforms are derived only for visible cells. */
     void updateSegmented(UpdateSegmentedVisualEffectPayload payload) {
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
@@ -112,25 +132,12 @@ public final class ClientVisualEffectManager {
         if (level == null || !level.dimension().location().equals(payload.dimensionId())) {
             return;
         }
-        SegmentedGroup group = this.segmentedGroups.get(payload.coordinatorId());
+        ClientSegmentGroup group = this.segmentedGroups.get(payload.coordinatorId());
         if (group == null) {
             return;
         }
-        EffectTransform base = payload.transform();
-        SegmentGridLayout layout = group.layout;
-        for (UUID instanceId : group.segmentIds) {
-            VisualEffectInstance effect = this.activeEffects.get(instanceId);
-            if (effect == null) {
-                continue;
-            }
-            SegmentLink link = effect.payload().segmentLink();
-            if (link == null) {
-                continue;
-            }
-            this.activeEffects.put(instanceId, effect.withTransform(
-                layout.transform(base, link.column(), link.row()), payload.updateGameTime()
-            ));
-        }
+        group.applyBase(payload.transform(), payload.updateGameTime());
+        this.indexGroup(payload.coordinatorId());
     }
 
     void render(net.neoforged.neoforge.client.event.RenderLevelStageEvent event) {
@@ -141,9 +148,7 @@ public final class ClientVisualEffectManager {
             return;
         }
         long gameTime = level.getGameTime();
-        float partialTick = event.getPartialTick().getGameTimeDeltaPartialTick(false);
         this.removeFinishedEffects(level, gameTime);
-
         if (this.activeEffects.isEmpty()) {
             return;
         }
@@ -155,37 +160,30 @@ public final class ClientVisualEffectManager {
         poseStack.pushPose();
         poseStack.translate(-cameraPosition.x, -cameraPosition.y, -cameraPosition.z);
         try {
-            for (VisualEffectInstance effect : this.activeEffects.values()) {
-                this.rendererRegistry.find(effect.effectId()).ifPresent(renderer -> {
-                    EffectRenderContext context = this.createRenderContext(effect, gameTime, partialTick);
-                    EffectTransform transform = context.transform();
-                    AABB renderBounds = this.validatedCullingBounds(renderer, context);
-                    if (!event.getFrustum().isVisible(renderBounds)) {
-                        return;
+            this.forEachVisibleEffect(event, (effect, context, renderer) -> {
+                EffectTransform transform = context.transform();
+                List<EffectRenderPass> renderPasses = List.copyOf(renderer.renderPasses(context));
+                Set<String> passIds = new HashSet<>();
+                for (EffectRenderPass renderPass : renderPasses) {
+                    if (!passIds.add(renderPass.id())) {
+                        throw new IllegalStateException("Duplicate render pass ID '" + renderPass.id()
+                            + "' for effect " + effect.effectId());
                     }
-                    List<EffectRenderPass> renderPasses = List.copyOf(renderer.renderPasses(context));
-                    Set<String> passIds = new HashSet<>();
+                }
+                poseStack.pushPose();
+                try {
+                    poseStack.translate(transform.position().x(), transform.position().y(),
+                        transform.position().z());
+                    EffectRenderTransform.applyRotation(poseStack, transform.yaw(), transform.pitch(),
+                        transform.roll());
                     for (EffectRenderPass renderPass : renderPasses) {
-                        if (!passIds.add(renderPass.id())) {
-                            throw new IllegalStateException("Duplicate render pass ID '" + renderPass.id()
-                                + "' for effect " + effect.effectId());
-                        }
+                        usedRenderTypes.add(renderPass.renderType());
+                        renderer.render(context, renderPass, poseStack, buffers);
                     }
-                    poseStack.pushPose();
-                    try {
-                        poseStack.translate(transform.position().x(), transform.position().y(),
-                            transform.position().z());
-                        EffectRenderTransform.applyRotation(poseStack, transform.yaw(), transform.pitch(),
-                            transform.roll());
-                        for (EffectRenderPass renderPass : renderPasses) {
-                            usedRenderTypes.add(renderPass.renderType());
-                            renderer.render(context, renderPass, poseStack, buffers);
-                        }
-                    } finally {
-                        poseStack.popPose();
-                    }
-                });
-            }
+                } finally {
+                    poseStack.popPose();
+                }
+            });
         } finally {
             poseStack.popPose();
             for (RenderType renderType : usedRenderTypes) {
@@ -203,22 +201,15 @@ public final class ClientVisualEffectManager {
         }
 
         long gameTime = level.getGameTime();
-        float partialTick = event.getPartialTick().getGameTimeDeltaPartialTick(false);
         this.removeFinishedEffects(level, gameTime);
         if (this.activeEffects.isEmpty()) {
             return List.of();
         }
 
         List<ScreenEffectFrame> screenEffects = new ArrayList<>();
-        for (VisualEffectInstance effect : this.activeEffects.values()) {
-            VisualEffectRenderer renderer = this.rendererRegistry.find(effect.effectId()).orElse(null);
+        this.forEachVisibleEffect(event, (effect, context, renderer) -> {
             if (!(renderer instanceof ScreenEffectRenderer screenRenderer)) {
-                continue;
-            }
-
-            EffectRenderContext context = this.createRenderContext(effect, gameTime, partialTick);
-            if (!event.getFrustum().isVisible(this.validatedCullingBounds(renderer, context))) {
-                continue;
+                return;
             }
             ScreenEffectSettings settings = Objects.requireNonNull(screenRenderer.screenEffectSettings(context),
                 "screenEffectSettings");
@@ -227,7 +218,7 @@ public final class ClientVisualEffectManager {
             if (mask.strength() > 0.0F) {
                 screenEffects.add(new ScreenEffectFrame(context, screenRenderer, settings, mask));
             }
-        }
+        });
         return List.copyOf(screenEffects);
     }
 
@@ -277,6 +268,210 @@ public final class ClientVisualEffectManager {
         }
     }
 
+    private void forEachVisibleEffect(
+        net.neoforged.neoforge.client.event.RenderLevelStageEvent event,
+        VisibleEffectConsumer consumer
+    ) {
+        Minecraft minecraft = Minecraft.getInstance();
+        ClientLevel level = minecraft.level;
+        if (level == null) {
+            return;
+        }
+        long gameTime = level.getGameTime();
+        float partialTick = event.getPartialTick().getGameTimeDeltaPartialTick(false);
+        AABB query = this.queryBox(event.getCamera().getPosition());
+
+        this.spatialIndex.query(query, entry -> {
+            if (entry.key().kind() == ClientEffectSpatialIndex.Kind.INSTANCE) {
+                this.visitInstance(entry.key().id(), event, gameTime, partialTick, consumer);
+                return;
+            }
+            ClientSegmentGroup group = this.segmentedGroups.get(entry.key().id());
+            if (group != null) {
+                group.forEachCellIn(query,
+                    member -> this.visitMember(group, member, event, gameTime, partialTick, consumer));
+            }
+        });
+        for (ClientEffectSpatialIndex.Key key : this.unindexedInstances) {
+            this.visitInstance(key.id(), event, gameTime, partialTick, consumer);
+        }
+        for (ClientEffectSpatialIndex.Key key : this.unindexedGroups) {
+            ClientSegmentGroup group = this.segmentedGroups.get(key.id());
+            if (group != null) {
+                group.forEachCellIn(AABB.INFINITE,
+                    member -> this.visitMember(group, member, event, gameTime, partialTick, consumer));
+            }
+        }
+    }
+
+    private void visitInstance(
+        UUID instanceId,
+        net.neoforged.neoforge.client.event.RenderLevelStageEvent event,
+        long gameTime,
+        float partialTick,
+        VisibleEffectConsumer consumer
+    ) {
+        VisualEffectInstance effect = this.activeEffects.get(instanceId);
+        if (effect == null) {
+            return;
+        }
+        VisualEffectRenderer renderer = this.rendererRegistry.find(effect.effectId()).orElse(null);
+        if (renderer == null) {
+            return;
+        }
+        EffectRenderContext context = this.createRenderContext(effect, gameTime, partialTick);
+        double radius = this.instanceSpatialRadii.getOrDefault(instanceId, Double.POSITIVE_INFINITY);
+        if (!this.isVisible(renderer, context, event, radius)) {
+            return;
+        }
+        consumer.accept(effect, context, renderer);
+    }
+
+    private void visitMember(
+        ClientSegmentGroup group,
+        ClientSegmentGroup.SegmentMember member,
+        net.neoforged.neoforge.client.event.RenderLevelStageEvent event,
+        long gameTime,
+        float partialTick,
+        VisibleEffectConsumer consumer
+    ) {
+        VisualEffectRenderer renderer = this.rendererRegistry.find(member.payload().effectId()).orElse(null);
+        if (renderer == null) {
+            return;
+        }
+        VisualEffectInstance effect = group.renderInstance(member);
+        EffectRenderContext context = this.createRenderContext(effect, gameTime, partialTick);
+        if (!this.isVisible(renderer, context, event, member.spatialRadius())) {
+            return;
+        }
+        consumer.accept(effect, context, renderer);
+    }
+
+    private boolean isVisible(
+        VisualEffectRenderer renderer,
+        EffectRenderContext context,
+        net.neoforged.neoforge.client.event.RenderLevelStageEvent event,
+        double spatialRadius
+    ) {
+        if (Double.isFinite(spatialRadius) && spatialRadius >= 0.0) {
+            EffectPoint position = context.transform().position();
+            AABB coarse = new AABB(
+                position.x() - spatialRadius, position.y() - spatialRadius, position.z() - spatialRadius,
+                position.x() + spatialRadius, position.y() + spatialRadius, position.z() + spatialRadius
+            );
+            if (!event.getFrustum().isVisible(coarse)) {
+                return false;
+            }
+        }
+        return event.getFrustum().isVisible(this.validatedCullingBounds(renderer, context));
+    }
+
+    private AABB queryBox(Vec3 cameraPosition) {
+        Minecraft minecraft = Minecraft.getInstance();
+        double far = minecraft.gameRenderer == null ? 256.0 : minecraft.gameRenderer.getDepthFar();
+        double radius = Math.max(64.0, far) + INDEX_QUERY_MARGIN;
+        return new AABB(
+            cameraPosition.x - radius, Double.NEGATIVE_INFINITY, cameraPosition.z - radius,
+            cameraPosition.x + radius, Double.POSITIVE_INFINITY, cameraPosition.z + radius
+        );
+    }
+
+    private double spatialRadius(VisualEffectRenderer renderer, VisualEffectInstance effect) {
+        EffectRenderContext context = new EffectRenderContext(
+            effect, effect.currentTransform(), 0.0F, 0.0F, 0.0F
+        );
+        double radius = renderer.spatialRadius(context);
+        if (Double.isNaN(radius) || radius < 0.0) {
+            LOGGER.warn("Renderer returned invalid spatial radius for effect {}; keeping it unindexed",
+                effect.effectId());
+            return Double.POSITIVE_INFINITY;
+        }
+        return radius;
+    }
+
+    private void indexInstance(UUID instanceId) {
+        VisualEffectInstance effect = this.activeEffects.get(instanceId);
+        Double radius = this.instanceSpatialRadii.get(instanceId);
+        if (effect == null || radius == null) {
+            return;
+        }
+        ClientEffectSpatialIndex.Key key = ClientEffectSpatialIndex.Key.instance(instanceId);
+        this.removeIndexEntry(key);
+        if (ClientEffectSpatialIndex.isIndexableRadius(radius)) {
+            AABB bounds = this.instanceBounds(effect, radius);
+            if (ClientEffectSpatialIndex.isIndexableBounds(bounds)) {
+                this.spatialIndex.put(key, bounds);
+                return;
+            }
+        }
+        this.unindexedInstances.add(key);
+    }
+
+    private void indexGroup(UUID coordinatorId) {
+        ClientSegmentGroup group = this.segmentedGroups.get(coordinatorId);
+        ClientEffectSpatialIndex.Key key = ClientEffectSpatialIndex.Key.group(coordinatorId);
+        if (group == null || group.isEmpty()) {
+            this.removeIndexEntry(key);
+            return;
+        }
+        this.removeIndexEntry(key);
+        if (group.isIndexable()) {
+            AABB bounds = group.indexBounds();
+            if (ClientEffectSpatialIndex.isIndexableBounds(bounds)) {
+                this.spatialIndex.put(key, bounds);
+                return;
+            }
+        }
+        this.unindexedGroups.add(key);
+    }
+
+    private void removeIndexEntry(ClientEffectSpatialIndex.Key key) {
+        this.spatialIndex.remove(key);
+        if (key.kind() == ClientEffectSpatialIndex.Kind.INSTANCE) {
+            this.unindexedInstances.remove(key);
+        } else {
+            this.unindexedGroups.remove(key);
+        }
+    }
+
+    private AABB instanceBounds(VisualEffectInstance effect, double spatialRadius) {
+        EffectTransform previous = effect.previousTransform();
+        EffectTransform current = effect.currentTransform();
+        double dx = current.position().x() - previous.position().x();
+        double dy = current.position().y() - previous.position().y();
+        double dz = current.position().z() - previous.position().z();
+        double movement = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        double total = spatialRadius + movement / 2.0;
+        double x = (previous.position().x() + current.position().x()) / 2.0;
+        double y = (previous.position().y() + current.position().y()) / 2.0;
+        double z = (previous.position().z() + current.position().z()) / 2.0;
+        return new AABB(x - total, y - total, z - total, x + total, y + total, z + total);
+    }
+
+    private ClientSegmentGroup segmentedGroup(
+        SegmentLink link,
+        StartVisualEffectPayload payload,
+        long gameTime
+    ) {
+        ClientSegmentGroup group = this.segmentedGroups.get(link.coordinatorId());
+        if (group == null) {
+            EffectTransform base = ClientSegmentGroup.baseFromSegment(link, payload.transform());
+            group = new ClientSegmentGroup(link.layout(), base, gameTime);
+            this.segmentedGroups.put(link.coordinatorId(), group);
+            return group;
+        }
+        if (!group.layout().equals(link.layout())) {
+            LOGGER.warn("Segment layout changed for coordinator {}; replacing the client group",
+                link.coordinatorId());
+            this.removeIndexEntry(ClientEffectSpatialIndex.Key.group(link.coordinatorId()));
+            this.segmentedGroups.remove(link.coordinatorId());
+            EffectTransform base = ClientSegmentGroup.baseFromSegment(link, payload.transform());
+            group = new ClientSegmentGroup(link.layout(), base, gameTime);
+            this.segmentedGroups.put(link.coordinatorId(), group);
+        }
+        return group;
+    }
+
     private AABB validatedCullingBounds(VisualEffectRenderer renderer, EffectRenderContext context) {
         AABB bounds = Objects.requireNonNull(renderer.cullingBounds(context), "cullingBounds");
         if (!Double.isFinite(bounds.minX) || !Double.isFinite(bounds.minY) || !Double.isFinite(bounds.minZ)
@@ -309,27 +504,24 @@ public final class ClientVisualEffectManager {
         if (removed == null) {
             return;
         }
+        this.instanceSpatialRadii.remove(instanceId);
+        this.removeIndexEntry(ClientEffectSpatialIndex.Key.instance(instanceId));
+
         SegmentLink link = removed.payload().segmentLink();
         if (link == null) {
             return;
         }
-        SegmentedGroup group = this.segmentedGroups.get(link.coordinatorId());
+        ClientSegmentGroup group = this.segmentedGroups.get(link.coordinatorId());
         if (group == null) {
             return;
         }
-        group.segmentIds.remove(instanceId);
-        if (group.segmentIds.isEmpty()) {
+        group.remove(link);
+        if (group.isEmpty()) {
             this.segmentedGroups.remove(link.coordinatorId());
+            this.removeIndexEntry(ClientEffectSpatialIndex.Key.group(link.coordinatorId()));
+        } else {
+            this.indexGroup(link.coordinatorId());
         }
-    }
-
-    private SegmentedGroup segmentedGroup(SegmentLink link) {
-        SegmentedGroup group = this.segmentedGroups.get(link.coordinatorId());
-        if (group == null || !group.layout.equals(link.layout())) {
-            group = new SegmentedGroup(link.layout());
-            this.segmentedGroups.put(link.coordinatorId(), group);
-        }
-        return group;
     }
 
     private EffectRenderContext createRenderContext(VisualEffectInstance effect, long gameTime, float partialTick) {
@@ -343,8 +535,7 @@ public final class ClientVisualEffectManager {
 
     void onLevelUnload(ClientLevel level) {
         if (this.currentLevel == level) {
-            this.activeEffects.clear();
-            this.segmentedGroups.clear();
+            this.clearState();
             this.currentLevel = null;
         }
     }
@@ -355,19 +546,22 @@ public final class ClientVisualEffectManager {
 
     private void synchronizeLevel(ClientLevel level) {
         if (this.currentLevel != level) {
-            this.activeEffects.clear();
-            this.segmentedGroups.clear();
+            this.clearState();
             this.currentLevel = level;
         }
     }
 
-    /** Client-side grouping of segment instances owned by one coordinator. */
-    private static final class SegmentedGroup {
-        private final SegmentGridLayout layout;
-        private final Set<UUID> segmentIds = new LinkedHashSet<>();
+    private void clearState() {
+        this.activeEffects.clear();
+        this.segmentedGroups.clear();
+        this.instanceSpatialRadii.clear();
+        this.spatialIndex.clear();
+        this.unindexedInstances.clear();
+        this.unindexedGroups.clear();
+    }
 
-        private SegmentedGroup(SegmentGridLayout layout) {
-            this.layout = layout;
-        }
+    @FunctionalInterface
+    private interface VisibleEffectConsumer {
+        void accept(VisualEffectInstance effect, EffectRenderContext context, VisualEffectRenderer renderer);
     }
 }

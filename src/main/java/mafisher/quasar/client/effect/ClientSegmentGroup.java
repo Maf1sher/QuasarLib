@@ -1,0 +1,295 @@
+package mafisher.quasar.client.effect;
+
+import java.util.Objects;
+import java.util.UUID;
+import java.util.function.Consumer;
+import mafisher.quasar.effect.EffectPoint;
+import mafisher.quasar.effect.EffectTransform;
+import mafisher.quasar.effect.network.StartVisualEffectPayload;
+import mafisher.quasar.effect.scale.SegmentGridLayout;
+import mafisher.quasar.effect.scale.SegmentLink;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
+
+/**
+ * Client-owned state for one segmented coordinator. The coordinator's base transform history is stored once; segment
+ * transforms are derived only for grid cells that a frame actually needs.
+ */
+final class ClientSegmentGroup {
+    private static final double RANGE_EPSILON = 1.0E-6;
+
+    private final SegmentGridLayout layout;
+    private final SegmentMember[] cells;
+    private final double halfDiagonal;
+    private EffectTransform previousBase;
+    private EffectTransform currentBase;
+    private long previousBaseGameTime;
+    private long currentBaseGameTime;
+    private double maxSpatialRadius;
+    private int memberCount;
+
+    ClientSegmentGroup(SegmentGridLayout layout, EffectTransform initialBase, long initialGameTime) {
+        this.layout = Objects.requireNonNull(layout, "layout");
+        this.cells = new SegmentMember[layout.segmentCount()];
+        this.previousBase = Objects.requireNonNull(initialBase, "initialBase");
+        this.currentBase = initialBase;
+        this.previousBaseGameTime = initialGameTime;
+        this.currentBaseGameTime = initialGameTime;
+        double halfX = (layout.columns() - 1) * layout.spacing() / 2.0;
+        double halfZ = (layout.rows() - 1) * layout.spacing() / 2.0;
+        this.halfDiagonal = Math.sqrt(halfX * halfX + halfZ * halfZ);
+    }
+
+    /**
+     * Recovers the coordinator base from one absolute segment transform. The server sends segment transforms only, but
+     * the layout and cell offset are enough to rebuild the shared base.
+     */
+    static EffectTransform baseFromSegment(SegmentLink link, EffectTransform segmentTransform) {
+        Objects.requireNonNull(link, "link");
+        Objects.requireNonNull(segmentTransform, "segmentTransform");
+        Vec3 offset = link.layout().offset(link.column(), link.row(), segmentTransform.yaw());
+        EffectPoint position = segmentTransform.position();
+        return new EffectTransform(
+            new EffectPoint(position.x() - offset.x, position.y() - offset.y, position.z() - offset.z),
+            segmentTransform.yaw(),
+            segmentTransform.pitch(),
+            segmentTransform.roll()
+        );
+    }
+
+    SegmentGridLayout layout() {
+        return this.layout;
+    }
+
+    boolean add(SegmentMember member) {
+        Objects.requireNonNull(member, "member");
+        if (!this.layout.equals(member.link().layout())) {
+            throw new IllegalArgumentException("Segment link layout does not match its coordinator group");
+        }
+        int index = member.link().segmentIndex();
+        if (this.cells[index] != null) {
+            this.memberCount--;
+        }
+        this.cells[index] = member;
+        this.memberCount++;
+        if (Double.isFinite(this.maxSpatialRadius)) {
+            this.maxSpatialRadius = Math.max(this.maxSpatialRadius, member.spatialRadius());
+        }
+        return this.memberCount > 0;
+    }
+
+    SegmentMember remove(SegmentLink link) {
+        Objects.requireNonNull(link, "link");
+        int index = link.segmentIndex();
+        SegmentMember existing = this.cells[index];
+        if (existing == null) {
+            return null;
+        }
+        if (!existing.link().equals(link)) {
+            return null;
+        }
+        this.cells[index] = null;
+        this.memberCount--;
+        this.recomputeMaxSpatialRadius();
+        return existing;
+    }
+
+    private void recomputeMaxSpatialRadius() {
+        double maximum = 0.0;
+        for (SegmentMember member : this.cells) {
+            if (member != null) {
+                maximum = Math.max(maximum, member.spatialRadius());
+            }
+        }
+        this.maxSpatialRadius = maximum;
+    }
+
+    boolean isEmpty() {
+        return this.memberCount == 0;
+    }
+
+    int memberCount() {
+        return this.memberCount;
+    }
+
+    double maxSpatialRadius() {
+        return this.maxSpatialRadius;
+    }
+
+    /** Radius around the base position that contains every segment and every rotation of the grid. */
+    double footprintRadius() {
+        if (!Double.isFinite(this.maxSpatialRadius)) {
+            return Double.POSITIVE_INFINITY;
+        }
+        return this.maxSpatialRadius + this.halfDiagonal;
+    }
+
+    boolean isIndexable() {
+        return ClientEffectSpatialIndex.isIndexableRadius(this.footprintRadius());
+    }
+
+    /** Applies one aggregated coordinator update without touching any segment instance. */
+    void applyBase(EffectTransform transform, long gameTime) {
+        Objects.requireNonNull(transform, "transform");
+        if (gameTime < this.currentBaseGameTime) {
+            return;
+        }
+        if (gameTime == this.currentBaseGameTime) {
+            this.currentBase = transform;
+            return;
+        }
+        this.previousBase = this.currentBase;
+        this.previousBaseGameTime = this.currentBaseGameTime;
+        this.currentBase = transform;
+        this.currentBaseGameTime = gameTime;
+    }
+
+    /** Conservative world bound for the index entry, covering both base endpoints and the interpolation path. */
+    AABB indexBounds() {
+        double radius = this.footprintRadius();
+        if (!Double.isFinite(radius)) {
+            return AABB.INFINITE;
+        }
+        double dx = this.currentBase.position().x() - this.previousBase.position().x();
+        double dy = this.currentBase.position().y() - this.previousBase.position().y();
+        double dz = this.currentBase.position().z() - this.previousBase.position().z();
+        double movement = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        double total = radius + movement / 2.0;
+        double x = (this.previousBase.position().x() + this.currentBase.position().x()) / 2.0;
+        double y = (this.previousBase.position().y() + this.currentBase.position().y()) / 2.0;
+        double z = (this.previousBase.position().z() + this.currentBase.position().z()) / 2.0;
+        return new AABB(x - total, y - total, z - total, x + total, y + total, z + total);
+    }
+
+    /** Builds the render-time instance for one segment; the stored start instance remains a payload carrier. */
+    VisualEffectInstance renderInstance(SegmentMember member) {
+        Objects.requireNonNull(member, "member");
+        EffectTransform from = this.layout.transform(this.previousBase, member.link().column(), member.link().row());
+        EffectTransform to = this.layout.transform(this.currentBase, member.link().column(), member.link().row());
+        if (this.previousBaseGameTime == this.currentBaseGameTime) {
+            return new VisualEffectInstance(member.payload(), to, to, this.currentBaseGameTime,
+                this.currentBaseGameTime);
+        }
+        return new VisualEffectInstance(member.payload(), from, to, this.previousBaseGameTime,
+            this.currentBaseGameTime);
+    }
+
+    /**
+     * Visits cells whose segment could intersect {@code query} at any point between the previous and current base.
+     * The range is deliberately conservative: it includes both endpoint layouts and a movement/rotation margin.
+     */
+    void forEachCellIn(AABB query, Consumer<SegmentMember> consumer) {
+        Objects.requireNonNull(query, "query");
+        Objects.requireNonNull(consumer, "consumer");
+        if (!Double.isFinite(this.maxSpatialRadius) || query.isInfinite()) {
+            this.forEachCell(consumer);
+            return;
+        }
+
+        double baseMovement = Math.sqrt(
+            square(this.currentBase.position().x() - this.previousBase.position().x())
+                + square(this.currentBase.position().y() - this.previousBase.position().y())
+                + square(this.currentBase.position().z() - this.previousBase.position().z())
+        );
+        double yawDelta = shortestAngle(this.currentBase.yaw() - this.previousBase.yaw());
+        double rotationMovement = 2.0 * this.halfDiagonal
+            * Math.abs(Math.sin(Math.toRadians(yawDelta) / 2.0));
+        AABB expanded = query.inflate((baseMovement + rotationMovement) / 2.0 + this.maxSpatialRadius);
+
+        int[] range = {Integer.MAX_VALUE, Integer.MIN_VALUE, Integer.MAX_VALUE, Integer.MIN_VALUE};
+        this.accumulateRange(expanded, this.previousBase, range);
+        this.accumulateRange(expanded, this.currentBase, range);
+        int minColumn = Math.max(0, range[0]);
+        int maxColumn = Math.min(this.layout.columns() - 1, range[1]);
+        int minRow = Math.max(0, range[2]);
+        int maxRow = Math.min(this.layout.rows() - 1, range[3]);
+        if (minColumn > maxColumn || minRow > maxRow) {
+            return;
+        }
+
+        for (int row = minRow; row <= maxRow; row++) {
+            int baseIndex = row * this.layout.columns();
+            for (int column = minColumn; column <= maxColumn; column++) {
+                SegmentMember member = this.cells[baseIndex + column];
+                if (member != null) {
+                    consumer.accept(member);
+                }
+            }
+        }
+    }
+
+    private void accumulateRange(AABB query, EffectTransform base, int[] range) {
+        double yaw = Math.toRadians(base.yaw());
+        double cos = Math.cos(yaw);
+        double sin = Math.sin(yaw);
+        double minLocalX = Double.POSITIVE_INFINITY;
+        double maxLocalX = Double.NEGATIVE_INFINITY;
+        double minLocalZ = Double.POSITIVE_INFINITY;
+        double maxLocalZ = Double.NEGATIVE_INFINITY;
+        for (int index = 0; index < 4; index++) {
+            double x = (index & 1) == 0 ? query.minX : query.maxX;
+            double z = (index & 2) == 0 ? query.minZ : query.maxZ;
+            double dx = x - base.position().x();
+            double dz = z - base.position().z();
+            double localX = dx * cos + dz * sin;
+            double localZ = -dx * sin + dz * cos;
+            minLocalX = Math.min(minLocalX, localX);
+            maxLocalX = Math.max(maxLocalX, localX);
+            minLocalZ = Math.min(minLocalZ, localZ);
+            maxLocalZ = Math.max(maxLocalZ, localZ);
+        }
+
+        double spacing = this.layout.spacing();
+        if (spacing <= 0.0) {
+            range[0] = Math.min(range[0], 0);
+            range[1] = Math.max(range[1], this.layout.columns() - 1);
+            range[2] = Math.min(range[2], 0);
+            range[3] = Math.max(range[3], this.layout.rows() - 1);
+            return;
+        }
+
+        double columnCenter = (this.layout.columns() - 1) / 2.0;
+        double rowCenter = (this.layout.rows() - 1) / 2.0;
+        int minColumn = (int)Math.ceil(minLocalX / spacing + columnCenter - RANGE_EPSILON);
+        int maxColumn = (int)Math.floor(maxLocalX / spacing + columnCenter + RANGE_EPSILON);
+        int minRow = (int)Math.ceil(minLocalZ / spacing + rowCenter - RANGE_EPSILON);
+        int maxRow = (int)Math.floor(maxLocalZ / spacing + rowCenter + RANGE_EPSILON);
+        range[0] = Math.min(range[0], minColumn);
+        range[1] = Math.max(range[1], maxColumn);
+        range[2] = Math.min(range[2], minRow);
+        range[3] = Math.max(range[3], maxRow);
+    }
+
+    private void forEachCell(Consumer<SegmentMember> consumer) {
+        for (SegmentMember member : this.cells) {
+            if (member != null) {
+                consumer.accept(member);
+            }
+        }
+    }
+
+    private static double square(double value) {
+        return value * value;
+    }
+
+    private static float shortestAngle(float difference) {
+        float wrapped = difference % 360.0F;
+        if (wrapped >= 180.0F) {
+            wrapped -= 360.0F;
+        } else if (wrapped < -180.0F) {
+            wrapped += 360.0F;
+        }
+        return wrapped;
+    }
+
+    record SegmentMember(UUID instanceId, StartVisualEffectPayload payload, SegmentLink link, double spatialRadius) {
+        SegmentMember {
+            Objects.requireNonNull(instanceId, "instanceId");
+            Objects.requireNonNull(payload, "payload");
+            Objects.requireNonNull(link, "link");
+            if (Double.isNaN(spatialRadius) || spatialRadius < 0.0) {
+                throw new IllegalArgumentException("Invalid segment spatial radius");
+            }
+        }
+    }
+}

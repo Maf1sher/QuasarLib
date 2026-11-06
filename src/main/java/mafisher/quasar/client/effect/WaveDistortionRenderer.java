@@ -41,11 +41,16 @@ final class WaveDistortionRenderer implements ScreenEffectRenderer {
 
     @Override
     public AABB cullingBounds(EffectRenderContext context) {
-        double radius = Math.sqrt(2.0) * context.scale();
+        double radius = spatialRadius(context);
         double x = context.transform().position().x();
         double y = context.transform().position().y();
         double z = context.transform().position().z();
         return new AABB(x - radius, y - radius, z - radius, x + radius, y + radius, z + radius);
+    }
+
+    @Override
+    public double spatialRadius(EffectRenderContext context) {
+        return Math.sqrt(2.0) * context.scale();
     }
 
     @Override
