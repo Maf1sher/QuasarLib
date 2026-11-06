@@ -1,0 +1,97 @@
+package mafisher.quasar.effect.audio;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import mafisher.quasar.effect.gameplay.EffectPhase;
+import mafisher.quasar.effect.gameplay.EffectPhasePlan;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.phys.Vec3;
+import org.junit.jupiter.api.Test;
+
+class EffectAudioSpecTest {
+    private static final ResourceLocation SOUND = ResourceLocation.withDefaultNamespace("test");
+    private static final SoundEvent SOUND_EVENT = SoundEvent.createVariableRangeEvent(SOUND);
+
+    @Test
+    void sortsCuesByTick() {
+        EffectAudioSpec spec = EffectAudioSpec.builder(100)
+            .cue(40, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F)
+            .cue(10, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F)
+            .build();
+
+        assertEquals(2, spec.cueCount());
+        assertEquals(10, spec.cues().get(0).tick());
+        assertEquals(40, spec.cues().get(1).tick());
+    }
+
+    @Test
+    void resolvesPhaseCuesByIndexAndName() {
+        EffectPhasePlan phases = EffectPhasePlan.of(
+            new EffectPhase("charge", 20),
+            new EffectPhase("impact", 30)
+        );
+
+        EffectAudioSpec spec = EffectAudioSpec.builder(phases)
+            .phaseCue(1, 5, Vec3.ZERO, SOUND_EVENT, SoundSource.MASTER, 1.0F, 1.0F)
+            .phaseCue("impact", 10, Vec3.ZERO, SOUND_EVENT, SoundSource.MASTER, 1.0F, 1.0F)
+            .build();
+
+        assertEquals(2, spec.cueCount());
+        assertEquals(25, spec.cues().get(0).tick());
+        assertEquals(30, spec.cues().get(1).tick());
+    }
+
+    @Test
+    void rejectsUnknownAndDuplicatePhaseNames() {
+        EffectPhasePlan phases = EffectPhasePlan.of(
+            new EffectPhase("same", 10),
+            new EffectPhase("same", 10)
+        );
+
+        assertThrows(IllegalArgumentException.class, () -> EffectAudioSpec.builder(phases)
+            .phaseCue("missing", 0, Vec3.ZERO, SOUND_EVENT, SoundSource.MASTER, 1.0F, 1.0F));
+        assertThrows(IllegalArgumentException.class, () -> EffectAudioSpec.builder(phases)
+            .phaseCue("same", 0, Vec3.ZERO, SOUND_EVENT, SoundSource.MASTER, 1.0F, 1.0F));
+    }
+
+    @Test
+    void rejectsCuesAtOrBeyondDuration() {
+        assertThrows(IllegalArgumentException.class, () -> EffectAudioSpec.builder(10)
+            .cue(10, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F));
+        assertThrows(IllegalArgumentException.class, () -> EffectAudioSpec.builder(10)
+            .cue(11, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F));
+    }
+
+    @Test
+    void capsTheCueCount() {
+        EffectAudioSpec.Builder builder = EffectAudioSpec.builder(1000);
+        for (int index = 0; index < EffectAudioSpec.MAX_CUES; index++) {
+            builder.cue(index, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F);
+        }
+
+        assertThrows(IllegalArgumentException.class,
+            () -> builder.cue(EffectAudioSpec.MAX_CUES, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F));
+    }
+
+    @Test
+    void noneIsEmpty() {
+        assertTrue(EffectAudioSpec.NONE.isEmpty());
+        assertEquals(0, EffectAudioSpec.NONE.cueCount());
+    }
+
+    @Test
+    void validatesCueTicksAgainstDuration() {
+        EffectAudioSpec spec = EffectAudioSpec.builder(10)
+            .cue(9, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F)
+            .build();
+
+        assertTrue(spec.fitsWithin(10));
+        assertFalse(spec.fitsWithin(9));
+        assertThrows(IllegalArgumentException.class, () -> spec.requireFitsWithin(9));
+    }
+}

@@ -2,9 +2,10 @@ package mafisher.quasar.effect.gameplay;
 
 import java.util.List;
 import java.util.Objects;
+import mafisher.quasar.effect.audio.EffectPhaseTiming;
 
 /** Immutable ordered phase plan; phase membership is derived from effect age. */
-public final class EffectPhasePlan {
+public final class EffectPhasePlan implements EffectPhaseTiming {
     public static final int MAX_DURATION_TICKS = 72_000;
 
     private final List<EffectPhase> phases;
@@ -71,6 +72,12 @@ public final class EffectPhasePlan {
     public int phaseStartTick(int phaseIndex) {
         requirePhaseIndex(phaseIndex);
         return this.phaseStarts[phaseIndex];
+    }
+
+    @Override
+    public String phaseName(int phaseIndex) {
+        requirePhaseIndex(phaseIndex);
+        return this.phases.get(phaseIndex).name();
     }
 
     public int phaseDurationTicks(int phaseIndex) {
