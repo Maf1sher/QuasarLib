@@ -3,8 +3,10 @@ package mafisher.quasar.effect.gameplay;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Objects;
+import java.util.function.BiPredicate;
 import mafisher.quasar.effect.block.BlockChange;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.block.state.BlockState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -51,19 +53,28 @@ final class PendingBlockChanges {
     }
 
     /**
-     * Applies at most {@code maxChanges} queued changes in insertion order. Positions outside the
-     * level or in unloaded chunks are skipped; individual block-update failures are logged and do
-     * not stop the queue. The result reports both processed entries (which consume the budget) and
-     * changes actually handed to the level.
+     * Applies at most {@code maxChanges} queued changes without protection callbacks.
      */
     ApplyResult apply(ServerLevel level, int maxChanges) {
+        return this.apply(level, maxChanges, (change, currentState) -> true);
+    }
+
+    /**
+     * Applies at most {@code maxChanges} queued changes in insertion order. Positions outside the
+     * level or in unloaded chunks are skipped; no-op changes do not invoke the protection gate;
+     * individual block-update failures are logged and do not stop the queue. The result reports
+     * processed entries (which consume the budget), changes handed to the level, and vetoes.
+     */
+    ApplyResult apply(ServerLevel level, int maxChanges, BiPredicate<BlockChange, BlockState> gate) {
         Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(gate, "gate");
         if (maxChanges < 0) {
             throw new IllegalArgumentException("Block change application budget cannot be negative");
         }
 
         int processed = 0;
         int applied = 0;
+        int vetoed = 0;
         while (processed < maxChanges && !this.changes.isEmpty()) {
             BlockChange change = this.changes.removeFirst();
             processed++;
@@ -75,6 +86,30 @@ final class PendingBlockChanges {
                 LOGGER.debug("Skipped block change in an unloaded chunk at {}", change.position());
                 continue;
             }
+
+            BlockState currentState;
+            try {
+                currentState = level.getBlockState(change.position());
+            } catch (RuntimeException exception) {
+                LOGGER.warn("Could not read the block state at {}", change.position(), exception);
+                continue;
+            }
+            if (currentState.equals(change.state())) {
+                LOGGER.debug("Skipped unchanged block at {}", change.position());
+                continue;
+            }
+
+            try {
+                if (!gate.test(change, currentState)) {
+                    vetoed++;
+                    continue;
+                }
+            } catch (RuntimeException exception) {
+                LOGGER.warn("Block protection failed at {}; vetoing the change", change.position(), exception);
+                vetoed++;
+                continue;
+            }
+
             try {
                 if (level.setBlockAndUpdate(change.position(), change.state())) {
                     applied++;
@@ -83,12 +118,12 @@ final class PendingBlockChanges {
                 LOGGER.warn("Failed to apply block change at {}", change.position(), exception);
             }
         }
-        return new ApplyResult(processed, applied);
+        return new ApplyResult(processed, applied, vetoed);
     }
 
-    record ApplyResult(int processed, int applied) {
+    record ApplyResult(int processed, int applied, int vetoed) {
         ApplyResult {
-            if (processed < 0 || applied < 0 || applied > processed) {
+            if (processed < 0 || applied < 0 || vetoed < 0 || applied + vetoed > processed) {
                 throw new IllegalArgumentException("Invalid block change application result");
             }
         }

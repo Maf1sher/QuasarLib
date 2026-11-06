@@ -15,4 +15,9 @@ class QuasarConfigTest {
     void publishesANonEmptyConfigSpec() {
         assertFalse(QuasarConfig.SPEC.isEmpty());
     }
+
+    @Test
+    void fallsBackToTheDefaultBeforeTheConfigLoads() {
+        assertTrue(QuasarConfig.destructiveEffectsEnabled());
+    }
 }

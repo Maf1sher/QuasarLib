@@ -22,6 +22,10 @@ public final class QuasarConfig {
 
     /** Whether destructive gameplay effects may start or resume on this server. */
     public static boolean destructiveEffectsEnabled() {
-        return DESTRUCTIVE_EFFECTS_ENABLED.get();
+        try {
+            return DESTRUCTIVE_EFFECTS_ENABLED.get();
+        } catch (IllegalStateException notLoaded) {
+            return DESTRUCTIVE_EFFECTS_ENABLED.getDefault();
+        }
     }
 }

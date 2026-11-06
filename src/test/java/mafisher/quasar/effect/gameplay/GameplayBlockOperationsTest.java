@@ -53,6 +53,7 @@ class GameplayBlockOperationsTest {
         when(this.level.getGameTime()).thenAnswer(ignored -> this.gameTime);
         when(this.level.isInWorldBounds(any())).thenReturn(true);
         when(this.level.hasChunkAt(any())).thenReturn(true);
+        when(this.level.getBlockState(any())).thenReturn(mock(BlockState.class));
         when(this.level.setBlockAndUpdate(any(), any())).thenReturn(true);
     }
 

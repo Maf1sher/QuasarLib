@@ -24,7 +24,7 @@ class PublicBlockApiVisibilityTest {
         assertEquals(position, change.position());
         assertEquals(state, change.state());
         assertEquals(4, EffectTickBudget.class.getRecordComponents().length);
-        assertEquals(6, EffectTickCounters.class.getRecordComponents().length);
+        assertEquals(7, EffectTickCounters.class.getRecordComponents().length);
     }
 
     @Test

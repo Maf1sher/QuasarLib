@@ -8,6 +8,8 @@ import mafisher.quasar.effect.EffectHitResult;
 import mafisher.quasar.effect.EffectHitbox;
 import mafisher.quasar.effect.EffectScope;
 import mafisher.quasar.effect.block.BlockChange;
+import mafisher.quasar.effect.block.BlockProtectionContext;
+import mafisher.quasar.effect.block.BlockProtectionService;
 import mafisher.quasar.effect.persistence.EffectCapabilities;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -201,9 +203,25 @@ public final class GameplayEffectContext {
     /** Applies up to {@code maxChanges} queued changes; the service owns the per-tick budget. */
     int applyBlockChanges(int maxChanges) {
         this.ensureOpen();
-        PendingBlockChanges.ApplyResult result = this.blockChanges.apply(this.level, maxChanges);
+        PendingBlockChanges.ApplyResult result = this.blockChanges.apply(
+            this.level,
+            maxChanges,
+            this::allowsBlockChange
+        );
         this.budgetState.recordBlockChangesApplied(result.applied());
+        this.budgetState.recordBlockChangesVetoed(result.vetoed());
         return result.processed();
+    }
+
+    private boolean allowsBlockChange(BlockChange change, BlockState currentState) {
+        return BlockProtectionService.allows(new BlockProtectionContext(
+            this.level,
+            change,
+            currentState,
+            this.spec.typeId(),
+            this.sessionId,
+            this.spec.ownerId()
+        ));
     }
 
     /** Requests a clean end after the current callback; the reason is {@link GameplayEffectEndReason#CANCELLED}. */

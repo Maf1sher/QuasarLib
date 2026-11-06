@@ -12,6 +12,7 @@ final class EffectTickBudgetState {
     private int entitiesSpawned;
     private int blockChangesQueued;
     private int blockChangesApplied;
+    private int blockChangesVetoed;
 
     EffectTickBudgetState(EffectTickBudget budget) {
         this.budget = Objects.requireNonNull(budget, "budget");
@@ -24,6 +25,7 @@ final class EffectTickBudgetState {
         this.entitiesSpawned = 0;
         this.blockChangesQueued = 0;
         this.blockChangesApplied = 0;
+        this.blockChangesVetoed = 0;
     }
 
     int remainingTargets() {
@@ -59,6 +61,10 @@ final class EffectTickBudgetState {
         this.blockChangesApplied += applied;
     }
 
+    void recordBlockChangesVetoed(int vetoed) {
+        this.blockChangesVetoed += vetoed;
+    }
+
     EffectTickCounters counters() {
         return new EffectTickCounters(
             this.targetsExamined,
@@ -66,7 +72,8 @@ final class EffectTickBudgetState {
             this.hitboxCalls,
             this.entitiesSpawned,
             this.blockChangesQueued,
-            this.blockChangesApplied
+            this.blockChangesApplied,
+            this.blockChangesVetoed
         );
     }
 }

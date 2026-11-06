@@ -11,6 +11,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import mafisher.quasar.effect.block.BlockChange;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
@@ -27,6 +29,7 @@ class PendingBlockChangesTest {
         this.level = mock(ServerLevel.class);
         when(this.level.isInWorldBounds(any())).thenReturn(true);
         when(this.level.hasChunkAt(any())).thenReturn(true);
+        when(this.level.getBlockState(any())).thenReturn(mock(BlockState.class));
         when(this.level.setBlockAndUpdate(any(), any())).thenReturn(true);
     }
 
@@ -41,10 +44,12 @@ class PendingBlockChangesTest {
         PendingBlockChanges.ApplyResult firstApply = pending.apply(this.level, 1);
         assertEquals(1, firstApply.processed());
         assertEquals(1, firstApply.applied());
+        assertEquals(0, firstApply.vetoed());
         assertEquals(1, pending.size());
         PendingBlockChanges.ApplyResult secondApply = pending.apply(this.level, 1);
         assertEquals(1, secondApply.processed());
         assertEquals(1, secondApply.applied());
+        assertEquals(0, secondApply.vetoed());
         assertEquals(0, pending.size());
 
         InOrder order = inOrder(this.level);
@@ -91,7 +96,82 @@ class PendingBlockChangesTest {
         PendingBlockChanges.ApplyResult result = pending.apply(this.level, 4);
         assertEquals(2, result.processed());
         assertEquals(1, result.applied());
+        assertEquals(0, result.vetoed());
         verify(this.level).setBlockAndUpdate(succeeding.position(), succeeding.state());
+    }
+
+    @Test
+    void vetoesOneChangeAndContinuesWithTheRest() {
+        PendingBlockChanges pending = new PendingBlockChanges(4);
+        BlockChange vetoed = change(0);
+        BlockChange applied = change(1);
+        pending.enqueue(vetoed);
+        pending.enqueue(applied);
+
+        PendingBlockChanges.ApplyResult result = pending.apply(
+            this.level,
+            4,
+            (change, currentState) -> change != vetoed
+        );
+
+        assertEquals(2, result.processed());
+        assertEquals(1, result.applied());
+        assertEquals(1, result.vetoed());
+        verify(this.level, never()).setBlockAndUpdate(vetoed.position(), vetoed.state());
+        verify(this.level).setBlockAndUpdate(applied.position(), applied.state());
+    }
+
+    @Test
+    void exposesTheCurrentStateToTheGate() {
+        PendingBlockChanges pending = new PendingBlockChanges(4);
+        BlockChange change = change(0);
+        BlockState currentState = mock(BlockState.class);
+        when(this.level.getBlockState(change.position())).thenReturn(currentState);
+        AtomicReference<BlockState> seen = new AtomicReference<>();
+        pending.enqueue(change);
+
+        pending.apply(this.level, 1, (queued, state) -> {
+            seen.set(state);
+            return true;
+        });
+
+        assertEquals(currentState, seen.get());
+    }
+
+    @Test
+    void skipsUnchangedBlocksWithoutInvokingTheGate() {
+        PendingBlockChanges pending = new PendingBlockChanges(4);
+        BlockChange change = change(0);
+        when(this.level.getBlockState(change.position())).thenReturn(change.state());
+        AtomicBoolean gateCalled = new AtomicBoolean();
+        pending.enqueue(change);
+
+        PendingBlockChanges.ApplyResult result = pending.apply(this.level, 1, (queued, state) -> {
+            gateCalled.set(true);
+            return true;
+        });
+
+        assertEquals(1, result.processed());
+        assertEquals(0, result.applied());
+        assertEquals(0, result.vetoed());
+        assertFalse(gateCalled.get());
+        verify(this.level, never()).setBlockAndUpdate(any(), any());
+    }
+
+    @Test
+    void countsAGateFailureAsAVeto() {
+        PendingBlockChanges pending = new PendingBlockChanges(4);
+        BlockChange change = change(0);
+        pending.enqueue(change);
+
+        PendingBlockChanges.ApplyResult result = pending.apply(this.level, 1, (queued, state) -> {
+            throw new RuntimeException("test failure");
+        });
+
+        assertEquals(1, result.processed());
+        assertEquals(0, result.applied());
+        assertEquals(1, result.vetoed());
+        verify(this.level, never()).setBlockAndUpdate(any(), any());
     }
 
     @Test

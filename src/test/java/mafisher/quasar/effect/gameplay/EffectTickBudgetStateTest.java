@@ -30,8 +30,9 @@ class EffectTickBudgetStateTest {
 
         state.recordBlockChangeQueued();
         state.recordBlockChangesApplied(2);
+        state.recordBlockChangesVetoed(3);
 
-        assertEquals(new EffectTickCounters(2, 1, 2, 1, 1, 2), state.counters());
+        assertEquals(new EffectTickCounters(2, 1, 2, 1, 1, 2, 3), state.counters());
 
         state.reset();
         assertEquals(EffectTickCounters.EMPTY, state.counters());
@@ -60,5 +61,6 @@ class EffectTickBudgetStateTest {
         assertThrows(IllegalArgumentException.class, () -> new EffectTickCounters(1, 2, 0, 0));
         assertThrows(IllegalArgumentException.class, () -> new EffectTickCounters(0, 0, 0, 0, -1, 0));
         assertThrows(IllegalArgumentException.class, () -> new EffectTickCounters(0, 0, 0, 0, 0, -1));
+        assertThrows(IllegalArgumentException.class, () -> new EffectTickCounters(0, 0, 0, 0, 0, 0, -1));
     }
 }
