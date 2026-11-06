@@ -2,6 +2,7 @@ package mafisher.quasar.client.effect;
 
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
 import mafisher.quasar.effect.network.StopVisualEffectPayload;
+import mafisher.quasar.effect.network.UpdateSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateVisualEffectPayload;
 import mafisher.quasar.effect.network.CinematicAudioPlanPayload;
 import mafisher.quasar.effect.network.StopCinematicAudioPayload;
@@ -52,6 +53,10 @@ public final class ClientEffectRuntime {
 
     public static void update(UpdateVisualEffectPayload payload) {
         manager().update(payload);
+    }
+
+    public static void updateSegmented(UpdateSegmentedVisualEffectPayload payload) {
+        manager().updateSegmented(payload);
     }
 
     public static void cinematicAudioPlan(CinematicAudioPlanPayload payload) {

@@ -3,16 +3,19 @@ package mafisher.quasar.effect.scale;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.WeakHashMap;
-import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectScope;
 import mafisher.quasar.effect.EffectTransform;
+import mafisher.quasar.effect.VisualEffectHandle;
 import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.VisualEffectSpec;
+import mafisher.quasar.effect.network.UpdateSegmentedVisualEffectPayload;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
@@ -55,14 +58,16 @@ public final class SegmentedVisualEffectService {
         }
 
         UUID coordinatorId = UUID.randomUUID();
+        SegmentGridLayout layout = spec.layout();
         EffectScope scope = null;
         List<UUID> segments = new ArrayList<>(spec.segmentCount());
+        int index = 0;
         try {
             scope = new EffectScope(level, coordinatorId);
             for (int row = 0; row < spec.rows(); row++) {
                 for (int column = 0; column < spec.columns(); column++) {
                     VisualEffectSpec segment = spec.segmentSpec(column, row);
-                    segments.add(scope.playVisual(segment));
+                    segments.add(scope.playVisual(segment, new SegmentLink(coordinatorId, index++, layout)));
                 }
             }
         } catch (RuntimeException | Error exception) {
@@ -82,7 +87,10 @@ public final class SegmentedVisualEffectService {
         return new SegmentedVisualEffectHandle(coordinatorId);
     }
 
-    /** Moves the root transform and sends an update for every segment. Unknown handles are no-ops. */
+    /**
+     * Moves the root transform, stages every segment for late joiners, and sends one aggregated update per tracking
+     * player instead of one packet per segment. Unknown handles are no-ops.
+     */
     public static void update(ServerLevel level, SegmentedVisualEffectHandle handle, EffectTransform transform) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(handle, "handle");
@@ -93,23 +101,23 @@ public final class SegmentedVisualEffectService {
         }
 
         SegmentedVisualEffectSpec spec = activeEffect.spec;
+        SegmentGridLayout layout = spec.layout();
+        Set<UUID> recipients = new LinkedHashSet<>();
         int index = 0;
         for (int row = 0; row < spec.rows(); row++) {
             for (int column = 0; column < spec.columns(); column++) {
-                Vec3 offset = spec.segmentOffset(column, row, transform.yaw());
-                EffectTransform segmentTransform = new EffectTransform(
-                    new EffectPoint(
-                        transform.position().x() + offset.x,
-                        transform.position().y() + offset.y,
-                        transform.position().z() + offset.z
-                    ),
-                    transform.yaw(),
-                    transform.pitch(),
-                    transform.roll()
-                );
-                activeEffect.scope.updateVisual(activeEffect.segmentIds.get(index++), segmentTransform);
+                VisualEffectHandle segment = new VisualEffectHandle(activeEffect.segmentIds.get(index++));
+                VisualEffectService.stageTransform(level, segment, layout.transform(transform, column, row));
+                VisualEffectService.collectTrackingPlayers(level, segment, recipients);
             }
         }
+        VisualEffectService.sendToTrackingPlayers(
+            level,
+            recipients,
+            UpdateSegmentedVisualEffectPayload.of(
+                handle.coordinatorId(), level.dimension().location(), transform, level.getGameTime()
+            )
+        );
     }
 
     /** Stops every segment and releases the coordinator. Unknown handles are no-ops and repeated stops are safe. */

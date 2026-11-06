@@ -1,0 +1,82 @@
+package mafisher.quasar.effect.network;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import java.util.UUID;
+import mafisher.quasar.effect.scale.SegmentGridLayout;
+import mafisher.quasar.effect.scale.SegmentLink;
+import net.minecraft.resources.ResourceLocation;
+import org.junit.jupiter.api.Test;
+
+class StartVisualEffectPayloadTest {
+    private static final ResourceLocation EFFECT_ID = ResourceLocation.fromNamespaceAndPath("quasar_lib", "test");
+    private static final ResourceLocation DIMENSION = ResourceLocation.fromNamespaceAndPath("minecraft", "overworld");
+
+    @Test
+    void roundTripsAStandaloneEffect() {
+        StartVisualEffectPayload payload = standalone();
+
+        StartVisualEffectPayload decoded = roundTrip(payload);
+
+        assertEquals(payload, decoded);
+        assertNull(decoded.segmentLink());
+    }
+
+    @Test
+    void roundTripsASegmentLink() {
+        SegmentLink link = new SegmentLink(UUID.randomUUID(), 5, new SegmentGridLayout(4, 3, 8.0));
+        StartVisualEffectPayload payload = withLink(link);
+
+        StartVisualEffectPayload decoded = roundTrip(payload);
+
+        assertEquals(payload, decoded);
+        assertEquals(link, decoded.segmentLink());
+        assertEquals(1, decoded.segmentLink().row());
+        assertEquals(1, decoded.segmentLink().column());
+    }
+
+    @Test
+    void aSegmentLinkAddsOnlyAFewBytes() {
+        int standaloneSize = encodedSize(standalone());
+        int linkedSize = encodedSize(withLink(new SegmentLink(
+            UUID.randomUUID(), 0, new SegmentGridLayout(8, 8, 4.0)
+        )));
+
+        assertTrue(linkedSize - standaloneSize <= 32,
+            "segment link overhead was " + (linkedSize - standaloneSize) + " bytes");
+    }
+
+    private static StartVisualEffectPayload standalone() {
+        return new StartVisualEffectPayload(EFFECT_ID, UUID.randomUUID(), DIMENSION, 1.0, 64.0, 2.0,
+            0.0F, 0.0F, 0.0F, 2.0F, 200, 100L, 42L);
+    }
+
+    private static StartVisualEffectPayload withLink(SegmentLink link) {
+        return new StartVisualEffectPayload(EFFECT_ID, UUID.randomUUID(), DIMENSION, 1.0, 64.0, 2.0,
+            0.0F, 0.0F, 0.0F, 2.0F, 200, 100L, 42L, link);
+    }
+
+    private static StartVisualEffectPayload roundTrip(StartVisualEffectPayload payload) {
+        ByteBuf buffer = Unpooled.buffer();
+        try {
+            StartVisualEffectPayload.STREAM_CODEC.encode(buffer, payload);
+            return StartVisualEffectPayload.STREAM_CODEC.decode(buffer);
+        } finally {
+            buffer.release();
+        }
+    }
+
+    private static int encodedSize(StartVisualEffectPayload payload) {
+        ByteBuf buffer = Unpooled.buffer();
+        try {
+            StartVisualEffectPayload.STREAM_CODEC.encode(buffer, payload);
+            return buffer.readableBytes();
+        } finally {
+            buffer.release();
+        }
+    }
+}

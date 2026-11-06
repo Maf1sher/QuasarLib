@@ -4,6 +4,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import mafisher.quasar.effect.scale.SegmentLink;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
@@ -36,15 +37,24 @@ public final class EffectScope implements AutoCloseable {
     }
 
     public UUID playVisual(VisualEffectSpec spec) {
-        return this.playVisual(spec, EffectLifetimePolicy.CANCEL_WITH_SCOPE);
+        return this.playVisual(spec, EffectLifetimePolicy.CANCEL_WITH_SCOPE, null);
     }
 
     public UUID playVisual(VisualEffectSpec spec, EffectLifetimePolicy lifetimePolicy) {
+        return this.playVisual(spec, lifetimePolicy, null);
+    }
+
+    /** Plays a visual that carries a segment link, so its coordinator can drive it with aggregated updates. */
+    public UUID playVisual(VisualEffectSpec spec, SegmentLink segmentLink) {
+        return this.playVisual(spec, EffectLifetimePolicy.CANCEL_WITH_SCOPE, segmentLink);
+    }
+
+    public UUID playVisual(VisualEffectSpec spec, EffectLifetimePolicy lifetimePolicy, SegmentLink segmentLink) {
         this.ensureOpen();
         Objects.requireNonNull(spec, "spec");
         Objects.requireNonNull(lifetimePolicy, "lifetimePolicy");
 
-        VisualEffectHandle handle = VisualEffectService.start(this.level, spec);
+        VisualEffectHandle handle = VisualEffectService.start(this.level, spec, segmentLink);
         UUID instanceId = handle.instanceId();
         this.activeVisuals.put(instanceId, handle);
         if (lifetimePolicy == EffectLifetimePolicy.CANCEL_WITH_SCOPE) {

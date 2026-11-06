@@ -15,7 +15,7 @@ public final class EffectNetwork {
 
     @SubscribeEvent
     public static void registerPayloads(RegisterPayloadHandlersEvent event) {
-        var registrar = event.registrar("3");
+        var registrar = event.registrar("4");
         registrar.playToClient(ArmScreenCompositorFailurePayload.TYPE,
             ArmScreenCompositorFailurePayload.STREAM_CODEC, (payload, context) -> {
                 if (FMLEnvironment.dist == Dist.CLIENT) {
@@ -32,6 +32,12 @@ public final class EffectNetwork {
             (payload, context) -> {
                 if (FMLEnvironment.dist == Dist.CLIENT) {
                     context.enqueueWork(() -> ClientEffectRuntime.update(payload));
+                }
+            });
+        registrar.playToClient(UpdateSegmentedVisualEffectPayload.TYPE,
+            UpdateSegmentedVisualEffectPayload.STREAM_CODEC, (payload, context) -> {
+                if (FMLEnvironment.dist == Dist.CLIENT) {
+                    context.enqueueWork(() -> ClientEffectRuntime.updateSegmented(payload));
                 }
             });
         registrar.playToClient(StopVisualEffectPayload.TYPE, StopVisualEffectPayload.STREAM_CODEC,

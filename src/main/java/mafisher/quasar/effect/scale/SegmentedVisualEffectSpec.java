@@ -28,7 +28,7 @@ public record SegmentedVisualEffectSpec(
     EffectAudience audience
 ) {
     /** Shared per-level ceiling. A coordinator cannot reserve more than this many segments. */
-    public static final int MAX_SEGMENTS = 128;
+    public static final int MAX_SEGMENTS = SegmentGridLayout.MAX_SEGMENTS;
 
     public SegmentedVisualEffectSpec {
         Objects.requireNonNull(effectId, "effectId");
@@ -62,15 +62,15 @@ public record SegmentedVisualEffectSpec(
         );
     }
 
+    /** Grid geometry shared with the client, so both sides place segments identically. */
+    public SegmentGridLayout layout() {
+        return new SegmentGridLayout(this.columns, this.rows, this.spacing);
+    }
+
     /** Horizontal offset from the root center to one segment, rotated by {@code yaw}. */
     public Vec3 segmentOffset(int column, int row, float yaw) {
         requireCell(column, row);
-        double localX = (column - (this.columns - 1) / 2.0) * this.spacing;
-        double localZ = (row - (this.rows - 1) / 2.0) * this.spacing;
-        double radians = Math.toRadians(yaw);
-        double cos = Math.cos(radians);
-        double sin = Math.sin(radians);
-        return new Vec3(localX * cos - localZ * sin, 0.0, localX * sin + localZ * cos);
+        return this.layout().offset(column, row, yaw);
     }
 
     /** Deterministic per-segment seed derived from the root seed and the segment cell. */

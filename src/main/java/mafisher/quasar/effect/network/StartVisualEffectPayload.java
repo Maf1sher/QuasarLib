@@ -3,6 +3,8 @@ package mafisher.quasar.effect.network;
 import io.netty.buffer.ByteBuf;
 import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectTransform;
+import mafisher.quasar.effect.scale.SegmentGridLayout;
+import mafisher.quasar.effect.scale.SegmentLink;
 import java.util.Objects;
 import java.util.UUID;
 import net.minecraft.core.UUIDUtil;
@@ -24,7 +26,8 @@ public record StartVisualEffectPayload(
     float scale,
     int durationTicks,
     long startGameTime,
-    long seed
+    long seed,
+    SegmentLink segmentLink
 ) implements CustomPacketPayload {
     public static final Type<StartVisualEffectPayload> TYPE = new Type<>(
         ResourceLocation.fromNamespaceAndPath("quasar_lib", "start_visual_effect")
@@ -56,12 +59,32 @@ public record StartVisualEffectPayload(
         double z,
         float yaw,
         float pitch,
+        float roll,
         float scale,
         int durationTicks,
         long startGameTime,
         long seed
     ) {
-        this(effectId, instanceId, dimensionId, x, y, z, yaw, pitch, 0.0F, scale, durationTicks, startGameTime, seed);
+        this(effectId, instanceId, dimensionId, x, y, z, yaw, pitch, roll, scale, durationTicks, startGameTime, seed,
+            null);
+    }
+
+    public StartVisualEffectPayload(
+        ResourceLocation effectId,
+        UUID instanceId,
+        ResourceLocation dimensionId,
+        double x,
+        double y,
+        double z,
+        float yaw,
+        float pitch,
+        float scale,
+        int durationTicks,
+        long startGameTime,
+        long seed
+    ) {
+        this(effectId, instanceId, dimensionId, x, y, z, yaw, pitch, 0.0F, scale, durationTicks, startGameTime, seed,
+            null);
     }
 
     public EffectTransform transform() {
@@ -88,6 +111,15 @@ public record StartVisualEffectPayload(
         buffer.writeInt(payload.durationTicks);
         buffer.writeLong(payload.startGameTime);
         buffer.writeLong(payload.seed);
+        SegmentLink link = payload.segmentLink;
+        buffer.writeBoolean(link != null);
+        if (link != null) {
+            UUIDUtil.STREAM_CODEC.encode(buffer, link.coordinatorId());
+            buffer.writeByte(link.segmentIndex());
+            buffer.writeByte(link.layout().columns());
+            buffer.writeByte(link.layout().rows());
+            buffer.writeDouble(link.layout().spacing());
+        }
     }
 
     private static StartVisualEffectPayload decode(ByteBuf buffer) {
@@ -104,7 +136,21 @@ public record StartVisualEffectPayload(
             buffer.readFloat(),
             buffer.readInt(),
             buffer.readLong(),
-            buffer.readLong()
+            buffer.readLong(),
+            decodeSegmentLink(buffer)
         );
+    }
+
+    private static SegmentLink decodeSegmentLink(ByteBuf buffer) {
+        if (!buffer.readBoolean()) {
+            return null;
+        }
+        UUID coordinatorId = UUIDUtil.STREAM_CODEC.decode(buffer);
+        int segmentIndex = buffer.readUnsignedByte();
+        int columns = buffer.readUnsignedByte();
+        int rows = buffer.readUnsignedByte();
+        double spacing = buffer.readDouble();
+        return new SegmentLink(coordinatorId, segmentIndex,
+            new SegmentGridLayout(columns, rows, spacing));
     }
 }

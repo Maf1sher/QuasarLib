@@ -3,7 +3,9 @@ package mafisher.quasar.effect;
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
 import mafisher.quasar.effect.network.StopVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateVisualEffectPayload;
+import mafisher.quasar.effect.scale.SegmentLink;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -13,6 +15,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.WeakHashMap;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
@@ -30,6 +33,14 @@ public final class VisualEffectService {
     }
 
     public static VisualEffectHandle start(ServerLevel level, VisualEffectSpec spec) {
+        return start(level, spec, null);
+    }
+
+    /**
+     * Starts a visual effect, optionally linked to a segmented coordinator. The link is sent to clients so one
+     * aggregated coordinator update can move every segment.
+     */
+    public static VisualEffectHandle start(ServerLevel level, VisualEffectSpec spec, SegmentLink segmentLink) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(spec, "spec");
         UUID instanceId = UUID.randomUUID();
@@ -47,7 +58,8 @@ public final class VisualEffectService {
             spec.scale(),
             spec.durationTicks(),
             level.getGameTime(),
-            spec.seed()
+            spec.seed(),
+            segmentLink
         );
         ActiveEffect active = new ActiveEffect(payload, spec.audience(), spec.transform());
         Map<UUID, ActiveEffect> effects = activeEffects(level);
@@ -69,11 +81,8 @@ public final class VisualEffectService {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(handle, "handle");
         Objects.requireNonNull(transform, "transform");
-        Map<UUID, ActiveEffect> effects = ACTIVE_EFFECTS.get(level);
-        ActiveEffect active = effects == null ? null : effects.get(handle.instanceId());
-        if (active == null || EffectTimeline.isFinished(
-            level.getGameTime(), active.payload().startGameTime(), active.payload().durationTicks()
-        )) {
+        ActiveEffect active = findActive(level, handle);
+        if (active == null) {
             return;
         }
 
@@ -81,7 +90,58 @@ public final class VisualEffectService {
         UpdateVisualEffectPayload payload = UpdateVisualEffectPayload.of(
             active.payload().instanceId(), level.dimension().location(), transform, level.getGameTime()
         );
-        for (UUID playerId : new ArrayList<>(active.trackingPlayers())) {
+        sendToTrackingPlayers(level, active.trackingPlayers(), payload);
+    }
+
+    /**
+     * Records a transform without sending packets. Segmented coordinators stage every segment so late joiners receive
+     * the current placement, then send one aggregated update themselves.
+     */
+    public static void stageTransform(ServerLevel level, VisualEffectHandle handle, EffectTransform transform) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(handle, "handle");
+        Objects.requireNonNull(transform, "transform");
+        ActiveEffect active = findActive(level, handle);
+        if (active != null) {
+            active.setTransform(transform);
+        }
+    }
+
+    /** Player IDs currently tracking one effect; empty for unknown, finished, or untracked handles. */
+    public static List<UUID> trackingPlayers(ServerLevel level, VisualEffectHandle handle) {
+        List<UUID> players = new ArrayList<>();
+        collectTrackingPlayers(level, handle, players);
+        return List.copyOf(players);
+    }
+
+    /** Adds player IDs tracking one effect to {@code target}; no-op for unknown or finished handles. */
+    public static void collectTrackingPlayers(
+        ServerLevel level,
+        VisualEffectHandle handle,
+        Collection<UUID> target
+    ) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(handle, "handle");
+        Objects.requireNonNull(target, "target");
+        ActiveEffect active = findActive(level, handle);
+        if (active != null) {
+            target.addAll(active.trackingPlayers());
+        }
+    }
+
+    /** Sends one payload to every listed player that is still present in this level. */
+    public static void sendToTrackingPlayers(
+        ServerLevel level,
+        Collection<UUID> playerIds,
+        CustomPacketPayload payload
+    ) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(playerIds, "playerIds");
+        Objects.requireNonNull(payload, "payload");
+        if (playerIds.isEmpty() || level.getServer() == null) {
+            return;
+        }
+        for (UUID playerId : playerIds) {
             ServerPlayer player = level.getServer().getPlayerList().getPlayer(playerId);
             if (player != null && player.level() == level) {
                 PacketDistributor.sendToPlayer(player, payload);
@@ -201,19 +261,24 @@ public final class VisualEffectService {
         return ACTIVE_EFFECTS.computeIfAbsent(level, ignored -> new LinkedHashMap<>());
     }
 
+    private static ActiveEffect findActive(ServerLevel level, VisualEffectHandle handle) {
+        Map<UUID, ActiveEffect> effects = ACTIVE_EFFECTS.get(level);
+        ActiveEffect active = effects == null ? null : effects.get(handle.instanceId());
+        if (active == null || EffectTimeline.isFinished(
+            level.getGameTime(), active.payload().startGameTime(), active.payload().durationTicks()
+        )) {
+            return null;
+        }
+        return active;
+    }
+
     private static void sendStart(ServerPlayer player, ActiveEffect active) {
         PacketDistributor.sendToPlayer(player, active.currentPayload());
         active.trackingPlayers().add(player.getUUID());
     }
 
     private static void sendStop(ServerLevel level, ActiveEffect active) {
-        StopVisualEffectPayload payload = stopPayload(level, active);
-        for (UUID playerId : new ArrayList<>(active.trackingPlayers())) {
-            ServerPlayer player = level.getServer().getPlayerList().getPlayer(playerId);
-            if (player != null && player.level() == level) {
-                PacketDistributor.sendToPlayer(player, payload);
-            }
-        }
+        sendToTrackingPlayers(level, active.trackingPlayers(), stopPayload(level, active));
         active.trackingPlayers().clear();
     }
 
@@ -268,7 +333,8 @@ public final class VisualEffectService {
                 this.payload.scale(),
                 this.payload.durationTicks(),
                 this.payload.startGameTime(),
-                this.payload.seed()
+                this.payload.seed(),
+                this.payload.segmentLink()
             );
         }
     }

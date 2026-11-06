@@ -7,7 +7,10 @@ import mafisher.quasar.effect.EffectTimeline;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
 import mafisher.quasar.effect.network.StopVisualEffectPayload;
+import mafisher.quasar.effect.network.UpdateSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateVisualEffectPayload;
+import mafisher.quasar.effect.scale.SegmentGridLayout;
+import mafisher.quasar.effect.scale.SegmentLink;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -31,6 +34,7 @@ import org.joml.Matrix4f;
 public final class ClientVisualEffectManager {
     private static final int MAX_ACTIVE_EFFECTS = 128;
     private final Map<UUID, VisualEffectInstance> activeEffects = new LinkedHashMap<>();
+    private final Map<UUID, SegmentedGroup> segmentedGroups = new LinkedHashMap<>();
     private final VisualEffectRendererRegistry rendererRegistry;
     private ClientLevel currentLevel;
 
@@ -48,10 +52,15 @@ public final class ClientVisualEffectManager {
         if (this.rendererRegistry.find(payload.effectId()).isEmpty()) {
             return;
         }
+        this.removeInstance(payload.instanceId());
         this.activeEffects.put(payload.instanceId(), new VisualEffectInstance(payload, level.getGameTime()));
+        SegmentLink segmentLink = payload.segmentLink();
+        if (segmentLink != null) {
+            this.segmentedGroup(segmentLink).segmentIds.add(payload.instanceId());
+        }
         while (this.activeEffects.size() > MAX_ACTIVE_EFFECTS) {
             UUID oldest = this.activeEffects.keySet().iterator().next();
-            this.activeEffects.remove(oldest);
+            this.removeInstance(oldest);
         }
     }
 
@@ -62,7 +71,7 @@ public final class ClientVisualEffectManager {
         if (level == null || !level.dimension().location().equals(payload.dimensionId())) {
             return;
         }
-        this.activeEffects.remove(payload.instanceId());
+        this.removeInstance(payload.instanceId());
     }
 
     void update(UpdateVisualEffectPayload payload) {
@@ -76,6 +85,35 @@ public final class ClientVisualEffectManager {
         if (effect != null) {
             this.activeEffects.put(payload.instanceId(),
                 effect.withTransform(payload.transform(), payload.updateGameTime()));
+        }
+    }
+
+    /** Applies one aggregated coordinator update to every segment this client currently holds. */
+    void updateSegmented(UpdateSegmentedVisualEffectPayload payload) {
+        Minecraft minecraft = Minecraft.getInstance();
+        ClientLevel level = minecraft.level;
+        this.synchronizeLevel(level);
+        if (level == null || !level.dimension().location().equals(payload.dimensionId())) {
+            return;
+        }
+        SegmentedGroup group = this.segmentedGroups.get(payload.coordinatorId());
+        if (group == null) {
+            return;
+        }
+        EffectTransform base = payload.transform();
+        SegmentGridLayout layout = group.layout;
+        for (UUID instanceId : group.segmentIds) {
+            VisualEffectInstance effect = this.activeEffects.get(instanceId);
+            if (effect == null) {
+                continue;
+            }
+            SegmentLink link = effect.payload().segmentLink();
+            if (link == null) {
+                continue;
+            }
+            this.activeEffects.put(instanceId, effect.withTransform(
+                layout.transform(base, link.column(), link.row()), payload.updateGameTime()
+            ));
         }
     }
 
@@ -236,11 +274,46 @@ public final class ClientVisualEffectManager {
 
     private void removeFinishedEffects(ClientLevel level, long gameTime) {
         ResourceLocation currentDimension = level.dimension().location();
-        this.activeEffects.entrySet().removeIf(entry -> {
+        List<UUID> finished = new ArrayList<>();
+        for (Map.Entry<UUID, VisualEffectInstance> entry : this.activeEffects.entrySet()) {
             StartVisualEffectPayload payload = entry.getValue().payload();
-            return !payload.dimensionId().equals(currentDimension)
-                || EffectTimeline.isFinished(gameTime, payload.startGameTime(), payload.durationTicks());
-        });
+            if (!payload.dimensionId().equals(currentDimension)
+                || EffectTimeline.isFinished(gameTime, payload.startGameTime(), payload.durationTicks())) {
+                finished.add(entry.getKey());
+            }
+        }
+        for (UUID instanceId : finished) {
+            this.removeInstance(instanceId);
+        }
+    }
+
+    /** Removes one instance and detaches it from its coordinator group, dropping empty groups. */
+    private void removeInstance(UUID instanceId) {
+        VisualEffectInstance removed = this.activeEffects.remove(instanceId);
+        if (removed == null) {
+            return;
+        }
+        SegmentLink link = removed.payload().segmentLink();
+        if (link == null) {
+            return;
+        }
+        SegmentedGroup group = this.segmentedGroups.get(link.coordinatorId());
+        if (group == null) {
+            return;
+        }
+        group.segmentIds.remove(instanceId);
+        if (group.segmentIds.isEmpty()) {
+            this.segmentedGroups.remove(link.coordinatorId());
+        }
+    }
+
+    private SegmentedGroup segmentedGroup(SegmentLink link) {
+        SegmentedGroup group = this.segmentedGroups.get(link.coordinatorId());
+        if (group == null || !group.layout.equals(link.layout())) {
+            group = new SegmentedGroup(link.layout());
+            this.segmentedGroups.put(link.coordinatorId(), group);
+        }
+        return group;
     }
 
     private EffectRenderContext createRenderContext(VisualEffectInstance effect, long gameTime, float partialTick) {
@@ -255,6 +328,7 @@ public final class ClientVisualEffectManager {
     void onLevelUnload(ClientLevel level) {
         if (this.currentLevel == level) {
             this.activeEffects.clear();
+            this.segmentedGroups.clear();
             this.currentLevel = null;
         }
     }
@@ -266,7 +340,18 @@ public final class ClientVisualEffectManager {
     private void synchronizeLevel(ClientLevel level) {
         if (this.currentLevel != level) {
             this.activeEffects.clear();
+            this.segmentedGroups.clear();
             this.currentLevel = level;
+        }
+    }
+
+    /** Client-side grouping of segment instances owned by one coordinator. */
+    private static final class SegmentedGroup {
+        private final SegmentGridLayout layout;
+        private final Set<UUID> segmentIds = new LinkedHashSet<>();
+
+        private SegmentedGroup(SegmentGridLayout layout) {
+            this.layout = layout;
         }
     }
 }
