@@ -18,6 +18,8 @@ import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.VisualEffectSpec;
+import mafisher.quasar.effect.audio.EffectAudioPlan;
+import mafisher.quasar.effect.audio.EffectAudioService;
 import mafisher.quasar.effect.persistence.EffectCapabilities;
 import mafisher.quasar.effect.persistence.EffectDescriptor;
 import mafisher.quasar.effect.persistence.EffectKind;
@@ -25,6 +27,7 @@ import mafisher.quasar.effect.persistence.EffectPersistence;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.level.Level;
@@ -58,6 +61,7 @@ class CinematicPersistenceTest {
     void tearDown() {
         CinematicEffectService.stopAll(this.level);
         VisualEffectService.clear(this.level);
+        EffectAudioService.clear(this.level);
     }
 
     @Test
@@ -91,6 +95,29 @@ class CinematicPersistenceTest {
         CinematicEffectService.restore(this.level, timeline, SESSION, 0L, descriptor());
 
         assertEquals(0, VisualEffectService.activeCount(this.level));
+    }
+
+    @Test
+    void restoresClientAudioPlanForLateJoiners() {
+        CinematicTimeline timeline = CinematicTimeline.builder(TIMELINE_ID, 100, 1L)
+            .audioMode(CinematicAudioMode.CLIENT)
+            .sound(0, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F)
+            .sound(60, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F)
+            .build();
+
+        CinematicEffectService.restore(this.level, timeline, SESSION, 0L, descriptor());
+
+        assertEquals(1, EffectAudioService.activeCount(this.level));
+        ServerPlayer player = mock(ServerPlayer.class);
+        when(player.level()).thenReturn(this.level);
+        when(player.position()).thenReturn(Vec3.ZERO);
+        when(this.level.players()).thenReturn(List.of(player));
+
+        this.gameTime = 50L;
+        List<EffectAudioPlan> plans = EffectAudioService.resumePlans(this.level, player);
+
+        assertEquals(1, plans.size());
+        assertEquals(1, plans.getFirst().firstCueIndex(50, 2));
     }
 
     private static VisualEffectSpec visualSpec(int durationTicks) {

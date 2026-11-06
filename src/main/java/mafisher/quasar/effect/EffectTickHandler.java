@@ -1,6 +1,7 @@
 package mafisher.quasar.effect;
 
 import mafisher.quasar.QuasarLib;
+import mafisher.quasar.effect.audio.EffectAudioService;
 import mafisher.quasar.effect.cinematic.CinematicEffectService;
 import mafisher.quasar.effect.gameplay.GameplayEffectService;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectService;
@@ -22,6 +23,7 @@ public final class EffectTickHandler {
             SegmentedVisualEffectService.tick(serverLevel);
             GameplayEffectService.tick(serverLevel);
             CinematicEffectService.tick(serverLevel);
+            EffectAudioService.tick(serverLevel);
         }
     }
 }

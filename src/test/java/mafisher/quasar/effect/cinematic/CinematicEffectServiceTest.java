@@ -15,6 +15,7 @@ import java.util.List;
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.VisualEffectSpec;
+import mafisher.quasar.effect.audio.EffectAudioService;
 import mafisher.quasar.effect.cinematic.CinematicAudioMode;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectService;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectSpec;
@@ -53,6 +54,7 @@ class CinematicEffectServiceTest {
         this.gameTime = 10_000;
         VisualEffectService.tick(this.level);
         SegmentedVisualEffectService.tick(this.level);
+        EffectAudioService.clear(this.level);
     }
 
     @Test
@@ -91,6 +93,7 @@ class CinematicEffectServiceTest {
 
         verify(this.level, times(0)).playSound(any(), anyDouble(), anyDouble(), anyDouble(),
             eq(SOUND), eq(SoundSource.MASTER), anyFloat(), anyFloat());
+        assertEquals(1, EffectAudioService.activeCount(this.level));
     }
 
     @Test

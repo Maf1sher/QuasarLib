@@ -15,7 +15,7 @@ public final class EffectNetwork {
 
     @SubscribeEvent
     public static void registerPayloads(RegisterPayloadHandlersEvent event) {
-        var registrar = event.registrar("5");
+        var registrar = event.registrar("6");
         registrar.playToClient(ResumeEffectsPayload.TYPE, ResumeEffectsPayload.STREAM_CODEC,
             (payload, context) -> {
                 if (FMLEnvironment.dist == Dist.CLIENT) {
@@ -52,16 +52,16 @@ public final class EffectNetwork {
                     context.enqueueWork(() -> ClientEffectRuntime.stop(payload));
                 }
             });
-        registrar.playToClient(CinematicAudioPlanPayload.TYPE, CinematicAudioPlanPayload.STREAM_CODEC,
+        registrar.playToClient(EffectAudioPlanPayload.TYPE, EffectAudioPlanPayload.STREAM_CODEC,
             (payload, context) -> {
                 if (FMLEnvironment.dist == Dist.CLIENT) {
-                    context.enqueueWork(() -> ClientEffectRuntime.cinematicAudioPlan(payload));
+                    context.enqueueWork(() -> ClientEffectRuntime.effectAudioPlan(payload));
                 }
             });
-        registrar.playToClient(StopCinematicAudioPayload.TYPE, StopCinematicAudioPayload.STREAM_CODEC,
+        registrar.playToClient(StopEffectAudioPayload.TYPE, StopEffectAudioPayload.STREAM_CODEC,
             (payload, context) -> {
                 if (FMLEnvironment.dist == Dist.CLIENT) {
-                    context.enqueueWork(() -> ClientEffectRuntime.stopCinematicAudio(payload));
+                    context.enqueueWork(() -> ClientEffectRuntime.stopEffectAudio(payload));
                 }
             });
     }

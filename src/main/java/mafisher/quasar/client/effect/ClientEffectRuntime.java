@@ -4,8 +4,8 @@ import mafisher.quasar.effect.network.StartVisualEffectPayload;
 import mafisher.quasar.effect.network.StopVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateVisualEffectPayload;
-import mafisher.quasar.effect.network.CinematicAudioPlanPayload;
-import mafisher.quasar.effect.network.StopCinematicAudioPayload;
+import mafisher.quasar.effect.network.EffectAudioPlanPayload;
+import mafisher.quasar.effect.network.StopEffectAudioPayload;
 import mafisher.quasar.effect.network.ResumeEffectsPayload;
 import java.util.List;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -68,12 +68,12 @@ public final class ClientEffectRuntime {
         manager().updateSegmented(payload);
     }
 
-    public static void cinematicAudioPlan(CinematicAudioPlanPayload payload) {
-        ClientCinematicAudio.accept(payload);
+    public static void effectAudioPlan(EffectAudioPlanPayload payload) {
+        ClientEffectAudio.accept(payload);
     }
 
-    public static void stopCinematicAudio(StopCinematicAudioPayload payload) {
-        ClientCinematicAudio.stop(payload);
+    public static void stopEffectAudio(StopEffectAudioPayload payload) {
+        ClientEffectAudio.stop(payload);
     }
 
     static void render(RenderLevelStageEvent event) {
@@ -94,6 +94,7 @@ public final class ClientEffectRuntime {
         if (current != null) {
             current.onLevelUnload(level);
         }
+        ClientEffectAudio.clear();
         ClientScreenCompositor compositor = screenCompositor;
         if (compositor != null) {
             compositor.onLevelUnload();

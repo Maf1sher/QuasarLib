@@ -15,13 +15,13 @@ public final class ClientEffectLifecycleEvents {
 
     @SubscribeEvent
     public static void onClientTick(ClientTickEvent.Pre event) {
-        ClientCinematicAudio.tick();
+        ClientEffectAudio.tick();
     }
 
     @SubscribeEvent
     public static void onLevelUnload(LevelEvent.Unload event) {
         if (event.getLevel() instanceof ClientLevel level) {
-            ClientCinematicAudio.clear();
+            ClientEffectAudio.clear();
             ClientEffectRuntime.onLevelUnload(level);
         }
     }

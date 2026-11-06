@@ -3,6 +3,9 @@ package mafisher.quasar.effect.persistence;
 import java.util.List;
 import mafisher.quasar.QuasarLib;
 import mafisher.quasar.effect.VisualEffectService;
+import mafisher.quasar.effect.audio.EffectAudioPlan;
+import mafisher.quasar.effect.audio.EffectAudioService;
+import mafisher.quasar.effect.network.EffectAudioPlanPayload;
 import mafisher.quasar.effect.network.ResumeEffectsPayload;
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
 import net.minecraft.server.level.ServerLevel;
@@ -31,6 +34,7 @@ public final class EffectPersistenceEvents {
     public static void onLevelUnload(LevelEvent.Unload event) {
         if (event.getLevel() instanceof ServerLevel level) {
             VisualEffectService.clear(level);
+            EffectAudioService.clear(level);
         }
     }
 
@@ -38,6 +42,7 @@ public final class EffectPersistenceEvents {
     public static void onServerStopping(ServerStoppingEvent event) {
         for (ServerLevel level : event.getServer().getAllLevels()) {
             VisualEffectService.clear(level);
+            EffectAudioService.clear(level);
         }
     }
 
@@ -69,5 +74,8 @@ public final class EffectPersistenceEvents {
             player,
             new ResumeEffectsPayload(level.dimension().location(), effects)
         );
+        for (EffectAudioPlan plan : EffectAudioService.resumePlans(level, player)) {
+            PacketDistributor.sendToPlayer(player, new EffectAudioPlanPayload(plan));
+        }
     }
 }
