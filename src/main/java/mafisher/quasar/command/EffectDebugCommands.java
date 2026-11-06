@@ -18,6 +18,7 @@ import mafisher.quasar.effect.VisualEffectSpec;
 import mafisher.quasar.effect.cinematic.CinematicEffectHandle;
 import mafisher.quasar.effect.cinematic.CinematicEffectService;
 import mafisher.quasar.effect.cinematic.CinematicTimeline;
+import mafisher.quasar.effect.cinematic.CinematicTimelineRegistry;
 import mafisher.quasar.effect.cinematic.EffectEasing;
 import mafisher.quasar.effect.entity.EffectProbeEntity;
 import mafisher.quasar.effect.entity.QuasarEffectEntities;
@@ -36,6 +37,7 @@ import mafisher.quasar.sound.QuasarSounds;
 import java.util.function.ToIntFunction;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.commands.arguments.ResourceLocationArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -126,6 +128,20 @@ public final class EffectDebugCommands {
                         .requires(source -> source.hasPermission(2))
                         .then(Commands.literal("demo")
                             .executes(context -> testCinematic(context.getSource())))
+                        .then(Commands.literal("play")
+                            .then(Commands.argument("id", ResourceLocationArgument.id())
+                                .suggests((context, builder) -> {
+                                    for (ResourceLocation id : CinematicTimelineRegistry.ids()) {
+                                        builder.suggest(id.toString());
+                                    }
+                                    return builder.buildFuture();
+                                })
+                                .executes(context -> playCinematic(
+                                    context.getSource(),
+                                    ResourceLocationArgument.getId(context, "id")
+                                ))))
+                        .then(Commands.literal("list")
+                            .executes(context -> listCinematics(context.getSource())))
                         .then(Commands.literal("stop-all")
                             .executes(context -> stopCinematics(context.getSource())))
                 )
@@ -367,6 +383,50 @@ public final class EffectDebugCommands {
             () -> Component.literal(
                 "Started cinematic " + timeline.id() + " (" + timeline.cueCount() + " cues, "
                     + timeline.durationTicks() + " ticks): " + handle.sessionId() + "."
+            ),
+            false
+        );
+        return 1;
+    }
+
+    private static int playCinematic(CommandSourceStack source, ResourceLocation id) {
+        CinematicTimeline timeline = CinematicTimelineRegistry.find(id).orElse(null);
+        if (timeline == null) {
+            source.sendFailure(Component.literal("Unknown cinematic: " + id + ". Run /quasarlib cinematic list."));
+            return 0;
+        }
+        try {
+            CinematicEffectHandle handle = CinematicEffectService.start(
+                source.getLevel(),
+                timeline,
+                source.getPosition()
+            );
+            source.sendSuccess(
+                () -> Component.literal(
+                    "Started cinematic " + id + " (" + timeline.cueCount() + " cues, "
+                        + timeline.durationTicks() + " ticks): " + handle.sessionId() + "."
+                ),
+                false
+            );
+            return 1;
+        } catch (IllegalStateException exception) {
+            source.sendFailure(Component.literal(exception.getMessage()));
+            return 0;
+        }
+    }
+
+    private static int listCinematics(CommandSourceStack source) {
+        if (CinematicTimelineRegistry.size() == 0) {
+            source.sendSuccess(
+                () -> Component.literal("No datapack cinematics are loaded."),
+                false
+            );
+            return 1;
+        }
+        source.sendSuccess(
+            () -> Component.literal(
+                "Loaded " + CinematicTimelineRegistry.size() + " cinematic(s): "
+                    + CinematicTimelineRegistry.ids()
             ),
             false
         );

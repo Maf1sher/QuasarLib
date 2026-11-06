@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.VisualEffectSpec;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectSpec;
@@ -81,6 +82,112 @@ public final class CinematicTimeline {
 
     public int cueCount() {
         return this.cues.size();
+    }
+
+    /**
+     * Returns a copy whose cue and keyframe positions are offset by {@code anchor}. JSON timelines are authored
+     * relative to the play anchor; callers with absolute positions can ignore this method.
+     */
+    public CinematicTimeline anchored(Vec3 anchor) {
+        Objects.requireNonNull(anchor, "anchor");
+        if (!Double.isFinite(anchor.x) || !Double.isFinite(anchor.y) || !Double.isFinite(anchor.z)) {
+            throw new IllegalArgumentException("Cinematic anchor must be finite");
+        }
+        if (anchor.equals(Vec3.ZERO)) {
+            return this;
+        }
+
+        List<CinematicCue> translatedCues = new ArrayList<>(this.cues.size());
+        for (CinematicCue cue : this.cues) {
+            translatedCues.add(translate(cue, anchor));
+        }
+        Map<String, CinematicTransformTrack> translatedTracks = new LinkedHashMap<>();
+        for (CinematicTransformTrack track : this.tracks.values()) {
+            List<CinematicKeyframe> keyframes = new ArrayList<>(track.keyframes().size());
+            for (CinematicKeyframe keyframe : track.keyframes()) {
+                keyframes.add(new CinematicKeyframe(
+                    keyframe.tick(),
+                    translate(keyframe.transform(), anchor),
+                    keyframe.easing()
+                ));
+            }
+            translatedTracks.put(track.key(), new CinematicTransformTrack(track.key(), keyframes));
+        }
+        return new CinematicTimeline(
+            this.id,
+            this.seed,
+            this.durationTicks,
+            this.transformUpdateIntervalTicks,
+            List.copyOf(translatedCues),
+            Collections.unmodifiableMap(translatedTracks)
+        );
+    }
+
+    private static CinematicCue translate(CinematicCue cue, Vec3 anchor) {
+        if (cue instanceof CinematicCue.SoundCue sound) {
+            return new CinematicCue.SoundCue(
+                sound.tick(),
+                sound.position().add(anchor),
+                sound.sound(),
+                sound.source(),
+                sound.volume(),
+                sound.pitch()
+            );
+        }
+        if (cue instanceof CinematicCue.VisualStartCue start) {
+            VisualEffectSpec spec = start.spec();
+            return new CinematicCue.VisualStartCue(
+                start.tick(),
+                start.key(),
+                new VisualEffectSpec(
+                    spec.effectId(),
+                    spec.position().add(anchor),
+                    spec.yaw(),
+                    spec.pitch(),
+                    spec.roll(),
+                    spec.scale(),
+                    spec.durationTicks(),
+                    spec.seed(),
+                    spec.audience()
+                )
+            );
+        }
+        if (cue instanceof CinematicCue.SegmentedStartCue start) {
+            SegmentedVisualEffectSpec spec = start.spec();
+            return new CinematicCue.SegmentedStartCue(
+                start.tick(),
+                start.key(),
+                new SegmentedVisualEffectSpec(
+                    spec.effectId(),
+                    spec.center().add(anchor),
+                    spec.yaw(),
+                    spec.pitch(),
+                    spec.roll(),
+                    spec.segmentScale(),
+                    spec.columns(),
+                    spec.rows(),
+                    spec.spacing(),
+                    spec.durationTicks(),
+                    spec.seed(),
+                    spec.audience()
+                )
+            );
+        }
+        return cue;
+    }
+
+    private static EffectTransform translate(EffectTransform transform, Vec3 anchor) {
+        EffectPoint position = transform.position();
+        return new EffectTransform(
+            new EffectPoint(
+                position.x() + anchor.x,
+                position.y() + anchor.y,
+                position.z() + anchor.z
+            ),
+            transform.yaw(),
+            transform.pitch(),
+            transform.roll()
+        );
     }
 
     public static final class Builder {

@@ -1,0 +1,70 @@
+{
+  "duration_ticks": 240,
+  "seed": 20261106,
+  "transform_update_interval_ticks": 1,
+  "cues": [
+    {
+      "type": "sound",
+      "tick": 0,
+      "position": [0, 0, 0],
+      "sound": "minecraft:block.amethyst_block.chime",
+      "source": "master",
+      "volume": 4.0,
+      "pitch": 1.0
+    },
+    {
+      "type": "visual",
+      "tick": 0,
+      "key": "ring",
+      "effect": "quasar_content:rune_circle",
+      "position": [0, 0, 0],
+      "yaw": 0,
+      "pitch": 0,
+      "roll": 0,
+      "scale": 5,
+      "duration_ticks": 220,
+      "seed": 20261107,
+      "audience": {
+        "type": "nearby",
+        "radius": 128
+      }
+    },
+    {
+      "type": "sound",
+      "tick": 20,
+      "position": [0, 0, 0],
+      "sound": "minecraft:block.amethyst_block.chime",
+      "source": "master",
+      "volume": 4.0,
+      "pitch": 1.2
+    },
+    {
+      "type": "visual_stop",
+      "tick": 160,
+      "key": "ring"
+    }
+  ],
+  "tracks": [
+    {
+      "key": "ring",
+      "keyframes": [
+        {
+          "tick": 0,
+          "position": [0, 0, 0],
+          "yaw": 0,
+          "pitch": 0,
+          "roll": 0,
+          "easing": "ease_out_cubic"
+        },
+        {
+          "tick": 100,
+          "position": [0, 3, 0],
+          "yaw": 180,
+          "pitch": 0,
+          "roll": 0,
+          "easing": "linear"
+        }
+      ]
+    }
+  ]
+}

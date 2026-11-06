@@ -10,6 +10,7 @@ import mafisher.quasar.effect.EffectScope;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectHandle;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectService;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,6 +26,15 @@ public final class CinematicEffectService {
     private static final Map<ServerLevel, Map<UUID, ActiveCinematic>> ACTIVE_SESSIONS = new WeakHashMap<>();
 
     private CinematicEffectService() {
+    }
+
+    /**
+     * Starts a relative timeline at a world anchor. JSON-authored timelines use this overload; code-authored
+     * timelines with absolute positions use {@link #start(ServerLevel, CinematicTimeline)}.
+     */
+    public static CinematicEffectHandle start(ServerLevel level, CinematicTimeline timeline, Vec3 anchor) {
+        Objects.requireNonNull(timeline, "timeline");
+        return start(level, timeline.anchored(anchor));
     }
 
     /**
