@@ -2,6 +2,7 @@
   "duration_ticks": 240,
   "seed": 20261106,
   "transform_update_interval_ticks": 1,
+  "audio_mode": "client",
   "cues": [
     {
       "type": "sound",

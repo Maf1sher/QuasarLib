@@ -15,6 +15,7 @@ import java.util.List;
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.VisualEffectSpec;
+import mafisher.quasar.effect.cinematic.CinematicAudioMode;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectService;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectSpec;
 import net.minecraft.resources.ResourceLocation;
@@ -79,6 +80,17 @@ class CinematicEffectServiceTest {
 
         verify(this.level, times(1)).playSound(any(), anyDouble(), anyDouble(), anyDouble(),
             eq(SOUND), eq(SoundSource.MASTER), eq(1.0F), eq(1.0F));
+    }
+
+    @Test
+    void clientAudioModeDoesNotPlayServerSound() {
+        CinematicEffectService.start(this.level, timelineBuilder(100)
+            .audioMode(CinematicAudioMode.CLIENT)
+            .sound(0, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F)
+            .build());
+
+        verify(this.level, times(0)).playSound(any(), anyDouble(), anyDouble(), anyDouble(),
+            eq(SOUND), eq(SoundSource.MASTER), anyFloat(), anyFloat());
     }
 
     @Test

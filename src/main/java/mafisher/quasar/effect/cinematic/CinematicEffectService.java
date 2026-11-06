@@ -1,16 +1,22 @@
 package mafisher.quasar.effect.cinematic;
 
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.WeakHashMap;
 import mafisher.quasar.effect.EffectScope;
+import mafisher.quasar.effect.network.CinematicAudioPlanPayload;
+import mafisher.quasar.effect.network.StopCinematicAudioPayload;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectHandle;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectService;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.network.PacketDistributor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,7 +67,7 @@ public final class CinematicEffectService {
 
         UUID sessionId = UUID.randomUUID();
         EffectScope scope = new EffectScope(level, sessionId);
-        ActiveCinematic session = new ActiveCinematic(timeline, scope, level.getGameTime());
+        ActiveCinematic session = new ActiveCinematic(timeline, scope, level, level.getGameTime());
         try {
             session.advanceTo(level, level.getGameTime());
         } catch (RuntimeException | Error exception) {
@@ -151,6 +157,8 @@ public final class CinematicEffectService {
         private final long startGameTime;
         private final Map<String, UUID> visuals = new LinkedHashMap<>();
         private final Map<String, SegmentedVisualEffectHandle> segmented = new LinkedHashMap<>();
+        private final CinematicAudioPlan audioPlan;
+        private final Set<UUID> audioRecipients = new HashSet<>();
         private int nextCueIndex;
         private int lastTransformAge = -1;
         private boolean closed;
@@ -158,11 +166,15 @@ public final class CinematicEffectService {
         private ActiveCinematic(
             CinematicTimeline timeline,
             EffectScope scope,
+            ServerLevel level,
             long startGameTime
         ) {
             this.timeline = timeline;
             this.scope = scope;
             this.startGameTime = startGameTime;
+            this.audioPlan = timeline.audioMode() == CinematicAudioMode.CLIENT
+                ? CinematicAudioPlan.from(scope.sessionId(), timeline, level.dimension().location(), startGameTime)
+                : null;
         }
 
         /** Executes due cues and samples tracks. Returns false when the timeline has finished and closed. */
@@ -171,6 +183,7 @@ public final class CinematicEffectService {
                 return false;
             }
 
+            this.syncAudioAudience(level);
             long rawAge = Math.max(0L, gameTime - this.startGameTime);
             int age = (int)Math.min(Integer.MAX_VALUE, rawAge);
             if (age >= this.timeline.durationTicks()) {
@@ -194,7 +207,11 @@ public final class CinematicEffectService {
 
         private void executeCue(ServerLevel level, CinematicCue cue) {
             if (cue instanceof CinematicCue.SoundCue sound) {
-                this.scope.playSound(sound.position(), sound.sound(), sound.source(), sound.volume(), sound.pitch());
+                if (this.audioPlan == null) {
+                    this.scope.playSound(
+                        sound.position(), sound.sound(), sound.source(), sound.volume(), sound.pitch()
+                    );
+                }
             } else if (cue instanceof CinematicCue.VisualStartCue start) {
                 this.visuals.put(start.key(), this.scope.playVisual(start.spec()));
             } else if (cue instanceof CinematicCue.VisualStopCue stop) {
@@ -210,6 +227,41 @@ public final class CinematicEffectService {
                     SegmentedVisualEffectService.stop(level, handle);
                 }
             }
+        }
+
+        private void syncAudioAudience(ServerLevel level) {
+            if (this.audioPlan == null || this.audioPlan.cueCount() == 0) {
+                return;
+            }
+            Set<UUID> present = new HashSet<>();
+            for (ServerPlayer player : level.players()) {
+                present.add(player.getUUID());
+            }
+            this.audioRecipients.retainAll(present);
+            for (ServerPlayer player : level.players()) {
+                if (this.audioRecipients.add(player.getUUID())) {
+                    PacketDistributor.sendToPlayer(player, new CinematicAudioPlanPayload(this.audioPlan));
+                }
+            }
+        }
+
+        private void sendAudioStop(ServerLevel level) {
+            if (this.audioPlan == null || this.audioRecipients.isEmpty()) {
+                return;
+            }
+            if (level.getServer() != null) {
+                StopCinematicAudioPayload payload = new StopCinematicAudioPayload(
+                    this.audioPlan.sessionId(),
+                    this.audioPlan.dimensionId()
+                );
+                for (UUID recipient : this.audioRecipients) {
+                    ServerPlayer player = level.getServer().getPlayerList().getPlayer(recipient);
+                    if (player != null && player.level() == level) {
+                        PacketDistributor.sendToPlayer(player, payload);
+                    }
+                }
+            }
+            this.audioRecipients.clear();
         }
 
         private void applyTracks(ServerLevel level, int age) {
@@ -231,6 +283,7 @@ public final class CinematicEffectService {
                 return;
             }
             this.closed = true;
+            this.sendAudioStop(level);
             for (SegmentedVisualEffectHandle handle : this.segmented.values()) {
                 SegmentedVisualEffectService.stop(level, handle);
             }

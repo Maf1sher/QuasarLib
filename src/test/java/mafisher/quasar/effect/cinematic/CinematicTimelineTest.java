@@ -101,11 +101,11 @@ class CinematicTimelineTest {
 
         CinematicTimeline.Builder builder = CinematicTimeline.builder(TIMELINE_ID, 10_000, 1L);
         for (int index = 0; index < CinematicTimeline.MAX_CUES; index++) {
-            builder.sound(index, Vec3.ZERO, SOUND, SoundSource.PLAYERS, 1.0F, 1.0F);
+            builder.visual("key" + index, index, visualSpec());
         }
         assertEquals(CinematicTimeline.MAX_CUES, builder.build().cueCount());
         assertThrows(IllegalStateException.class,
-            () -> builder.sound(0, Vec3.ZERO, SOUND, SoundSource.PLAYERS, 1.0F, 1.0F));
+            () -> builder.visual("overflow", 0, visualSpec()));
     }
 
     @Test

@@ -17,6 +17,7 @@ import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.VisualEffectSpec;
 import mafisher.quasar.effect.cinematic.CinematicEffectHandle;
 import mafisher.quasar.effect.cinematic.CinematicEffectService;
+import mafisher.quasar.effect.cinematic.CinematicAudioMode;
 import mafisher.quasar.effect.cinematic.CinematicTimeline;
 import mafisher.quasar.effect.cinematic.CinematicTimelineRegistry;
 import mafisher.quasar.effect.cinematic.EffectEasing;
@@ -330,6 +331,7 @@ public final class EffectDebugCommands {
                 seed
             )
             .transformUpdateIntervalTicks(1)
+            .audioMode(CinematicAudioMode.CLIENT)
             .sound(0, position, QuasarSounds.EFFECT_TEST.get(), SoundSource.MASTER, 4.0F, 1.0F)
             .visual("ring", 0, new VisualEffectSpec(
                 EffectVisualIds.DEBUG_RUNE_CIRCLE,

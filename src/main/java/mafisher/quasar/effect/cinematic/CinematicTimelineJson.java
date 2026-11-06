@@ -27,7 +27,8 @@ final class CinematicTimelineJson {
         long seed = GsonHelper.getAsLong(root, "seed", 0L);
         int updateInterval = GsonHelper.getAsInt(root, "transform_update_interval_ticks", 1);
         CinematicTimeline.Builder builder = CinematicTimeline.builder(id, durationTicks, seed)
-            .transformUpdateIntervalTicks(updateInterval);
+            .transformUpdateIntervalTicks(updateInterval)
+            .audioMode(audioMode(root));
 
         JsonArray cues = GsonHelper.getAsJsonArray(root, "cues");
         if (cues.isEmpty()) {
@@ -139,6 +140,15 @@ final class CinematicTimelineJson {
             return EffectEasing.valueOf(value);
         } catch (IllegalArgumentException exception) {
             throw new JsonParseException("Unknown cinematic easing: " + value, exception);
+        }
+    }
+
+    private static CinematicAudioMode audioMode(JsonObject json) {
+        String value = GsonHelper.getAsString(json, "audio_mode", "server").toUpperCase(Locale.ROOT);
+        try {
+            return CinematicAudioMode.valueOf(value);
+        } catch (IllegalArgumentException exception) {
+            throw new JsonParseException("Unknown cinematic audio mode: " + value, exception);
         }
     }
 

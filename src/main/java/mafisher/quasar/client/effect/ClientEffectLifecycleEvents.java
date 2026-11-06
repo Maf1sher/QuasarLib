@@ -5,6 +5,7 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
 
 @EventBusSubscriber(modid = QuasarLib.MOD_ID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
@@ -13,8 +14,14 @@ public final class ClientEffectLifecycleEvents {
     }
 
     @SubscribeEvent
+    public static void onClientTick(ClientTickEvent.Pre event) {
+        ClientCinematicAudio.tick();
+    }
+
+    @SubscribeEvent
     public static void onLevelUnload(LevelEvent.Unload event) {
         if (event.getLevel() instanceof ClientLevel level) {
+            ClientCinematicAudio.clear();
             ClientEffectRuntime.onLevelUnload(level);
         }
     }

@@ -24,6 +24,7 @@ import net.minecraft.world.phys.Vec3;
 public final class CinematicTimeline {
     public static final int MAX_DURATION_TICKS = 72_000;
     public static final int MAX_CUES = 512;
+    public static final int MAX_SOUND_CUES = 128;
     public static final int MAX_TRACKS = 128;
     public static final int MIN_TRANSFORM_UPDATE_INTERVAL_TICKS = 1;
     public static final int MAX_TRANSFORM_UPDATE_INTERVAL_TICKS = 20;
@@ -32,6 +33,7 @@ public final class CinematicTimeline {
     private final long seed;
     private final int durationTicks;
     private final int transformUpdateIntervalTicks;
+    private final CinematicAudioMode audioMode;
     private final List<CinematicCue> cues;
     private final Map<String, CinematicTransformTrack> tracks;
 
@@ -40,6 +42,7 @@ public final class CinematicTimeline {
         long seed,
         int durationTicks,
         int transformUpdateIntervalTicks,
+        CinematicAudioMode audioMode,
         List<CinematicCue> cues,
         Map<String, CinematicTransformTrack> tracks
     ) {
@@ -47,6 +50,7 @@ public final class CinematicTimeline {
         this.seed = seed;
         this.durationTicks = durationTicks;
         this.transformUpdateIntervalTicks = transformUpdateIntervalTicks;
+        this.audioMode = audioMode;
         this.cues = cues;
         this.tracks = tracks;
     }
@@ -69,6 +73,10 @@ public final class CinematicTimeline {
 
     public int transformUpdateIntervalTicks() {
         return this.transformUpdateIntervalTicks;
+    }
+
+    public CinematicAudioMode audioMode() {
+        return this.audioMode;
     }
 
     /** Cues sorted by tick; cues with the same tick keep their builder insertion order. */
@@ -118,6 +126,7 @@ public final class CinematicTimeline {
             this.seed,
             this.durationTicks,
             this.transformUpdateIntervalTicks,
+            this.audioMode,
             List.copyOf(translatedCues),
             Collections.unmodifiableMap(translatedTracks)
         );
@@ -199,6 +208,7 @@ public final class CinematicTimeline {
         private final Map<String, Integer> visualStarts = new LinkedHashMap<>();
         private final Map<String, Integer> segmentedStarts = new LinkedHashMap<>();
         private int transformUpdateIntervalTicks = 1;
+        private CinematicAudioMode audioMode = CinematicAudioMode.SERVER;
 
         private Builder(ResourceLocation id, int durationTicks, long seed) {
             this.id = Objects.requireNonNull(id, "id");
@@ -221,6 +231,12 @@ public final class CinematicTimeline {
                 );
             }
             this.transformUpdateIntervalTicks = intervalTicks;
+            return this;
+        }
+
+        /** Chooses whether sound cues play on the server or are scheduled once on the client. */
+        public Builder audioMode(CinematicAudioMode audioMode) {
+            this.audioMode = Objects.requireNonNull(audioMode, "audioMode");
             return this;
         }
 
@@ -277,6 +293,7 @@ public final class CinematicTimeline {
 
             List<CinematicCue> sortedCues = new ArrayList<>(this.cues);
             sortedCues.sort(Comparator.comparingInt(CinematicCue::tick));
+            int soundCues = 0;
             Map<String, Integer> stopTicks = new LinkedHashMap<>();
             for (CinematicCue cue : sortedCues) {
                 if (cue.tick() >= this.durationTicks) {
@@ -284,11 +301,18 @@ public final class CinematicTimeline {
                         "Cinematic cue at tick " + cue.tick() + " must be before duration " + this.durationTicks
                     );
                 }
-                if (cue instanceof CinematicCue.VisualStopCue stop) {
+                if (cue instanceof CinematicCue.SoundCue) {
+                    soundCues++;
+                } else if (cue instanceof CinematicCue.VisualStopCue stop) {
                     validateStop(stop.key(), stop.tick(), this.visualStarts, "visual", stopTicks);
                 } else if (cue instanceof CinematicCue.SegmentedStopCue stop) {
                     validateStop(stop.key(), stop.tick(), this.segmentedStarts, "segmented", stopTicks);
                 }
+            }
+            if (soundCues > MAX_SOUND_CUES) {
+                throw new IllegalStateException(
+                    "A cinematic timeline supports at most " + MAX_SOUND_CUES + " sound cues"
+                );
             }
 
             Map<String, CinematicTransformTrack> tracks = new LinkedHashMap<>();
@@ -313,6 +337,7 @@ public final class CinematicTimeline {
                 this.seed,
                 this.durationTicks,
                 this.transformUpdateIntervalTicks,
+                this.audioMode,
                 List.copyOf(sortedCues),
                 Collections.unmodifiableMap(tracks)
             );

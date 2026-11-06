@@ -24,6 +24,7 @@ class CinematicTimelineResourceTest {
             );
 
             assertEquals(240, timeline.durationTicks());
+            assertEquals(CinematicAudioMode.CLIENT, timeline.audioMode());
             assertEquals(4, timeline.cueCount());
             assertEquals(1, timeline.tracks().size());
         }
