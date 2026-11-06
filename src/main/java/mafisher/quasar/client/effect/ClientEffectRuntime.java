@@ -11,59 +11,56 @@ import net.neoforged.neoforge.common.NeoForge;
 
 /** Client-lifetime owner and narrow entry point for effect event delegates. */
 public final class ClientEffectRuntime {
+    private static final Object INIT_LOCK = new Object();
     private static volatile ClientVisualEffectManager manager;
     private static volatile ClientScreenCompositor screenCompositor;
 
     private ClientEffectRuntime() {
     }
 
-    static void initialize() {
-        if (manager != null) {
-            return;
+    /**
+     * Builds the renderer registry on first use. The registration event is posted lazily so the game bus is fully
+     * active; posting it during client setup can run before consumer game-bus listeners are ready.
+     */
+    private static ClientVisualEffectManager manager() {
+        ClientVisualEffectManager current = manager;
+        if (current != null) {
+            return current;
         }
-        VisualEffectRendererRegistry rendererRegistry = new VisualEffectRendererRegistry();
-        rendererRegistry.registerBuiltIns();
-        NeoForge.EVENT_BUS.post(new RegisterVisualEffectRenderersEvent(rendererRegistry));
-        rendererRegistry.freeze();
-        manager = new ClientVisualEffectManager(rendererRegistry);
-        screenCompositor = new ClientScreenCompositor();
+        synchronized (INIT_LOCK) {
+            if (manager == null) {
+                VisualEffectRendererRegistry rendererRegistry = new VisualEffectRendererRegistry();
+                rendererRegistry.registerBuiltIns();
+                NeoForge.EVENT_BUS.post(new RegisterVisualEffectRenderersEvent(rendererRegistry));
+                rendererRegistry.freeze();
+                screenCompositor = new ClientScreenCompositor();
+                manager = new ClientVisualEffectManager(rendererRegistry);
+            }
+            return manager;
+        }
     }
 
     public static void start(StartVisualEffectPayload payload) {
-        ClientVisualEffectManager current = manager;
-        if (current != null) {
-            current.start(payload);
-        }
+        manager().start(payload);
     }
 
     public static void stop(StopVisualEffectPayload payload) {
-        ClientVisualEffectManager current = manager;
-        if (current != null) {
-            current.stop(payload);
-        }
+        manager().stop(payload);
     }
 
     public static void update(UpdateVisualEffectPayload payload) {
-        ClientVisualEffectManager current = manager;
-        if (current != null) {
-            current.update(payload);
-        }
+        manager().update(payload);
     }
 
     static void render(RenderLevelStageEvent event) {
         if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_PARTICLES) {
-            ClientVisualEffectManager current = manager;
-            if (current != null) {
-                current.render(event);
-            }
+            manager().render(event);
         } else if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
-            ClientScreenCompositor current = screenCompositor;
-            if (current != null) {
-                ClientVisualEffectManager effectManager = manager;
-                List<ScreenEffectFrame> screenEffects = effectManager == null
-                    ? List.of()
-                    : effectManager.screenEffects(event);
-                current.render(event, effectManager, screenEffects);
+            ClientVisualEffectManager effectManager = manager();
+            ClientScreenCompositor compositor = screenCompositor;
+            if (compositor != null) {
+                List<ScreenEffectFrame> screenEffects = effectManager.screenEffects(event);
+                compositor.render(event, effectManager, screenEffects);
             }
         }
     }
