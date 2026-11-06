@@ -7,7 +7,8 @@ import java.util.List;
 
 /**
  * Immutable local-space quad mesh whose per-draw material values remain dynamic. Vertices target BLOCK or
- * NEW_ENTITY-style formats with position, color, UV0, normal, overlay, and light; UV1 is not set.
+ * NEW_ENTITY-style formats with position, color, UV0, normal, overlay, and light; the overlay value is written to
+ * UV1 and can carry per-effect shader data.
  */
 public final class EffectMesh {
     private final List<Vertex> vertices;

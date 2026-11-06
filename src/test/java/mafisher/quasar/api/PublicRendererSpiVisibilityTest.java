@@ -3,8 +3,11 @@ package mafisher.quasar.api;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import mafisher.quasar.client.effect.EffectMesh;
 import mafisher.quasar.client.effect.EffectMeshes;
+import mafisher.quasar.client.effect.EffectRenderTypeOptions;
+import mafisher.quasar.client.effect.EffectShader;
 import mafisher.quasar.client.effect.QuasarRenderTypes;
 import mafisher.quasar.client.effect.RegisterVisualEffectRenderersEvent;
 import net.minecraft.resources.ResourceLocation;
@@ -31,5 +34,23 @@ class PublicRendererSpiVisibilityTest {
         assertNotNull(QuasarRenderTypes.worldVisual(texture));
         assertNotNull(QuasarRenderTypes.screenEffectMask(texture));
         assertNotNull(RegisterVisualEffectRenderersEvent.class);
+    }
+
+    @Test
+    void exposesShaderRenderTypeFactories() {
+        ResourceLocation texture = ResourceLocation.fromNamespaceAndPath(
+            "test", "textures/effect/public_shader.png"
+        );
+        EffectShader shader = EffectShader.create(
+            ResourceLocation.fromNamespaceAndPath("test", "shader"), DefaultVertexFormat.BLOCK
+        );
+
+        assertEquals(DefaultVertexFormat.BLOCK, shader.format());
+        assertNotNull(QuasarRenderTypes.worldVisual(shader, texture));
+        assertNotNull(QuasarRenderTypes.worldVisual(shader, texture,
+            EffectRenderTypeOptions.WORLD_DEPTH_WRITING));
+        assertNotNull(QuasarRenderTypes.screenEffectMask(shader, texture));
+        assertNotNull(QuasarRenderTypes.screenEffectMask(shader, texture,
+            EffectRenderTypeOptions.MASK_DEFAULT));
     }
 }

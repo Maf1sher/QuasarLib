@@ -28,6 +28,6 @@ public final class ClientEffectModEvents {
 
     @SubscribeEvent
     public static void registerShaders(RegisterShadersEvent event) throws IOException {
-        EffectRenderTypes.registerShaders(event);
+        EffectShaders.registerAll(event);
     }
 }

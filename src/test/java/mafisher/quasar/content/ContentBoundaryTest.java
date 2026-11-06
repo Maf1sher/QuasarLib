@@ -17,6 +17,7 @@ class ContentBoundaryTest {
     private static final String CONTENT_PACKAGE = "mafisher.quasar.content";
     private static final List<String> ENGINE_INTERNAL_IMPORTS = List.of(
         "mafisher.quasar.client.effect.EffectRenderTypes",
+        "mafisher.quasar.client.effect.EffectShaders",
         "mafisher.quasar.client.effect.VisualEffectRendererRegistry",
         "mafisher.quasar.client.effect.ClientEffectRuntime",
         "mafisher.quasar.client.effect.ClientVisualEffectManager",
