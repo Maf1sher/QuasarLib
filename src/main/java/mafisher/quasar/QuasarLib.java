@@ -4,13 +4,16 @@ import mafisher.quasar.content.ContentBootstrap;
 import mafisher.quasar.effect.entity.QuasarEffectEntities;
 import mafisher.quasar.sound.QuasarSounds;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.config.ModConfig;
 
 @Mod(QuasarLib.MOD_ID)
 public final class QuasarLib {
     public static final String MOD_ID = "quasar_lib";
 
-    public QuasarLib(IEventBus modEventBus) {
+    public QuasarLib(IEventBus modEventBus, ModContainer modContainer) {
+        modContainer.registerConfig(ModConfig.Type.SERVER, QuasarConfig.SPEC);
         QuasarEffectEntities.ENTITY_TYPES.register(modEventBus);
         QuasarSounds.SOUNDS.register(modEventBus);
         ContentBootstrap.init(modEventBus);

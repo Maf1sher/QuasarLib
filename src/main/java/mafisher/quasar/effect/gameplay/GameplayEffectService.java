@@ -11,6 +11,7 @@ import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.persistence.EffectDescriptor;
+import mafisher.quasar.effect.persistence.EffectCapabilities;
 import mafisher.quasar.effect.persistence.EffectKind;
 import mafisher.quasar.effect.persistence.EffectPersistenceOptions;
 import mafisher.quasar.effect.persistence.EffectPersistenceService;
@@ -72,6 +73,15 @@ public final class GameplayEffectService {
         Objects.requireNonNull(options, "options");
         if (level.isClientSide()) {
             throw new IllegalStateException("Gameplay effects are server-authoritative");
+        }
+        if (!destructivePolicyAllows(level, spec, options.capabilities())) {
+            LOGGER.warn(
+                "Rejected destructive gameplay effect {} in {} for owner {}: server policy denied",
+                spec.typeId(),
+                level.dimension().location(),
+                spec.ownerId()
+            );
+            throw new IllegalStateException("Destructive gameplay effects are disabled by server policy");
         }
 
         Map<UUID, ActiveSession> sessions = activeSessions(level);
@@ -179,6 +189,14 @@ public final class GameplayEffectService {
         int age = (int)Math.min(Integer.MAX_VALUE, Math.max(0L, level.getGameTime() - startGameTime));
         if (age >= spec.phases().totalDurationTicks()) {
             EffectPersistenceService.recordStop(level, sessionId);
+            return null;
+        }
+        if (!destructivePolicyAllows(level, spec, descriptor.capabilities())) {
+            LOGGER.info(
+                "Deferred destructive gameplay effect {} in {}: server policy denied",
+                spec.typeId(),
+                level.dimension().location()
+            );
             return null;
         }
 
@@ -367,6 +385,25 @@ public final class GameplayEffectService {
             return remainingBlockChanges;
         }
         return remainingBlockChanges - session.context.applyBlockChanges(perSession);
+    }
+
+    private static boolean destructivePolicyAllows(
+        ServerLevel level,
+        GameplayEffectSpec spec,
+        EffectCapabilities capabilities
+    ) {
+        if (!capabilities.destructive()) {
+            return true;
+        }
+        return DestructiveEffectPolicies.allows(
+            new DestructiveEffectPolicyContext(
+                level,
+                spec.typeId(),
+                spec.ownerId(),
+                spec.anchor(),
+                capabilities
+            )
+        );
     }
 
     private static boolean ownerUnavailable(ServerLevel level, GameplayEffectSpec spec) {

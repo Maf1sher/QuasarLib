@@ -45,6 +45,7 @@ class GameplayBlockOperationsTest {
 
     @BeforeEach
     void setUp() {
+        DestructiveEffectPolicies.clearForTesting();
         this.level = mock(ServerLevel.class);
         this.state = mock(BlockState.class);
         when(this.level.isClientSide()).thenReturn(false);
@@ -58,6 +59,7 @@ class GameplayBlockOperationsTest {
     @AfterEach
     void tearDown() {
         GameplayEffectService.stopAll(this.level, GameplayEffectEndReason.CANCELLED);
+        DestructiveEffectPolicies.clearForTesting();
     }
 
     @Test
