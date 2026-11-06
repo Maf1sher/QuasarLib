@@ -7,12 +7,16 @@ import java.util.function.Predicate;
 import mafisher.quasar.effect.EffectHitResult;
 import mafisher.quasar.effect.EffectHitbox;
 import mafisher.quasar.effect.EffectScope;
+import mafisher.quasar.effect.block.BlockChange;
+import mafisher.quasar.effect.persistence.EffectCapabilities;
+import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.level.block.state.BlockState;
 
 /** Read-mostly view of one active gameplay effect session. */
 public final class GameplayEffectContext {
@@ -20,7 +24,9 @@ public final class GameplayEffectContext {
     private final EffectScope scope;
     private final GameplayEffectSpec spec;
     private final UUID sessionId;
+    private final EffectCapabilities capabilities;
     private final EffectTickBudgetState budgetState;
+    private final PendingBlockChanges blockChanges = new PendingBlockChanges();
 
     private int ageTicks;
     private RandomSource random;
@@ -29,8 +35,14 @@ public final class GameplayEffectContext {
     private CompoundTag persistentState;
     private boolean stateDirty;
 
-    GameplayEffectContext(ServerLevel level, EffectScope scope, GameplayEffectSpec spec, UUID sessionId) {
-        this(level, scope, spec, sessionId, 0, new CompoundTag());
+    GameplayEffectContext(
+        ServerLevel level,
+        EffectScope scope,
+        GameplayEffectSpec spec,
+        UUID sessionId,
+        EffectCapabilities capabilities
+    ) {
+        this(level, scope, spec, sessionId, capabilities, 0, new CompoundTag());
     }
 
     GameplayEffectContext(
@@ -38,6 +50,7 @@ public final class GameplayEffectContext {
         EffectScope scope,
         GameplayEffectSpec spec,
         UUID sessionId,
+        EffectCapabilities capabilities,
         int initialAgeTicks,
         CompoundTag initialState
     ) {
@@ -45,6 +58,7 @@ public final class GameplayEffectContext {
         this.scope = Objects.requireNonNull(scope, "scope");
         this.spec = Objects.requireNonNull(spec, "spec");
         this.sessionId = Objects.requireNonNull(sessionId, "sessionId");
+        this.capabilities = Objects.requireNonNull(capabilities, "capabilities");
         this.persistentState = Objects.requireNonNull(initialState, "initialState").copy();
         this.budgetState = new EffectTickBudgetState(spec.budget());
         this.beginTick(initialAgeTicks);
@@ -65,6 +79,11 @@ public final class GameplayEffectContext {
 
     public UUID sessionId() {
         return this.sessionId;
+    }
+
+    /** Capabilities declared for this session; block changes require the destructive capability. */
+    public EffectCapabilities capabilities() {
+        return this.capabilities;
     }
 
     public int ageTicks() {
@@ -135,6 +154,58 @@ public final class GameplayEffectContext {
         return spawned;
     }
 
+    /**
+     * Queues one server-authoritative block change. The engine applies at most
+     * {@link EffectTickBudget#maxBlockChanges()} changes per tick; overflow waits for later ticks.
+     *
+     * @return {@code true} when the change was queued, {@code false} when the block-change
+     *     budget is zero or the pending safety cap is full
+     * @throws IllegalStateException when the session is closed or the effect did not declare the
+     *     destructive capability
+     * @throws IllegalArgumentException when the position is outside the level
+     */
+    public boolean queueBlockChange(BlockPos position, BlockState state) {
+        this.ensureOpen();
+        return this.queueBlockChange(new BlockChange(position, state));
+    }
+
+    /** Queues one block change; see {@link #queueBlockChange(BlockPos, BlockState)}. */
+    public boolean queueBlockChange(BlockChange change) {
+        this.ensureOpen();
+        Objects.requireNonNull(change, "change");
+        if (!this.capabilities.destructive()) {
+            throw new IllegalStateException(
+                "Gameplay effect " + this.spec.typeId() + " did not declare the destructive capability"
+            );
+        }
+        if (this.spec.budget().maxBlockChanges() <= 0) {
+            return false;
+        }
+        if (!this.level.isInWorldBounds(change.position())) {
+            throw new IllegalArgumentException(
+                "Block change position is outside the level: " + change.position()
+            );
+        }
+        if (!this.blockChanges.enqueue(change)) {
+            return false;
+        }
+        this.budgetState.recordBlockChangeQueued();
+        return true;
+    }
+
+    /** Changes waiting for a future tick's application budget. */
+    public int pendingBlockChanges() {
+        return this.blockChanges.size();
+    }
+
+    /** Applies up to {@code maxChanges} queued changes; the service owns the per-tick budget. */
+    int applyBlockChanges(int maxChanges) {
+        this.ensureOpen();
+        PendingBlockChanges.ApplyResult result = this.blockChanges.apply(this.level, maxChanges);
+        this.budgetState.recordBlockChangesApplied(result.applied());
+        return result.processed();
+    }
+
     /** Requests a clean end after the current callback; the reason is {@link GameplayEffectEndReason#CANCELLED}. */
     public void requestStop() {
         this.stopRequested = true;
@@ -200,6 +271,7 @@ public final class GameplayEffectContext {
 
     void close() {
         this.open = false;
+        this.blockChanges.clear();
     }
 
     private void ensureOpen() {

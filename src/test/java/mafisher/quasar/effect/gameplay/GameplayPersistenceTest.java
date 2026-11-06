@@ -16,6 +16,7 @@ import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.VisualEffectSpec;
 import mafisher.quasar.effect.persistence.EffectCapabilities;
 import mafisher.quasar.effect.persistence.EffectDescriptor;
+import mafisher.quasar.effect.persistence.EffectDescriptorNbt;
 import mafisher.quasar.effect.persistence.EffectKind;
 import mafisher.quasar.effect.persistence.EffectPersistence;
 import mafisher.quasar.effect.persistence.EffectPersistenceService;
@@ -107,14 +108,39 @@ class GameplayPersistenceTest {
         ));
     }
 
+    @Test
+    void preservesTheBlockChangeBudgetInDescriptorNbt() {
+        GameplayEffectSpec spec = spec(new EffectTickBudget(1, 2, 3, 32));
+        EffectDescriptor descriptor = descriptor(spec, new CompoundTag());
+
+        EffectDescriptor loaded = EffectDescriptorNbt.load(EffectDescriptorNbt.save(descriptor));
+
+        assertEquals(32, GameplayEffectNbt.loadSpec(loaded).budget().maxBlockChanges());
+    }
+
+    @Test
+    void defaultsTheBlockChangeBudgetForOlderDescriptors() {
+        GameplayEffectSpec spec = spec(new EffectTickBudget(1, 2, 3, 32));
+        CompoundTag tag = EffectDescriptorNbt.save(descriptor(spec, new CompoundTag()));
+        tag.getCompound("state").getCompound("spec").getCompound("budget").remove("max_block_changes");
+
+        EffectDescriptor loaded = EffectDescriptorNbt.load(tag);
+
+        assertEquals(0, GameplayEffectNbt.loadSpec(loaded).budget().maxBlockChanges());
+    }
+
     private static GameplayEffectSpec spec() {
+        return spec(EffectTickBudget.unlimited());
+    }
+
+    private static GameplayEffectSpec spec(EffectTickBudget budget) {
         return new GameplayEffectSpec(
             TYPE,
             null,
             new Vec3(0.0, 64.0, 0.0),
             EffectPhasePlan.of(new EffectPhase("telegraph", 10), new EffectPhase("strike", 10)),
             3L,
-            EffectTickBudget.unlimited(),
+            budget,
             OwnerPolicy.CONTINUE
         );
     }

@@ -10,25 +10,28 @@ import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
-/** Keeps the gameplay layer server-side and independent of the content layer. */
+/** Keeps the gameplay and block layers server-side and independent of the content layer. */
 class GameplayBoundaryTest {
     private static final Path GAMEPLAY_ROOT = findSourceRoot().resolve("mafisher/quasar/effect/gameplay");
+    private static final Path BLOCK_ROOT = findSourceRoot().resolve("mafisher/quasar/effect/block");
 
     @Test
-    void gameplayPackageDoesNotImportClientOrContent() throws IOException {
+    void effectPackagesDoNotImportClientOrContent() throws IOException {
         List<String> violations = new ArrayList<>();
-        try (Stream<Path> files = Files.walk(GAMEPLAY_ROOT)) {
-            for (Path file : files.filter(path -> path.toString().endsWith(".java")).toList()) {
-                String source = Files.readString(file);
-                if (source.contains("import net.minecraft.client")
-                    || source.contains("import mafisher.quasar.client")
-                    || source.contains("import mafisher.quasar.content")) {
-                    violations.add(file.toString());
+        for (Path root : List.of(GAMEPLAY_ROOT, BLOCK_ROOT)) {
+            try (Stream<Path> files = Files.walk(root)) {
+                for (Path file : files.filter(path -> path.toString().endsWith(".java")).toList()) {
+                    String source = Files.readString(file);
+                    if (source.contains("import net.minecraft.client")
+                        || source.contains("import mafisher.quasar.client")
+                        || source.contains("import mafisher.quasar.content")) {
+                        violations.add(file.toString());
+                    }
                 }
             }
         }
 
-        assertTrue(violations.isEmpty(), () -> "Gameplay must stay server-side and content-free: " + violations);
+        assertTrue(violations.isEmpty(), () -> "Server effects must stay server-side and content-free: " + violations);
     }
 
     private static Path findSourceRoot() {

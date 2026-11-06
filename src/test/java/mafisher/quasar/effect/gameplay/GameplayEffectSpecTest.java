@@ -16,6 +16,7 @@ class GameplayEffectSpecTest {
         assertEquals(ResourceLocation.fromNamespaceAndPath("quasar_lib", "test"), spec.typeId());
         assertEquals(30, spec.phases().totalDurationTicks());
         assertEquals(10, spec.budget().maxTargetsExamined());
+        assertEquals(0, spec.budget().maxBlockChanges());
         assertEquals(OwnerPolicy.STOP_WHEN_UNAVAILABLE, spec.ownerPolicy());
     }
 

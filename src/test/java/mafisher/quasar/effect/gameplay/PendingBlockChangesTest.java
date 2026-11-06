@@ -1,0 +1,132 @@
+package mafisher.quasar.effect.gameplay;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import mafisher.quasar.effect.block.BlockChange;
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.block.state.BlockState;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
+
+class PendingBlockChangesTest {
+    private ServerLevel level;
+
+    @BeforeEach
+    void setUp() {
+        this.level = mock(ServerLevel.class);
+        when(this.level.isInWorldBounds(any())).thenReturn(true);
+        when(this.level.hasChunkAt(any())).thenReturn(true);
+        when(this.level.setBlockAndUpdate(any(), any())).thenReturn(true);
+    }
+
+    @Test
+    void appliesInInsertionOrderWithinTheBudget() {
+        PendingBlockChanges pending = new PendingBlockChanges(4);
+        BlockChange first = change(0);
+        BlockChange second = change(1);
+        assertTrue(pending.enqueue(first));
+        assertTrue(pending.enqueue(second));
+
+        PendingBlockChanges.ApplyResult firstApply = pending.apply(this.level, 1);
+        assertEquals(1, firstApply.processed());
+        assertEquals(1, firstApply.applied());
+        assertEquals(1, pending.size());
+        PendingBlockChanges.ApplyResult secondApply = pending.apply(this.level, 1);
+        assertEquals(1, secondApply.processed());
+        assertEquals(1, secondApply.applied());
+        assertEquals(0, pending.size());
+
+        InOrder order = inOrder(this.level);
+        order.verify(this.level).setBlockAndUpdate(first.position(), first.state());
+        order.verify(this.level).setBlockAndUpdate(second.position(), second.state());
+    }
+
+    @Test
+    void rejectsChangesAtTheSafetyCap() {
+        PendingBlockChanges pending = new PendingBlockChanges(1);
+
+        assertTrue(pending.enqueue(change(0)));
+        assertFalse(pending.enqueue(change(1)));
+        assertEquals(1, pending.size());
+    }
+
+    @Test
+    void skipsOutOfBoundsPositionsAndUnloadedChunks() {
+        PendingBlockChanges pending = new PendingBlockChanges(4);
+        BlockChange outOfBounds = change(0);
+        BlockChange unloaded = change(1);
+        when(this.level.isInWorldBounds(outOfBounds.position())).thenReturn(false);
+        when(this.level.hasChunkAt(unloaded.position())).thenReturn(false);
+        pending.enqueue(outOfBounds);
+        pending.enqueue(unloaded);
+
+        PendingBlockChanges.ApplyResult result = pending.apply(this.level, 4);
+        assertEquals(2, result.processed());
+        assertEquals(0, result.applied());
+        assertEquals(0, pending.size());
+        verify(this.level, never()).setBlockAndUpdate(any(), any());
+    }
+
+    @Test
+    void continuesAfterAnIndividualBlockUpdateFailure() {
+        PendingBlockChanges pending = new PendingBlockChanges(4);
+        BlockChange failing = change(0);
+        BlockChange succeeding = change(1);
+        when(this.level.setBlockAndUpdate(failing.position(), failing.state()))
+            .thenThrow(new RuntimeException("test failure"));
+        pending.enqueue(failing);
+        pending.enqueue(succeeding);
+
+        PendingBlockChanges.ApplyResult result = pending.apply(this.level, 4);
+        assertEquals(2, result.processed());
+        assertEquals(1, result.applied());
+        verify(this.level).setBlockAndUpdate(succeeding.position(), succeeding.state());
+    }
+
+    @Test
+    void processesAChangeThatTheLevelDoesNotApply() {
+        PendingBlockChanges pending = new PendingBlockChanges(4);
+        BlockChange change = change(0);
+        when(this.level.setBlockAndUpdate(change.position(), change.state())).thenReturn(false);
+        pending.enqueue(change);
+
+        PendingBlockChanges.ApplyResult result = pending.apply(this.level, 1);
+
+        assertEquals(1, result.processed());
+        assertEquals(0, result.applied());
+        assertEquals(0, pending.size());
+    }
+
+    @Test
+    void clearsPendingChanges() {
+        PendingBlockChanges pending = new PendingBlockChanges(4);
+        pending.enqueue(change(0));
+
+        pending.clear();
+
+        assertEquals(0, pending.size());
+    }
+
+    @Test
+    void rejectsNegativeCapacityAndBudget() {
+        assertThrows(IllegalArgumentException.class, () -> new PendingBlockChanges(-1));
+        PendingBlockChanges pending = new PendingBlockChanges(1);
+
+        assertThrows(IllegalArgumentException.class, () -> pending.apply(this.level, -1));
+    }
+
+    private static BlockChange change(int x) {
+        return new BlockChange(new BlockPos(x, 64, 0), mock(BlockState.class));
+    }
+}

@@ -48,6 +48,7 @@ public final class GameplayEffectNbt {
         budget.putInt("max_targets", spec.budget().maxTargetsExamined());
         budget.putInt("max_hitboxes", spec.budget().maxHitboxCalls());
         budget.putInt("max_spawns", spec.budget().maxEntitySpawns());
+        budget.putInt("max_block_changes", spec.budget().maxBlockChanges());
         tag.put("budget", budget);
         tag.putString("owner_policy", spec.ownerPolicy().name());
         return tag;
@@ -74,7 +75,8 @@ public final class GameplayEffectNbt {
             new EffectTickBudget(
                 budgetTag.getInt("max_targets"),
                 budgetTag.getInt("max_hitboxes"),
-                budgetTag.getInt("max_spawns")
+                budgetTag.getInt("max_spawns"),
+                budgetTag.getInt("max_block_changes")
             ),
             OwnerPolicy.valueOf(tag.getString("owner_policy"))
         );

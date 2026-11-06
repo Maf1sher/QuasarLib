@@ -21,8 +21,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Server-thread registry for active gameplay effect sessions. Sessions are transient: they are not
- * saved, and level unload or server shutdown closes them.
+ * Server-thread registry for active gameplay effect sessions. Sessions are resumable through their
+ * descriptors; level unload and server shutdown close them without deleting persisted state.
  */
 public final class GameplayEffectService {
     /** Provisional safety cap; it is not a balance budget and needs measurement before adoption. */
@@ -31,6 +31,11 @@ public final class GameplayEffectService {
     public static final int MAX_ACTIVE_SESSIONS_PER_OWNER = OwnerAdmission.MAX_ACTIVE_SESSIONS_PER_OWNER;
     /** Provisional per-owner start-rate cap; it is a safety ceiling, not a measured balance target. */
     public static final int MAX_STARTS_PER_OWNER_PER_TICK = OwnerAdmission.MAX_STARTS_PER_OWNER_PER_TICK;
+    /**
+     * Provisional level-wide ceiling for block changes applied per server tick. It keeps many
+     * sessions from exhausting the tick; it is a safety cap, not a measured balance budget.
+     */
+    public static final int MAX_BLOCK_CHANGES_PER_LEVEL_TICK = 512;
 
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
     private static final Map<ServerLevel, Map<UUID, ActiveSession>> ACTIVE_SESSIONS = new WeakHashMap<>();
@@ -99,7 +104,7 @@ public final class GameplayEffectService {
         GameplayEffectContext context = null;
         try {
             scope = new EffectScope(level);
-            context = new GameplayEffectContext(level, scope, spec, scope.sessionId());
+            context = new GameplayEffectContext(level, scope, spec, scope.sessionId(), options.capabilities());
             controller.onStart(context);
             controller.onPhaseEnter(context, 0);
         } catch (RuntimeException | Error exception) {
@@ -194,6 +199,7 @@ public final class GameplayEffectService {
             scope,
             spec,
             sessionId,
+            descriptor.capabilities(),
             age,
             GameplayEffectNbt.loadConsumerState(descriptor)
         );
@@ -269,16 +275,25 @@ public final class GameplayEffectService {
 
     /** Advances every active session in one level by one server tick. */
     public static void tick(ServerLevel level) {
+        tick(level, MAX_BLOCK_CHANGES_PER_LEVEL_TICK);
+    }
+
+    /** Package-private overload that lets tests exercise the level-wide block application budget. */
+    static void tick(ServerLevel level, int blockChangeBudget) {
         Objects.requireNonNull(level, "level");
+        if (blockChangeBudget < 0) {
+            throw new IllegalArgumentException("Block change application budget cannot be negative");
+        }
         Map<UUID, ActiveSession> sessions = ACTIVE_SESSIONS.get(level);
         if (sessions == null || sessions.isEmpty()) {
             ACTIVE_SESSIONS.remove(level);
             return;
         }
 
+        int remainingBlockChanges = blockChangeBudget;
         for (ActiveSession session : new ArrayList<>(sessions.values())) {
             if (sessions.containsKey(session.id)) {
-                tickSession(level, session);
+                remainingBlockChanges = tickSession(level, session, remainingBlockChanges);
             }
         }
         if (sessions.isEmpty()) {
@@ -286,17 +301,26 @@ public final class GameplayEffectService {
         }
     }
 
-    private static void tickSession(ServerLevel level, ActiveSession session) {
+    private static int tickSession(ServerLevel level, ActiveSession session, int remainingBlockChanges) {
         GameplayEffectContext context = session.context;
         int nextAge = context.ageTicks() + 1;
         if (nextAge >= session.spec.phases().totalDurationTicks()) {
             context.endAt(session.spec.phases().totalDurationTicks());
+            try {
+                remainingBlockChanges = applyBlockChanges(session, remainingBlockChanges);
+            } catch (RuntimeException exception) {
+                LOGGER.error(
+                    "Gameplay effect {} failed to apply block changes on expiry",
+                    session.spec.typeId(),
+                    exception
+                );
+            }
             finish(level, session, GameplayEffectEndReason.EXPIRED, true);
-            return;
+            return remainingBlockChanges;
         }
         if (ownerUnavailable(level, session.spec)) {
             finish(level, session, GameplayEffectEndReason.OWNER_UNAVAILABLE, true);
-            return;
+            return remainingBlockChanges;
         }
 
         int previousPhase = context.phaseIndex();
@@ -306,11 +330,13 @@ public final class GameplayEffectService {
             if (phaseIndex != previousPhase) {
                 session.controller.onPhaseEnter(context, phaseIndex);
                 if (context.isStopRequested()) {
+                    remainingBlockChanges = applyBlockChanges(session, remainingBlockChanges);
                     finish(level, session, GameplayEffectEndReason.CANCELLED, true);
-                    return;
+                    return remainingBlockChanges;
                 }
             }
             session.controller.onTick(context);
+            remainingBlockChanges = applyBlockChanges(session, remainingBlockChanges);
         } catch (RuntimeException exception) {
             LOGGER.error(
                 "Gameplay effect {} failed on tick {}",
@@ -319,7 +345,7 @@ public final class GameplayEffectService {
                 exception
             );
             finish(level, session, GameplayEffectEndReason.FAILED, true);
-            return;
+            return remainingBlockChanges;
         }
 
         if (context.consumeStateDirty()) {
@@ -332,6 +358,15 @@ public final class GameplayEffectService {
         if (context.isStopRequested()) {
             finish(level, session, GameplayEffectEndReason.CANCELLED, true);
         }
+        return remainingBlockChanges;
+    }
+
+    private static int applyBlockChanges(ActiveSession session, int remainingBlockChanges) {
+        int perSession = Math.min(session.spec.budget().maxBlockChanges(), remainingBlockChanges);
+        if (perSession <= 0) {
+            return remainingBlockChanges;
+        }
+        return remainingBlockChanges - session.context.applyBlockChanges(perSession);
     }
 
     private static boolean ownerUnavailable(ServerLevel level, GameplayEffectSpec spec) {
