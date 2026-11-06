@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -19,7 +20,10 @@ import net.neoforged.neoforge.network.PacketDistributor;
 
 /** Server-thread service for starting, moving, tracking, and cancelling transient client-rendered effects. */
 public final class VisualEffectService {
-    private static final int MAX_ACTIVE_EFFECTS_PER_LEVEL = 128;
+    /** Hard safety cap per level. The oldest effect is stopped and evicted when it is exceeded. */
+    public static final int MAX_ACTIVE_EFFECTS_PER_LEVEL = 128;
+    private static final int GRID_MIN_PLAYERS = 8;
+    private static final long GRID_MIN_QUERIES = 256L;
     private static final Map<ServerLevel, Map<UUID, ActiveEffect>> ACTIVE_EFFECTS = new WeakHashMap<>();
 
     private VisualEffectService() {
@@ -48,10 +52,10 @@ public final class VisualEffectService {
         ActiveEffect active = new ActiveEffect(payload, spec.audience(), spec.transform());
         Map<UUID, ActiveEffect> effects = activeEffects(level);
         effects.put(instanceId, active);
-        for (ServerPlayer player : level.players()) {
-            if (active.includes(player)) {
-                sendStart(player, active);
-            }
+        Map<UUID, ServerPlayer> audience = new LinkedHashMap<>();
+        collectAudience(level, active, null, audience);
+        for (ServerPlayer player : audience.values()) {
+            sendStart(player, active);
         }
         while (effects.size() > MAX_ACTIVE_EFFECTS_PER_LEVEL) {
             UUID oldest = effects.keySet().iterator().next();
@@ -110,10 +114,14 @@ public final class VisualEffectService {
         }
 
         long gameTime = level.getGameTime();
-        Set<UUID> onlinePlayers = new HashSet<>();
-        for (ServerPlayer player : level.players()) {
-            onlinePlayers.add(player.getUUID());
-        }
+        List<ServerPlayer> players = level.players();
+        long directQueries = (long)players.size() * effects.size();
+        SpatialGrid<ServerPlayer> index = players.size() > GRID_MIN_PLAYERS
+            && effects.size() > 1
+            && directQueries > GRID_MIN_QUERIES
+            ? buildPlayerIndex(players)
+            : null;
+        Map<UUID, ServerPlayer> nearby = new LinkedHashMap<>();
 
         Iterator<Map.Entry<UUID, ActiveEffect>> iterator = effects.entrySet().iterator();
         while (iterator.hasNext()) {
@@ -124,16 +132,67 @@ public final class VisualEffectService {
                 continue;
             }
 
-            active.trackingPlayers().removeIf(playerId -> !onlinePlayers.contains(playerId));
-            for (ServerPlayer player : level.players()) {
-                boolean inRange = active.includes(player);
-                boolean wasTracking = active.trackingPlayers().contains(player.getUUID());
-                if (inRange && !wasTracking) {
-                    sendStart(player, active);
-                } else if (!inRange && wasTracking) {
-                    PacketDistributor.sendToPlayer(player, stopPayload(level, active));
-                    active.trackingPlayers().remove(player.getUUID());
+            nearby.clear();
+            collectAudience(level, active, index, nearby);
+            Iterator<UUID> trackers = active.trackingPlayers().iterator();
+            while (trackers.hasNext()) {
+                UUID playerId = trackers.next();
+                if (!nearby.containsKey(playerId)) {
+                    ServerPlayer player = level.getServer() == null
+                        ? null
+                        : level.getServer().getPlayerList().getPlayer(playerId);
+                    if (player != null && player.level() == level) {
+                        PacketDistributor.sendToPlayer(player, stopPayload(level, active));
+                    }
+                    trackers.remove();
                 }
+            }
+            for (ServerPlayer player : nearby.values()) {
+                if (!active.trackingPlayers().contains(player.getUUID())) {
+                    sendStart(player, active);
+                }
+            }
+        }
+    }
+
+    /** Number of active visual effects in one level. */
+    public static int activeCount(ServerLevel level) {
+        Objects.requireNonNull(level, "level");
+        Map<UUID, ActiveEffect> effects = ACTIVE_EFFECTS.get(level);
+        return effects == null ? 0 : effects.size();
+    }
+
+    private static SpatialGrid<ServerPlayer> buildPlayerIndex(List<ServerPlayer> players) {
+        SpatialGrid<ServerPlayer> index = new SpatialGrid<>(ServerPlayer::position);
+        for (ServerPlayer player : players) {
+            index.add(player);
+        }
+        return index;
+    }
+
+    private static void collectAudience(
+        ServerLevel level,
+        ActiveEffect active,
+        SpatialGrid<ServerPlayer> index,
+        Map<UUID, ServerPlayer> audience
+    ) {
+        if (!(active.audience() instanceof EffectAudience.Nearby nearby)) {
+            for (ServerPlayer player : level.players()) {
+                audience.put(player.getUUID(), player);
+            }
+            return;
+        }
+
+        EffectPoint position = active.transform().position();
+        double radiusSqr = nearby.radius() * nearby.radius();
+        if (index != null) {
+            index.forEachNear(new Vec3(position.x(), position.y(), position.z()), nearby.radius(),
+                player -> audience.put(player.getUUID(), player));
+            return;
+        }
+        for (ServerPlayer player : level.players()) {
+            if (position.distanceToSqr(player.getX(), player.getY(), player.getZ()) <= radiusSqr) {
+                audience.put(player.getUUID(), player);
             }
         }
     }
@@ -178,13 +237,12 @@ public final class VisualEffectService {
             return this.payload;
         }
 
-        private boolean includes(ServerPlayer player) {
-            if (this.audience instanceof EffectAudience.Nearby nearby) {
-                EffectPoint position = this.transform.position();
-                return player.distanceToSqr(position.x(), position.y(), position.z())
-                    <= nearby.radius() * nearby.radius();
-            }
-            return true;
+        private EffectAudience audience() {
+            return this.audience;
+        }
+
+        private EffectTransform transform() {
+            return this.transform;
         }
 
         private Set<UUID> trackingPlayers() {

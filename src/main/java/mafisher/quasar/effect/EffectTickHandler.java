@@ -2,6 +2,7 @@ package mafisher.quasar.effect;
 
 import mafisher.quasar.QuasarLib;
 import mafisher.quasar.effect.gameplay.GameplayEffectService;
+import mafisher.quasar.effect.scale.SegmentedVisualEffectService;
 import net.minecraft.server.level.ServerLevel;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -17,6 +18,7 @@ public final class EffectTickHandler {
     public static void onLevelTick(LevelTickEvent.Post event) {
         if (event.getLevel() instanceof ServerLevel serverLevel) {
             VisualEffectService.tick(serverLevel);
+            SegmentedVisualEffectService.tick(serverLevel);
             GameplayEffectService.tick(serverLevel);
         }
     }
