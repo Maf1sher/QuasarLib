@@ -1,5 +1,6 @@
 package mafisher.quasar.content;
 
+import mafisher.quasar.client.effect.RegisterScreenEffectOperationsEvent;
 import mafisher.quasar.client.effect.RegisterVisualEffectRenderersEvent;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -9,6 +10,11 @@ import net.neoforged.fml.common.EventBusSubscriber;
 @EventBusSubscriber(modid = ContentBootstrap.MOD_ID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
 public final class ContentClientEffects {
     private ContentClientEffects() {
+    }
+
+    @SubscribeEvent
+    public static void registerOperations(RegisterScreenEffectOperationsEvent event) {
+        event.register(ContentScreenOperations.RUNE_GLOW, new ContentRuneGlowOperation());
     }
 
     @SubscribeEvent

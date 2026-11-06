@@ -1,0 +1,20 @@
+{
+  "vertex": "quasar_content:rune_glow",
+  "fragment": "quasar_content:rune_glow",
+  "samplers": [
+    { "name": "SceneSampler" },
+    { "name": "MaskSampler" },
+    { "name": "DepthSampler" }
+  ],
+  "attributes": [
+    "Position"
+  ],
+  "uniforms": [
+    { "name": "MaskColor", "type": "float", "count": 3, "values": [ 0.18, 0.72, 1.0 ] },
+    { "name": "MaskStrength", "type": "float", "count": 1, "values": [ 0.45 ] },
+    { "name": "GlowColor", "type": "float", "count": 3, "values": [ 0.18, 0.72, 1.0 ] },
+    { "name": "GlowStrength", "type": "float", "count": 1, "values": [ 0.55 ] },
+    { "name": "GlowPulse", "type": "float", "count": 1, "values": [ 0.05 ] },
+    { "name": "GlowTime", "type": "float", "count": 1, "values": [ 0.0 ] }
+  ]
+}

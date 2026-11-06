@@ -1,12 +1,16 @@
 package mafisher.quasar.content;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.UUID;
 import mafisher.quasar.client.effect.EffectRenderContext;
 import mafisher.quasar.client.effect.EffectRenderPass;
+import mafisher.quasar.client.effect.ScreenEffectMask;
+import mafisher.quasar.client.effect.ScreenEffectSettings;
 import mafisher.quasar.client.effect.VisualEffectInstance;
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
 import net.minecraft.resources.ResourceLocation;
@@ -23,6 +27,19 @@ class ContentRuneCircleRendererTest {
         assertEquals(3, passes.size());
         assertEquals(3, passes.stream().map(EffectRenderPass::id).distinct().count());
         assertTrue(passes.stream().allMatch(pass -> pass.renderType() != null));
+    }
+
+    @Test
+    void selectsContentOwnedScreenGlow() {
+        ContentRuneCircleRenderer renderer = new ContentRuneCircleRenderer();
+        ScreenEffectSettings settings = renderer.screenEffectSettings(context());
+
+        assertSame(ContentScreenOperations.RUNE_GLOW, settings.operation());
+        assertSame(ContentRuneGlowSettings.DEFAULT,
+            settings.settings(ContentRuneGlowSettings.class));
+        ScreenEffectMask mask = renderer.screenEffectMask(context());
+        assertTrue(mask.strength() > 0.0F);
+        assertNotNull(renderer.screenMaskRenderType(context()));
     }
 
     @Test
