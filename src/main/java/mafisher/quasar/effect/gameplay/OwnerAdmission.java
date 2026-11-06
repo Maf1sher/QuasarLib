@@ -44,6 +44,15 @@ final class OwnerAdmission {
         }
     }
 
+    /** Counts a restored session without consuming the per-tick start rate. */
+    void adopt(UUID ownerId) {
+        if (ownerId == null) {
+            return;
+        }
+        OwnerState state = this.owners.computeIfAbsent(ownerId, ignored -> new OwnerState());
+        state.activeSessions++;
+    }
+
     int activeSessions(UUID ownerId) {
         if (ownerId == null) {
             return 0;

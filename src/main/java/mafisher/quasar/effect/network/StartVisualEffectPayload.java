@@ -97,8 +97,7 @@ public record StartVisualEffectPayload(
         return TYPE;
     }
 
-    private static void encode(ByteBuf buffer, StartVisualEffectPayload payload) {
-        ResourceLocation.STREAM_CODEC.encode(buffer, payload.effectId);
+    static void encode(ByteBuf buffer, StartVisualEffectPayload payload) {        ResourceLocation.STREAM_CODEC.encode(buffer, payload.effectId);
         UUIDUtil.STREAM_CODEC.encode(buffer, payload.instanceId);
         ResourceLocation.STREAM_CODEC.encode(buffer, payload.dimensionId);
         buffer.writeDouble(payload.x);
@@ -122,7 +121,7 @@ public record StartVisualEffectPayload(
         }
     }
 
-    private static StartVisualEffectPayload decode(ByteBuf buffer) {
+    static StartVisualEffectPayload decode(ByteBuf buffer) {
         return new StartVisualEffectPayload(
             ResourceLocation.STREAM_CODEC.decode(buffer),
             UUIDUtil.STREAM_CODEC.decode(buffer),

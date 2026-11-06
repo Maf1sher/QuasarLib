@@ -34,6 +34,8 @@ import mafisher.quasar.effect.gameplay.GameplayEffectService;
 import mafisher.quasar.effect.gameplay.GameplayEffectSpec;
 import mafisher.quasar.effect.gameplay.OwnerPolicy;
 import mafisher.quasar.effect.network.ArmScreenCompositorFailurePayload;
+import mafisher.quasar.effect.persistence.EffectRecoveryReport;
+import mafisher.quasar.effect.persistence.EffectRestoreService;
 import mafisher.quasar.sound.QuasarSounds;
 import java.util.function.ToIntFunction;
 import net.minecraft.commands.CommandSourceStack;
@@ -145,6 +147,12 @@ public final class EffectDebugCommands {
                             .executes(context -> listCinematics(context.getSource())))
                         .then(Commands.literal("stop-all")
                             .executes(context -> stopCinematics(context.getSource())))
+                )
+                .then(
+                    Commands.literal("persistence")
+                        .requires(source -> source.hasPermission(2))
+                        .then(Commands.literal("report")
+                            .executes(context -> persistenceReport(context.getSource())))
                 )
         );
     }
@@ -441,6 +449,21 @@ public final class EffectDebugCommands {
             () -> Component.literal("Stopped " + stopped + " cinematic effect(s)."),
             false
         );
+        return 1;
+    }
+
+    private static int persistenceReport(CommandSourceStack source) {
+        EffectRecoveryReport report = EffectRestoreService.report(source.getLevel());
+        source.sendSuccess(
+            () -> Component.literal(
+                "Persistence: restored " + report.restored() + ", expired " + report.expired()
+                    + ", quarantined " + report.quarantined() + ", deferred " + report.unsupported() + "."
+            ),
+            false
+        );
+        for (String message : report.messages()) {
+            source.sendSuccess(() -> Component.literal("  " + message), false);
+        }
         return 1;
     }
 

@@ -10,12 +10,20 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.WeakHashMap;
+import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectScope;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.VisualEffectHandle;
 import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.VisualEffectSpec;
 import mafisher.quasar.effect.network.UpdateSegmentedVisualEffectPayload;
+import mafisher.quasar.effect.persistence.EffectDescriptor;
+import mafisher.quasar.effect.persistence.EffectKind;
+import mafisher.quasar.effect.persistence.EffectPersistenceOptions;
+import mafisher.quasar.effect.persistence.EffectPersistenceService;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.StringTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
@@ -38,10 +46,120 @@ public final class SegmentedVisualEffectService {
      * capacity; no segment is started and no unrelated effect is evicted in that case.
      */
     public static SegmentedVisualEffectHandle start(ServerLevel level, SegmentedVisualEffectSpec spec) {
+        return start(level, spec, EffectPersistenceOptions.DEFAULT);
+    }
+
+    public static SegmentedVisualEffectHandle start(
+        ServerLevel level,
+        SegmentedVisualEffectSpec spec,
+        EffectPersistenceOptions options
+    ) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(spec, "spec");
+        Objects.requireNonNull(options, "options");
+        SegmentedVisualEffectHandle handle = startInternal(
+            level, spec, UUID.randomUUID(), level.getGameTime(), options, null
+        );
+        if (handle == null) {
+            throw new IllegalStateException("Not enough visual effect capacity for segmented effect");
+        }
+        return handle;
+    }
+
+    /** Starts a segmented effect with a stable identity and absolute start time for restore or cinematics. */
+    public static SegmentedVisualEffectHandle startWithId(
+        ServerLevel level,
+        SegmentedVisualEffectSpec spec,
+        UUID coordinatorId,
+        long startGameTime,
+        EffectPersistenceOptions options
+    ) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(spec, "spec");
+        Objects.requireNonNull(coordinatorId, "coordinatorId");
+        Objects.requireNonNull(options, "options");
+        return startInternal(level, spec, coordinatorId, startGameTime, options, null);
+    }
+
+    public static List<UUID> restoreSegmentIds(UUID coordinatorId, int segmentCount) {
+        Objects.requireNonNull(coordinatorId, "coordinatorId");
+        List<UUID> ids = new ArrayList<>(segmentCount);
+        for (int index = 0; index < segmentCount; index++) {
+            ids.add(segmentId(coordinatorId, index));
+        }
+        return List.copyOf(ids);
+    }
+
+    /** Stable segment identity derived from its coordinator and cell index. */
+    public static UUID segmentId(UUID coordinatorId, int index) {
+        Objects.requireNonNull(coordinatorId, "coordinatorId");
+        if (index < 0) {
+            throw new IllegalArgumentException("Segment index cannot be negative");
+        }
+        return UUID.nameUUIDFromBytes(
+            ("quasar:segment:" + coordinatorId + ":" + index).getBytes(java.nio.charset.StandardCharsets.UTF_8)
+        );
+    }
+
+    /** Restores a coordinator with its original segment identities and start time. */
+    public static SegmentedVisualEffectHandle restore(
+        ServerLevel level,
+        SegmentedVisualEffectSpec spec,
+        UUID coordinatorId,
+        long startGameTime,
+        List<UUID> segmentIds,
+        EffectDescriptor descriptor
+    ) {
+        return restore(level, spec, coordinatorId, startGameTime, segmentIds, descriptor,
+            EffectPersistenceOptions.DEFAULT);
+    }
+
+    public static SegmentedVisualEffectHandle restore(
+        ServerLevel level,
+        SegmentedVisualEffectSpec spec,
+        UUID coordinatorId,
+        long startGameTime,
+        List<UUID> segmentIds,
+        EffectDescriptor descriptor,
+        EffectPersistenceOptions options
+    ) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(spec, "spec");
+        Objects.requireNonNull(coordinatorId, "coordinatorId");
+        Objects.requireNonNull(options, "options");
+        List<UUID> ids = segmentIds == null
+            ? restoreSegmentIds(coordinatorId, spec.segmentCount())
+            : segmentIds;
+        return startInternal(level, spec, coordinatorId, startGameTime, options, ids, descriptor);
+    }
+
+    private static SegmentedVisualEffectHandle startInternal(
+        ServerLevel level,
+        SegmentedVisualEffectSpec spec,
+        UUID coordinatorId,
+        long startGameTime,
+        EffectPersistenceOptions options,
+        List<UUID> restoredSegmentIds
+    ) {
+        return startInternal(level, spec, coordinatorId, startGameTime, options, restoredSegmentIds, null);
+    }
+
+    private static SegmentedVisualEffectHandle startInternal(
+        ServerLevel level,
+        SegmentedVisualEffectSpec spec,
+        UUID coordinatorId,
+        long startGameTime,
+        EffectPersistenceOptions options,
+        List<UUID> restoredSegmentIds,
+        EffectDescriptor restoredDescriptor
+    ) {
         if (level.isClientSide()) {
             throw new IllegalStateException("Segmented visual effects are server-authoritative");
+        }
+        if (restoredSegmentIds != null && restoredSegmentIds.size() != spec.segmentCount()) {
+            LOGGER.warn("Could not restore segmented effect {}: expected {} segment IDs but found {}",
+                coordinatorId, spec.segmentCount(), restoredSegmentIds.size());
+            return null;
         }
 
         int active = VisualEffectService.activeCount(level);
@@ -54,10 +172,9 @@ public final class SegmentedVisualEffectService {
                 Math.max(0, VisualEffectService.MAX_ACTIVE_EFFECTS_PER_LEVEL - active),
                 VisualEffectService.MAX_ACTIVE_EFFECTS_PER_LEVEL
             );
-            throw new IllegalStateException("Not enough visual effect capacity for segmented effect");
+            return null;
         }
 
-        UUID coordinatorId = UUID.randomUUID();
         SegmentGridLayout layout = spec.layout();
         EffectScope scope = null;
         List<UUID> segments = new ArrayList<>(spec.segmentCount());
@@ -67,7 +184,26 @@ public final class SegmentedVisualEffectService {
             for (int row = 0; row < spec.rows(); row++) {
                 for (int column = 0; column < spec.columns(); column++) {
                     VisualEffectSpec segment = spec.segmentSpec(column, row);
-                    segments.add(scope.playVisual(segment, new SegmentLink(coordinatorId, index++, layout)));
+                    SegmentLink link = new SegmentLink(coordinatorId, index, layout);
+                    UUID segmentId = restoredSegmentIds == null
+                        ? segmentId(coordinatorId, index)
+                        : restoredSegmentIds.get(index);
+                    if (restoredSegmentIds == null) {
+                        VisualEffectHandle handle = VisualEffectService.startWithId(
+                            level, segment, segmentId, startGameTime, EffectPersistenceOptions.cosmetic(), link
+                        );
+                        scope.adoptVisual(segmentId, handle);
+                    } else {
+                        VisualEffectHandle handle = VisualEffectService.restoreSegment(
+                            level, segment, segmentId, startGameTime, link
+                        );
+                        if (handle == null) {
+                            throw new IllegalStateException("Could not restore segment " + index);
+                        }
+                        scope.adoptVisual(segmentId, handle);
+                    }
+                    segments.add(segmentId);
+                    index++;
                 }
             }
         } catch (RuntimeException | Error exception) {
@@ -77,13 +213,47 @@ public final class SegmentedVisualEffectService {
             throw exception;
         }
 
+        CompoundTag state = options.state();
+        state.putInt("columns", spec.columns());
+        state.putInt("rows", spec.rows());
+        state.putDouble("spacing", spec.spacing());
+        state.putFloat("segment_scale", spec.segmentScale());
+        ListTag ids = new ListTag();
+        for (UUID segmentId : segments) {
+            ids.add(StringTag.valueOf(segmentId.toString()));
+        }
+        state.put("segment_ids", ids);
+        EffectDescriptor descriptor = restoredDescriptor == null ? new EffectDescriptor(
+            coordinatorId,
+            EffectKind.SEGMENTED,
+            spec.effectId(),
+            level.dimension().location(),
+            new EffectTransform(
+                new EffectPoint(spec.center().x, spec.center().y, spec.center().z),
+                spec.yaw(),
+                spec.pitch(),
+                spec.roll()
+            ),
+            spec.segmentScale(),
+            spec.seed(),
+            startGameTime,
+            spec.durationTicks(),
+            spec.audience(),
+            options.capabilities(),
+            options.persistence(),
+            null,
+            state
+        ) : restoredDescriptor;
+
         ActiveSegmentedEffect activeEffect = new ActiveSegmentedEffect(
             spec,
             scope,
             List.copyOf(segments),
-            level.getGameTime()
+            startGameTime,
+            descriptor
         );
         activeSegments(level).put(coordinatorId, activeEffect);
+        EffectPersistenceService.recordStart(level, descriptor);
         return new SegmentedVisualEffectHandle(coordinatorId);
     }
 
@@ -111,6 +281,10 @@ public final class SegmentedVisualEffectService {
                 VisualEffectService.collectTrackingPlayers(level, segment, recipients);
             }
         }
+        if (activeEffect.descriptor != null) {
+            activeEffect.descriptor = activeEffect.descriptor.withTransform(transform);
+            EffectPersistenceService.recordUpdate(level, activeEffect.descriptor);
+        }
         VisualEffectService.sendToTrackingPlayers(
             level,
             recipients,
@@ -130,7 +304,8 @@ public final class SegmentedVisualEffectService {
         }
         ActiveSegmentedEffect removed = active.remove(handle.coordinatorId());
         if (removed != null) {
-            removed.close();
+            removed.close(true);
+            EffectPersistenceService.recordStop(level, handle.coordinatorId());
         }
         if (active.isEmpty()) {
             ACTIVE_COORDINATORS.remove(level);
@@ -139,13 +314,24 @@ public final class SegmentedVisualEffectService {
 
     /** Stops every coordinator in one level and returns how many were active. */
     public static int stopAll(ServerLevel level) {
+        return stopAll(level, true);
+    }
+
+    /**
+     * Stops every coordinator in one level. Level unload and shutdown pass {@code false} so the
+     * persisted descriptors survive; an explicit stop passes {@code true}.
+     */
+    public static int stopAll(ServerLevel level, boolean persistRemoval) {
         Objects.requireNonNull(level, "level");
         Map<UUID, ActiveSegmentedEffect> active = ACTIVE_COORDINATORS.remove(level);
         if (active == null) {
             return 0;
         }
         for (ActiveSegmentedEffect activeEffect : active.values()) {
-            activeEffect.close();
+            activeEffect.close(persistRemoval);
+            if (persistRemoval) {
+                EffectPersistenceService.recordStop(level, activeEffect.descriptor.instanceId());
+            }
         }
         return active.size();
     }
@@ -164,8 +350,9 @@ public final class SegmentedVisualEffectService {
         while (iterator.hasNext()) {
             ActiveSegmentedEffect activeEffect = iterator.next().getValue();
             if (gameTime - activeEffect.startGameTime >= activeEffect.spec.durationTicks()) {
-                activeEffect.close();
+                activeEffect.close(true);
                 iterator.remove();
+                EffectPersistenceService.recordStop(level, activeEffect.descriptor.instanceId());
             }
         }
         if (active.isEmpty()) {
@@ -193,21 +380,24 @@ public final class SegmentedVisualEffectService {
         private final EffectScope scope;
         private final List<UUID> segmentIds;
         private final long startGameTime;
+        private EffectDescriptor descriptor;
 
         private ActiveSegmentedEffect(
             SegmentedVisualEffectSpec spec,
             EffectScope scope,
             List<UUID> segmentIds,
-            long startGameTime
+            long startGameTime,
+            EffectDescriptor descriptor
         ) {
             this.spec = spec;
             this.scope = scope;
             this.segmentIds = segmentIds;
             this.startGameTime = startGameTime;
+            this.descriptor = descriptor;
         }
 
-        private void close() {
-            this.scope.close();
+        private void close(boolean persistRemoval) {
+            this.scope.close(persistRemoval);
         }
     }
 }

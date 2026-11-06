@@ -1,0 +1,184 @@
+package mafisher.quasar.effect.gameplay;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import java.util.List;
+import java.util.UUID;
+import mafisher.quasar.effect.EffectAudience;
+import mafisher.quasar.effect.EffectPoint;
+import mafisher.quasar.effect.EffectTransform;
+import mafisher.quasar.effect.VisualEffectSpec;
+import mafisher.quasar.effect.persistence.EffectCapabilities;
+import mafisher.quasar.effect.persistence.EffectDescriptor;
+import mafisher.quasar.effect.persistence.EffectKind;
+import mafisher.quasar.effect.persistence.EffectPersistence;
+import mafisher.quasar.effect.persistence.EffectPersistenceService;
+import mafisher.quasar.effect.persistence.EffectSavedData;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.saveddata.SavedData;
+import net.minecraft.world.level.storage.DimensionDataStorage;
+import net.minecraft.world.phys.Vec3;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+class GameplayPersistenceTest {
+    private static final ResourceLocation TYPE = ResourceLocation.fromNamespaceAndPath("quasar_lib", "test_gameplay");
+    private static final UUID SESSION = UUID.fromString("00000000-0000-0000-0000-000000000010");
+
+    private ServerLevel level;
+    private EffectSavedData store;
+    private long gameTime;
+
+    @BeforeEach
+    void setUp() {
+        this.level = mock(ServerLevel.class);
+        DimensionDataStorage storage = mock(DimensionDataStorage.class);
+        this.store = new EffectSavedData();
+        when(this.level.isClientSide()).thenReturn(false);
+        when(this.level.dimension()).thenReturn(Level.OVERWORLD);
+        when(this.level.players()).thenReturn(List.of());
+        when(this.level.getGameTime()).thenAnswer(ignored -> this.gameTime);
+        when(this.level.getDataStorage()).thenReturn(storage);
+        doReturn(this.store).when(storage).computeIfAbsent(
+            any(SavedData.Factory.class), eq(EffectSavedData.FILE_ID)
+        );
+    }
+
+    @AfterEach
+    void tearDown() {
+        GameplayEffectService.stopAll(this.level, GameplayEffectEndReason.CANCELLED);
+    }
+
+    @Test
+    void resumesAtTheRestoredAgeWithoutCallingOnStart() {
+        GameplayEffectSpec spec = spec();
+        this.gameTime = 15L;
+        CompoundTag initialState = new CompoundTag();
+        initialState.putInt("counter", 5);
+        EffectDescriptor descriptor = descriptor(spec, initialState);
+
+        RecordingController controller = new RecordingController();
+        GameplayEffectHandle handle = GameplayEffectService.restore(
+            this.level, spec, SESSION, 0L, descriptor, controller
+        );
+
+        assertEquals(SESSION, handle.sessionId());
+        assertEquals(0, controller.starts);
+        assertEquals(1, controller.resumes);
+        assertEquals(1, controller.resumedPhase);
+    }
+
+    @Test
+    void persistsConsumerStateChangedDuringATick() {
+        GameplayEffectSpec spec = spec();
+        this.gameTime = 0L;
+        EffectDescriptor descriptor = descriptor(spec, new CompoundTag());
+        this.store.put(descriptor);
+
+        GameplayEffectService.restore(this.level, spec, SESSION, 0L, descriptor, new RecordingController());
+        this.gameTime = 1L;
+        GameplayEffectService.tick(this.level);
+
+        EffectDescriptor updated = this.store.find(SESSION);
+        assertEquals(1, updated.state().getCompound("state").getInt("counter"));
+    }
+
+    @Test
+    void keepsScopeOwnedVisualDescriptorsOnUnload() {
+        this.gameTime = 0L;
+        GameplayEffectService.start(this.level, spec(), new VisualController());
+        assertEquals(2, this.store.descriptors().size());
+
+        GameplayEffectService.stopAll(this.level, GameplayEffectEndReason.LEVEL_UNLOAD, false);
+
+        assertEquals(2, this.store.descriptors().size());
+        assertTrue(this.store.descriptors().stream().anyMatch(
+            descriptor -> descriptor.kind() == EffectKind.VISUAL
+        ));
+    }
+
+    private static GameplayEffectSpec spec() {
+        return new GameplayEffectSpec(
+            TYPE,
+            null,
+            new Vec3(0.0, 64.0, 0.0),
+            EffectPhasePlan.of(new EffectPhase("telegraph", 10), new EffectPhase("strike", 10)),
+            3L,
+            EffectTickBudget.unlimited(),
+            OwnerPolicy.CONTINUE
+        );
+    }
+
+    private static EffectDescriptor descriptor(GameplayEffectSpec spec, CompoundTag consumerState) {
+        return new EffectDescriptor(
+            SESSION,
+            EffectKind.GAMEPLAY,
+            TYPE,
+            ResourceLocation.fromNamespaceAndPath("minecraft", "overworld"),
+            new EffectTransform(new EffectPoint(0.0, 64.0, 0.0), 0.0F, 0.0F, 0.0F),
+            1.0F,
+            spec.seed(),
+            0L,
+            spec.phases().totalDurationTicks(),
+            EffectAudience.dimensionWide(),
+            EffectCapabilities.NONE,
+            EffectPersistence.RESUMABLE,
+            null,
+            GameplayEffectNbt.saveDescriptorState(spec, consumerState)
+        );
+    }
+
+    private static final class VisualController implements GameplayEffectController {
+        @Override
+        public void onStart(GameplayEffectContext context) {
+            context.scope().playVisual(new VisualEffectSpec(
+                TYPE,
+                Vec3.ZERO,
+                0.0F,
+                0.0F,
+                0.0F,
+                1.0F,
+                100,
+                1L,
+                EffectAudience.nearby(64.0)
+            ));
+        }
+
+        @Override
+        public void onTick(GameplayEffectContext context) {
+        }
+    }
+
+    private static final class RecordingController implements GameplayEffectController {
+        private int starts;
+        private int resumes;
+        private int resumedPhase;
+
+        @Override
+        public void onStart(GameplayEffectContext context) {
+            this.starts++;
+        }
+
+        @Override
+        public void onResume(GameplayEffectContext context) {
+            this.resumes++;
+            this.resumedPhase = context.phaseIndex();
+            context.updatePersistentState(state -> state.putInt("counter", state.getInt("counter") + 1));
+        }
+
+        @Override
+        public void onTick(GameplayEffectContext context) {
+            context.updatePersistentState(state -> state.putInt("counter", 1));
+        }
+    }
+}

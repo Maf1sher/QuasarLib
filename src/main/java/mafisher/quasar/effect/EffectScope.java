@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import mafisher.quasar.effect.scale.SegmentLink;
+import mafisher.quasar.effect.persistence.EffectPersistenceOptions;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
@@ -22,6 +23,7 @@ public final class EffectScope implements AutoCloseable {
     private final Map<UUID, VisualEffectHandle> activeVisuals = new HashMap<>();
     private final EffectScopeResources resources = new EffectScopeResources();
     private boolean closed;
+    private boolean persistRemovalOnClose = true;
 
     public EffectScope(ServerLevel level) {
         this(level, UUID.randomUUID());
@@ -54,21 +56,48 @@ public final class EffectScope implements AutoCloseable {
         Objects.requireNonNull(spec, "spec");
         Objects.requireNonNull(lifetimePolicy, "lifetimePolicy");
 
-        VisualEffectHandle handle = VisualEffectService.start(this.level, spec, segmentLink);
+        VisualEffectHandle handle = VisualEffectService.start(this.level, spec, segmentLink,
+            lifetimePolicy == EffectLifetimePolicy.CANCEL_WITH_SCOPE
+                ? EffectPersistenceOptions.DEFAULT.withOwnerSessionId(this.sessionId)
+                : EffectPersistenceOptions.DEFAULT);
         UUID instanceId = handle.instanceId();
         this.activeVisuals.put(instanceId, handle);
         if (lifetimePolicy == EffectLifetimePolicy.CANCEL_WITH_SCOPE) {
-            this.resources.track(() -> this.stopVisual(instanceId));
+            this.resources.track(() -> this.stopVisual(instanceId, this.persistRemovalOnClose));
         }
         return instanceId;
     }
 
+    /**
+     * Adds an already-started visual handle to this scope's cleanup ledger. Used when a
+     * persisted effect restores its child visuals after a restart.
+     */
+    public void adoptVisual(UUID instanceId, VisualEffectHandle handle) {
+        this.ensureOpen();
+        Objects.requireNonNull(instanceId, "instanceId");
+        Objects.requireNonNull(handle, "handle");
+        if (!instanceId.equals(handle.instanceId())) {
+            throw new IllegalArgumentException("Adopted visual ID does not match its handle");
+        }
+        this.activeVisuals.put(instanceId, handle);
+        this.resources.track(() -> {
+            if (this.activeVisuals.remove(instanceId) != null) {
+                VisualEffectService.stop(this.level, handle, this.persistRemovalOnClose);
+            }
+        });
+    }
+
+    /** Stops a visual created by this scope and removes it from the cleanup ledger. */
     public void stopVisual(UUID instanceId) {
+        stopVisual(instanceId, true);
+    }
+
+    private void stopVisual(UUID instanceId, boolean persistRemoval) {
         VisualEffectHandle handle = this.activeVisuals.remove(Objects.requireNonNull(instanceId, "instanceId"));
         if (handle == null) {
             return;
         }
-        VisualEffectService.stop(this.level, handle);
+        VisualEffectService.stop(this.level, handle, persistRemoval);
     }
 
     /** Updates a visual created by this scope without changing its lifetime or ownership. */
@@ -123,10 +152,19 @@ public final class EffectScope implements AutoCloseable {
 
     @Override
     public void close() {
+        close(true);
+    }
+
+    /**
+     * Closes the scope. Level unload and server shutdown pass {@code false} so child visual
+     * descriptors survive for restore; explicit stops pass {@code true}.
+     */
+    public void close(boolean persistRemoval) {
         if (this.closed) {
             return;
         }
         this.closed = true;
+        this.persistRemovalOnClose = persistRemoval;
         try {
             this.resources.close();
         } catch (RuntimeException exception) {

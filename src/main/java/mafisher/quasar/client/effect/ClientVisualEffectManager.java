@@ -7,6 +7,7 @@ import mafisher.quasar.effect.EffectTimeline;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
 import mafisher.quasar.effect.network.StopVisualEffectPayload;
+import mafisher.quasar.effect.network.ResumeEffectsPayload;
 import mafisher.quasar.effect.network.UpdateSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateVisualEffectPayload;
 import mafisher.quasar.effect.scale.SegmentGridLayout;
@@ -72,6 +73,21 @@ public final class ClientVisualEffectManager {
             return;
         }
         this.removeInstance(payload.instanceId());
+    }
+
+    /** Replaces the local visual snapshot for one dimension with the server's resume list. */
+    void resume(ResumeEffectsPayload payload) {
+        Minecraft minecraft = Minecraft.getInstance();
+        ClientLevel level = minecraft.level;
+        this.synchronizeLevel(level);
+        if (level == null || !level.dimension().location().equals(payload.dimensionId())) {
+            return;
+        }
+        this.activeEffects.clear();
+        this.segmentedGroups.clear();
+        for (StartVisualEffectPayload effect : payload.effects()) {
+            this.start(effect);
+        }
     }
 
     void update(UpdateVisualEffectPayload payload) {

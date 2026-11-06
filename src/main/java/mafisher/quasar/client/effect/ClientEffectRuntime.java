@@ -6,6 +6,7 @@ import mafisher.quasar.effect.network.UpdateSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateVisualEffectPayload;
 import mafisher.quasar.effect.network.CinematicAudioPlanPayload;
 import mafisher.quasar.effect.network.StopCinematicAudioPayload;
+import mafisher.quasar.effect.network.ResumeEffectsPayload;
 import java.util.List;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.server.packs.resources.ResourceManager;
@@ -49,6 +50,10 @@ public final class ClientEffectRuntime {
 
     public static void start(StartVisualEffectPayload payload) {
         manager().start(payload);
+    }
+
+    public static void resume(ResumeEffectsPayload payload) {
+        manager().resume(payload);
     }
 
     public static void stop(StopVisualEffectPayload payload) {

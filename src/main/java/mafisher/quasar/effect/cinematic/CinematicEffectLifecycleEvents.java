@@ -16,14 +16,14 @@ public final class CinematicEffectLifecycleEvents {
     @SubscribeEvent
     public static void onLevelUnload(LevelEvent.Unload event) {
         if (event.getLevel() instanceof ServerLevel level) {
-            CinematicEffectService.stopAll(level);
+            CinematicEffectService.stopAll(level, false);
         }
     }
 
     @SubscribeEvent
     public static void onServerStopping(ServerStoppingEvent event) {
         for (ServerLevel level : event.getServer().getAllLevels()) {
-            CinematicEffectService.stopAll(level);
+            CinematicEffectService.stopAll(level, false);
         }
     }
 }

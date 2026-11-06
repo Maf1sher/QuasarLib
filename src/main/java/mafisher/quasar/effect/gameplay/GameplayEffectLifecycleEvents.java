@@ -16,14 +16,14 @@ public final class GameplayEffectLifecycleEvents {
     @SubscribeEvent
     public static void onLevelUnload(LevelEvent.Unload event) {
         if (event.getLevel() instanceof ServerLevel level) {
-            GameplayEffectService.stopAll(level, GameplayEffectEndReason.LEVEL_UNLOAD);
+            GameplayEffectService.stopAll(level, GameplayEffectEndReason.LEVEL_UNLOAD, false);
         }
     }
 
     @SubscribeEvent
     public static void onServerStopping(ServerStoppingEvent event) {
         for (ServerLevel level : event.getServer().getAllLevels()) {
-            GameplayEffectService.stopAll(level, GameplayEffectEndReason.SERVER_STOPPING);
+            GameplayEffectService.stopAll(level, GameplayEffectEndReason.SERVER_STOPPING, false);
         }
     }
 }

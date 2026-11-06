@@ -16,14 +16,14 @@ public final class SegmentedEffectLifecycleEvents {
     @SubscribeEvent
     public static void onLevelUnload(LevelEvent.Unload event) {
         if (event.getLevel() instanceof ServerLevel level) {
-            SegmentedVisualEffectService.stopAll(level);
+            SegmentedVisualEffectService.stopAll(level, false);
         }
     }
 
     @SubscribeEvent
     public static void onServerStopping(ServerStoppingEvent event) {
         for (ServerLevel level : event.getServer().getAllLevels()) {
-            SegmentedVisualEffectService.stopAll(level);
+            SegmentedVisualEffectService.stopAll(level, false);
         }
     }
 }

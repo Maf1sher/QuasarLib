@@ -7,6 +7,14 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.WeakHashMap;
 import mafisher.quasar.effect.EffectScope;
+import mafisher.quasar.effect.EffectTransform;
+import mafisher.quasar.effect.EffectAudience;
+import mafisher.quasar.effect.EffectPoint;
+import mafisher.quasar.effect.persistence.EffectDescriptor;
+import mafisher.quasar.effect.persistence.EffectKind;
+import mafisher.quasar.effect.persistence.EffectPersistenceOptions;
+import mafisher.quasar.effect.persistence.EffectPersistenceService;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import org.slf4j.Logger;
@@ -40,9 +48,23 @@ public final class GameplayEffectService {
         GameplayEffectSpec spec,
         GameplayEffectController controller
     ) {
+        return start(level, spec, controller, EffectPersistenceOptions.DEFAULT);
+    }
+
+    /**
+     * Starts a session and calls {@link GameplayEffectController#onStart} before registering it.
+     * A failed start closes the scope and leaves no active session behind.
+     */
+    public static GameplayEffectHandle start(
+        ServerLevel level,
+        GameplayEffectSpec spec,
+        GameplayEffectController controller,
+        EffectPersistenceOptions options
+    ) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(spec, "spec");
         Objects.requireNonNull(controller, "controller");
+        Objects.requireNonNull(options, "options");
         if (level.isClientSide()) {
             throw new IllegalStateException("Gameplay effects are server-authoritative");
         }
@@ -94,12 +116,111 @@ public final class GameplayEffectService {
             throw exception;
         }
 
-        ActiveSession session = new ActiveSession(spec, controller, scope, context);
+        EffectDescriptor descriptor = descriptor(level, spec, context.sessionId(), level.getGameTime(), options);
+        ActiveSession session = new ActiveSession(spec, controller, scope, context, descriptor, level.getGameTime());
         sessions.put(session.id, session);
+        EffectPersistenceService.recordStart(level, descriptor);
         if (context.isStopRequested()) {
-            finish(level, session, GameplayEffectEndReason.CANCELLED);
+            finish(level, session, GameplayEffectEndReason.CANCELLED, true);
         }
         return new GameplayEffectHandle(session.id);
+    }
+
+    private static EffectDescriptor descriptor(
+        ServerLevel level,
+        GameplayEffectSpec spec,
+        UUID sessionId,
+        long startGameTime,
+        EffectPersistenceOptions options
+    ) {
+        return new EffectDescriptor(
+            sessionId,
+            EffectKind.GAMEPLAY,
+            spec.typeId(),
+            level.dimension().location(),
+            new EffectTransform(new EffectPoint(spec.anchor().x, spec.anchor().y, spec.anchor().z), 0.0F, 0.0F, 0.0F),
+            1.0F,
+            spec.seed(),
+            startGameTime,
+            spec.phases().totalDurationTicks(),
+            EffectAudience.dimensionWide(),
+            options.capabilities(),
+            options.persistence(),
+            null,
+            GameplayEffectNbt.saveDescriptorState(spec, options.state())
+        );
+    }
+
+    /**
+     * Restores one gameplay session with its original identity, start time, and consumer state.
+     * The controller factory must be registered in {@link GameplayEffectTypeRegistry}.
+     */
+    public static GameplayEffectHandle restore(
+        ServerLevel level,
+        GameplayEffectSpec spec,
+        UUID sessionId,
+        long startGameTime,
+        EffectDescriptor descriptor,
+        GameplayEffectController controller
+    ) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(spec, "spec");
+        Objects.requireNonNull(sessionId, "sessionId");
+        Objects.requireNonNull(controller, "controller");
+        if (level.isClientSide()) {
+            throw new IllegalStateException("Gameplay effects are server-authoritative");
+        }
+
+        int age = (int)Math.min(Integer.MAX_VALUE, Math.max(0L, level.getGameTime() - startGameTime));
+        if (age >= spec.phases().totalDurationTicks()) {
+            EffectPersistenceService.recordStop(level, sessionId);
+            return null;
+        }
+
+        Map<UUID, ActiveSession> sessions = activeSessions(level);
+        if (sessions.size() >= MAX_ACTIVE_SESSIONS_PER_LEVEL) {
+            LOGGER.warn("Could not restore gameplay effect {}: active session cap reached", spec.typeId());
+            return null;
+        }
+        OwnerAdmission admission = ownerAdmission(level);
+        if (spec.ownerId() != null && admission.activeSessions(spec.ownerId()) >= MAX_ACTIVE_SESSIONS_PER_OWNER) {
+            LOGGER.warn("Could not restore gameplay effect {}: owner session cap reached", spec.typeId());
+            return null;
+        }
+
+        EffectScope scope = new EffectScope(level, sessionId);
+        GameplayEffectContext context = new GameplayEffectContext(
+            level,
+            scope,
+            spec,
+            sessionId,
+            age,
+            GameplayEffectNbt.loadConsumerState(descriptor)
+        );
+        try {
+            controller.onResume(context);
+        } catch (RuntimeException | Error exception) {
+            context.close();
+            scope.close(false);
+            throw exception;
+        }
+        admission.adopt(spec.ownerId());
+
+        ActiveSession session = new ActiveSession(spec, controller, scope, context, descriptor, startGameTime);
+        sessions.put(session.id, session);
+        if (context.isStopRequested()) {
+            finish(level, session, GameplayEffectEndReason.CANCELLED, true);
+        }
+        return new GameplayEffectHandle(session.id);
+    }
+
+    /** Scope of one active session, used to reattach persisted child visuals after restore. */
+    public static EffectScope scope(ServerLevel level, GameplayEffectHandle handle) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(handle, "handle");
+        Map<UUID, ActiveSession> sessions = ACTIVE_SESSIONS.get(level);
+        ActiveSession session = sessions == null ? null : sessions.get(handle.sessionId());
+        return session == null ? null : session.scope;
     }
 
     /** Stops one session; unknown handles are no-ops and repeated stops are safe. */
@@ -110,12 +231,20 @@ public final class GameplayEffectService {
         Map<UUID, ActiveSession> sessions = ACTIVE_SESSIONS.get(level);
         ActiveSession session = sessions == null ? null : sessions.get(handle.sessionId());
         if (session != null) {
-            finish(level, session, reason);
+            finish(level, session, reason, true);
         }
     }
 
     /** Stops every session in one level and returns how many were active. */
     public static int stopAll(ServerLevel level, GameplayEffectEndReason reason) {
+        return stopAll(level, reason, true);
+    }
+
+    /**
+     * Stops every session in one level. Level unload and shutdown pass {@code false} so the
+     * descriptors stay available for restore; an explicit stop passes {@code true}.
+     */
+    public static int stopAll(ServerLevel level, GameplayEffectEndReason reason, boolean persistRemoval) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(reason, "reason");
         Map<UUID, ActiveSession> sessions = ACTIVE_SESSIONS.get(level);
@@ -125,7 +254,7 @@ public final class GameplayEffectService {
         }
         int count = sessions.size();
         for (ActiveSession session : new ArrayList<>(sessions.values())) {
-            finish(level, session, reason);
+            finish(level, session, reason, persistRemoval);
         }
         ACTIVE_SESSIONS.remove(level);
         OWNER_ADMISSIONS.remove(level);
@@ -162,11 +291,11 @@ public final class GameplayEffectService {
         int nextAge = context.ageTicks() + 1;
         if (nextAge >= session.spec.phases().totalDurationTicks()) {
             context.endAt(session.spec.phases().totalDurationTicks());
-            finish(level, session, GameplayEffectEndReason.EXPIRED);
+            finish(level, session, GameplayEffectEndReason.EXPIRED, true);
             return;
         }
         if (ownerUnavailable(level, session.spec)) {
-            finish(level, session, GameplayEffectEndReason.OWNER_UNAVAILABLE);
+            finish(level, session, GameplayEffectEndReason.OWNER_UNAVAILABLE, true);
             return;
         }
 
@@ -177,7 +306,7 @@ public final class GameplayEffectService {
             if (phaseIndex != previousPhase) {
                 session.controller.onPhaseEnter(context, phaseIndex);
                 if (context.isStopRequested()) {
-                    finish(level, session, GameplayEffectEndReason.CANCELLED);
+                    finish(level, session, GameplayEffectEndReason.CANCELLED, true);
                     return;
                 }
             }
@@ -189,12 +318,19 @@ public final class GameplayEffectService {
                 nextAge,
                 exception
             );
-            finish(level, session, GameplayEffectEndReason.FAILED);
+            finish(level, session, GameplayEffectEndReason.FAILED, true);
             return;
         }
 
+        if (context.consumeStateDirty()) {
+            session.descriptor = session.descriptor.withState(
+                GameplayEffectNbt.saveDescriptorState(session.spec, context.rawPersistentState())
+            );
+            EffectPersistenceService.recordUpdate(level, session.descriptor);
+        }
+
         if (context.isStopRequested()) {
-            finish(level, session, GameplayEffectEndReason.CANCELLED);
+            finish(level, session, GameplayEffectEndReason.CANCELLED, true);
         }
     }
 
@@ -206,7 +342,12 @@ public final class GameplayEffectService {
         return owner == null || owner.isRemoved() || !owner.isAlive() || owner.level() != level;
     }
 
-    private static void finish(ServerLevel level, ActiveSession session, GameplayEffectEndReason reason) {
+    private static void finish(
+        ServerLevel level,
+        ActiveSession session,
+        GameplayEffectEndReason reason,
+        boolean persistRemoval
+    ) {
         Map<UUID, ActiveSession> sessions = ACTIVE_SESSIONS.get(level);
         if (sessions == null || sessions.remove(session.id) == null) {
             return;
@@ -218,10 +359,13 @@ public final class GameplayEffectService {
             LOGGER.error("Gameplay effect {} failed in onEnd", session.spec.typeId(), exception);
         } finally {
             session.context.close();
-            session.scope.close();
+            session.scope.close(persistRemoval);
             OwnerAdmission admission = OWNER_ADMISSIONS.get(level);
             if (admission != null) {
                 admission.recordEnd(session.spec.ownerId());
+            }
+            if (persistRemoval) {
+                EffectPersistenceService.recordStop(level, session.id);
             }
         }
         if (sessions.isEmpty()) {
@@ -243,18 +387,24 @@ public final class GameplayEffectService {
         private final GameplayEffectController controller;
         private final EffectScope scope;
         private final GameplayEffectContext context;
+        private final long startGameTime;
+        private EffectDescriptor descriptor;
 
         private ActiveSession(
             GameplayEffectSpec spec,
             GameplayEffectController controller,
             EffectScope scope,
-            GameplayEffectContext context
+            GameplayEffectContext context,
+            EffectDescriptor descriptor,
+            long startGameTime
         ) {
             this.id = context.sessionId();
             this.spec = spec;
             this.controller = controller;
             this.scope = scope;
             this.context = context;
+            this.descriptor = descriptor;
+            this.startGameTime = startGameTime;
         }
     }
 }

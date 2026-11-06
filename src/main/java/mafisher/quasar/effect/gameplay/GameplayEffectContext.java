@@ -2,10 +2,12 @@ package mafisher.quasar.effect.gameplay;
 
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 import mafisher.quasar.effect.EffectHitResult;
 import mafisher.quasar.effect.EffectHitbox;
 import mafisher.quasar.effect.EffectScope;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.damagesource.DamageSource;
@@ -24,14 +26,28 @@ public final class GameplayEffectContext {
     private RandomSource random;
     private boolean stopRequested;
     private boolean open = true;
+    private CompoundTag persistentState;
+    private boolean stateDirty;
 
     GameplayEffectContext(ServerLevel level, EffectScope scope, GameplayEffectSpec spec, UUID sessionId) {
+        this(level, scope, spec, sessionId, 0, new CompoundTag());
+    }
+
+    GameplayEffectContext(
+        ServerLevel level,
+        EffectScope scope,
+        GameplayEffectSpec spec,
+        UUID sessionId,
+        int initialAgeTicks,
+        CompoundTag initialState
+    ) {
         this.level = Objects.requireNonNull(level, "level");
         this.scope = Objects.requireNonNull(scope, "scope");
         this.spec = Objects.requireNonNull(spec, "spec");
         this.sessionId = Objects.requireNonNull(sessionId, "sessionId");
+        this.persistentState = Objects.requireNonNull(initialState, "initialState").copy();
         this.budgetState = new EffectTickBudgetState(spec.budget());
-        this.beginTick(0);
+        this.beginTick(initialAgeTicks);
     }
 
     public ServerLevel level() {
@@ -126,6 +142,39 @@ public final class GameplayEffectContext {
 
     public EffectTickCounters counters() {
         return this.budgetState.counters();
+    }
+
+    /** A defensive copy of consumer state carried by the persisted descriptor. */
+    public CompoundTag persistentState() {
+        this.ensureOpen();
+        return this.persistentState.copy();
+    }
+
+    /** Replaces consumer state and marks it for persistence at the end of the current tick. */
+    public void setPersistentState(CompoundTag state) {
+        this.ensureOpen();
+        this.persistentState = Objects.requireNonNull(state, "state").copy();
+        this.stateDirty = true;
+    }
+
+    /** Mutates a copy of consumer state and marks it for persistence at the end of the current tick. */
+    public void updatePersistentState(Consumer<CompoundTag> mutator) {
+        this.ensureOpen();
+        Objects.requireNonNull(mutator, "mutator");
+        CompoundTag updated = this.persistentState.copy();
+        mutator.accept(updated);
+        this.persistentState = updated;
+        this.stateDirty = true;
+    }
+
+    boolean consumeStateDirty() {
+        boolean dirty = this.stateDirty;
+        this.stateDirty = false;
+        return dirty;
+    }
+
+    CompoundTag rawPersistentState() {
+        return this.persistentState.copy();
     }
 
     boolean isStopRequested() {

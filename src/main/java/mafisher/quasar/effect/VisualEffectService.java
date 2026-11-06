@@ -3,6 +3,10 @@ package mafisher.quasar.effect;
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
 import mafisher.quasar.effect.network.StopVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateVisualEffectPayload;
+import mafisher.quasar.effect.persistence.EffectDescriptor;
+import mafisher.quasar.effect.persistence.EffectKind;
+import mafisher.quasar.effect.persistence.EffectPersistenceOptions;
+import mafisher.quasar.effect.persistence.EffectPersistenceService;
 import mafisher.quasar.effect.scale.SegmentLink;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -20,9 +24,13 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.network.PacketDistributor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Server-thread service for starting, moving, tracking, and cancelling transient client-rendered effects. */
 public final class VisualEffectService {
+    private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
+
     /** Hard safety cap per level. The oldest effect is stopped and evicted when it is exceeded. */
     public static final int MAX_ACTIVE_EFFECTS_PER_LEVEL = 128;
     private static final int GRID_MIN_PLAYERS = 8;
@@ -33,7 +41,7 @@ public final class VisualEffectService {
     }
 
     public static VisualEffectHandle start(ServerLevel level, VisualEffectSpec spec) {
-        return start(level, spec, null);
+        return start(level, spec, null, EffectPersistenceOptions.DEFAULT);
     }
 
     /**
@@ -41,9 +49,66 @@ public final class VisualEffectService {
      * aggregated coordinator update can move every segment.
      */
     public static VisualEffectHandle start(ServerLevel level, VisualEffectSpec spec, SegmentLink segmentLink) {
+        return start(level, spec, segmentLink, EffectPersistenceOptions.DEFAULT);
+    }
+
+    public static VisualEffectHandle start(
+        ServerLevel level,
+        VisualEffectSpec spec,
+        EffectPersistenceOptions options
+    ) {
+        return start(level, spec, null, options);
+    }
+
+    public static VisualEffectHandle start(
+        ServerLevel level,
+        VisualEffectSpec spec,
+        SegmentLink segmentLink,
+        EffectPersistenceOptions options
+    ) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(spec, "spec");
-        UUID instanceId = UUID.randomUUID();
+        Objects.requireNonNull(options, "options");
+        return startInternal(level, spec, segmentLink, options, UUID.randomUUID(), level.getGameTime());
+    }
+
+    /**
+     * Starts a visual effect with a caller-supplied identity and absolute start time. Used by
+     * cinematic timelines and persistence restore, which must preserve ages across restarts.
+     */
+    public static VisualEffectHandle startWithId(
+        ServerLevel level,
+        VisualEffectSpec spec,
+        UUID instanceId,
+        long startGameTime,
+        EffectPersistenceOptions options
+    ) {
+        return startWithId(level, spec, instanceId, startGameTime, options, null);
+    }
+
+    public static VisualEffectHandle startWithId(
+        ServerLevel level,
+        VisualEffectSpec spec,
+        UUID instanceId,
+        long startGameTime,
+        EffectPersistenceOptions options,
+        SegmentLink segmentLink
+    ) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(spec, "spec");
+        Objects.requireNonNull(instanceId, "instanceId");
+        Objects.requireNonNull(options, "options");
+        return startInternal(level, spec, segmentLink, options, instanceId, startGameTime);
+    }
+
+    private static VisualEffectHandle startInternal(
+        ServerLevel level,
+        VisualEffectSpec spec,
+        SegmentLink segmentLink,
+        EffectPersistenceOptions options,
+        UUID instanceId,
+        long startGameTime
+    ) {
         Vec3 position = spec.position();
         StartVisualEffectPayload payload = new StartVisualEffectPayload(
             spec.effectId(),
@@ -57,11 +122,27 @@ public final class VisualEffectService {
             spec.roll(),
             spec.scale(),
             spec.durationTicks(),
-            level.getGameTime(),
+            startGameTime,
             spec.seed(),
             segmentLink
         );
-        ActiveEffect active = new ActiveEffect(payload, spec.audience(), spec.transform());
+        EffectDescriptor descriptor = segmentLink == null ? new EffectDescriptor(
+            instanceId,
+            EffectKind.VISUAL,
+            spec.effectId(),
+            level.dimension().location(),
+            spec.transform(),
+            spec.scale(),
+            spec.seed(),
+            startGameTime,
+            spec.durationTicks(),
+            spec.audience(),
+            options.capabilities(),
+            options.persistence(),
+            options.ownerSessionId(),
+            options.state()
+        ) : null;
+        ActiveEffect active = new ActiveEffect(payload, spec.audience(), spec.transform(), descriptor);
         Map<UUID, ActiveEffect> effects = activeEffects(level);
         effects.put(instanceId, active);
         Map<UUID, ServerPlayer> audience = new LinkedHashMap<>();
@@ -72,6 +153,109 @@ public final class VisualEffectService {
         while (effects.size() > MAX_ACTIVE_EFFECTS_PER_LEVEL) {
             UUID oldest = effects.keySet().iterator().next();
             stop(level, new VisualEffectHandle(oldest));
+        }
+        if (descriptor != null) {
+            EffectPersistenceService.recordStart(level, descriptor);
+        }
+        return new VisualEffectHandle(instanceId);
+    }
+
+    /**
+     * Restores one standalone visual with its original identity, start time, and transform.
+     * Returns {@code null} when the level is at the safety cap.
+     */
+    public static VisualEffectHandle restore(
+        ServerLevel level,
+        VisualEffectSpec spec,
+        UUID instanceId,
+        long startGameTime,
+        EffectDescriptor descriptor
+    ) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(spec, "spec");
+        Objects.requireNonNull(instanceId, "instanceId");
+        Map<UUID, ActiveEffect> effects = activeEffects(level);
+        if (effects.size() >= MAX_ACTIVE_EFFECTS_PER_LEVEL) {
+            LOGGER.warn("Could not restore visual effect {}: active visual cap reached", instanceId);
+            return null;
+        }
+        EffectTransform transform = spec.transform();
+        StartVisualEffectPayload payload = new StartVisualEffectPayload(
+            spec.effectId(),
+            instanceId,
+            level.dimension().location(),
+            transform.position().x(),
+            transform.position().y(),
+            transform.position().z(),
+            transform.yaw(),
+            transform.pitch(),
+            transform.roll(),
+            spec.scale(),
+            spec.durationTicks(),
+            startGameTime,
+            spec.seed(),
+            null
+        );
+        ActiveEffect active = new ActiveEffect(payload, spec.audience(), transform, descriptor);
+        effects.put(instanceId, active);
+        Map<UUID, ServerPlayer> audience = new LinkedHashMap<>();
+        collectAudience(level, active, null, audience);
+        for (ServerPlayer player : audience.values()) {
+            sendStart(player, active);
+        }
+        return new VisualEffectHandle(instanceId);
+    }
+
+    /** Restores one coordinator-owned segment without recording it as a standalone descriptor. */
+    public static VisualEffectHandle restoreSegment(
+        ServerLevel level,
+        VisualEffectSpec spec,
+        UUID instanceId,
+        long startGameTime,
+        SegmentLink link
+    ) {
+        return restore(level, spec, instanceId, startGameTime, null, link);
+    }
+
+    private static VisualEffectHandle restore(
+        ServerLevel level,
+        VisualEffectSpec spec,
+        UUID instanceId,
+        long startGameTime,
+        EffectDescriptor descriptor,
+        SegmentLink link
+    ) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(spec, "spec");
+        Objects.requireNonNull(instanceId, "instanceId");
+        Map<UUID, ActiveEffect> effects = activeEffects(level);
+        if (effects.size() >= MAX_ACTIVE_EFFECTS_PER_LEVEL) {
+            LOGGER.warn("Could not restore visual effect {}: active visual cap reached", instanceId);
+            return null;
+        }
+        EffectTransform transform = spec.transform();
+        StartVisualEffectPayload payload = new StartVisualEffectPayload(
+            spec.effectId(),
+            instanceId,
+            level.dimension().location(),
+            transform.position().x(),
+            transform.position().y(),
+            transform.position().z(),
+            transform.yaw(),
+            transform.pitch(),
+            transform.roll(),
+            spec.scale(),
+            spec.durationTicks(),
+            startGameTime,
+            spec.seed(),
+            link
+        );
+        ActiveEffect active = new ActiveEffect(payload, spec.audience(), transform, descriptor);
+        effects.put(instanceId, active);
+        Map<UUID, ServerPlayer> audience = new LinkedHashMap<>();
+        collectAudience(level, active, null, audience);
+        for (ServerPlayer player : audience.values()) {
+            sendStart(player, active);
         }
         return new VisualEffectHandle(instanceId);
     }
@@ -87,6 +271,10 @@ public final class VisualEffectService {
         }
 
         active.setTransform(transform);
+        if (active.descriptor() != null) {
+            active.setDescriptor(active.descriptor().withTransform(transform));
+            EffectPersistenceService.recordUpdate(level, active.descriptor());
+        }
         UpdateVisualEffectPayload payload = UpdateVisualEffectPayload.of(
             active.payload().instanceId(), level.dimension().location(), transform, level.getGameTime()
         );
@@ -150,6 +338,11 @@ public final class VisualEffectService {
     }
 
     public static void stop(ServerLevel level, VisualEffectHandle handle) {
+        stop(level, handle, true);
+    }
+
+    /** Stops an instance; {@code persistRemoval=false} keeps its descriptor for a later restore. */
+    public static void stop(ServerLevel level, VisualEffectHandle handle, boolean persistRemoval) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(handle, "handle");
         Map<UUID, ActiveEffect> effects = ACTIVE_EFFECTS.get(level);
@@ -159,6 +352,9 @@ public final class VisualEffectService {
         ActiveEffect active = effects.remove(handle.instanceId());
         if (active != null) {
             sendStop(level, active);
+            if (persistRemoval) {
+                EffectPersistenceService.recordStop(level, handle.instanceId());
+            }
         }
         if (effects.isEmpty()) {
             ACTIVE_EFFECTS.remove(level);
@@ -189,6 +385,7 @@ public final class VisualEffectService {
             if (gameTime - active.payload().startGameTime() >= active.payload().durationTicks()) {
                 sendStop(level, active);
                 iterator.remove();
+                EffectPersistenceService.recordStop(level, active.payload().instanceId());
                 continue;
             }
 
@@ -220,6 +417,36 @@ public final class VisualEffectService {
         Objects.requireNonNull(level, "level");
         Map<UUID, ActiveEffect> effects = ACTIVE_EFFECTS.get(level);
         return effects == null ? 0 : effects.size();
+    }
+
+    /**
+     * Builds a resume snapshot for one joining player. The client replaces its visual state with
+     * the snapshot; normal tick reconciliation still sends a start when needed.
+     */
+    public static List<StartVisualEffectPayload> resumePayloads(ServerLevel level, ServerPlayer player) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(player, "player");
+        Map<UUID, ActiveEffect> effects = ACTIVE_EFFECTS.get(level);
+        if (effects == null || effects.isEmpty()) {
+            return List.of();
+        }
+
+        List<StartVisualEffectPayload> payloads = new ArrayList<>();
+        Map<UUID, ServerPlayer> audience = new LinkedHashMap<>();
+        for (ActiveEffect active : effects.values()) {
+            audience.clear();
+            collectAudience(level, active, null, audience);
+            if (audience.containsKey(player.getUUID())) {
+                payloads.add(active.currentPayload());
+            }
+        }
+        return List.copyOf(payloads);
+    }
+
+    /** Drops transient runtime state for a level without deleting persisted descriptors. */
+    public static void clear(ServerLevel level) {
+        Objects.requireNonNull(level, "level");
+        ACTIVE_EFFECTS.remove(level);
     }
 
     private static SpatialGrid<ServerPlayer> buildPlayerIndex(List<ServerPlayer> players) {
@@ -291,11 +518,18 @@ public final class VisualEffectService {
         private final EffectAudience audience;
         private final Set<UUID> trackingPlayers = new HashSet<>();
         private EffectTransform transform;
+        private EffectDescriptor descriptor;
 
-        private ActiveEffect(StartVisualEffectPayload payload, EffectAudience audience, EffectTransform transform) {
+        private ActiveEffect(
+            StartVisualEffectPayload payload,
+            EffectAudience audience,
+            EffectTransform transform,
+            EffectDescriptor descriptor
+        ) {
             this.payload = payload;
             this.audience = audience;
             this.transform = transform;
+            this.descriptor = descriptor;
         }
 
         private StartVisualEffectPayload payload() {
@@ -308,6 +542,14 @@ public final class VisualEffectService {
 
         private EffectTransform transform() {
             return this.transform;
+        }
+
+        private EffectDescriptor descriptor() {
+            return this.descriptor;
+        }
+
+        private void setDescriptor(EffectDescriptor descriptor) {
+            this.descriptor = descriptor;
         }
 
         private Set<UUID> trackingPlayers() {
