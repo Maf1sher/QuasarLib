@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import mafisher.quasar.effect.block.BlockChange;
+import mafisher.quasar.effect.persistence.BlockJournal;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.state.BlockState;
@@ -186,6 +187,61 @@ class PendingBlockChangesTest {
         assertEquals(1, result.processed());
         assertEquals(0, result.applied());
         assertEquals(0, pending.size());
+    }
+
+    @Test
+    void recordsOnlyAppliedChangesInTheJournal() {
+        PendingBlockChanges pending = new PendingBlockChanges(4);
+        BlockJournal journal = new BlockJournal();
+        BlockChange applied = change(0);
+        BlockChange vetoed = change(1);
+        pending.enqueue(vetoed);
+        pending.enqueue(applied);
+
+        PendingBlockChanges.ApplyResult result = pending.apply(
+            this.level,
+            4,
+            (change, currentState) -> change != vetoed,
+            journal
+        );
+
+        assertEquals(1, result.vetoed());
+        assertEquals(1, result.applied());
+        assertEquals(1, journal.size());
+        assertTrue(journal.consumeDirty());
+    }
+
+    @Test
+    void discardsJournalEntriesWhenTheWorldWriteFails() {
+        PendingBlockChanges pending = new PendingBlockChanges(4);
+        BlockJournal journal = new BlockJournal();
+        BlockChange change = change(0);
+        when(this.level.setBlockAndUpdate(change.position(), change.state())).thenReturn(false);
+        pending.enqueue(change);
+
+        PendingBlockChanges.ApplyResult result = pending.apply(
+            this.level, 1, (queued, currentState) -> true, journal
+        );
+
+        assertEquals(0, result.applied());
+        assertEquals(0, journal.size());
+    }
+
+    @Test
+    void doesNotJournalNoOpChanges() {
+        PendingBlockChanges pending = new PendingBlockChanges(4);
+        BlockJournal journal = new BlockJournal();
+        BlockChange change = change(0);
+        when(this.level.getBlockState(change.position())).thenReturn(change.state());
+        pending.enqueue(change);
+
+        PendingBlockChanges.ApplyResult result = pending.apply(
+            this.level, 1, (queued, currentState) -> true, journal
+        );
+
+        assertEquals(1, result.processed());
+        assertEquals(0, result.applied());
+        assertEquals(0, journal.size());
     }
 
     @Test

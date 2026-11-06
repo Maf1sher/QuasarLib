@@ -1,30 +1,42 @@
 package mafisher.quasar.effect.gameplay;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.VisualEffectSpec;
+import mafisher.quasar.effect.block.BlockChange;
+import mafisher.quasar.effect.persistence.BlockJournal;
+import mafisher.quasar.effect.persistence.BlockRollbackService;
 import mafisher.quasar.effect.persistence.EffectCapabilities;
 import mafisher.quasar.effect.persistence.EffectDescriptor;
 import mafisher.quasar.effect.persistence.EffectDescriptorNbt;
 import mafisher.quasar.effect.persistence.EffectKind;
 import mafisher.quasar.effect.persistence.EffectPersistence;
+import mafisher.quasar.effect.persistence.EffectPersistenceOptions;
 import mafisher.quasar.effect.persistence.EffectPersistenceService;
 import mafisher.quasar.effect.persistence.EffectSavedData;
+import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.saveddata.SavedData;
 import net.minecraft.world.level.storage.DimensionDataStorage;
 import net.minecraft.world.phys.Vec3;
@@ -35,21 +47,35 @@ import org.junit.jupiter.api.Test;
 class GameplayPersistenceTest {
     private static final ResourceLocation TYPE = ResourceLocation.fromNamespaceAndPath("quasar_lib", "test_gameplay");
     private static final UUID SESSION = UUID.fromString("00000000-0000-0000-0000-000000000010");
+    private static final BlockPos FIRST = new BlockPos(0, 64, 0);
 
     private ServerLevel level;
     private EffectSavedData store;
     private long gameTime;
+    private BlockState oldState;
+    private BlockState newState;
+    private AtomicReference<BlockState> worldState;
 
     @BeforeEach
     void setUp() {
         this.level = mock(ServerLevel.class);
         DimensionDataStorage storage = mock(DimensionDataStorage.class);
         this.store = new EffectSavedData();
+        this.oldState = Blocks.STONE.defaultBlockState();
+        this.newState = Blocks.AIR.defaultBlockState();
+        this.worldState = new AtomicReference<>(this.oldState);
         when(this.level.isClientSide()).thenReturn(false);
         when(this.level.dimension()).thenReturn(Level.OVERWORLD);
         when(this.level.players()).thenReturn(List.of());
         when(this.level.getGameTime()).thenAnswer(ignored -> this.gameTime);
         when(this.level.getDataStorage()).thenReturn(storage);
+        when(this.level.isInWorldBounds(any())).thenReturn(true);
+        when(this.level.hasChunkAt(any())).thenReturn(true);
+        when(this.level.getBlockState(any())).thenAnswer(ignored -> this.worldState.get());
+        when(this.level.setBlockAndUpdate(any(), any())).thenAnswer(invocation -> {
+            this.worldState.set(invocation.getArgument(1));
+            return true;
+        });
         doReturn(this.store).when(storage).computeIfAbsent(
             any(SavedData.Factory.class), eq(EffectSavedData.FILE_ID)
         );
@@ -58,6 +84,7 @@ class GameplayPersistenceTest {
     @AfterEach
     void tearDown() {
         GameplayEffectService.stopAll(this.level, GameplayEffectEndReason.CANCELLED);
+        BlockRollbackService.clear(this.level);
     }
 
     @Test
@@ -109,6 +136,74 @@ class GameplayPersistenceTest {
     }
 
     @Test
+    void rollsBackAppliedBlockChangesWhenCancelled() {
+        GameplayEffectSpec spec = destroyerSpec(4, 20);
+        QueueController controller = new QueueController(new BlockChange(FIRST, this.newState));
+        GameplayEffectHandle handle = startDestroyer(spec, controller);
+
+        GameplayEffectService.tick(this.level);
+
+        BlockJournal journal = this.store.journal(handle.sessionId());
+        assertNotNull(journal);
+        assertEquals(1, journal.size());
+        verify(this.level).setBlockAndUpdate(FIRST, this.newState);
+
+        GameplayEffectService.stop(this.level, handle, GameplayEffectEndReason.CANCELLED);
+
+        assertTrue(this.store.contains(handle.sessionId()));
+        assertTrue(this.store.journal(handle.sessionId()).isRollbackPending());
+
+        BlockRollbackService.tick(this.level, 10);
+
+        verify(this.level).setBlockAndUpdate(FIRST, this.oldState);
+        assertFalse(this.store.contains(handle.sessionId()));
+        assertNull(this.store.journal(handle.sessionId()));
+    }
+
+    @Test
+    void expiryKeepsBlockChangesAndDropsTheJournal() {
+        GameplayEffectSpec spec = destroyerSpec(4, 1);
+        QueueController controller = new QueueController(new BlockChange(FIRST, this.newState));
+        GameplayEffectHandle handle = startDestroyer(spec, controller);
+
+        GameplayEffectService.tick(this.level);
+
+        verify(this.level).setBlockAndUpdate(FIRST, this.newState);
+        assertFalse(this.store.contains(handle.sessionId()));
+        assertNull(this.store.journal(handle.sessionId()));
+    }
+
+    @Test
+    void unloadPreservesTheJournalAndRestoreCanRollBack() {
+        GameplayEffectSpec spec = destroyerSpec(4, 20);
+        QueueController controller = new QueueController(new BlockChange(FIRST, this.newState));
+        GameplayEffectHandle handle = startDestroyer(spec, controller);
+        GameplayEffectService.tick(this.level);
+        verify(this.level).setBlockAndUpdate(FIRST, this.newState);
+
+        GameplayEffectService.stopAll(this.level, GameplayEffectEndReason.LEVEL_UNLOAD, false);
+
+        assertTrue(this.store.contains(handle.sessionId()));
+        BlockJournal journal = this.store.journal(handle.sessionId());
+        assertNotNull(journal);
+        assertEquals(1, journal.size());
+        assertFalse(journal.isRollbackPending());
+
+        EffectDescriptor descriptor = this.store.find(handle.sessionId());
+        GameplayEffectService.restore(
+            this.level, spec, handle.sessionId(), 0L, descriptor, new RecordingController()
+        );
+        GameplayEffectService.stop(
+            this.level, new GameplayEffectHandle(handle.sessionId()), GameplayEffectEndReason.CANCELLED
+        );
+
+        BlockRollbackService.tick(this.level, 10);
+
+        verify(this.level).setBlockAndUpdate(FIRST, this.oldState);
+        assertFalse(this.store.contains(handle.sessionId()));
+    }
+
+    @Test
     void preservesTheBlockChangeBudgetInDescriptorNbt() {
         GameplayEffectSpec spec = spec(new EffectTickBudget(1, 2, 3, 32));
         EffectDescriptor descriptor = descriptor(spec, new CompoundTag());
@@ -131,6 +226,32 @@ class GameplayPersistenceTest {
 
     private static GameplayEffectSpec spec() {
         return spec(EffectTickBudget.unlimited());
+    }
+
+    private static GameplayEffectSpec destroyerSpec(int maxBlockChanges, int durationTicks) {
+        return new GameplayEffectSpec(
+            TYPE,
+            null,
+            new Vec3(0.0, 64.0, 0.0),
+            EffectPhasePlan.of(new EffectPhase("run", durationTicks)),
+            3L,
+            new EffectTickBudget(0, 0, 0, maxBlockChanges),
+            OwnerPolicy.CONTINUE
+        );
+    }
+
+    private GameplayEffectHandle startDestroyer(
+        GameplayEffectSpec spec,
+        GameplayEffectController controller
+    ) {
+        return GameplayEffectService.start(
+            this.level,
+            spec,
+            controller,
+            EffectPersistenceOptions.DEFAULT.withCapabilities(
+                EffectCapabilities.destructiveCapability()
+            )
+        );
     }
 
     private static GameplayEffectSpec spec(EffectTickBudget budget) {
@@ -162,6 +283,23 @@ class GameplayPersistenceTest {
             null,
             GameplayEffectNbt.saveDescriptorState(spec, consumerState)
         );
+    }
+
+    private static final class QueueController implements GameplayEffectController {
+        private final BlockChange change;
+
+        private QueueController(BlockChange change) {
+            this.change = change;
+        }
+
+        @Override
+        public void onStart(GameplayEffectContext context) {
+            context.queueBlockChange(this.change);
+        }
+
+        @Override
+        public void onTick(GameplayEffectContext context) {
+        }
     }
 
     private static final class VisualController implements GameplayEffectController {

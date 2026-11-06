@@ -2,8 +2,10 @@ package mafisher.quasar.effect.persistence;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.WeakHashMap;
 import mafisher.quasar.effect.EffectPoint;
@@ -58,9 +60,38 @@ public final class EffectRestoreService {
         int expired = 0;
         int quarantined = 0;
         int unsupported = 0;
+        int rollbacks = 0;
         List<String> messages = new ArrayList<>();
+        Set<UUID> handledRollbacks = new HashSet<>();
+
+        for (EffectDescriptor descriptor : new ArrayList<>(store.descriptors())) {
+            BlockJournal journal = store.journal(descriptor.instanceId());
+            if (journal == null || !journal.isRollbackPending()) {
+                continue;
+            }
+            handledRollbacks.add(descriptor.instanceId());
+            if (!descriptor.dimensionId().equals(level.dimension().location())) {
+                store.removeOwnedBy(descriptor.instanceId());
+                store.quarantine(descriptor.instanceId());
+                quarantined++;
+                messages.add("Quarantined pending rollback " + descriptor.instanceId()
+                    + " in " + descriptor.dimensionId());
+                continue;
+            }
+            store.removeOwnedBy(descriptor.instanceId());
+            if (BlockRollbackService.schedule(level, descriptor.instanceId(), journal)) {
+                rollbacks++;
+                messages.add("Rolling back " + descriptor.instanceId());
+            } else {
+                messages.add("Skipped rollback " + descriptor.instanceId());
+            }
+        }
 
         for (EffectDescriptor descriptor : descriptors) {
+            if (handledRollbacks.contains(descriptor.instanceId())
+                || !store.contains(descriptor.instanceId())) {
+                continue;
+            }
             if (descriptor.isExpired(level.getGameTime())) {
                 store.remove(descriptor.instanceId());
                 expired++;
@@ -92,17 +123,18 @@ public final class EffectRestoreService {
 
         store.setDirty();
         EffectRecoveryReport report = new EffectRecoveryReport(
-            restored, expired, quarantined, unsupported, messages
+            restored, expired, quarantined, unsupported, rollbacks, messages
         );
         REPORTS.put(level, report);
-        if (restored > 0 || quarantined > 0 || unsupported > 0) {
+        if (restored > 0 || quarantined > 0 || unsupported > 0 || rollbacks > 0) {
             LOGGER.info(
-                "Restored {} effect(s) in {}: expired {}, quarantined {}, deferred {}",
+                "Restored {} effect(s) in {}: expired {}, quarantined {}, deferred {}, rollbacks {}",
                 restored,
                 level.dimension().location(),
                 expired,
                 quarantined,
-                unsupported
+                unsupported,
+                rollbacks
             );
         }
         return report;

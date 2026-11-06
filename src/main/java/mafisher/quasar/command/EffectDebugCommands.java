@@ -457,7 +457,8 @@ public final class EffectDebugCommands {
         source.sendSuccess(
             () -> Component.literal(
                 "Persistence: restored " + report.restored() + ", expired " + report.expired()
-                    + ", quarantined " + report.quarantined() + ", deferred " + report.unsupported() + "."
+                    + ", quarantined " + report.quarantined() + ", deferred " + report.unsupported()
+                    + ", rollbacks " + report.rollbacks() + "."
             ),
             false
         );

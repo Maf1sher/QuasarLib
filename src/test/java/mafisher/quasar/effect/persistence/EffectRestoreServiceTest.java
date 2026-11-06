@@ -1,11 +1,13 @@
 package mafisher.quasar.effect.persistence;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -14,18 +16,24 @@ import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.VisualEffectService;
+import mafisher.quasar.effect.block.BlockChange;
 import mafisher.quasar.effect.gameplay.EffectPhase;
 import mafisher.quasar.effect.gameplay.EffectPhasePlan;
 import mafisher.quasar.effect.gameplay.EffectTickBudget;
 import mafisher.quasar.effect.gameplay.GameplayEffectNbt;
 import mafisher.quasar.effect.gameplay.GameplayEffectSpec;
 import mafisher.quasar.effect.gameplay.OwnerPolicy;
+import mafisher.quasar.effect.persistence.BlockJournal;
+import mafisher.quasar.effect.persistence.BlockRollbackService;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectService;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectSpec;
+import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.saveddata.SavedData;
 import net.minecraft.world.level.storage.DimensionDataStorage;
 import org.junit.jupiter.api.AfterEach;
@@ -60,6 +68,7 @@ class EffectRestoreServiceTest {
     void tearDown() {
         VisualEffectService.clear(this.level);
         SegmentedVisualEffectService.stopAll(this.level);
+        BlockRollbackService.clearForTesting();
     }
 
     @Test
@@ -155,6 +164,58 @@ class EffectRestoreServiceTest {
 
         assertEquals(1, report.quarantined());
         assertEquals(1, this.store.quarantineCount());
+    }
+
+    @Test
+    void schedulesPendingRollbacksBeforeRestoring() {
+        UUID instanceId = UUID.randomUUID();
+        BlockPos position = new BlockPos(0, 64, 0);
+        BlockState oldState = Blocks.STONE.defaultBlockState();
+        BlockState newState = Blocks.AIR.defaultBlockState();
+        BlockJournal journal = new BlockJournal();
+        journal.record(this.level, new BlockChange(position, newState), oldState);
+        journal.beginRollback();
+
+        GameplayEffectSpec spec = new GameplayEffectSpec(
+            EFFECT,
+            null,
+            new net.minecraft.world.phys.Vec3(0.0, 64.0, 0.0),
+            EffectPhasePlan.of(new EffectPhase("strike", 100)),
+            3L,
+            EffectTickBudget.unlimited(),
+            OwnerPolicy.CONTINUE
+        );
+        EffectDescriptor descriptor = new EffectDescriptor(
+            instanceId,
+            EffectKind.GAMEPLAY,
+            EFFECT,
+            DIMENSION,
+            new EffectTransform(new EffectPoint(0.0, 64.0, 0.0), 0.0F, 0.0F, 0.0F),
+            1.0F,
+            3L,
+            0L,
+            100,
+            EffectAudience.dimensionWide(),
+            EffectCapabilities.destructiveCapability(),
+            EffectPersistence.RESUMABLE,
+            null,
+            GameplayEffectNbt.saveDescriptorState(spec, new CompoundTag())
+        );
+        this.store.put(descriptor);
+        this.store.putJournal(instanceId, journal);
+        when(this.level.hasChunkAt(any())).thenReturn(true);
+        when(this.level.getBlockState(position)).thenReturn(newState);
+        when(this.level.setBlockAndUpdate(any(), any())).thenReturn(true);
+
+        EffectRecoveryReport report = EffectRestoreService.restoreLevel(this.level);
+
+        assertEquals(1, report.rollbacks());
+        assertTrue(this.store.contains(instanceId));
+
+        BlockRollbackService.tick(this.level, 10);
+
+        verify(this.level).setBlockAndUpdate(position, oldState);
+        assertFalse(this.store.contains(instanceId));
     }
 
     private static EffectDescriptor visualDescriptor(long startGameTime, int durationTicks,

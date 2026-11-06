@@ -5,6 +5,7 @@ import java.util.Deque;
 import java.util.Objects;
 import java.util.function.BiPredicate;
 import mafisher.quasar.effect.block.BlockChange;
+import mafisher.quasar.effect.persistence.BlockJournal;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.state.BlockState;
 import org.slf4j.Logger;
@@ -53,10 +54,17 @@ final class PendingBlockChanges {
     }
 
     /**
-     * Applies at most {@code maxChanges} queued changes without protection callbacks.
+     * Applies at most {@code maxChanges} queued changes without protection callbacks or a journal.
      */
     ApplyResult apply(ServerLevel level, int maxChanges) {
-        return this.apply(level, maxChanges, (change, currentState) -> true);
+        return this.apply(level, maxChanges, (change, currentState) -> true, null);
+    }
+
+    /**
+     * Applies at most {@code maxChanges} queued changes without a journal.
+     */
+    ApplyResult apply(ServerLevel level, int maxChanges, BiPredicate<BlockChange, BlockState> gate) {
+        return this.apply(level, maxChanges, gate, null);
     }
 
     /**
@@ -65,7 +73,12 @@ final class PendingBlockChanges {
      * individual block-update failures are logged and do not stop the queue. The result reports
      * processed entries (which consume the budget), changes handed to the level, and vetoes.
      */
-    ApplyResult apply(ServerLevel level, int maxChanges, BiPredicate<BlockChange, BlockState> gate) {
+    ApplyResult apply(
+        ServerLevel level,
+        int maxChanges,
+        BiPredicate<BlockChange, BlockState> gate,
+        BlockJournal journal
+    ) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(gate, "gate");
         if (maxChanges < 0) {
@@ -110,11 +123,17 @@ final class PendingBlockChanges {
                 continue;
             }
 
+            boolean recorded = journal != null && journal.record(level, change, currentState);
             try {
                 if (level.setBlockAndUpdate(change.position(), change.state())) {
                     applied++;
+                } else if (recorded) {
+                    journal.discardLast();
                 }
             } catch (RuntimeException exception) {
+                if (recorded) {
+                    journal.discardLast();
+                }
                 LOGGER.warn("Failed to apply block change at {}", change.position(), exception);
             }
         }

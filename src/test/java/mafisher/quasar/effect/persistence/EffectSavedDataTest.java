@@ -2,16 +2,23 @@ package mafisher.quasar.effect.persistence;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.util.UUID;
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectTransform;
+import mafisher.quasar.effect.block.BlockChange;
+import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.block.Blocks;
 import org.junit.jupiter.api.Test;
 
 class EffectSavedDataTest {
@@ -83,9 +90,92 @@ class EffectSavedDataTest {
 
         assertEquals(EffectSavedData.SCHEMA_VERSION, saved.getInt("schema_version"));
         assertEquals(Tag.TAG_LIST, saved.getTagType("effects"));
+        assertEquals(Tag.TAG_LIST, saved.getTagType("journals"));
+    }
+
+    @Test
+    void roundTripsBlockJournals() {
+        EffectSavedData data = new EffectSavedData();
+        EffectDescriptor descriptor = descriptor(5L);
+        data.put(descriptor);
+        BlockJournal journal = journal();
+        data.putJournal(descriptor.instanceId(), journal);
+
+        EffectSavedData loaded = EffectSavedData.load(data.save(new CompoundTag(), null), null);
+
+        assertEquals(1, loaded.journal(descriptor.instanceId()).size());
+        assertEquals(EffectSavedData.SCHEMA_VERSION, loaded.schemaVersion());
+    }
+
+    @Test
+    void migratesLegacySchemaWithoutJournals() {
+        EffectSavedData data = new EffectSavedData();
+        data.put(descriptor(6L));
+        CompoundTag legacy = data.save(new CompoundTag(), null);
+        legacy.putInt("schema_version", 1);
+        legacy.remove("journals");
+
+        EffectSavedData loaded = EffectSavedData.load(legacy, null);
+
+        assertEquals(1, loaded.schemaVersion());
+        assertEquals(1, loaded.descriptors().size());
+
+        CompoundTag resaved = loaded.save(new CompoundTag(), null);
+        assertEquals(EffectSavedData.SCHEMA_VERSION, resaved.getInt("schema_version"));
+    }
+
+    @Test
+    void removesJournalsWithDescriptors() {
+        EffectSavedData data = new EffectSavedData();
+        EffectDescriptor descriptor = descriptor(7L);
+        data.put(descriptor);
+        data.putJournal(descriptor.instanceId(), journal());
+
+        data.remove(descriptor.instanceId());
+
+        assertNull(data.journal(descriptor.instanceId()));
+        assertTrue(data.journalIds().isEmpty());
+    }
+
+    @Test
+    void removesChildDescriptorsByOwnerSession() {
+        EffectSavedData data = new EffectSavedData();
+        UUID parent = UUID.randomUUID();
+        EffectDescriptor child = descriptor(8L, parent);
+        data.put(child);
+
+        assertEquals(1, data.removeOwnedBy(parent));
+
+        assertFalse(data.contains(child.instanceId()));
+        assertTrue(data.instanceIds().isEmpty());
+    }
+
+    @Test
+    void ignoresJournalsForUnknownDescriptors() {
+        EffectSavedData data = new EffectSavedData();
+
+        data.putJournal(UUID.randomUUID(), journal());
+
+        assertTrue(data.journalIds().isEmpty());
+    }
+
+    private static BlockJournal journal() {
+        ServerLevel level = mock(ServerLevel.class);
+        when(level.getBlockEntity(net.minecraft.core.BlockPos.ZERO)).thenReturn(null);
+        BlockJournal journal = new BlockJournal();
+        journal.record(
+            level,
+            new BlockChange(BlockPos.ZERO, Blocks.AIR.defaultBlockState()),
+            Blocks.STONE.defaultBlockState()
+        );
+        return journal;
     }
 
     private static EffectDescriptor descriptor(long startGameTime) {
+        return descriptor(startGameTime, null);
+    }
+
+    private static EffectDescriptor descriptor(long startGameTime, UUID ownerSessionId) {
         return new EffectDescriptor(
             UUID.randomUUID(),
             EffectKind.VISUAL,
@@ -99,7 +189,7 @@ class EffectSavedDataTest {
             EffectAudience.dimensionWide(),
             EffectCapabilities.NONE,
             EffectPersistence.RESUMABLE,
-            null,
+            ownerSessionId,
             new CompoundTag()
         );
     }

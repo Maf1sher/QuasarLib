@@ -1,6 +1,7 @@
 package mafisher.quasar.effect.gameplay;
 
 import mafisher.quasar.QuasarLib;
+import mafisher.quasar.effect.persistence.BlockRollbackService;
 import net.minecraft.server.level.ServerLevel;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -17,6 +18,7 @@ public final class GameplayEffectLifecycleEvents {
     public static void onLevelUnload(LevelEvent.Unload event) {
         if (event.getLevel() instanceof ServerLevel level) {
             GameplayEffectService.stopAll(level, GameplayEffectEndReason.LEVEL_UNLOAD, false);
+            BlockRollbackService.clear(level);
         }
     }
 
@@ -24,6 +26,7 @@ public final class GameplayEffectLifecycleEvents {
     public static void onServerStopping(ServerStoppingEvent event) {
         for (ServerLevel level : event.getServer().getAllLevels()) {
             GameplayEffectService.stopAll(level, GameplayEffectEndReason.SERVER_STOPPING, false);
+            BlockRollbackService.clear(level);
         }
     }
 }

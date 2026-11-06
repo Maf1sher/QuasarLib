@@ -10,6 +10,8 @@ import mafisher.quasar.effect.EffectScope;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectPoint;
+import mafisher.quasar.effect.persistence.BlockJournal;
+import mafisher.quasar.effect.persistence.BlockRollbackService;
 import mafisher.quasar.effect.persistence.EffectDescriptor;
 import mafisher.quasar.effect.persistence.EffectCapabilities;
 import mafisher.quasar.effect.persistence.EffectKind;
@@ -112,9 +114,12 @@ public final class GameplayEffectService {
 
         EffectScope scope = null;
         GameplayEffectContext context = null;
+        BlockJournal journal = new BlockJournal();
         try {
             scope = new EffectScope(level);
-            context = new GameplayEffectContext(level, scope, spec, scope.sessionId(), options.capabilities());
+            context = new GameplayEffectContext(
+                level, scope, spec, scope.sessionId(), options.capabilities(), journal
+            );
             controller.onStart(context);
             controller.onPhaseEnter(context, 0);
         } catch (RuntimeException | Error exception) {
@@ -135,6 +140,9 @@ public final class GameplayEffectService {
         ActiveSession session = new ActiveSession(spec, controller, scope, context, descriptor, level.getGameTime());
         sessions.put(session.id, session);
         EffectPersistenceService.recordStart(level, descriptor);
+        if (options.capabilities().destructive()) {
+            EffectPersistenceService.recordJournal(level, session.id, journal);
+        }
         if (context.isStopRequested()) {
             finish(level, session, GameplayEffectEndReason.CANCELLED, true);
         }
@@ -186,6 +194,15 @@ public final class GameplayEffectService {
             throw new IllegalStateException("Gameplay effects are server-authoritative");
         }
 
+        BlockJournal journal = EffectPersistenceService.journalOrNull(level, sessionId);
+        if (journal == null) {
+            journal = new BlockJournal();
+        }
+        if (journal.isRollbackPending()) {
+            BlockRollbackService.schedule(level, sessionId, journal);
+            return null;
+        }
+
         int age = (int)Math.min(Integer.MAX_VALUE, Math.max(0L, level.getGameTime() - startGameTime));
         if (age >= spec.phases().totalDurationTicks()) {
             EffectPersistenceService.recordStop(level, sessionId);
@@ -218,6 +235,7 @@ public final class GameplayEffectService {
             spec,
             sessionId,
             descriptor.capabilities(),
+            journal,
             age,
             GameplayEffectNbt.loadConsumerState(descriptor)
         );
@@ -303,18 +321,16 @@ public final class GameplayEffectService {
             throw new IllegalArgumentException("Block change application budget cannot be negative");
         }
         Map<UUID, ActiveSession> sessions = ACTIVE_SESSIONS.get(level);
-        if (sessions == null || sessions.isEmpty()) {
-            ACTIVE_SESSIONS.remove(level);
-            return;
-        }
-
         int remainingBlockChanges = blockChangeBudget;
-        for (ActiveSession session : new ArrayList<>(sessions.values())) {
-            if (sessions.containsKey(session.id)) {
-                remainingBlockChanges = tickSession(level, session, remainingBlockChanges);
+        if (sessions != null && !sessions.isEmpty()) {
+            for (ActiveSession session : new ArrayList<>(sessions.values())) {
+                if (sessions.containsKey(session.id)) {
+                    remainingBlockChanges = tickSession(level, session, remainingBlockChanges);
+                }
             }
         }
-        if (sessions.isEmpty()) {
+        BlockRollbackService.tick(level, remainingBlockChanges);
+        if (sessions == null || sessions.isEmpty()) {
             ACTIVE_SESSIONS.remove(level);
         }
     }
@@ -333,10 +349,12 @@ public final class GameplayEffectService {
                     exception
                 );
             }
+            persistJournal(level, session);
             finish(level, session, GameplayEffectEndReason.EXPIRED, true);
             return remainingBlockChanges;
         }
         if (ownerUnavailable(level, session.spec)) {
+            persistJournal(level, session);
             finish(level, session, GameplayEffectEndReason.OWNER_UNAVAILABLE, true);
             return remainingBlockChanges;
         }
@@ -349,12 +367,14 @@ public final class GameplayEffectService {
                 session.controller.onPhaseEnter(context, phaseIndex);
                 if (context.isStopRequested()) {
                     remainingBlockChanges = applyBlockChanges(session, remainingBlockChanges);
+                    persistJournal(level, session);
                     finish(level, session, GameplayEffectEndReason.CANCELLED, true);
                     return remainingBlockChanges;
                 }
             }
             session.controller.onTick(context);
             remainingBlockChanges = applyBlockChanges(session, remainingBlockChanges);
+            persistJournal(level, session);
         } catch (RuntimeException exception) {
             LOGGER.error(
                 "Gameplay effect {} failed on tick {}",
@@ -385,6 +405,12 @@ public final class GameplayEffectService {
             return remainingBlockChanges;
         }
         return remainingBlockChanges - session.context.applyBlockChanges(perSession);
+    }
+
+    private static void persistJournal(ServerLevel level, ActiveSession session) {
+        if (session.context.consumeJournalDirty()) {
+            EffectPersistenceService.recordJournal(level, session.id, session.context.blockJournal());
+        }
     }
 
     private static boolean destructivePolicyAllows(
@@ -425,6 +451,22 @@ public final class GameplayEffectService {
             return;
         }
 
+        BlockJournal journal = session.context.blockJournal();
+        boolean wantsRollback = persistRemoval && shouldRollback(reason);
+        boolean rollback = wantsRollback && journal.canRollback();
+        if (wantsRollback && journal.isTruncated()) {
+            LOGGER.warn(
+                "Block journal for {} was truncated; leaving its changes permanent",
+                session.id
+            );
+        }
+        if (rollback) {
+            journal.beginRollback();
+            EffectPersistenceService.recordJournal(level, session.id, journal);
+        } else if (!persistRemoval) {
+            persistJournal(level, session);
+        }
+
         try {
             session.controller.onEnd(session.context, reason);
         } catch (RuntimeException exception) {
@@ -436,13 +478,26 @@ public final class GameplayEffectService {
             if (admission != null) {
                 admission.recordEnd(session.spec.ownerId());
             }
-            if (persistRemoval) {
-                EffectPersistenceService.recordStop(level, session.id);
+        }
+
+        if (rollback) {
+            try {
+                BlockRollbackService.schedule(level, session.id, journal);
+            } catch (RuntimeException exception) {
+                LOGGER.error("Could not schedule block rollback for {}", session.id, exception);
             }
+        } else if (persistRemoval) {
+            EffectPersistenceService.recordStop(level, session.id);
         }
         if (sessions.isEmpty()) {
             ACTIVE_SESSIONS.remove(level);
         }
+    }
+
+    private static boolean shouldRollback(GameplayEffectEndReason reason) {
+        return reason == GameplayEffectEndReason.CANCELLED
+            || reason == GameplayEffectEndReason.FAILED
+            || reason == GameplayEffectEndReason.OWNER_UNAVAILABLE;
     }
 
     private static Map<UUID, ActiveSession> activeSessions(ServerLevel level) {

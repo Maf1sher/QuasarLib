@@ -10,6 +10,7 @@ import mafisher.quasar.effect.EffectScope;
 import mafisher.quasar.effect.block.BlockChange;
 import mafisher.quasar.effect.block.BlockProtectionContext;
 import mafisher.quasar.effect.block.BlockProtectionService;
+import mafisher.quasar.effect.persistence.BlockJournal;
 import mafisher.quasar.effect.persistence.EffectCapabilities;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -27,6 +28,7 @@ public final class GameplayEffectContext {
     private final GameplayEffectSpec spec;
     private final UUID sessionId;
     private final EffectCapabilities capabilities;
+    private final BlockJournal blockJournal;
     private final EffectTickBudgetState budgetState;
     private final PendingBlockChanges blockChanges = new PendingBlockChanges();
 
@@ -42,9 +44,10 @@ public final class GameplayEffectContext {
         EffectScope scope,
         GameplayEffectSpec spec,
         UUID sessionId,
-        EffectCapabilities capabilities
+        EffectCapabilities capabilities,
+        BlockJournal blockJournal
     ) {
-        this(level, scope, spec, sessionId, capabilities, 0, new CompoundTag());
+        this(level, scope, spec, sessionId, capabilities, blockJournal, 0, new CompoundTag());
     }
 
     GameplayEffectContext(
@@ -53,6 +56,7 @@ public final class GameplayEffectContext {
         GameplayEffectSpec spec,
         UUID sessionId,
         EffectCapabilities capabilities,
+        BlockJournal blockJournal,
         int initialAgeTicks,
         CompoundTag initialState
     ) {
@@ -61,6 +65,7 @@ public final class GameplayEffectContext {
         this.spec = Objects.requireNonNull(spec, "spec");
         this.sessionId = Objects.requireNonNull(sessionId, "sessionId");
         this.capabilities = Objects.requireNonNull(capabilities, "capabilities");
+        this.blockJournal = Objects.requireNonNull(blockJournal, "blockJournal");
         this.persistentState = Objects.requireNonNull(initialState, "initialState").copy();
         this.budgetState = new EffectTickBudgetState(spec.budget());
         this.beginTick(initialAgeTicks);
@@ -206,11 +211,21 @@ public final class GameplayEffectContext {
         PendingBlockChanges.ApplyResult result = this.blockChanges.apply(
             this.level,
             maxChanges,
-            this::allowsBlockChange
+            this::allowsBlockChange,
+            this.blockJournal
         );
         this.budgetState.recordBlockChangesApplied(result.applied());
         this.budgetState.recordBlockChangesVetoed(result.vetoed());
         return result.processed();
+    }
+
+    /** The engine-managed journal for this session. */
+    BlockJournal blockJournal() {
+        return this.blockJournal;
+    }
+
+    boolean consumeJournalDirty() {
+        return this.blockJournal.consumeDirty();
     }
 
     private boolean allowsBlockChange(BlockChange change, BlockState currentState) {
