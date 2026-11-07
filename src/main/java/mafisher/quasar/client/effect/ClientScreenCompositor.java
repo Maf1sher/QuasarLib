@@ -7,6 +7,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.logging.LogUtils;
 import java.util.List;
 import java.util.Objects;
+import mafisher.quasar.effect.EffectQualityTier;
 import net.minecraft.client.Minecraft;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import org.joml.Matrix4f;
@@ -75,7 +76,10 @@ final class ClientScreenCompositor {
 
         boolean sceneCaptured = false;
         try {
-            this.ensureTargets(width, height);
+            EffectQualityTier quality = ClientQualityController.tier();
+            int targetWidth = Math.max(1, Math.round(width * quality.screenScale()));
+            int targetHeight = Math.max(1, Math.round(height * quality.screenScale()));
+            this.ensureTargets(targetWidth, targetHeight);
             if (mainTarget.getDepthTextureId() <= 0 || this.screenMaskTarget.getDepthTextureId() <= 0) {
                 throw new IllegalStateException("The main render target has no sampleable depth attachment");
             }
@@ -87,8 +91,8 @@ final class ClientScreenCompositor {
                 event.getCamera().getPosition(),
                 new Matrix4f(event.getModelViewMatrix()),
                 new Matrix4f(event.getProjectionMatrix()),
-                width,
-                height,
+                targetWidth,
+                targetHeight,
                 event.getPartialTick().getGameTimeDeltaPartialTick(false)
             );
 
@@ -96,7 +100,7 @@ final class ClientScreenCompositor {
             for (ScreenEffectFrame screenEffect : screenEffects) {
                 this.renderMask(event, manager, mainTarget, screenEffect);
                 RenderTarget destination = currentColor == mainTarget ? this.compositionTarget : mainTarget;
-                this.renderOperation(currentColor, destination, screenEffect, camera);
+                this.renderOperation(currentColor, destination, screenEffect, camera, quality);
                 currentColor = destination;
             }
 
@@ -145,7 +149,7 @@ final class ClientScreenCompositor {
     }
 
     private void renderOperation(RenderTarget sourceColor, RenderTarget destination,
-        ScreenEffectFrame screenEffect, ScreenEffectCameraState camera) {
+        ScreenEffectFrame screenEffect, ScreenEffectCameraState camera, EffectQualityTier quality) {
         ScreenEffectOperationRenderer renderer = this.operationRegistry.find(screenEffect.settings().operation())
             .orElseThrow(() -> new IllegalStateException("No screen effect operation registered for "
                 + screenEffect.settings().operation().id()));
@@ -155,6 +159,7 @@ final class ClientScreenCompositor {
                 screenEffect.context(),
                 screenEffect.mask(),
                 camera,
+                quality,
                 sourceColor,
                 destination,
                 this.screenMaskTarget,

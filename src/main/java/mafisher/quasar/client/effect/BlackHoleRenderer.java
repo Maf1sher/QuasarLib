@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 import mafisher.quasar.QuasarLib;
+import mafisher.quasar.effect.EffectQualityTier;
 import mafisher.quasar.effect.EffectTimeline;
 import java.util.List;
 import net.minecraft.client.Minecraft;
@@ -52,9 +53,15 @@ final class BlackHoleRenderer implements ScreenEffectRenderer {
         }
 
         int shaderData = shaderData(context);
+        int sphereLod = context.lod().level();
+        if (context.quality() == EffectQualityTier.LOW) {
+            sphereLod = Math.max(sphereLod, 2);
+        } else if (context.quality() == EffectQualityTier.MEDIUM) {
+            sphereLod = Math.max(sphereLod, 1);
+        }
         switch (pass.id()) {
             case CORE_PASS -> renderCore(poseStack, bufferSource.getBuffer(CORE_RENDER_TYPE),
-                scale * CORE_RADIUS_FACTOR, context.lod().level(), shaderData);
+                scale * CORE_RADIUS_FACTOR, sphereLod, shaderData);
             case DISK_PASS -> renderDisk(poseStack, bufferSource.getBuffer(DISK_RENDER_TYPE), context,
                 scale, EffectTimeline.fadeEnvelope(context.progress(), 0.08F, 0.12F),
                 BlackHoleLighting.emissionScale(daylightFactor(context)), shaderData);
@@ -129,8 +136,10 @@ final class BlackHoleRenderer implements ScreenEffectRenderer {
         float scale, float alpha, float emissionScale, int shaderData) {
         renderAccretionLayer(poseStack, vertices, BlackHoleGeometry.primaryDisk(), scale,
             context.ageTicks() * 0.018F, alpha, emissionScale, shaderData);
-        renderAccretionLayer(poseStack, vertices, BlackHoleGeometry.secondaryDisk(), scale,
-            -context.ageTicks() * 0.027F, alpha, emissionScale, shaderData);
+        if (context.quality().atLeast(EffectQualityTier.MEDIUM)) {
+            renderAccretionLayer(poseStack, vertices, BlackHoleGeometry.secondaryDisk(), scale,
+                -context.ageTicks() * 0.027F, alpha, emissionScale, shaderData);
+        }
     }
 
     private static void renderAccretionLayer(PoseStack poseStack, VertexConsumer vertices,

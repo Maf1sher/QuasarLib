@@ -3,6 +3,7 @@ package mafisher.quasar.client.effect;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.pipeline.TextureTarget;
 import java.util.Objects;
+import mafisher.quasar.effect.EffectQualityTier;
 import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
@@ -41,7 +42,8 @@ final class BuiltInScreenEffectOperations {
         ShaderInstance shader = compositeShader();
         context.bindCompositeInputs(shader);
         context.setUniform(shader, "Operation", 1.0F);
-        context.setUniform(shader, "WaveAmplitudePixels", settings.amplitudePixels());
+        context.setUniform(shader, "WaveAmplitudePixels",
+            settings.amplitudePixels() * context.quality().screenScale());
         context.setUniform(shader, "WaveFrequency", settings.frequencyCycles());
         context.setUniform(shader, "WaveSpeed", settings.speedCyclesPerTick());
         context.setUniform(shader, "WaveTime", context.effect().ageTicks());
@@ -51,6 +53,10 @@ final class BuiltInScreenEffectOperations {
 
     private static void renderSceneBlur(ScreenEffectOperationContext context) {
         SceneBlurSettings settings = context.settings(SceneBlurSettings.class);
+        if (!blurEnabled(context.quality())) {
+            context.blitColor(context.sourceColor(), context.destination());
+            return;
+        }
         TextureTarget blur = context.acquireScratchTarget(
             context.destination().width, context.destination().height
         );
@@ -83,7 +89,7 @@ final class BuiltInScreenEffectOperations {
         second.setFilterMode(LINEAR_FILTER);
         try {
             renderBloomPasses(context, context.sourceColor(), destination, context.mask().strength(),
-                settings, first, second);
+                settings, first, second, bloomUsesBlur(context.quality()));
         } finally {
             context.releaseScratchTarget(first);
             context.releaseScratchTarget(second);
@@ -107,7 +113,8 @@ final class BuiltInScreenEffectOperations {
                 context.setUniform(shader, "LensRadiusPixels", projection.radiusPixels());
                 context.setUniform(shader, "LensDepth", projection.depth());
                 context.setUniform(shader, "LensStrength", settings.lensStrength());
-                context.setUniform(shader, "MaxDistortionPixels", settings.maxDistortionPixels());
+                context.setUniform(shader, "MaxDistortionPixels",
+                    settings.maxDistortionPixels() * context.quality().screenScale());
                 context.setUniform(shader, "ViewportWidth", destination.width);
                 context.setUniform(shader, "ViewportHeight", destination.height);
                 context.drawFullscreen(lens, shader);
@@ -122,7 +129,7 @@ final class BuiltInScreenEffectOperations {
             second.setFilterMode(LINEAR_FILTER);
             try {
                 renderBloomPasses(context, bloomSource, destination, context.mask().strength(),
-                    settings.bloomSettings(), first, second);
+                    settings.bloomSettings(), first, second, bloomUsesBlur(context.quality()));
             } finally {
                 context.releaseScratchTarget(first);
                 context.releaseScratchTarget(second);
@@ -136,22 +143,24 @@ final class BuiltInScreenEffectOperations {
 
     private static void renderBloomPasses(ScreenEffectOperationContext context, RenderTarget source,
         RenderTarget destination, float maskStrength, BloomSettings settings, TextureTarget first,
-        TextureTarget second) {
+        TextureTarget second, boolean blur) {
         ShaderInstance shader = bloomShader();
         bindBloomInputs(context, shader, source);
         setBloomUniforms(context, shader, settings, source, maskStrength);
         context.setUniform(shader, "Pass", 0.0F);
         context.drawFullscreen(first, shader);
 
-        context.setSampler(shader, "BloomSampler", first.getColorTextureId());
-        context.setUniform(shader, "Pass", 1.0F);
-        context.setUniform(shader, "Horizontal", 1.0F);
-        context.drawFullscreen(second, shader);
+        if (blur) {
+            context.setSampler(shader, "BloomSampler", first.getColorTextureId());
+            context.setUniform(shader, "Pass", 1.0F);
+            context.setUniform(shader, "Horizontal", 1.0F);
+            context.drawFullscreen(second, shader);
 
-        context.setSampler(shader, "BloomSampler", second.getColorTextureId());
-        context.setUniform(shader, "Pass", 2.0F);
-        context.setUniform(shader, "Horizontal", 0.0F);
-        context.drawFullscreen(first, shader);
+            context.setSampler(shader, "BloomSampler", second.getColorTextureId());
+            context.setUniform(shader, "Pass", 2.0F);
+            context.setUniform(shader, "Horizontal", 0.0F);
+            context.drawFullscreen(first, shader);
+        }
 
         bindBloomInputs(context, shader, source);
         context.setSampler(shader, "BloomSampler", first.getColorTextureId());
@@ -171,7 +180,8 @@ final class BuiltInScreenEffectOperations {
         BloomSettings settings, RenderTarget viewport, float maskStrength) {
         context.setUniform(shader, "Threshold", settings.threshold());
         context.setUniform(shader, "Intensity", settings.intensity());
-        context.setUniform(shader, "RadiusPixels", settings.radiusPixels());
+        context.setUniform(shader, "RadiusPixels",
+            settings.radiusPixels() * context.quality().screenScale());
         context.setUniform(shader, "MaskStrength", maskStrength);
         context.setUniform(shader, "ViewportWidth", viewport.width);
         context.setUniform(shader, "ViewportHeight", viewport.height);
@@ -179,9 +189,22 @@ final class BuiltInScreenEffectOperations {
 
     private static void setBlurUniforms(ScreenEffectOperationContext context, ShaderInstance shader,
         SceneBlurSettings settings, RenderTarget viewport) {
-        context.setUniform(shader, "BlurRadiusPixels", settings.radiusPixels());
+        context.setUniform(shader, "BlurRadiusPixels",
+            settings.radiusPixels() * context.quality().screenScale() * blurRadiusScale(context.quality()));
         context.setUniform(shader, "ViewportWidth", viewport.width);
         context.setUniform(shader, "ViewportHeight", viewport.height);
+    }
+
+    static boolean bloomUsesBlur(EffectQualityTier quality) {
+        return quality.atLeast(EffectQualityTier.HIGH);
+    }
+
+    static boolean blurEnabled(EffectQualityTier quality) {
+        return quality != EffectQualityTier.LOW;
+    }
+
+    static float blurRadiusScale(EffectQualityTier quality) {
+        return quality.atLeast(EffectQualityTier.HIGH) ? 1.0F : 0.5F;
     }
 
     private static BlackHoleProjection projectBlackHole(ScreenEffectOperationContext context,

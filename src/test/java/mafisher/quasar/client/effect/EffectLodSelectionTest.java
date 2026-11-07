@@ -1,6 +1,7 @@
 package mafisher.quasar.client.effect;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import net.minecraft.world.phys.Vec3;
@@ -27,6 +28,27 @@ class EffectLodSelectionTest {
         assertEquals(1, lod.level());
         assertEquals(60.0, lod.cameraDistance());
         assertEquals(5.0, lod.gapInRadii());
+    }
+
+    @Test
+    void qualityMultiplierMakesLowerTiersSwitchSooner() {
+        EffectLod high = EffectLodSelection.select(EffectLodProfile.of(2.0), ORIGIN,
+            new Vec3(25.0, 0.0, 0.0), 10.0, 1.0F);
+        EffectLod low = EffectLodSelection.select(EffectLodProfile.of(2.0), ORIGIN,
+            new Vec3(25.0, 0.0, 0.0), 10.0, 2.0F);
+
+        assertEquals(0, high.level());
+        assertEquals(1, low.level());
+        assertEquals(1.5, high.gapInRadii());
+        assertEquals(3.0, low.gapInRadii());
+    }
+
+    @Test
+    void rejectsInvalidQualityMultiplier() {
+        assertThrows(IllegalArgumentException.class, () -> EffectLodSelection.select(
+            EffectLodProfile.of(1.0), ORIGIN, new Vec3(1.0, 0.0, 0.0), 1.0, 0.0F));
+        assertThrows(IllegalArgumentException.class, () -> EffectLodSelection.select(
+            EffectLodProfile.of(1.0), ORIGIN, new Vec3(1.0, 0.0, 0.0), 1.0, Float.NaN));
     }
 
     @Test

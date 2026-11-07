@@ -4,6 +4,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexSorting;
 import mafisher.quasar.effect.EffectPoint;
+import mafisher.quasar.effect.EffectQualityTier;
 import mafisher.quasar.effect.EffectTimeline;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.network.ResumeEffectsPayload;
@@ -333,11 +334,13 @@ public final class ClientVisualEffectManager {
             return;
         }
         EffectRenderContext context = this.createRenderContext(effect, gameTime, partialTick);
+        EffectQualityTier quality = ClientQualityController.tier();
+        context = context.withQuality(quality);
         double radius = this.instanceSpatialRadii.getOrDefault(instanceId, Double.POSITIVE_INFINITY);
         if (!this.isVisible(renderer, context, event, radius)) {
             return;
         }
-        consumer.accept(effect, context.withLod(selectLod(renderer, event, context, radius)), renderer);
+        consumer.accept(effect, context.withLod(selectLod(renderer, event, context, radius, quality)), renderer);
     }
 
     private void visitMember(
@@ -354,11 +357,13 @@ public final class ClientVisualEffectManager {
         }
         VisualEffectInstance effect = group.renderInstance(member);
         EffectRenderContext context = this.createRenderContext(effect, gameTime, partialTick);
+        EffectQualityTier quality = ClientQualityController.tier();
+        context = context.withQuality(quality);
         if (!this.isVisible(renderer, context, event, member.spatialRadius())) {
             return;
         }
-        consumer.accept(effect, context.withLod(selectLod(renderer, event, context, member.spatialRadius())),
-            renderer);
+        consumer.accept(effect, context.withLod(selectLod(renderer, event, context, member.spatialRadius(),
+            quality)), renderer);
     }
 
     /**
@@ -369,12 +374,14 @@ public final class ClientVisualEffectManager {
         VisualEffectRenderer renderer,
         net.neoforged.neoforge.client.event.RenderLevelStageEvent event,
         EffectRenderContext context,
-        double spatialRadius
+        double spatialRadius,
+        EffectQualityTier quality
     ) {
         Vec3 cameraPosition = event.getCamera().getPosition();
         EffectPoint position = context.transform().position();
         return EffectLodSelection.select(renderer.lodProfile(), cameraPosition.x, cameraPosition.y,
-            cameraPosition.z, position.x(), position.y(), position.z(), spatialRadius);
+            cameraPosition.z, position.x(), position.y(), position.z(), spatialRadius,
+            quality.lodDistanceMultiplier());
     }
 
     private boolean isVisible(

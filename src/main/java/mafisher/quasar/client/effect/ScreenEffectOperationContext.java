@@ -10,6 +10,7 @@ import com.mojang.blaze3d.vertex.BufferUploader;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import java.util.Objects;
+import mafisher.quasar.effect.EffectQualityTier;
 import net.minecraft.client.renderer.ShaderInstance;
 
 /**
@@ -31,19 +32,21 @@ public final class ScreenEffectOperationContext {
     private final EffectRenderContext effect;
     private final ScreenEffectMask mask;
     private final ScreenEffectCameraState camera;
+    private final EffectQualityTier quality;
     private final RenderTarget sourceColor;
     private final RenderTarget destination;
     private final RenderTarget maskTarget;
     private final ScreenEffectScratchTargetPool scratchTargets;
 
     ScreenEffectOperationContext(ScreenEffectSettings settings, EffectRenderContext effect,
-        ScreenEffectMask mask, ScreenEffectCameraState camera, RenderTarget sourceColor,
-        RenderTarget destination, RenderTarget maskTarget,
+        ScreenEffectMask mask, ScreenEffectCameraState camera, EffectQualityTier quality,
+        RenderTarget sourceColor, RenderTarget destination, RenderTarget maskTarget,
         ScreenEffectScratchTargetPool scratchTargets) {
         this.settings = Objects.requireNonNull(settings, "settings");
         this.effect = Objects.requireNonNull(effect, "effect");
         this.mask = Objects.requireNonNull(mask, "mask");
         this.camera = Objects.requireNonNull(camera, "camera");
+        this.quality = Objects.requireNonNull(quality, "quality");
         this.sourceColor = Objects.requireNonNull(sourceColor, "sourceColor");
         this.destination = Objects.requireNonNull(destination, "destination");
         this.maskTarget = Objects.requireNonNull(maskTarget, "maskTarget");
@@ -81,6 +84,11 @@ public final class ScreenEffectOperationContext {
     /** Returns immutable camera position, matrices, viewport, and partial tick. */
     public ScreenEffectCameraState camera() {
         return this.camera;
+    }
+
+    /** Returns the quality tier selected for this frame. */
+    public EffectQualityTier quality() {
+        return this.quality;
     }
 
     /** Returns the color captured before this operation. */

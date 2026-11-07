@@ -21,6 +21,7 @@ import mafisher.quasar.client.effect.RegisterVisualEffectRenderersEvent;
 import mafisher.quasar.client.effect.VisualEffectInstance;
 import mafisher.quasar.client.effect.VisualEffectRenderer;
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
+import mafisher.quasar.effect.EffectQualityTier;
 import net.minecraft.resources.ResourceLocation;
 import org.joml.Matrix4f;
 import org.junit.jupiter.api.Test;
@@ -125,6 +126,12 @@ class PublicRendererSpiVisibilityTest {
         assertEquals(1, renderer.lodProfile().select(2.0));
         assertEquals(EffectLod.FULL,
             new EffectRenderContext(instance, payload.transform(), 0.0F, 0.0F, 0.0F).lod());
+        assertEquals(EffectQualityTier.HIGH,
+            new EffectRenderContext(instance, payload.transform(), 0.0F, 0.0F, 0.0F).quality());
+        assertEquals(EffectQualityTier.LOW,
+            new EffectRenderContext(instance, payload.transform(), 0.0F, 0.0F, 0.0F)
+                .withQuality(EffectQualityTier.LOW)
+                .quality());
         assertEquals(2, new EffectRenderContext(instance, payload.transform(), 0.0F, 0.0F, 0.0F)
             .withLod(new EffectLod(2, 64.0, 8.0))
             .lod()

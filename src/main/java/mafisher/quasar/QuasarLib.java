@@ -14,6 +14,7 @@ public final class QuasarLib {
 
     public QuasarLib(IEventBus modEventBus, ModContainer modContainer) {
         modContainer.registerConfig(ModConfig.Type.SERVER, QuasarConfig.SPEC);
+        modContainer.registerConfig(ModConfig.Type.CLIENT, QuasarClientConfig.SPEC);
         QuasarEffectEntities.ENTITY_TYPES.register(modEventBus);
         QuasarSounds.SOUNDS.register(modEventBus);
         ContentBootstrap.init(modEventBus);

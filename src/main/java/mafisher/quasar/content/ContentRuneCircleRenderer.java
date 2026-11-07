@@ -16,6 +16,7 @@ import mafisher.quasar.client.effect.QuasarRenderTypes;
 import mafisher.quasar.client.effect.ScreenEffectMask;
 import mafisher.quasar.client.effect.ScreenEffectRenderer;
 import mafisher.quasar.client.effect.ScreenEffectSettings;
+import mafisher.quasar.effect.EffectQualityTier;
 import mafisher.quasar.effect.EffectTimeline;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
@@ -55,14 +56,16 @@ final class ContentRuneCircleRenderer implements ScreenEffectRenderer, Instanced
         float seedRotation = seedRotation(context.seed());
         float seedData = (Long.hashCode(context.seed()) & 0xFFFF) / 65535.0F;
 
-        List<EffectInstancedPass> passes = new ArrayList<>(reduced(context) ? 1 : 3);
+        List<EffectInstancedPass> passes = new ArrayList<>(layerCount(context));
         passes.add(instancedLayer(OUTER_PASS, SETTINGS.outer(), worldScale,
             seedRotation + context.ageTicks() * SETTINGS.outer().rotationSpeed(), alpha,
             context.progress(), seedData));
-        if (!reduced(context)) {
+        if (layerCount(context) >= 2) {
             passes.add(instancedLayer(MIDDLE_PASS, SETTINGS.middle(), worldScale,
                 seedRotation + context.ageTicks() * SETTINGS.middle().rotationSpeed(), alpha,
                 context.progress(), seedData));
+        }
+        if (layerCount(context) >= 3) {
             passes.add(instancedLayer(INNER_PASS, SETTINGS.inner(), worldScale,
                 seedRotation + context.ageTicks() * SETTINGS.inner().rotationSpeed(), alpha,
                 context.progress(), seedData));
@@ -120,10 +123,12 @@ final class ContentRuneCircleRenderer implements ScreenEffectRenderer, Instanced
         renderLayer(poseStack, vertices, worldScale, SETTINGS.outer(),
             seedRotation + context.ageTicks() * SETTINGS.outer().rotationSpeed(), alpha,
             OverlayTexture.NO_OVERLAY);
-        if (!reduced(context)) {
+        if (layerCount(context) >= 2) {
             renderLayer(poseStack, vertices, worldScale, SETTINGS.middle(),
                 seedRotation + context.ageTicks() * SETTINGS.middle().rotationSpeed(), alpha,
                 OverlayTexture.NO_OVERLAY);
+        }
+        if (layerCount(context) >= 3) {
             renderLayer(poseStack, vertices, worldScale, SETTINGS.inner(),
                 seedRotation + context.ageTicks() * SETTINGS.inner().rotationSpeed(), alpha,
                 OverlayTexture.NO_OVERLAY);
@@ -145,6 +150,13 @@ final class ContentRuneCircleRenderer implements ScreenEffectRenderer, Instanced
             .scale(worldScale * layer.scale(), 1.0F, worldScale * layer.scale());
         return new EffectInstancedPass(id, RENDER_TYPE, EffectMeshes.horizontalQuad(), localTransform,
             layer.red(), layer.green(), layer.blue(), alpha * layer.alpha(), progress, seedData);
+    }
+
+    private static int layerCount(EffectRenderContext context) {
+        if (reduced(context) || context.quality() == EffectQualityTier.LOW) {
+            return 1;
+        }
+        return context.quality() == EffectQualityTier.MEDIUM ? 2 : 3;
     }
 
     private static boolean reduced(EffectRenderContext context) {

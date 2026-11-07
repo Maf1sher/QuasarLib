@@ -2,6 +2,7 @@ package mafisher.quasar.client.effect;
 
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
 import mafisher.quasar.effect.network.StopVisualEffectPayload;
+import mafisher.quasar.effect.EffectQualityTier;
 import mafisher.quasar.effect.network.UpdateSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateVisualEffectPayload;
 import mafisher.quasar.effect.network.EffectAudioPlanPayload;
@@ -78,15 +79,24 @@ public final class ClientEffectRuntime {
 
     static void render(RenderLevelStageEvent event) {
         if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_PARTICLES) {
+            long start = System.nanoTime();
             manager().render(event);
+            ClientQualityController.recordWorldRender(System.nanoTime() - start);
         } else if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
+            long start = System.nanoTime();
             ClientVisualEffectManager effectManager = manager();
             ClientScreenCompositor compositor = screenCompositor;
             if (compositor != null) {
                 List<ScreenEffectFrame> screenEffects = effectManager.screenEffects(event);
                 compositor.render(event, effectManager, screenEffects);
             }
+            ClientQualityController.recordLevelRender(System.nanoTime() - start);
         }
+    }
+
+    /** Returns the quality tier currently used for client presentation. */
+    public static EffectQualityTier qualityTier() {
+        return ClientQualityController.tier();
     }
 
     static void onLevelUnload(ClientLevel level) {
@@ -94,6 +104,7 @@ public final class ClientEffectRuntime {
         if (current != null) {
             current.onLevelUnload(level);
         }
+        ClientQualityController.reset();
         ClientEffectAudio.clear();
         ClientScreenCompositor compositor = screenCompositor;
         if (compositor != null) {

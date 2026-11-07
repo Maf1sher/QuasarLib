@@ -13,6 +13,7 @@ import mafisher.quasar.client.effect.EffectRenderContext;
 import mafisher.quasar.client.effect.ScreenEffectMask;
 import mafisher.quasar.client.effect.ScreenEffectSettings;
 import mafisher.quasar.client.effect.VisualEffectInstance;
+import mafisher.quasar.effect.EffectQualityTier;
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.AABB;
@@ -54,6 +55,17 @@ class ContentRuneCircleRendererTest {
         assertEquals(3, renderer.instancedPasses(full).size());
         assertEquals(List.of("outer"),
             renderer.instancedPasses(reduced).stream().map(EffectInstancedPass::id).toList());
+    }
+
+    @Test
+    void trimsLayersByQualityTier() {
+        ContentRuneCircleRenderer renderer = new ContentRuneCircleRenderer();
+        EffectRenderContext context = context();
+
+        assertEquals(1, renderer.instancedPasses(context.withQuality(EffectQualityTier.LOW)).size());
+        assertEquals(2, renderer.instancedPasses(context.withQuality(EffectQualityTier.MEDIUM)).size());
+        assertEquals(3, renderer.instancedPasses(context.withQuality(EffectQualityTier.HIGH)).size());
+        assertEquals(3, renderer.instancedPasses(context.withQuality(EffectQualityTier.ULTRA)).size());
     }
 
     @Test
