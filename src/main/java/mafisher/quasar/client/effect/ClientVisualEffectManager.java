@@ -206,7 +206,7 @@ public final class ClientVisualEffectManager {
         this.instancedRenderer.draw(instancedBatches.draws(), baseView, RenderSystem.getProjectionMatrix());
     }
 
-    List<ScreenEffectFrame> screenEffects(net.neoforged.neoforge.client.event.RenderLevelStageEvent event) {
+    List<ScreenEffectBatch> screenEffects(net.neoforged.neoforge.client.event.RenderLevelStageEvent event) {
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
         this.synchronizeLevel(level);
@@ -220,7 +220,7 @@ public final class ClientVisualEffectManager {
             return List.of();
         }
 
-        List<ScreenEffectFrame> screenEffects = new ArrayList<>();
+        List<ScreenEffectFrame> frames = new ArrayList<>();
         this.forEachVisibleEffect(event, (effect, context, renderer) -> {
             if (!(renderer instanceof ScreenEffectRenderer screenRenderer)) {
                 return;
@@ -229,21 +229,24 @@ public final class ClientVisualEffectManager {
                 "screenEffectSettings");
             ScreenEffectMask mask = Objects.requireNonNull(screenRenderer.screenEffectMask(context),
                 "screenEffectMask");
-            if (mask.strength() > 0.0F) {
-                screenEffects.add(new ScreenEffectFrame(context, screenRenderer, settings, mask));
+            if (mask.strength() <= 0.0F) {
+                return;
             }
+            RenderType maskRenderType = Objects.requireNonNull(
+                screenRenderer.screenMaskRenderType(context), "screenMaskRenderType");
+            SegmentLink link = effect.payload().segmentLink();
+            UUID ownerId = link == null ? effect.instanceId() : link.coordinatorId();
+            frames.add(new ScreenEffectFrame(ownerId, context, screenRenderer, settings, mask, maskRenderType));
         });
-        return List.copyOf(screenEffects);
+        return ScreenEffectBatch.group(frames);
     }
 
-    void renderScreenMask(net.neoforged.neoforge.client.event.RenderLevelStageEvent event, ScreenEffectFrame effect) {
+    void renderScreenMask(net.neoforged.neoforge.client.event.RenderLevelStageEvent event, ScreenEffectBatch batch) {
         Minecraft minecraft = Minecraft.getInstance();
         Vec3 cameraPosition = event.getCamera().getPosition();
         PoseStack poseStack = event.getPoseStack();
         MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
-        RenderType maskRenderType = Objects.requireNonNull(
-            effect.renderer().screenMaskRenderType(effect.context()), "screenMaskRenderType");
-        EffectTransform transform = effect.context().transform();
+        RenderType maskRenderType = batch.maskRenderType();
 
         RenderSystem.backupProjectionMatrix();
         var modelViewStack = RenderSystem.getModelViewStack();
@@ -255,21 +258,27 @@ public final class ClientVisualEffectManager {
             modelViewStack.set(event.getModelViewMatrix());
             RenderSystem.applyModelViewMatrix();
 
-            poseStack.pushPose();
             try {
-                poseStack.translate(-cameraPosition.x, -cameraPosition.y, -cameraPosition.z);
-                poseStack.pushPose();
-                try {
-                    poseStack.translate(transform.position().x(), transform.position().y(),
-                        transform.position().z());
-                    EffectRenderTransform.applyRotation(poseStack, transform.yaw(), transform.pitch(),
-                        transform.roll());
-                    effect.renderer().renderScreenMask(effect.context(), maskRenderType, poseStack, buffers);
-                } finally {
-                    poseStack.popPose();
+                for (ScreenEffectFrame frame : batch.frames()) {
+                    EffectTransform transform = frame.context().transform();
+                    poseStack.pushPose();
+                    try {
+                        poseStack.translate(-cameraPosition.x, -cameraPosition.y, -cameraPosition.z);
+                        poseStack.pushPose();
+                        try {
+                            poseStack.translate(transform.position().x(), transform.position().y(),
+                                transform.position().z());
+                            EffectRenderTransform.applyRotation(poseStack, transform.yaw(), transform.pitch(),
+                                transform.roll());
+                            batch.renderer().renderScreenMask(frame.context(), maskRenderType, poseStack, buffers);
+                        } finally {
+                            poseStack.popPose();
+                        }
+                    } finally {
+                        poseStack.popPose();
+                    }
                 }
             } finally {
-                poseStack.popPose();
                 buffers.endBatch(maskRenderType);
             }
         } finally {

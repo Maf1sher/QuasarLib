@@ -35,12 +35,12 @@ final class ClientScreenCompositor {
         this.operationRegistry = Objects.requireNonNull(operationRegistry, "operationRegistry");
     }
 
-    void render(RenderLevelStageEvent event, ClientVisualEffectManager manager, List<ScreenEffectFrame> screenEffects) {
+    void render(RenderLevelStageEvent event, ClientVisualEffectManager manager, List<ScreenEffectBatch> batches) {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_LEVEL) {
             return;
         }
 
-        if (screenEffects.isEmpty()) {
+        if (batches.isEmpty()) {
             this.hadScreenEffects = false;
             this.unavailableWidth = -1;
             this.unavailableHeight = -1;
@@ -96,9 +96,9 @@ final class ClientScreenCompositor {
 
             RenderTarget currentColor = this.sceneColorTarget;
             RenderTarget alternateColor = this.compositionTarget;
-            for (ScreenEffectFrame screenEffect : screenEffects) {
-                this.renderMask(event, manager, mainTarget, screenEffect);
-                this.renderOperation(currentColor, alternateColor, screenEffect, camera, quality);
+            for (ScreenEffectBatch batch : batches) {
+                this.renderMask(event, manager, mainTarget, batch);
+                this.renderOperation(currentColor, alternateColor, batch, camera, quality);
                 RenderTarget previous = currentColor;
                 currentColor = alternateColor;
                 alternateColor = previous;
@@ -144,15 +144,15 @@ final class ClientScreenCompositor {
     }
 
     private void renderOperation(RenderTarget sourceColor, RenderTarget destination,
-        ScreenEffectFrame screenEffect, ScreenEffectCameraState camera, EffectQualityTier quality) {
-        ScreenEffectOperationRenderer renderer = this.operationRegistry.find(screenEffect.settings().operation())
+        ScreenEffectBatch batch, ScreenEffectCameraState camera, EffectQualityTier quality) {
+        ScreenEffectOperationRenderer renderer = this.operationRegistry.find(batch.settings().operation())
             .orElseThrow(() -> new IllegalStateException("No screen effect operation registered for "
-                + screenEffect.settings().operation().id()));
+                + batch.settings().operation().id()));
         try {
             ScreenEffectOperationContext context = new ScreenEffectOperationContext(
-                screenEffect.settings(),
-                screenEffect.context(),
-                screenEffect.mask(),
+                batch.settings(),
+                batch.operationContext(),
+                batch.mask(),
                 camera,
                 quality,
                 sourceColor,
@@ -168,13 +168,13 @@ final class ClientScreenCompositor {
     }
 
     private void renderMask(RenderLevelStageEvent event, ClientVisualEffectManager manager, RenderTarget mainTarget,
-        ScreenEffectFrame screenEffect) {
+        ScreenEffectBatch batch) {
         this.screenMaskTarget.setClearColor(0.0F, 0.0F, 0.0F, 0.0F);
         this.screenMaskTarget.clear(false);
         this.screenMaskTarget.copyDepthFrom(mainTarget);
         this.screenMaskTarget.bindWrite(true);
         try {
-            manager.renderScreenMask(event, screenEffect);
+            manager.renderScreenMask(event, batch);
         } finally {
             this.screenMaskTarget.unbindWrite();
         }

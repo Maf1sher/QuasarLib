@@ -87,8 +87,8 @@ public final class ClientEffectRuntime {
             ClientVisualEffectManager effectManager = manager();
             ClientScreenCompositor compositor = screenCompositor;
             if (compositor != null) {
-                List<ScreenEffectFrame> screenEffects = effectManager.screenEffects(event);
-                compositor.render(event, effectManager, screenEffects);
+                List<ScreenEffectBatch> batches = effectManager.screenEffects(event);
+                compositor.render(event, effectManager, batches);
             }
             ClientQualityController.recordLevelRender(System.nanoTime() - start);
         }
