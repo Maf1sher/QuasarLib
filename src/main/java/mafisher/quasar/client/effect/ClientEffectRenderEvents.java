@@ -15,7 +15,7 @@ public final class ClientEffectRenderEvents {
     public static void renderEffects(RenderLevelStageEvent event) {
         if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_PARTICLES
             || event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
-            ClientEffectRuntime.render(event);
+            ClientEffectFrameRuntime.render(event);
         }
     }
 }

@@ -23,7 +23,7 @@ public final class ClientEffectModEvents {
 
     @SubscribeEvent
     public static void registerReloadListeners(RegisterClientReloadListenersEvent event) {
-        event.registerReloadListener((ResourceManagerReloadListener)ClientEffectRuntime::onResourceReload);
+        event.registerReloadListener((ResourceManagerReloadListener)ClientEffectFrameRuntime::onResourceReload);
     }
 
     @SubscribeEvent

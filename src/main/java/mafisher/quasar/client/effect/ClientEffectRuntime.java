@@ -1,97 +1,49 @@
 package mafisher.quasar.client.effect;
 
-import mafisher.quasar.effect.network.StartVisualEffectPayload;
-import mafisher.quasar.effect.network.StopVisualEffectPayload;
 import mafisher.quasar.effect.EffectQualityTier;
+import mafisher.quasar.effect.network.EffectAudioPlanPayload;
+import mafisher.quasar.effect.network.ResumeEffectsPayload;
+import mafisher.quasar.effect.network.StartVisualEffectPayload;
+import mafisher.quasar.effect.network.StopEffectAudioPayload;
+import mafisher.quasar.effect.network.StopVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateVisualEffectPayload;
-import mafisher.quasar.effect.network.EffectAudioPlanPayload;
-import mafisher.quasar.effect.network.StopEffectAudioPayload;
-import mafisher.quasar.effect.network.ResumeEffectsPayload;
-import java.util.List;
-import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.server.packs.resources.ResourceManager;
-import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
-import net.neoforged.neoforge.common.NeoForge;
 
-/** Client-lifetime owner and narrow entry point for effect event delegates. */
+/**
+ * Narrow, descriptor-safe entry point for payload handlers. Its method signatures use only common
+ * types, so a dedicated server may load this class without loading client-only Minecraft types.
+ * Client rendering and lifecycle work lives in {@link ClientEffectFrameRuntime}.
+ */
 public final class ClientEffectRuntime {
-    private static final Object INIT_LOCK = new Object();
-    private static volatile ClientVisualEffectManager manager;
-    private static volatile ClientScreenCompositor screenCompositor;
-
     private ClientEffectRuntime() {
     }
 
-    /**
-     * Builds the renderer registry on first use. The registration event is posted lazily so the game bus is fully
-     * active; posting it during client setup can run before consumer game-bus listeners are ready.
-     */
-    private static ClientVisualEffectManager manager() {
-        ClientVisualEffectManager current = manager;
-        if (current != null) {
-            return current;
-        }
-        synchronized (INIT_LOCK) {
-            if (manager == null) {
-                ScreenEffectOperationRegistry operationRegistry = new ScreenEffectOperationRegistry();
-                operationRegistry.registerBuiltIns();
-                NeoForge.EVENT_BUS.post(new RegisterScreenEffectOperationsEvent(operationRegistry));
-                operationRegistry.freeze();
-                VisualEffectRendererRegistry rendererRegistry = new VisualEffectRendererRegistry();
-                rendererRegistry.registerBuiltIns();
-                NeoForge.EVENT_BUS.post(new RegisterVisualEffectRenderersEvent(rendererRegistry));
-                rendererRegistry.freeze();
-                screenCompositor = new ClientScreenCompositor(operationRegistry);
-                manager = new ClientVisualEffectManager(rendererRegistry);
-            }
-            return manager;
-        }
-    }
-
     public static void start(StartVisualEffectPayload payload) {
-        manager().start(payload);
+        ClientEffectFrameRuntime.start(payload);
     }
 
     public static void resume(ResumeEffectsPayload payload) {
-        manager().resume(payload);
+        ClientEffectFrameRuntime.resume(payload);
     }
 
     public static void stop(StopVisualEffectPayload payload) {
-        manager().stop(payload);
+        ClientEffectFrameRuntime.stop(payload);
     }
 
     public static void update(UpdateVisualEffectPayload payload) {
-        manager().update(payload);
+        ClientEffectFrameRuntime.update(payload);
     }
 
     public static void updateSegmented(UpdateSegmentedVisualEffectPayload payload) {
-        manager().updateSegmented(payload);
+        ClientEffectFrameRuntime.updateSegmented(payload);
     }
 
     public static void effectAudioPlan(EffectAudioPlanPayload payload) {
-        ClientEffectAudio.accept(payload);
+        ClientEffectFrameRuntime.effectAudioPlan(payload);
     }
 
     public static void stopEffectAudio(StopEffectAudioPayload payload) {
-        ClientEffectAudio.stop(payload);
-    }
-
-    static void render(RenderLevelStageEvent event) {
-        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_PARTICLES) {
-            long start = System.nanoTime();
-            manager().render(event);
-            ClientQualityController.recordWorldRender(System.nanoTime() - start);
-        } else if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
-            long start = System.nanoTime();
-            ClientVisualEffectManager effectManager = manager();
-            ClientScreenCompositor compositor = screenCompositor;
-            if (compositor != null) {
-                List<ScreenEffectBatch> batches = effectManager.screenEffects(event);
-                compositor.render(event, effectManager, batches);
-            }
-            ClientQualityController.recordLevelRender(System.nanoTime() - start);
-        }
+        ClientEffectFrameRuntime.stopEffectAudio(payload);
     }
 
     /** Returns the quality tier currently used for client presentation. */
@@ -99,32 +51,7 @@ public final class ClientEffectRuntime {
         return ClientQualityController.tier();
     }
 
-    static void onLevelUnload(ClientLevel level) {
-        ClientVisualEffectManager current = manager;
-        if (current != null) {
-            current.onLevelUnload(level);
-        }
-        ClientQualityController.reset();
-        ClientEffectAudio.clear();
-        ClientScreenCompositor compositor = screenCompositor;
-        if (compositor != null) {
-            compositor.onLevelUnload();
-        }
-    }
-
-    static void onResourceReload(ResourceManager resourceManager) {
-        ClientVisualEffectManager current = manager;
-        if (current != null) {
-            current.onResourceReload(resourceManager);
-        }
-        ClientScreenCompositor compositor = screenCompositor;
-        if (compositor != null) {
-            compositor.onResourceReload();
-        }
-    }
-
     public static boolean armScreenCompositorFailureOnce() {
-        ClientScreenCompositor compositor = screenCompositor;
-        return compositor != null && compositor.armFailureAfterCompositionOnce();
+        return ClientEffectFrameRuntime.armScreenCompositorFailureOnce();
     }
 }
