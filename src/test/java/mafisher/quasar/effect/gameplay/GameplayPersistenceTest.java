@@ -34,6 +34,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -119,6 +120,51 @@ class GameplayPersistenceTest {
 
         EffectDescriptor updated = this.store.find(SESSION);
         assertEquals(1, updated.state().getCompound("state").getInt("counter"));
+    }
+
+    @Test
+    void restoredSessionsWaitForTheirOwnerDuringTheReconnectGrace() {
+        UUID ownerId = UUID.randomUUID();
+        GameplayEffectSpec spec = ownedSpec(ownerId, 20_000);
+        this.gameTime = 0L;
+
+        GameplayEffectService.restore(
+            this.level, spec, SESSION, 0L, descriptor(spec, new CompoundTag()), new RecordingController()
+        );
+        assertEquals(1, GameplayEffectService.activeCount(this.level));
+
+        this.gameTime = GameplayEffectService.RESTORED_OWNER_GRACE_TICKS - 1L;
+        GameplayEffectService.tick(this.level);
+        assertEquals(1, GameplayEffectService.activeCount(this.level));
+
+        this.gameTime = GameplayEffectService.RESTORED_OWNER_GRACE_TICKS;
+        GameplayEffectService.tick(this.level);
+        assertEquals(0, GameplayEffectService.activeCount(this.level));
+    }
+
+    @Test
+    void ownerLossAfterAReconnectCancelsImmediately() {
+        UUID ownerId = UUID.randomUUID();
+        GameplayEffectSpec spec = ownedSpec(ownerId, 20_000);
+        this.gameTime = 0L;
+        GameplayEffectService.restore(
+            this.level, spec, SESSION, 0L, descriptor(spec, new CompoundTag()), new RecordingController()
+        );
+
+        Entity owner = mock(Entity.class);
+        when(owner.isRemoved()).thenReturn(false);
+        when(owner.isAlive()).thenReturn(true);
+        when(owner.level()).thenReturn(this.level);
+        when(this.level.getEntity(ownerId)).thenReturn(owner);
+
+        this.gameTime = 1L;
+        GameplayEffectService.tick(this.level);
+        assertEquals(1, GameplayEffectService.activeCount(this.level));
+
+        when(this.level.getEntity(ownerId)).thenReturn(null);
+        this.gameTime = 2L;
+        GameplayEffectService.tick(this.level);
+        assertEquals(0, GameplayEffectService.activeCount(this.level));
     }
 
     @Test
@@ -222,6 +268,18 @@ class GameplayPersistenceTest {
         EffectDescriptor loaded = EffectDescriptorNbt.load(tag);
 
         assertEquals(0, GameplayEffectNbt.loadSpec(loaded).budget().maxBlockChanges());
+    }
+
+    private static GameplayEffectSpec ownedSpec(UUID ownerId, int durationTicks) {
+        return new GameplayEffectSpec(
+            TYPE,
+            ownerId,
+            new Vec3(0.0, 64.0, 0.0),
+            EffectPhasePlan.of(new EffectPhase("run", durationTicks)),
+            3L,
+            EffectTickBudget.unlimited(),
+            OwnerPolicy.STOP_WHEN_UNAVAILABLE
+        );
     }
 
     private static GameplayEffectSpec spec() {

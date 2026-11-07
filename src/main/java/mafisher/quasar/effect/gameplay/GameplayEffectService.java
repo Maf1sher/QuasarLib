@@ -41,6 +41,12 @@ public final class GameplayEffectService {
      * sessions from exhausting the tick; it is a safety cap, not a measured balance budget.
      */
     public static final int MAX_BLOCK_CHANGES_PER_LEVEL_TICK = 512;
+    /**
+     * How long a restored session may wait for its owner to become available before the normal
+     * {@link OwnerPolicy#STOP_WHEN_UNAVAILABLE} path cancels it. Dedicated servers restore effects
+     * before players log in, so an immediate owner check would roll every player-owned session back.
+     */
+    static final int RESTORED_OWNER_GRACE_TICKS = 6_000;
 
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
     private static final Map<ServerLevel, Map<UUID, ActiveSession>> ACTIVE_SESSIONS = new WeakHashMap<>();
@@ -139,7 +145,8 @@ public final class GameplayEffectService {
         }
 
         EffectDescriptor descriptor = descriptor(level, spec, context.sessionId(), level.getGameTime(), options);
-        ActiveSession session = new ActiveSession(spec, controller, scope, context, descriptor, level.getGameTime());
+        ActiveSession session = new ActiveSession(spec, controller, scope, context, descriptor, level.getGameTime(),
+            0L);
         sessions.put(session.id, session);
         EffectPersistenceService.recordStart(level, descriptor);
         if (options.capabilities().destructive()) {
@@ -251,7 +258,8 @@ public final class GameplayEffectService {
         }
         admission.adopt(spec.ownerId());
 
-        ActiveSession session = new ActiveSession(spec, controller, scope, context, descriptor, startGameTime);
+        ActiveSession session = new ActiveSession(spec, controller, scope, context, descriptor, startGameTime,
+            level.getGameTime() + RESTORED_OWNER_GRACE_TICKS);
         sessions.put(session.id, session);
         startAudio(level, session);
         if (context.isStopRequested()) {
@@ -357,7 +365,7 @@ public final class GameplayEffectService {
             finish(level, session, GameplayEffectEndReason.EXPIRED, true);
             return remainingBlockChanges;
         }
-        if (ownerUnavailable(level, session.spec)) {
+        if (ownerUnavailable(level, session)) {
             persistJournal(level, session);
             finish(level, session, GameplayEffectEndReason.OWNER_UNAVAILABLE, true);
             return remainingBlockChanges;
@@ -436,12 +444,24 @@ public final class GameplayEffectService {
         );
     }
 
-    private static boolean ownerUnavailable(ServerLevel level, GameplayEffectSpec spec) {
+    private static boolean ownerUnavailable(ServerLevel level, ActiveSession session) {
+        GameplayEffectSpec spec = session.spec;
         if (spec.ownerId() == null || spec.ownerPolicy() == OwnerPolicy.CONTINUE) {
             return false;
         }
+        var online = level.getServer() == null
+            ? null
+            : level.getServer().getPlayerList().getPlayer(spec.ownerId());
+        if (online != null) {
+            session.ownerSeen = true;
+            return online.level() != level || online.isRemoved() || !online.isAlive();
+        }
         Entity owner = level.getEntity(spec.ownerId());
-        return owner == null || owner.isRemoved() || !owner.isAlive() || owner.level() != level;
+        if (owner != null) {
+            session.ownerSeen = true;
+            return owner.isRemoved() || !owner.isAlive() || owner.level() != level;
+        }
+        return session.ownerSeen || level.getGameTime() >= session.ownerGraceUntil;
     }
 
     private static void startAudio(ServerLevel level, ActiveSession session) {
@@ -535,6 +555,8 @@ public final class GameplayEffectService {
         private final EffectScope scope;
         private final GameplayEffectContext context;
         private final long startGameTime;
+        private final long ownerGraceUntil;
+        private boolean ownerSeen;
         private EffectDescriptor descriptor;
 
         private ActiveSession(
@@ -543,7 +565,8 @@ public final class GameplayEffectService {
             EffectScope scope,
             GameplayEffectContext context,
             EffectDescriptor descriptor,
-            long startGameTime
+            long startGameTime,
+            long ownerGraceUntil
         ) {
             this.id = context.sessionId();
             this.spec = spec;
@@ -552,6 +575,7 @@ public final class GameplayEffectService {
             this.context = context;
             this.descriptor = descriptor;
             this.startGameTime = startGameTime;
+            this.ownerGraceUntil = ownerGraceUntil;
         }
     }
 }
