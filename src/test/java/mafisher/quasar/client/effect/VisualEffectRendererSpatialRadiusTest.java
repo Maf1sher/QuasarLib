@@ -20,6 +20,7 @@ class VisualEffectRendererSpatialRadiusTest {
         };
 
         assertEquals(Double.POSITIVE_INFINITY, renderer.spatialRadius(context(5.0F, 0.0F)));
+        assertEquals(EffectLodProfile.FULL, renderer.lodProfile());
     }
 
     @Test

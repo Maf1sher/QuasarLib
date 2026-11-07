@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.UUID;
+import mafisher.quasar.client.effect.EffectLod;
 import mafisher.quasar.client.effect.EffectRenderContext;
 import mafisher.quasar.client.effect.EffectRenderPass;
 import mafisher.quasar.client.effect.ScreenEffectMask;
@@ -40,6 +41,17 @@ class ContentRuneCircleRendererTest {
         ScreenEffectMask mask = renderer.screenEffectMask(context());
         assertTrue(mask.strength() > 0.0F);
         assertNotNull(renderer.screenMaskRenderType(context()));
+    }
+
+    @Test
+    void thinsPassesAtReducedLevelOfDetail() {
+        ContentRuneCircleRenderer renderer = new ContentRuneCircleRenderer();
+        EffectRenderContext full = context();
+        EffectRenderContext reduced = full.withLod(new EffectLod(1, 128.0, 8.0));
+
+        assertEquals(3, renderer.renderPasses(full).size());
+        assertEquals(List.of("outer"),
+            renderer.renderPasses(reduced).stream().map(EffectRenderPass::id).toList());
     }
 
     @Test

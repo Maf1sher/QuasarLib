@@ -23,6 +23,20 @@ public final class EffectMeshes {
         return UNIT_SPHERE;
     }
 
+    /**
+     * Builds a unit sphere with explicit tessellation. Callers should cache the result at construction time; vertex
+     * count is {@code latitudeSegments * longitudeSegments * 4}.
+     */
+    public static EffectMesh unitSphere(int latitudeSegments, int longitudeSegments) {
+        if (latitudeSegments < 1 || longitudeSegments < 1) {
+            throw new IllegalArgumentException("Sphere segments must be positive");
+        }
+        if ((long)latitudeSegments * longitudeSegments * 4 > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("Sphere tessellation is too large");
+        }
+        return createUnitSphere(latitudeSegments, longitudeSegments);
+    }
+
     private static EffectMesh createHorizontalQuad() {
         return EffectMesh.builder(4)
             .vertex(-1.0F, 0.0F, -1.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F)
@@ -42,14 +56,18 @@ public final class EffectMeshes {
     }
 
     private static EffectMesh createUnitSphere() {
-        int vertexCount = SPHERE_LATITUDE_SEGMENTS * SPHERE_LONGITUDE_SEGMENTS * 4;
+        return createUnitSphere(SPHERE_LATITUDE_SEGMENTS, SPHERE_LONGITUDE_SEGMENTS);
+    }
+
+    private static EffectMesh createUnitSphere(int latitudeSegments, int longitudeSegments) {
+        int vertexCount = latitudeSegments * longitudeSegments * 4;
         EffectMesh.Builder mesh = EffectMesh.builder(vertexCount);
-        for (int latitude = 0; latitude < SPHERE_LATITUDE_SEGMENTS; latitude++) {
-            float top = (float)latitude / SPHERE_LATITUDE_SEGMENTS;
-            float bottom = (float)(latitude + 1) / SPHERE_LATITUDE_SEGMENTS;
-            for (int longitude = 0; longitude < SPHERE_LONGITUDE_SEGMENTS; longitude++) {
-                float left = (float)longitude / SPHERE_LONGITUDE_SEGMENTS;
-                float right = (float)(longitude + 1) / SPHERE_LONGITUDE_SEGMENTS;
+        for (int latitude = 0; latitude < latitudeSegments; latitude++) {
+            float top = (float)latitude / latitudeSegments;
+            float bottom = (float)(latitude + 1) / latitudeSegments;
+            for (int longitude = 0; longitude < longitudeSegments; longitude++) {
+                float left = (float)longitude / longitudeSegments;
+                float right = (float)(longitude + 1) / longitudeSegments;
                 addSphereVertex(mesh, left, top);
                 addSphereVertex(mesh, left, bottom);
                 addSphereVertex(mesh, right, bottom);

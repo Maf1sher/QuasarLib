@@ -48,6 +48,16 @@ class EffectMeshesTest {
         assertVertex(mesh.vertex(3), -0.5F, 1.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F);
     }
 
+    @Test
+    void buildsParameterizedSpheresForLevelOfDetail() {
+        assertEquals(8 * 16 * 4, EffectMeshes.unitSphere(8, 16).vertexCount());
+        assertEquals(16 * 32 * 4, EffectMeshes.unitSphere(16, 32).vertexCount());
+        assertEquals(32 * 64 * 4, EffectMeshes.unitSphere().vertexCount());
+        assertThrows(IllegalArgumentException.class, () -> EffectMeshes.unitSphere(0, 16));
+        assertThrows(IllegalArgumentException.class, () -> EffectMeshes.unitSphere(16, 0));
+        assertThrows(IllegalArgumentException.class, () -> EffectMeshes.unitSphere(-1, 16));
+    }
+
     private static void assertVertex(EffectMesh.Vertex vertex, float x, float y, float z, float u, float v,
         float normalX, float normalY, float normalZ) {
         assertEquals(x, vertex.x());

@@ -26,6 +26,15 @@ class BlackHoleGeometryTest {
     }
 
     @Test
+    void cachesASmallerSphereForEachLevelOfDetail() {
+        assertSame(EffectMeshes.unitSphere(), BlackHoleGeometry.sphere(0));
+        assertEquals(16 * 32 * 4, BlackHoleGeometry.sphere(1).vertexCount());
+        assertEquals(8 * 16 * 4, BlackHoleGeometry.sphere(2).vertexCount());
+        assertSame(BlackHoleGeometry.sphere(2), BlackHoleGeometry.sphere(99));
+        assertSame(BlackHoleGeometry.sphere(0), BlackHoleGeometry.sphere(-1));
+    }
+
+    @Test
     void cachesBothWarpedDiskLayersWithValidVertexAttributes() {
         EffectMesh primary = BlackHoleGeometry.primaryDisk();
         EffectMesh secondary = BlackHoleGeometry.secondaryDisk();

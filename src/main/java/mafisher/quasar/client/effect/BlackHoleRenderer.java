@@ -31,10 +31,16 @@ final class BlackHoleRenderer implements ScreenEffectRenderer {
         new EffectRenderPass(CORE_PASS, CORE_RENDER_TYPE),
         new EffectRenderPass(DISK_PASS, DISK_RENDER_TYPE)
     );
+    private static final EffectLodProfile LOD_PROFILE = EffectLodProfile.of(2.0, 8.0);
 
     @Override
     public List<EffectRenderPass> renderPasses(EffectRenderContext context) {
         return RENDER_PASSES;
+    }
+
+    @Override
+    public EffectLodProfile lodProfile() {
+        return LOD_PROFILE;
     }
 
     @Override
@@ -48,7 +54,7 @@ final class BlackHoleRenderer implements ScreenEffectRenderer {
         int shaderData = shaderData(context);
         switch (pass.id()) {
             case CORE_PASS -> renderCore(poseStack, bufferSource.getBuffer(CORE_RENDER_TYPE),
-                scale * CORE_RADIUS_FACTOR, shaderData);
+                scale * CORE_RADIUS_FACTOR, context.lod().level(), shaderData);
             case DISK_PASS -> renderDisk(poseStack, bufferSource.getBuffer(DISK_RENDER_TYPE), context,
                 scale, EffectTimeline.fadeEnvelope(context.progress(), 0.08F, 0.12F),
                 BlackHoleLighting.emissionScale(daylightFactor(context)), shaderData);
@@ -96,11 +102,12 @@ final class BlackHoleRenderer implements ScreenEffectRenderer {
             context.scale() * SCREEN_SETTINGS.lensRadiusScale(), alpha);
     }
 
-    private static void renderCore(PoseStack poseStack, VertexConsumer vertices, float radius, int shaderData) {
+    private static void renderCore(PoseStack poseStack, VertexConsumer vertices, float radius, int lodLevel,
+        int shaderData) {
         poseStack.pushPose();
         try {
             poseStack.scale(radius, radius, radius);
-            BlackHoleGeometry.sphere().emit(vertices, poseStack.last(), 0.0F, 0.0F, 0.0F, 1.0F,
+            BlackHoleGeometry.sphere(lodLevel).emit(vertices, poseStack.last(), 0.0F, 0.0F, 0.0F, 1.0F,
                 shaderData, 0x00F000F0);
         } finally {
             poseStack.popPose();

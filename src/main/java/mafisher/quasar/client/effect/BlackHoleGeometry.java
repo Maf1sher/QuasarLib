@@ -7,6 +7,11 @@ final class BlackHoleGeometry {
     private static final float DISK_RADIUS = 1.25F;
     private static final float PRIMARY_DISK_INNER_RADIUS = 0.42F;
     private static final EffectMesh SPHERE = EffectMeshes.unitSphere();
+    private static final EffectMesh[] LOD_SPHERES = {
+        SPHERE,
+        EffectMeshes.unitSphere(16, 32),
+        EffectMeshes.unitSphere(8, 16)
+    };
     private static final EffectMesh PRIMARY_DISK = createDiskLayer(
         PRIMARY_DISK_INNER_RADIUS, DISK_RADIUS, DISK_RADIUS,
         DISK_RADIUS * 0.035F, DISK_RADIUS * 0.035F, 1.0F);
@@ -19,6 +24,11 @@ final class BlackHoleGeometry {
 
     static EffectMesh sphere() {
         return SPHERE;
+    }
+
+    /** Returns the prebuilt sphere for an engine-selected LOD level, clamped to the available variants. */
+    static EffectMesh sphere(int lodLevel) {
+        return LOD_SPHERES[Math.max(0, Math.min(lodLevel, LOD_SPHERES.length - 1))];
     }
 
     static EffectMesh primaryDisk() {

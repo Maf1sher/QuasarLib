@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import java.util.UUID;
+import mafisher.quasar.client.effect.EffectLod;
+import mafisher.quasar.client.effect.EffectLodProfile;
 import mafisher.quasar.client.effect.EffectMesh;
 import mafisher.quasar.client.effect.EffectMeshes;
 import mafisher.quasar.client.effect.EffectRenderContext;
@@ -36,6 +38,7 @@ class PublicRendererSpiVisibilityTest {
         assertNotNull(EffectMeshes.horizontalQuad());
         assertNotNull(EffectMeshes.verticalPlane());
         assertNotNull(EffectMeshes.unitSphere());
+        assertNotNull(EffectMeshes.unitSphere(8, 16));
         assertNotNull(QuasarRenderTypes.worldVisual(texture));
         assertNotNull(QuasarRenderTypes.screenEffectMask(texture));
         assertNotNull(RegisterVisualEffectRenderersEvent.class);
@@ -84,5 +87,41 @@ class PublicRendererSpiVisibilityTest {
         assertEquals(Double.POSITIVE_INFINITY, renderer.spatialRadius(
             new EffectRenderContext(instance, payload.transform(), 0.0F, 0.0F, 0.0F)
         ));
+    }
+
+    @Test
+    void exposesLevelOfDetailWithAFullDefault() {
+        ResourceLocation effectId = ResourceLocation.fromNamespaceAndPath("test", "effect");
+        StartVisualEffectPayload payload = new StartVisualEffectPayload(
+            effectId,
+            UUID.randomUUID(),
+            ResourceLocation.fromNamespaceAndPath("minecraft", "overworld"),
+            0.0,
+            64.0,
+            0.0,
+            0.0F,
+            0.0F,
+            0.0F,
+            1.0F,
+            100,
+            0L,
+            1L
+        );
+        VisualEffectInstance instance = new VisualEffectInstance(payload);
+        VisualEffectRenderer renderer = new VisualEffectRenderer() {
+            @Override
+            public EffectLodProfile lodProfile() {
+                return EffectLodProfile.of(1.0, 4.0);
+            }
+        };
+
+        assertEquals(3, renderer.lodProfile().levelCount());
+        assertEquals(1, renderer.lodProfile().select(2.0));
+        assertEquals(EffectLod.FULL,
+            new EffectRenderContext(instance, payload.transform(), 0.0F, 0.0F, 0.0F).lod());
+        assertEquals(2, new EffectRenderContext(instance, payload.transform(), 0.0F, 0.0F, 0.0F)
+            .withLod(new EffectLod(2, 64.0, 8.0))
+            .lod()
+            .level());
     }
 }

@@ -26,6 +26,8 @@ class ContentBoundaryTest {
         "mafisher\\.quasar\\.[A-Za-z0-9_$.]+"
     );
     private static final Set<String> PUBLIC_ENGINE_API = Set.of(
+        "mafisher.quasar.client.effect.EffectLod",
+        "mafisher.quasar.client.effect.EffectLodProfile",
         "mafisher.quasar.client.effect.EffectMeshes",
         "mafisher.quasar.client.effect.EffectRenderContext",
         "mafisher.quasar.client.effect.EffectRenderPass",

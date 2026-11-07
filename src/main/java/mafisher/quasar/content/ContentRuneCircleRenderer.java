@@ -3,6 +3,7 @@ package mafisher.quasar.content;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
+import mafisher.quasar.client.effect.EffectLodProfile;
 import mafisher.quasar.client.effect.EffectMeshes;
 import mafisher.quasar.client.effect.EffectRenderContext;
 import mafisher.quasar.client.effect.EffectRenderPass;
@@ -40,10 +41,19 @@ final class ContentRuneCircleRenderer implements ScreenEffectRenderer {
         new EffectRenderPass(MIDDLE_PASS, RENDER_TYPE),
         new EffectRenderPass(INNER_PASS, RENDER_TYPE)
     );
+    private static final List<EffectRenderPass> REDUCED_RENDER_PASSES = List.of(
+        new EffectRenderPass(OUTER_PASS, RENDER_TYPE)
+    );
+    private static final EffectLodProfile LOD_PROFILE = EffectLodProfile.of(4.0);
 
     @Override
     public List<EffectRenderPass> renderPasses(EffectRenderContext context) {
-        return RENDER_PASSES;
+        return reduced(context) ? REDUCED_RENDER_PASSES : RENDER_PASSES;
+    }
+
+    @Override
+    public EffectLodProfile lodProfile() {
+        return LOD_PROFILE;
     }
 
     @Override
@@ -116,12 +126,18 @@ final class ContentRuneCircleRenderer implements ScreenEffectRenderer {
         renderLayer(poseStack, vertices, worldScale, SETTINGS.outer(),
             seedRotation + context.ageTicks() * SETTINGS.outer().rotationSpeed(), alpha,
             OverlayTexture.NO_OVERLAY);
-        renderLayer(poseStack, vertices, worldScale, SETTINGS.middle(),
-            seedRotation + context.ageTicks() * SETTINGS.middle().rotationSpeed(), alpha,
-            OverlayTexture.NO_OVERLAY);
-        renderLayer(poseStack, vertices, worldScale, SETTINGS.inner(),
-            seedRotation + context.ageTicks() * SETTINGS.inner().rotationSpeed(), alpha,
-            OverlayTexture.NO_OVERLAY);
+        if (!reduced(context)) {
+            renderLayer(poseStack, vertices, worldScale, SETTINGS.middle(),
+                seedRotation + context.ageTicks() * SETTINGS.middle().rotationSpeed(), alpha,
+                OverlayTexture.NO_OVERLAY);
+            renderLayer(poseStack, vertices, worldScale, SETTINGS.inner(),
+                seedRotation + context.ageTicks() * SETTINGS.inner().rotationSpeed(), alpha,
+                OverlayTexture.NO_OVERLAY);
+        }
+    }
+
+    private static boolean reduced(EffectRenderContext context) {
+        return context.lod().level() > 0;
     }
 
     private static void renderLayer(

@@ -324,7 +324,7 @@ public final class ClientVisualEffectManager {
         if (!this.isVisible(renderer, context, event, radius)) {
             return;
         }
-        consumer.accept(effect, context, renderer);
+        consumer.accept(effect, context.withLod(selectLod(renderer, event, context, radius)), renderer);
     }
 
     private void visitMember(
@@ -344,7 +344,24 @@ public final class ClientVisualEffectManager {
         if (!this.isVisible(renderer, context, event, member.spatialRadius())) {
             return;
         }
-        consumer.accept(effect, context, renderer);
+        consumer.accept(effect, context.withLod(selectLod(renderer, event, context, member.spatialRadius())),
+            renderer);
+    }
+
+    /**
+     * Selects the LOD for one visible instance or segment cell. Selection uses the interpolated transform and the
+     * renderer's lifetime-conservative spatial radius, so it never needs a per-frame renderer callback.
+     */
+    private static EffectLod selectLod(
+        VisualEffectRenderer renderer,
+        net.neoforged.neoforge.client.event.RenderLevelStageEvent event,
+        EffectRenderContext context,
+        double spatialRadius
+    ) {
+        Vec3 cameraPosition = event.getCamera().getPosition();
+        EffectPoint position = context.transform().position();
+        return EffectLodSelection.select(renderer.lodProfile(), cameraPosition.x, cameraPosition.y,
+            cameraPosition.z, position.x(), position.y(), position.z(), spatialRadius);
     }
 
     private boolean isVisible(

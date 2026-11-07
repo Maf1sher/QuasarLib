@@ -49,6 +49,18 @@ public interface VisualEffectRenderer {
     }
 
     /**
+     * Declares ordered level-of-detail distance bands for this renderer. Thresholds are surface gaps in multiples of
+     * {@link #spatialRadius(EffectRenderContext)}; the engine selects a level per instance and, for segmented
+     * coordinators, per visible grid cell. The default keeps full detail, so existing renderers are unchanged.
+     *
+     * <p>LOD requires a finite spatial radius. A renderer with the default infinite radius always receives level
+     * {@code 0}.
+     */
+    default EffectLodProfile lodProfile() {
+        return EffectLodProfile.FULL;
+    }
+
+    /**
      * Returns a conservative world-space bound for culling. The default preserves the old scale-based bound.
      */
     default AABB cullingBounds(EffectRenderContext context) {
