@@ -1,10 +1,13 @@
 package mafisher.quasar.effect.gameplay;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -32,31 +35,82 @@ class GameplayEffectServiceTest {
     @AfterEach
     void tearDown() {
         GameplayEffectService.stopAll(this.level, GameplayEffectEndReason.CANCELLED);
+        GameplayEffectService.resetBudgetForTesting();
     }
 
     @Test
-    void rejectsASecondOwnerStartInTheSameTick() {
-        start(OWNER, OwnerPolicy.STOP_WHEN_UNAVAILABLE, new RecordingController());
+    void defersASecondOwnerStartToTheNextTick() {
+        start(OWNER, OwnerPolicy.CONTINUE, new RecordingController());
 
-        assertThrows(IllegalStateException.class,
-            () -> start(OWNER, OwnerPolicy.STOP_WHEN_UNAVAILABLE, new RecordingController()));
+        GameplayEffectHandle deferred = start(
+            OWNER, OwnerPolicy.CONTINUE, new RecordingController()
+        );
+
         assertEquals(1, GameplayEffectService.activeCount(this.level));
+        assertEquals(1, GameplayEffectService.pendingCount(this.level));
+        assertTrue(GameplayEffectService.isPending(this.level, deferred));
+        assertFalse(GameplayEffectService.isActive(this.level, deferred));
+
+        this.gameTime = 1;
+        GameplayEffectService.tick(this.level);
+
+        assertTrue(GameplayEffectService.isActive(this.level, deferred));
+        assertEquals(2, GameplayEffectService.activeCount(this.level));
+        assertEquals(0, GameplayEffectService.pendingCount(this.level));
     }
 
     @Test
-    void rejectsStartsAboveTheOwnerSessionCap() {
+    void defersStartsAboveTheOwnerSessionBudget() {
+        List<GameplayEffectHandle> handles = new ArrayList<>();
         for (int tick = 0; tick < GameplayEffectService.MAX_ACTIVE_SESSIONS_PER_OWNER; tick++) {
             this.gameTime = tick;
-            start(OWNER, OwnerPolicy.STOP_WHEN_UNAVAILABLE, new RecordingController());
+            handles.add(start(OWNER, OwnerPolicy.CONTINUE, new RecordingController()));
         }
         this.gameTime = GameplayEffectService.MAX_ACTIVE_SESSIONS_PER_OWNER;
 
-        assertThrows(IllegalStateException.class,
-            () -> start(OWNER, OwnerPolicy.STOP_WHEN_UNAVAILABLE, new RecordingController()));
+        GameplayEffectHandle deferred = start(
+            OWNER, OwnerPolicy.CONTINUE, new RecordingController()
+        );
+
         assertEquals(
             GameplayEffectService.MAX_ACTIVE_SESSIONS_PER_OWNER,
             GameplayEffectService.activeCount(this.level)
         );
+        assertEquals(1, GameplayEffectService.pendingCount(this.level));
+
+        GameplayEffectService.stop(this.level, handles.getFirst(), GameplayEffectEndReason.CANCELLED);
+        this.gameTime++;
+        GameplayEffectService.tick(this.level);
+
+        assertTrue(GameplayEffectService.isActive(this.level, deferred));
+        assertEquals(
+            GameplayEffectService.MAX_ACTIVE_SESSIONS_PER_OWNER,
+            GameplayEffectService.activeCount(this.level)
+        );
+        assertEquals(0, GameplayEffectService.pendingCount(this.level));
+    }
+
+    @Test
+    void defersWhenTheLevelBudgetIsFull() {
+        GameplayEffectService.overrideBudgetForTesting(1, 8, 8);
+        UUID otherOwner = UUID.fromString("00000000-0000-0000-0000-000000000003");
+        GameplayEffectHandle first = start(
+            OWNER, OwnerPolicy.CONTINUE, new RecordingController()
+        );
+        GameplayEffectHandle deferred = start(
+            otherOwner, OwnerPolicy.CONTINUE, new RecordingController()
+        );
+
+        assertEquals(1, GameplayEffectService.activeCount(this.level));
+        assertTrue(GameplayEffectService.isPending(this.level, deferred));
+
+        GameplayEffectService.stop(this.level, first, GameplayEffectEndReason.CANCELLED);
+        this.gameTime++;
+        GameplayEffectService.tick(this.level);
+
+        assertTrue(GameplayEffectService.isActive(this.level, deferred));
+        assertEquals(1, GameplayEffectService.activeCount(this.level));
+        assertEquals(0, GameplayEffectService.pendingCount(this.level));
     }
 
     @Test

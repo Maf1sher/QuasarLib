@@ -11,6 +11,8 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.WeakHashMap;
 import mafisher.quasar.effect.EffectAudience;
+import mafisher.quasar.effect.EffectBudgetService;
+import mafisher.quasar.effect.EffectBudgets;
 import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectTimeline;
 import mafisher.quasar.effect.EffectTransform;
@@ -37,21 +39,24 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Server-thread coordinator for segmented, giant-scale world effects. A coordinator owns its cells directly and
- * reserves a dedicated per-level segment budget, so a large grid neither consumes standalone visual slots nor can be
- * evicted by standalone starts. Start, stop, and updates are aggregated per coordinator.
+ * reserves a dedicated soft per-level segment budget, so a large grid neither consumes standalone visual slots nor can
+ * be evicted by standalone starts. When the budget is full, the lowest-priority coordinator is culled first. Start,
+ * stop, and updates are aggregated per coordinator.
  */
 public final class SegmentedVisualEffectService {
-    /** Dedicated per-level budget; segmented cells never count against the standalone visual cap. */
+    /** Default dedicated per-level budget; segmented cells never count against the standalone visual cap. */
     public static final int MAX_ACTIVE_SEGMENTS_PER_LEVEL = SegmentedEffectLimits.MAX_SEGMENTS_PER_LEVEL;
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
     private static final Map<ServerLevel, Map<UUID, ActiveSegmentedEffect>> ACTIVE_COORDINATORS = new WeakHashMap<>();
+    private static Integer budgetOverride;
 
     private SegmentedVisualEffectService() {
     }
 
     /**
-     * Starts a segmented effect and returns its root handle. Throws when the level's dedicated segment budget is
-     * exhausted; standalone effects are never evicted in that case.
+     * Starts a segmented effect and returns its root handle. When the level's dedicated segment budget is full, the
+     * lowest-priority coordinator is culled first; a coordinator larger than the whole budget is admitted and reported
+     * as over budget instead of being rejected.
      */
     public static SegmentedVisualEffectHandle start(ServerLevel level, SegmentedVisualEffectSpec spec) {
         return start(level, spec, EffectPersistenceOptions.DEFAULT);
@@ -65,13 +70,7 @@ public final class SegmentedVisualEffectService {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(spec, "spec");
         Objects.requireNonNull(options, "options");
-        SegmentedVisualEffectHandle handle = startInternal(
-            level, spec, UUID.randomUUID(), level.getGameTime(), options, null
-        );
-        if (handle == null) {
-            throw new IllegalStateException("Not enough segmented effect capacity");
-        }
-        return handle;
+        return startInternal(level, spec, UUID.randomUUID(), level.getGameTime(), options, null);
     }
 
     /** Starts a segmented effect with a stable identity and absolute start time for restore or cinematics. */
@@ -165,16 +164,10 @@ public final class SegmentedVisualEffectService {
         ActiveSegmentedEffect replaced = active.get(coordinatorId);
         int replacedSegments = replaced == null ? 0 : replaced.spec.segmentCount();
         int activeSegments = activeSegmentCount(active) - replacedSegments;
-        if (activeSegments + spec.segmentCount() > MAX_ACTIVE_SEGMENTS_PER_LEVEL) {
-            LOGGER.warn(
-                "Rejected segmented effect {} in {}: requires {} segment slots but only {} of {} remain",
-                spec.effectId(),
-                level.dimension().location(),
-                spec.segmentCount(),
-                Math.max(0, MAX_ACTIVE_SEGMENTS_PER_LEVEL - activeSegments),
-                MAX_ACTIVE_SEGMENTS_PER_LEVEL
-            );
-            return null;
+        int budget = budget();
+        int excess = activeSegments + spec.segmentCount() - budget;
+        if (excess > 0) {
+            cullForBudget(level, active, coordinatorId, excess);
         }
 
         EffectTransform transform = new EffectTransform(
@@ -193,6 +186,7 @@ public final class SegmentedVisualEffectService {
             ids.add(StringTag.valueOf(segmentId(coordinatorId, index).toString()));
         }
         state.put("segment_ids", ids);
+        state.putString("priority", spec.priority().name());
         EffectAudioNbt.saveInto(state, spec.audio());
         EffectDescriptor descriptor = restoredDescriptor == null ? new EffectDescriptor(
             coordinatorId,
@@ -371,6 +365,83 @@ public final class SegmentedVisualEffectService {
         Objects.requireNonNull(level, "level");
         Map<UUID, ActiveSegmentedEffect> active = ACTIVE_COORDINATORS.get(level);
         return active == null ? 0 : activeSegmentCount(active);
+    }
+
+    /** Whether one coordinator is currently active; culled or finished handles return {@code false}. */
+    public static boolean isActive(ServerLevel level, SegmentedVisualEffectHandle handle) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(handle, "handle");
+        ActiveSegmentedEffect effect = find(level, handle);
+        return effect != null && !EffectTimeline.isFinished(
+            level.getGameTime(), effect.startGameTime, effect.spec.durationTicks()
+        );
+    }
+
+    static void overrideBudgetForTesting(int budget) {
+        if (budget < 1) {
+            throw new IllegalArgumentException("Segment budget must be positive");
+        }
+        budgetOverride = budget;
+    }
+
+    static void resetBudgetForTesting() {
+        budgetOverride = null;
+    }
+
+    private static int budget() {
+        return budgetOverride == null ? EffectBudgets.segments() : budgetOverride;
+    }
+
+    /**
+     * Culls whole coordinators, lowest priority first and oldest first on ties, until {@code excess}
+     * segment slots are released. The newcomer is not in the map yet and is never culled.
+     */
+    private static void cullForBudget(
+        ServerLevel level,
+        Map<UUID, ActiveSegmentedEffect> active,
+        UUID newcomerId,
+        int excess
+    ) {
+        int remaining = excess;
+        while (remaining > 0) {
+            UUID victim = lowestPriority(active, newcomerId);
+            if (victim == null) {
+                LOGGER.warn(
+                    "Admitted segmented effect over the soft segment budget of {}: {} slot(s) over",
+                    budget(),
+                    remaining
+                );
+                return;
+            }
+            ActiveSegmentedEffect victimEffect = active.get(victim);
+            int released = victimEffect == null ? 0 : victimEffect.spec.segmentCount();
+            stop(level, new SegmentedVisualEffectHandle(victim));
+            EffectBudgetService.recordCull(level);
+            LOGGER.info(
+                "Culled segmented effect {} in {} to free {} segment slot(s) of a soft budget of {}",
+                victim,
+                level.dimension().location(),
+                released,
+                budget()
+            );
+            remaining -= released;
+        }
+    }
+
+    private static UUID lowestPriority(Map<UUID, ActiveSegmentedEffect> active, UUID excludedId) {
+        UUID victim = null;
+        int lowest = Integer.MAX_VALUE;
+        for (Map.Entry<UUID, ActiveSegmentedEffect> entry : active.entrySet()) {
+            if (entry.getKey().equals(excludedId)) {
+                continue;
+            }
+            int weight = entry.getValue().spec.priority().weight();
+            if (weight < lowest) {
+                lowest = weight;
+                victim = entry.getKey();
+            }
+        }
+        return victim;
     }
 
     /**

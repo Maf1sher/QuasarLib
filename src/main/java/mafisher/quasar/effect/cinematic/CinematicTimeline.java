@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import mafisher.quasar.effect.EffectPoint;
+import mafisher.quasar.effect.EffectPriority;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.VisualEffectSpec;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectSpec;
@@ -34,6 +35,7 @@ public final class CinematicTimeline {
     private final int durationTicks;
     private final int transformUpdateIntervalTicks;
     private final CinematicAudioMode audioMode;
+    private final EffectPriority priority;
     private final List<CinematicCue> cues;
     private final Map<String, CinematicTransformTrack> tracks;
 
@@ -43,6 +45,7 @@ public final class CinematicTimeline {
         int durationTicks,
         int transformUpdateIntervalTicks,
         CinematicAudioMode audioMode,
+        EffectPriority priority,
         List<CinematicCue> cues,
         Map<String, CinematicTransformTrack> tracks
     ) {
@@ -51,6 +54,7 @@ public final class CinematicTimeline {
         this.durationTicks = durationTicks;
         this.transformUpdateIntervalTicks = transformUpdateIntervalTicks;
         this.audioMode = audioMode;
+        this.priority = priority;
         this.cues = cues;
         this.tracks = tracks;
     }
@@ -77,6 +81,11 @@ public final class CinematicTimeline {
 
     public CinematicAudioMode audioMode() {
         return this.audioMode;
+    }
+
+    /** Author-declared importance used when the cinematic session budget is full. */
+    public EffectPriority priority() {
+        return this.priority;
     }
 
     /** Cues sorted by tick; cues with the same tick keep their builder insertion order. */
@@ -127,6 +136,7 @@ public final class CinematicTimeline {
             this.durationTicks,
             this.transformUpdateIntervalTicks,
             this.audioMode,
+            this.priority,
             List.copyOf(translatedCues),
             Collections.unmodifiableMap(translatedTracks)
         );
@@ -158,7 +168,8 @@ public final class CinematicTimeline {
                     spec.durationTicks(),
                     spec.seed(),
                     spec.audience(),
-                    spec.audio()
+                    spec.audio(),
+                    spec.priority()
                 )
             );
         }
@@ -180,7 +191,8 @@ public final class CinematicTimeline {
                     spec.durationTicks(),
                     spec.seed(),
                     spec.audience(),
-                    spec.audio()
+                    spec.audio(),
+                    spec.priority()
                 )
             );
         }
@@ -211,6 +223,7 @@ public final class CinematicTimeline {
         private final Map<String, Integer> segmentedStarts = new LinkedHashMap<>();
         private int transformUpdateIntervalTicks = 1;
         private CinematicAudioMode audioMode = CinematicAudioMode.SERVER;
+        private EffectPriority priority = EffectPriority.NORMAL;
 
         private Builder(ResourceLocation id, int durationTicks, long seed) {
             this.id = Objects.requireNonNull(id, "id");
@@ -239,6 +252,12 @@ public final class CinematicTimeline {
         /** Chooses whether sound cues play on the server or are scheduled once on the client. */
         public Builder audioMode(CinematicAudioMode audioMode) {
             this.audioMode = Objects.requireNonNull(audioMode, "audioMode");
+            return this;
+        }
+
+        /** Sets the importance used when the level's cinematic session budget is full. */
+        public Builder priority(EffectPriority priority) {
+            this.priority = Objects.requireNonNull(priority, "priority");
             return this;
         }
 
@@ -340,6 +359,7 @@ public final class CinematicTimeline {
                 this.durationTicks,
                 this.transformUpdateIntervalTicks,
                 this.audioMode,
+                this.priority,
                 List.copyOf(sortedCues),
                 Collections.unmodifiableMap(tracks)
             );

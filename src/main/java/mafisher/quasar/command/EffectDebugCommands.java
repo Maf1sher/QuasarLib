@@ -7,6 +7,8 @@ import com.mojang.brigadier.context.CommandContext;
 import mafisher.quasar.QuasarLib;
 import mafisher.quasar.effect.EffectScope;
 import mafisher.quasar.effect.EffectAudience;
+import mafisher.quasar.effect.EffectBudgetReport;
+import mafisher.quasar.effect.EffectBudgetService;
 import mafisher.quasar.effect.EffectDamageShape;
 import mafisher.quasar.effect.EffectHitbox;
 import mafisher.quasar.effect.EffectLifetimePolicy;
@@ -153,6 +155,11 @@ public final class EffectDebugCommands {
                         .requires(source -> source.hasPermission(2))
                         .then(Commands.literal("report")
                             .executes(context -> persistenceReport(context.getSource())))
+                )
+                .then(
+                    Commands.literal("budget")
+                        .requires(source -> source.hasPermission(2))
+                        .executes(context -> budgetReport(context.getSource()))
                 )
         );
     }
@@ -447,6 +454,29 @@ public final class EffectDebugCommands {
         int stopped = CinematicEffectService.stopAll(source.getLevel());
         source.sendSuccess(
             () -> Component.literal("Stopped " + stopped + " cinematic effect(s)."),
+            false
+        );
+        return 1;
+    }
+
+    private static int budgetReport(CommandSourceStack source) {
+        EffectBudgetReport report = EffectBudgetService.report(source.getLevel());
+        source.sendSuccess(
+            () -> Component.literal(
+                "Budget: visuals " + report.standaloneVisuals() + "/" + report.standaloneVisualBudget()
+                    + ", segments " + report.segments() + "/" + report.segmentBudget()
+                    + ", gameplay " + report.gameplaySessions() + "/" + report.gameplaySessionBudget()
+                    + " (pending " + report.pendingGameplaySessions() + "/" + report.gameplayPendingBudget() + ")"
+                    + ", cinematics " + report.cinematicSessions() + "/" + report.cinematicSessionBudget()
+                    + ", over budget " + report.overBudget() + "."
+            ),
+            false
+        );
+        source.sendSuccess(
+            () -> Component.literal(
+                "Soft degradation: culled " + report.culledEffects() + ", deferred "
+                    + report.deferredStarts() + ", dropped spawns " + report.droppedEntitySpawns() + "."
+            ),
             false
         );
         return 1;

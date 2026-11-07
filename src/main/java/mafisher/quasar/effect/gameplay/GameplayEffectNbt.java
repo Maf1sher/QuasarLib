@@ -3,6 +3,7 @@ package mafisher.quasar.effect.gameplay;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import mafisher.quasar.effect.EffectPriority;
 import mafisher.quasar.effect.audio.EffectAudioSpec;
 import mafisher.quasar.effect.persistence.EffectAudioNbt;
 import mafisher.quasar.effect.persistence.EffectDescriptor;
@@ -53,6 +54,7 @@ public final class GameplayEffectNbt {
         budget.putInt("max_block_changes", spec.budget().maxBlockChanges());
         tag.put("budget", budget);
         tag.putString("owner_policy", spec.ownerPolicy().name());
+        tag.putString("priority", spec.priority().name());
         if (!spec.audio().isEmpty()) {
             tag.put("audio", EffectAudioNbt.save(spec.audio()));
         }
@@ -87,7 +89,8 @@ public final class GameplayEffectNbt {
                 budgetTag.getInt("max_block_changes")
             ),
             OwnerPolicy.valueOf(tag.getString("owner_policy")),
-            audio
+            audio,
+            EffectPriority.byName(tag.getString("priority"), EffectPriority.NORMAL)
         );
     }
 

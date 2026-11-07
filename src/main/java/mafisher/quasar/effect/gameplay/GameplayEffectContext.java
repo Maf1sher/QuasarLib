@@ -4,6 +4,7 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
+import mafisher.quasar.effect.EffectBudgetService;
 import mafisher.quasar.effect.EffectHitResult;
 import mafisher.quasar.effect.EffectHitbox;
 import mafisher.quasar.effect.EffectScope;
@@ -149,12 +150,27 @@ public final class GameplayEffectContext {
         return result;
     }
 
-    /** Spawns an entity through the session scope and consumes one spawn budget slot. */
+    /** Whether this session and its level may spawn more entities on the current tick. */
+    public boolean canSpawnEntity() {
+        this.ensureOpen();
+        return this.budgetState.canSpawnEntity()
+            && EffectBudgetService.entitySpawnBudgetAvailable(this.level);
+    }
+
+    /**
+     * Spawns an entity through the session scope and consumes one spawn budget slot. Spawn budgets
+     * are soft: when either the session budget or the level-wide per-tick budget is exhausted, the
+     * spawn is dropped and counted, and this method returns {@code null} instead of throwing.
+     */
     public <T extends Entity> T spawnEntity(T entity) {
         this.ensureOpen();
         Objects.requireNonNull(entity, "entity");
         if (!this.budgetState.canSpawnEntity()) {
-            throw new IllegalStateException("Gameplay effect entity spawn budget is exhausted");
+            EffectBudgetService.recordDroppedEntitySpawn(this.level);
+            return null;
+        }
+        if (!EffectBudgetService.tryAcquireEntitySpawn(this.level)) {
+            return null;
         }
         T spawned = this.scope.spawnEntity(entity);
         this.budgetState.recordEntitySpawn();

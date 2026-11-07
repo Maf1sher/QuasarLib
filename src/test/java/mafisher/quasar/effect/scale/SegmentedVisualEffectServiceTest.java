@@ -1,7 +1,8 @@
 package mafisher.quasar.effect.scale;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -9,6 +10,7 @@ import java.util.List;
 import java.util.UUID;
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectPoint;
+import mafisher.quasar.effect.EffectPriority;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.VisualEffectSpec;
@@ -91,18 +93,46 @@ class SegmentedVisualEffectServiceTest {
     }
 
     @Test
-    void rejectsAStartBeyondTheDedicatedSegmentBudget() {
+    void cullsTheOldestCoordinatorBeyondTheDedicatedSegmentBudget() {
         int fullGrids = SegmentedVisualEffectService.MAX_ACTIVE_SEGMENTS_PER_LEVEL / 128;
+        SegmentedVisualEffectHandle oldest = null;
         for (int index = 0; index < fullGrids; index++) {
+            SegmentedVisualEffectHandle handle = SegmentedVisualEffectService.start(
+                this.level, spec(16, 8, 200)
+            );
+            if (oldest == null) {
+                oldest = handle;
+            }
+        }
+
+        SegmentedVisualEffectHandle admitted = SegmentedVisualEffectService.start(
+            this.level, spec(1, 1, 200)
+        );
+
+        assertTrue(SegmentedVisualEffectService.isActive(this.level, admitted));
+        assertFalse(SegmentedVisualEffectService.isActive(this.level, oldest));
+        assertEquals(fullGrids, SegmentedVisualEffectService.activeCount(this.level));
+        assertTrue(SegmentedVisualEffectService.activeSegmentCount(this.level)
+            <= SegmentedVisualEffectService.MAX_ACTIVE_SEGMENTS_PER_LEVEL);
+    }
+
+    @Test
+    void cullsABackgroundCoordinatorBeforeANormalOne() {
+        int fullGrids = SegmentedVisualEffectService.MAX_ACTIVE_SEGMENTS_PER_LEVEL / 128;
+        SegmentedVisualEffectHandle background = SegmentedVisualEffectService.start(
+            this.level, spec(16, 8, 200, EffectPriority.BACKGROUND)
+        );
+        for (int index = 1; index < fullGrids; index++) {
             SegmentedVisualEffectService.start(this.level, spec(16, 8, 200));
         }
 
-        assertEquals(SegmentedVisualEffectService.MAX_ACTIVE_SEGMENTS_PER_LEVEL,
-            SegmentedVisualEffectService.activeSegmentCount(this.level));
-        assertThrows(IllegalStateException.class,
-            () -> SegmentedVisualEffectService.start(this.level, spec(1, 1, 200)));
-        assertEquals(SegmentedVisualEffectService.MAX_ACTIVE_SEGMENTS_PER_LEVEL,
-            SegmentedVisualEffectService.activeSegmentCount(this.level));
+        SegmentedVisualEffectHandle high = SegmentedVisualEffectService.start(
+            this.level, spec(16, 8, 200, EffectPriority.HIGH)
+        );
+
+        assertTrue(SegmentedVisualEffectService.isActive(this.level, high));
+        assertFalse(SegmentedVisualEffectService.isActive(this.level, background));
+        assertEquals(fullGrids, SegmentedVisualEffectService.activeCount(this.level));
     }
 
     @Test
@@ -195,6 +225,15 @@ class SegmentedVisualEffectServiceTest {
     }
 
     private static SegmentedVisualEffectSpec spec(int columns, int rows, int durationTicks) {
+        return spec(columns, rows, durationTicks, EffectPriority.NORMAL);
+    }
+
+    private static SegmentedVisualEffectSpec spec(
+        int columns,
+        int rows,
+        int durationTicks,
+        EffectPriority priority
+    ) {
         return new SegmentedVisualEffectSpec(
             EFFECT_ID,
             new Vec3(0.0, 64.0, 0.0),
@@ -207,7 +246,9 @@ class SegmentedVisualEffectServiceTest {
             columns * rows > 1 ? 8.0 : 0.0,
             durationTicks,
             42L,
-            EffectAudience.dimensionWide()
+            EffectAudience.dimensionWide(),
+            EffectAudioSpec.NONE,
+            priority
         );
     }
 

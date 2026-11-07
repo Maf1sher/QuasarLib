@@ -9,6 +9,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.WeakHashMap;
 import mafisher.quasar.effect.EffectPoint;
+import mafisher.quasar.effect.EffectPriority;
 import mafisher.quasar.effect.EffectScope;
 import mafisher.quasar.effect.VisualEffectHandle;
 import mafisher.quasar.effect.VisualEffectService;
@@ -206,7 +207,8 @@ public final class EffectRestoreService {
             descriptor.durationTicks(),
             descriptor.seed(),
             descriptor.audience(),
-            audio
+            audio,
+            priority(descriptor)
         );
         List<UUID> segmentIds = segmentIds(descriptor);
         return SegmentedVisualEffectService.restore(
@@ -230,7 +232,8 @@ public final class EffectRestoreService {
             descriptor.durationTicks(),
             descriptor.seed(),
             descriptor.audience(),
-            EffectAudioNbt.loadFrom(descriptor.state())
+            EffectAudioNbt.loadFrom(descriptor.state()),
+            priority(descriptor)
         );
         VisualEffectHandle handle = VisualEffectService.restore(
             level,
@@ -257,6 +260,10 @@ public final class EffectRestoreService {
     private static Vec3 transformPosition(EffectDescriptor descriptor) {
         EffectPoint position = descriptor.transform().position();
         return new Vec3(position.x(), position.y(), position.z());
+    }
+
+    private static EffectPriority priority(EffectDescriptor descriptor) {
+        return EffectPriority.byName(descriptor.state().getString("priority"), EffectPriority.NORMAL);
     }
 
     private static List<UUID> segmentIds(EffectDescriptor descriptor) {

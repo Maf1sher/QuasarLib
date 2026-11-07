@@ -24,6 +24,78 @@ public final class QuasarConfig {
         .worldRestart()
         .defineInRange("block_journal_max_entries", 65_536, 1, 1_000_000);
 
+    static final ModConfigSpec.IntValue STANDALONE_VISUAL_BUDGET = BUILDER
+        .comment(
+            "Soft per-level budget for standalone client visuals.",
+            "When over budget the engine culls the lowest-priority effect instead of rejecting starts.",
+            "Requires a world restart."
+        )
+        .worldRestart()
+        .defineInRange("standalone_visual_budget", 128, 1, 4_096);
+
+    static final ModConfigSpec.IntValue SEGMENT_BUDGET = BUILDER
+        .comment(
+            "Soft per-level budget for segmented cells.",
+            "Segmented cells never consume standalone visual slots.",
+            "Requires a world restart."
+        )
+        .worldRestart()
+        .defineInRange("segment_budget", 1_024, 128, 65_536);
+
+    static final ModConfigSpec.IntValue GAMEPLAY_SESSION_BUDGET = BUILDER
+        .comment(
+            "Soft per-level budget for active gameplay sessions.",
+            "Starts above the budget wait in a priority queue instead of throwing.",
+            "Requires a world restart."
+        )
+        .worldRestart()
+        .defineInRange("gameplay_session_budget", 128, 1, 4_096);
+
+    static final ModConfigSpec.IntValue GAMEPLAY_SESSIONS_PER_OWNER_BUDGET = BUILDER
+        .comment(
+            "Soft per-owner gameplay session budget.",
+            "Starts above the budget wait in a priority queue instead of throwing.",
+            "Requires a world restart."
+        )
+        .worldRestart()
+        .defineInRange("gameplay_sessions_per_owner_budget", 8, 1, 1_024);
+
+    static final ModConfigSpec.IntValue GAMEPLAY_STARTS_PER_OWNER_PER_TICK_BUDGET = BUILDER
+        .comment(
+            "Maximum immediate gameplay starts per owner per tick.",
+            "Further starts are deferred to the next tick instead of throwing.",
+            "Requires a world restart."
+        )
+        .worldRestart()
+        .defineInRange("gameplay_starts_per_owner_per_tick", 1, 1, 64);
+
+    static final ModConfigSpec.IntValue GAMEPLAY_PENDING_BUDGET = BUILDER
+        .comment(
+            "Maximum queued gameplay starts per level.",
+            "When full, the lowest-priority queued start is dropped and counted.",
+            "Requires a world restart."
+        )
+        .worldRestart()
+        .defineInRange("gameplay_pending_budget", 256, 1, 4_096);
+
+    static final ModConfigSpec.IntValue CINEMATIC_SESSION_BUDGET = BUILDER
+        .comment(
+            "Soft per-level budget for cinematic sessions.",
+            "When over budget the engine culls the lowest-priority cinematic instead of rejecting starts.",
+            "Requires a world restart."
+        )
+        .worldRestart()
+        .defineInRange("cinematic_session_budget", 16, 1, 1_024);
+
+    static final ModConfigSpec.IntValue ENTITY_SPAWNS_PER_LEVEL_TICK_BUDGET = BUILDER
+        .comment(
+            "Maximum effect entity spawns applied per level tick.",
+            "Excess spawns are dropped and counted; gameplay effects never throw for this budget.",
+            "Requires a world restart."
+        )
+        .worldRestart()
+        .defineInRange("entity_spawns_per_level_tick", 256, 1, 65_536);
+
     public static final ModConfigSpec SPEC = BUILDER.build();
 
     private QuasarConfig() {
@@ -44,6 +116,54 @@ public final class QuasarConfig {
             return BLOCK_JOURNAL_MAX_ENTRIES.get();
         } catch (IllegalStateException notLoaded) {
             return BLOCK_JOURNAL_MAX_ENTRIES.getDefault();
+        }
+    }
+
+    /** Soft per-level budget for standalone visuals. */
+    public static int standaloneVisualBudget() {
+        return value(STANDALONE_VISUAL_BUDGET);
+    }
+
+    /** Soft per-level budget for segmented cells. */
+    public static int segmentBudget() {
+        return value(SEGMENT_BUDGET);
+    }
+
+    /** Soft per-level budget for active gameplay sessions. */
+    public static int gameplaySessionBudget() {
+        return value(GAMEPLAY_SESSION_BUDGET);
+    }
+
+    /** Soft per-owner budget for active gameplay sessions. */
+    public static int gameplaySessionsPerOwnerBudget() {
+        return value(GAMEPLAY_SESSIONS_PER_OWNER_BUDGET);
+    }
+
+    /** Immediate gameplay starts allowed per owner per tick. */
+    public static int gameplayStartsPerOwnerPerTickBudget() {
+        return value(GAMEPLAY_STARTS_PER_OWNER_PER_TICK_BUDGET);
+    }
+
+    /** Maximum queued gameplay starts per level. */
+    public static int gameplayPendingBudget() {
+        return value(GAMEPLAY_PENDING_BUDGET);
+    }
+
+    /** Soft per-level budget for cinematic sessions. */
+    public static int cinematicSessionBudget() {
+        return value(CINEMATIC_SESSION_BUDGET);
+    }
+
+    /** Maximum effect entity spawns applied per level tick. */
+    public static int entitySpawnsPerLevelTickBudget() {
+        return value(ENTITY_SPAWNS_PER_LEVEL_TICK_BUDGET);
+    }
+
+    private static int value(ModConfigSpec.IntValue config) {
+        try {
+            return config.get();
+        } catch (IllegalStateException notLoaded) {
+            return config.getDefault();
         }
     }
 }

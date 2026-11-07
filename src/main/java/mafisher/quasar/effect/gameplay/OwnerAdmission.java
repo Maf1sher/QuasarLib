@@ -13,20 +13,30 @@ final class OwnerAdmission {
     static final int MAX_STARTS_PER_OWNER_PER_TICK = 1;
 
     private final Map<UUID, OwnerState> owners = new HashMap<>();
+    private final int maxSessionsPerOwner;
+    private final int maxStartsPerTick;
+
+    OwnerAdmission(int maxSessionsPerOwner, int maxStartsPerTick) {
+        if (maxSessionsPerOwner < 1 || maxStartsPerTick < 1) {
+            throw new IllegalArgumentException("Owner admission budgets must be positive");
+        }
+        this.maxSessionsPerOwner = maxSessionsPerOwner;
+        this.maxStartsPerTick = maxStartsPerTick;
+    }
 
     Result tryStart(UUID ownerId, long gameTime) {
         if (ownerId == null) {
             return Result.ACCEPTED;
         }
         OwnerState state = this.owners.computeIfAbsent(ownerId, ignored -> new OwnerState());
-        if (state.activeSessions >= MAX_ACTIVE_SESSIONS_PER_OWNER) {
+        if (state.activeSessions >= this.maxSessionsPerOwner) {
             return Result.OWNER_SESSION_CAP;
         }
         if (state.startTick != gameTime) {
             state.startTick = gameTime;
             state.startsThisTick = 0;
         }
-        if (state.startsThisTick >= MAX_STARTS_PER_OWNER_PER_TICK) {
+        if (state.startsThisTick >= this.maxStartsPerTick) {
             return Result.OWNER_START_RATE;
         }
         state.activeSessions++;

@@ -10,7 +10,10 @@ class OwnerAdmissionTest {
 
     @Test
     void acceptsFirstStart() {
-        OwnerAdmission admission = new OwnerAdmission();
+        OwnerAdmission admission = new OwnerAdmission(
+            OwnerAdmission.MAX_ACTIVE_SESSIONS_PER_OWNER,
+            OwnerAdmission.MAX_STARTS_PER_OWNER_PER_TICK
+        );
 
         assertEquals(OwnerAdmission.Result.ACCEPTED, admission.tryStart(OWNER, 0L));
         assertEquals(1, admission.activeSessions(OWNER));
@@ -18,7 +21,10 @@ class OwnerAdmissionTest {
 
     @Test
     void rejectsSecondStartInTheSameTick() {
-        OwnerAdmission admission = new OwnerAdmission();
+        OwnerAdmission admission = new OwnerAdmission(
+            OwnerAdmission.MAX_ACTIVE_SESSIONS_PER_OWNER,
+            OwnerAdmission.MAX_STARTS_PER_OWNER_PER_TICK
+        );
         admission.tryStart(OWNER, 42L);
 
         assertEquals(OwnerAdmission.Result.OWNER_START_RATE, admission.tryStart(OWNER, 42L));
@@ -27,7 +33,10 @@ class OwnerAdmissionTest {
 
     @Test
     void acceptsAnotherStartOnTheNextTick() {
-        OwnerAdmission admission = new OwnerAdmission();
+        OwnerAdmission admission = new OwnerAdmission(
+            OwnerAdmission.MAX_ACTIVE_SESSIONS_PER_OWNER,
+            OwnerAdmission.MAX_STARTS_PER_OWNER_PER_TICK
+        );
         admission.tryStart(OWNER, 42L);
 
         assertEquals(OwnerAdmission.Result.ACCEPTED, admission.tryStart(OWNER, 43L));
@@ -36,7 +45,10 @@ class OwnerAdmissionTest {
 
     @Test
     void rejectsStartsAtTheOwnerSessionCap() {
-        OwnerAdmission admission = new OwnerAdmission();
+        OwnerAdmission admission = new OwnerAdmission(
+            OwnerAdmission.MAX_ACTIVE_SESSIONS_PER_OWNER,
+            OwnerAdmission.MAX_STARTS_PER_OWNER_PER_TICK
+        );
         for (int tick = 0; tick < OwnerAdmission.MAX_ACTIVE_SESSIONS_PER_OWNER; tick++) {
             assertEquals(OwnerAdmission.Result.ACCEPTED, admission.tryStart(OWNER, tick));
         }
@@ -50,7 +62,10 @@ class OwnerAdmissionTest {
 
     @Test
     void endingASessionFreesOneSlot() {
-        OwnerAdmission admission = new OwnerAdmission();
+        OwnerAdmission admission = new OwnerAdmission(
+            OwnerAdmission.MAX_ACTIVE_SESSIONS_PER_OWNER,
+            OwnerAdmission.MAX_STARTS_PER_OWNER_PER_TICK
+        );
         for (int tick = 0; tick < OwnerAdmission.MAX_ACTIVE_SESSIONS_PER_OWNER; tick++) {
             admission.tryStart(OWNER, tick);
         }
@@ -66,7 +81,10 @@ class OwnerAdmissionTest {
 
     @Test
     void ownerlessSessionsAreNotLimitedByOwnerState() {
-        OwnerAdmission admission = new OwnerAdmission();
+        OwnerAdmission admission = new OwnerAdmission(
+            OwnerAdmission.MAX_ACTIVE_SESSIONS_PER_OWNER,
+            OwnerAdmission.MAX_STARTS_PER_OWNER_PER_TICK
+        );
 
         for (int attempt = 0; attempt < 100; attempt++) {
             assertEquals(OwnerAdmission.Result.ACCEPTED, admission.tryStart(null, 1L));
@@ -76,7 +94,10 @@ class OwnerAdmissionTest {
 
     @Test
     void endingAnUnknownOwnerIsANoOp() {
-        OwnerAdmission admission = new OwnerAdmission();
+        OwnerAdmission admission = new OwnerAdmission(
+            OwnerAdmission.MAX_ACTIVE_SESSIONS_PER_OWNER,
+            OwnerAdmission.MAX_STARTS_PER_OWNER_PER_TICK
+        );
 
         admission.recordEnd(OWNER);
 

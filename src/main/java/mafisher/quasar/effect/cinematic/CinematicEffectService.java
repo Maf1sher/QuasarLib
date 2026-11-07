@@ -10,6 +10,9 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.WeakHashMap;
 import mafisher.quasar.effect.EffectAudience;
+import mafisher.quasar.effect.EffectBudgetService;
+import mafisher.quasar.effect.EffectBudgets;
+import mafisher.quasar.effect.EffectPriority;
 import mafisher.quasar.effect.EffectScope;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.EffectPoint;
@@ -31,14 +34,16 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Server-thread registry for cinematic timelines. A session executes each cue at most once, samples transform tracks,
- * and owns one {@link EffectScope}. Sessions are transient and never save.
+ * and owns one {@link EffectScope}. The session budget is soft: a full level closes the lowest-priority timeline or
+ * culls a strictly lower-priority newcomer.
  */
 public final class CinematicEffectService {
-    /** Provisional safety cap; it is not a measured balance budget. */
+    /** Default soft budget; it is a quality threshold, not a hard capability gate. */
     public static final int MAX_ACTIVE_SESSIONS_PER_LEVEL = 16;
 
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
     private static final Map<ServerLevel, Map<UUID, ActiveCinematic>> ACTIVE_SESSIONS = new WeakHashMap<>();
+    private static Integer budgetOverride;
 
     private CinematicEffectService() {
     }
@@ -63,18 +68,15 @@ public final class CinematicEffectService {
         Objects.requireNonNull(anchor, "anchor");
         Objects.requireNonNull(options, "options");
         CinematicTimeline anchored = timeline.anchored(anchor);
-        CinematicEffectHandle handle = startInternal(
+        return startInternal(
             level, anchored, anchor, UUID.randomUUID(), level.getGameTime(), options, null
         );
-        if (handle == null) {
-            throw new IllegalStateException("Too many active cinematic effects in this level");
-        }
-        return handle;
     }
 
     /**
-     * Starts a timeline, executes its tick-zero cues immediately, and applies tick-zero transform tracks. Start is
-     * rejected instead of evicting another cinematic when the level cap is reached.
+     * Starts a timeline, executes its tick-zero cues immediately, and applies tick-zero transform tracks. When the
+     * level budget is full, the lowest-priority cinematic is closed first; a lower-priority newcomer returns an
+     * inactive handle instead of throwing.
      */
     public static CinematicEffectHandle start(ServerLevel level, CinematicTimeline timeline) {
         Objects.requireNonNull(timeline, "timeline");
@@ -127,14 +129,16 @@ public final class CinematicEffectService {
         }
 
         Map<UUID, ActiveCinematic> sessions = ACTIVE_SESSIONS.get(level);
-        if (sessions != null && sessions.size() >= MAX_ACTIVE_SESSIONS_PER_LEVEL) {
-            LOGGER.warn(
-                "Rejected cinematic {} in {}: active session cap {} reached",
+        if (sessions != null && sessions.size() >= budget()
+            && !admitByPriority(level, sessions, timeline.priority())) {
+            EffectBudgetService.recordCull(level);
+            LOGGER.info(
+                "Culled cinematic {} in {}: its priority {} is below every active session",
                 timeline.id(),
                 level.dimension().location(),
-                MAX_ACTIVE_SESSIONS_PER_LEVEL
+                timeline.priority()
             );
-            return null;
+            return new CinematicEffectHandle(sessionId);
         }
 
         EffectScope scope = new EffectScope(level, sessionId);
@@ -268,6 +272,72 @@ public final class CinematicEffectService {
         Objects.requireNonNull(level, "level");
         Map<UUID, ActiveCinematic> sessions = ACTIVE_SESSIONS.get(level);
         return sessions == null ? 0 : sessions.size();
+    }
+
+    /** Whether one cinematic session is currently active; culled or finished handles return {@code false}. */
+    public static boolean isActive(ServerLevel level, CinematicEffectHandle handle) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(handle, "handle");
+        Map<UUID, ActiveCinematic> sessions = ACTIVE_SESSIONS.get(level);
+        ActiveCinematic session = sessions == null ? null : sessions.get(handle.sessionId());
+        return session != null
+            && !session.closed
+            && level.getGameTime() - session.startGameTime < session.timeline.durationTicks();
+    }
+
+    static void overrideBudgetForTesting(int budget) {
+        if (budget < 1) {
+            throw new IllegalArgumentException("Cinematic budget must be positive");
+        }
+        budgetOverride = budget;
+    }
+
+    static void resetBudgetForTesting() {
+        budgetOverride = null;
+    }
+
+    private static int budget() {
+        return budgetOverride == null ? EffectBudgets.cinematicSessions() : budgetOverride;
+    }
+
+    /**
+     * Makes room for a newcomer. Returns {@code false} when the newcomer is strictly lower priority than
+     * every active session; otherwise the lowest-priority (oldest on ties) session is closed.
+     */
+    private static boolean admitByPriority(
+        ServerLevel level,
+        Map<UUID, ActiveCinematic> sessions,
+        EffectPriority newcomerPriority
+    ) {
+        Map.Entry<UUID, ActiveCinematic> victim = null;
+        int lowest = Integer.MAX_VALUE;
+        for (Map.Entry<UUID, ActiveCinematic> entry : sessions.entrySet()) {
+            int weight = entry.getValue().timeline.priority().weight();
+            if (weight < lowest) {
+                lowest = weight;
+                victim = entry;
+            }
+        }
+        if (victim == null) {
+            return true;
+        }
+        if (newcomerPriority.weight() < lowest) {
+            return false;
+        }
+        UUID victimId = victim.getKey();
+        ActiveCinematic victimSession = sessions.remove(victimId);
+        if (victimSession != null) {
+            victimSession.close(level, true);
+        }
+        EffectBudgetService.recordCull(level);
+        LOGGER.info(
+            "Closed cinematic {} in {} to admit a priority {} cinematic under the soft budget of {}",
+            victimId,
+            level.dimension().location(),
+            newcomerPriority,
+            budget()
+        );
+        return true;
     }
 
     private static Map<UUID, ActiveCinematic> activeSessions(ServerLevel level) {
@@ -433,7 +503,9 @@ public final class CinematicEffectService {
                     EffectPersistenceOptions.cosmetic()
                 );
                 if (handle == null) {
-                    throw new IllegalStateException("Not enough visual effect capacity for cinematic segment");
+                    EffectBudgetService.recordCull(level);
+                    LOGGER.warn("Skipped segmented cinematic cue {}: no coordinator was created", start.key());
+                    return;
                 }
                 this.segmented.put(start.key(), handle);
             } else if (cue instanceof CinematicCue.SegmentedStopCue stop) {

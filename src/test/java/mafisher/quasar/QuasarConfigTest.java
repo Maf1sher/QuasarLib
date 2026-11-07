@@ -27,4 +27,16 @@ class QuasarConfigTest {
         assertEquals(65_536, QuasarConfig.BLOCK_JOURNAL_MAX_ENTRIES.getDefault());
         assertEquals(65_536, QuasarConfig.blockJournalMaxEntries());
     }
+
+    @Test
+    void exposesSoftCapacityBudgets() {
+        assertEquals(128, QuasarConfig.standaloneVisualBudget());
+        assertEquals(1_024, QuasarConfig.segmentBudget());
+        assertEquals(128, QuasarConfig.gameplaySessionBudget());
+        assertEquals(8, QuasarConfig.gameplaySessionsPerOwnerBudget());
+        assertEquals(1, QuasarConfig.gameplayStartsPerOwnerPerTickBudget());
+        assertEquals(256, QuasarConfig.gameplayPendingBudget());
+        assertEquals(16, QuasarConfig.cinematicSessionBudget());
+        assertEquals(256, QuasarConfig.entitySpawnsPerLevelTickBudget());
+    }
 }

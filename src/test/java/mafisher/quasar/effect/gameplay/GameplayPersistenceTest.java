@@ -17,8 +17,10 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectPoint;
+import mafisher.quasar.effect.EffectPriority;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.VisualEffectSpec;
+import mafisher.quasar.effect.audio.EffectAudioSpec;
 import mafisher.quasar.effect.block.BlockChange;
 import mafisher.quasar.effect.persistence.BlockJournal;
 import mafisher.quasar.effect.persistence.BlockRollbackService;
@@ -270,6 +272,27 @@ class GameplayPersistenceTest {
         assertEquals(0, GameplayEffectNbt.loadSpec(loaded).budget().maxBlockChanges());
     }
 
+    @Test
+    void preservesPriorityInDescriptorNbt() {
+        GameplayEffectSpec spec = specWithPriority(EffectPriority.HIGH);
+        EffectDescriptor descriptor = descriptor(spec, new CompoundTag());
+
+        EffectDescriptor loaded = EffectDescriptorNbt.load(EffectDescriptorNbt.save(descriptor));
+
+        assertEquals(EffectPriority.HIGH, GameplayEffectNbt.loadSpec(loaded).priority());
+    }
+
+    @Test
+    void defaultsPriorityForOlderDescriptors() {
+        GameplayEffectSpec spec = specWithPriority(EffectPriority.HIGH);
+        CompoundTag tag = EffectDescriptorNbt.save(descriptor(spec, new CompoundTag()));
+        tag.getCompound("state").getCompound("spec").remove("priority");
+
+        EffectDescriptor loaded = EffectDescriptorNbt.load(tag);
+
+        assertEquals(EffectPriority.NORMAL, GameplayEffectNbt.loadSpec(loaded).priority());
+    }
+
     private static GameplayEffectSpec ownedSpec(UUID ownerId, int durationTicks) {
         return new GameplayEffectSpec(
             TYPE,
@@ -321,6 +344,20 @@ class GameplayPersistenceTest {
             3L,
             budget,
             OwnerPolicy.CONTINUE
+        );
+    }
+
+    private static GameplayEffectSpec specWithPriority(EffectPriority priority) {
+        return new GameplayEffectSpec(
+            TYPE,
+            null,
+            new Vec3(0.0, 64.0, 0.0),
+            EffectPhasePlan.of(new EffectPhase("telegraph", 10), new EffectPhase("strike", 10)),
+            3L,
+            EffectTickBudget.unlimited(),
+            OwnerPolicy.CONTINUE,
+            EffectAudioSpec.NONE,
+            priority
         );
     }
 

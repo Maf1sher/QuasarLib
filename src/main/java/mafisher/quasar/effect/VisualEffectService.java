@@ -36,13 +36,14 @@ public final class VisualEffectService {
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
 
     /**
-     * Hard safety cap per level for visuals tracked by this service. Segmented coordinators use their own
+     * Default soft budget per level for visuals tracked by this service. Segmented coordinators use their own
      * dedicated budget and are not stored here.
      */
     public static final int MAX_ACTIVE_EFFECTS_PER_LEVEL = 128;
     private static final int GRID_MIN_PLAYERS = 8;
     private static final long GRID_MIN_QUERIES = 256L;
     private static final Map<ServerLevel, Map<UUID, ActiveEffect>> ACTIVE_EFFECTS = new WeakHashMap<>();
+    private static Integer budgetOverride;
 
     private VisualEffectService() {
     }
@@ -150,17 +151,17 @@ public final class VisualEffectService {
             options.ownerSessionId(),
             descriptorState(options, spec)
         ) : null;
-        ActiveEffect active = new ActiveEffect(payload, spec.audience(), spec.transform(), descriptor);
+        ActiveEffect active = new ActiveEffect(payload, spec.audience(), spec.transform(), descriptor,
+            spec.priority());
         Map<UUID, ActiveEffect> effects = activeEffects(level);
         effects.put(instanceId, active);
+        if (!enforceBudget(level, effects, instanceId)) {
+            return new VisualEffectHandle(instanceId);
+        }
         Map<UUID, ServerPlayer> audience = new LinkedHashMap<>();
         collectAudience(level, active, null, audience);
         for (ServerPlayer player : audience.values()) {
             sendStart(level, player, active);
-        }
-        while (effects.size() > MAX_ACTIVE_EFFECTS_PER_LEVEL) {
-            UUID oldest = effects.keySet().iterator().next();
-            stop(level, new VisualEffectHandle(oldest));
         }
         if (descriptor != null) {
             EffectPersistenceService.recordStart(level, descriptor);
@@ -172,8 +173,89 @@ public final class VisualEffectService {
     }
 
     /**
-     * Restores one standalone visual with its original identity, start time, and transform.
-     * Returns {@code null} when the level is at the safety cap.
+     * Enforces the soft per-level budget by culling the lowest-priority effect, oldest first on ties.
+     * The newcomer participates, so a background effect started while the level is full is culled
+     * before it is announced instead of throwing.
+     */
+    private static boolean enforceBudget(ServerLevel level, Map<UUID, ActiveEffect> effects, UUID newcomerId) {
+        int budget = budget();
+        while (effects.size() > budget) {
+            UUID victim = lowestPriority(effects);
+            if (victim == null) {
+                return effects.containsKey(newcomerId);
+            }
+            EffectBudgetService.recordCull(level);
+            LOGGER.info(
+                "Culled visual effect {} in {} because the soft budget of {} is full",
+                victim,
+                level.dimension().location(),
+                budget
+            );
+            if (victim.equals(newcomerId)) {
+                effects.remove(victim);
+                return false;
+            }
+            stop(level, new VisualEffectHandle(victim));
+        }
+        return effects.containsKey(newcomerId);
+    }
+
+    private static UUID lowestPriority(Map<UUID, ActiveEffect> effects) {
+        UUID victim = null;
+        int lowest = Integer.MAX_VALUE;
+        for (Map.Entry<UUID, ActiveEffect> entry : effects.entrySet()) {
+            int weight = entry.getValue().priority().weight();
+            if (weight < lowest) {
+                lowest = weight;
+                victim = entry.getKey();
+            }
+        }
+        return victim;
+    }
+
+    /** Whether one visual is currently active; culled or finished handles return {@code false}. */
+    public static boolean isActive(ServerLevel level, VisualEffectHandle handle) {
+        return findActive(level, handle) != null;
+    }
+
+    /**
+     * Adopts active visuals whose descriptor names {@code ownerSessionId}. Used when a deferred
+     * restored gameplay session becomes active after its child visuals were restored.
+     */
+    public static void adoptOwnedBy(ServerLevel level, UUID ownerSessionId, EffectScope scope) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(ownerSessionId, "ownerSessionId");
+        Objects.requireNonNull(scope, "scope");
+        Map<UUID, ActiveEffect> effects = ACTIVE_EFFECTS.get(level);
+        if (effects == null) {
+            return;
+        }
+        for (ActiveEffect active : effects.values()) {
+            if (active.descriptor() != null && ownerSessionId.equals(active.descriptor().ownerSessionId())) {
+                UUID instanceId = active.payload().instanceId();
+                scope.adoptVisual(instanceId, new VisualEffectHandle(instanceId));
+            }
+        }
+    }
+
+    static void overrideBudgetForTesting(int budget) {
+        if (budget < 1) {
+            throw new IllegalArgumentException("Visual budget must be positive");
+        }
+        budgetOverride = budget;
+    }
+
+    static void resetBudgetForTesting() {
+        budgetOverride = null;
+    }
+
+    private static int budget() {
+        return budgetOverride == null ? EffectBudgets.standaloneVisuals() : budgetOverride;
+    }
+
+    /**
+     * Restores one standalone visual with its original identity, start time, and transform. The
+     * handle may be inactive when the soft budget culled it; query {@link #isActive}.
      */
     public static VisualEffectHandle restore(
         ServerLevel level,
@@ -186,10 +268,6 @@ public final class VisualEffectService {
         Objects.requireNonNull(spec, "spec");
         Objects.requireNonNull(instanceId, "instanceId");
         Map<UUID, ActiveEffect> effects = activeEffects(level);
-        if (effects.size() >= MAX_ACTIVE_EFFECTS_PER_LEVEL) {
-            LOGGER.warn("Could not restore visual effect {}: active visual cap reached", instanceId);
-            return null;
-        }
         EffectTransform transform = spec.transform();
         StartVisualEffectPayload payload = new StartVisualEffectPayload(
             spec.effectId(),
@@ -208,8 +286,11 @@ public final class VisualEffectService {
             spec.seed(),
             null
         );
-        ActiveEffect active = new ActiveEffect(payload, spec.audience(), transform, descriptor);
+        ActiveEffect active = new ActiveEffect(payload, spec.audience(), transform, descriptor, spec.priority());
         effects.put(instanceId, active);
+        if (!enforceBudget(level, effects, instanceId)) {
+            return new VisualEffectHandle(instanceId);
+        }
         Map<UUID, ServerPlayer> audience = new LinkedHashMap<>();
         collectAudience(level, active, null, audience);
         for (ServerPlayer player : audience.values()) {
@@ -242,10 +323,6 @@ public final class VisualEffectService {
         Objects.requireNonNull(spec, "spec");
         Objects.requireNonNull(instanceId, "instanceId");
         Map<UUID, ActiveEffect> effects = activeEffects(level);
-        if (effects.size() >= MAX_ACTIVE_EFFECTS_PER_LEVEL) {
-            LOGGER.warn("Could not restore visual effect {}: active visual cap reached", instanceId);
-            return null;
-        }
         EffectTransform transform = spec.transform();
         StartVisualEffectPayload payload = new StartVisualEffectPayload(
             spec.effectId(),
@@ -264,8 +341,11 @@ public final class VisualEffectService {
             spec.seed(),
             link
         );
-        ActiveEffect active = new ActiveEffect(payload, spec.audience(), transform, descriptor);
+        ActiveEffect active = new ActiveEffect(payload, spec.audience(), transform, descriptor, spec.priority());
         effects.put(instanceId, active);
+        if (!enforceBudget(level, effects, instanceId)) {
+            return new VisualEffectHandle(instanceId);
+        }
         Map<UUID, ServerPlayer> audience = new LinkedHashMap<>();
         collectAudience(level, active, null, audience);
         for (ServerPlayer player : audience.values()) {
@@ -473,11 +553,13 @@ public final class VisualEffectService {
         Objects.requireNonNull(level, "level");
         ACTIVE_EFFECTS.remove(level);
         EffectAudioService.clear(level);
+        EffectBudgetService.clear(level);
     }
 
     private static CompoundTag descriptorState(EffectPersistenceOptions options, VisualEffectSpec spec) {
         CompoundTag state = options.state().copy();
         EffectAudioNbt.saveInto(state, spec.audio());
+        state.putString("priority", spec.priority().name());
         return state;
     }
 
@@ -564,6 +646,7 @@ public final class VisualEffectService {
         private final StartVisualEffectPayload payload;
         private final EffectAudience audience;
         private final Set<UUID> trackingPlayers = new HashSet<>();
+        private final EffectPriority priority;
         private EffectTransform transform;
         private EffectDescriptor descriptor;
 
@@ -571,12 +654,14 @@ public final class VisualEffectService {
             StartVisualEffectPayload payload,
             EffectAudience audience,
             EffectTransform transform,
-            EffectDescriptor descriptor
+            EffectDescriptor descriptor,
+            EffectPriority priority
         ) {
             this.payload = payload;
             this.audience = audience;
             this.transform = transform;
             this.descriptor = descriptor;
+            this.priority = priority;
         }
 
         private StartVisualEffectPayload payload() {
@@ -585,6 +670,10 @@ public final class VisualEffectService {
 
         private EffectAudience audience() {
             return this.audience;
+        }
+
+        private EffectPriority priority() {
+            return this.priority;
         }
 
         private EffectTransform transform() {

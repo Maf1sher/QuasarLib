@@ -2,6 +2,7 @@ package mafisher.quasar.effect.scale;
 
 import java.util.Objects;
 import mafisher.quasar.effect.EffectAudience;
+import mafisher.quasar.effect.EffectPriority;
 import mafisher.quasar.effect.VisualEffectSpec;
 import mafisher.quasar.effect.audio.EffectAudioSpec;
 import net.minecraft.resources.ResourceLocation;
@@ -28,7 +29,8 @@ public record SegmentedVisualEffectSpec(
     int durationTicks,
     long seed,
     EffectAudience audience,
-    EffectAudioSpec audio
+    EffectAudioSpec audio,
+    EffectPriority priority
 ) {
     /** Shared per-level ceiling. A coordinator cannot reserve more than this many segments. */
     public static final int MAX_SEGMENTS = SegmentGridLayout.MAX_SEGMENTS;
@@ -38,6 +40,7 @@ public record SegmentedVisualEffectSpec(
         Objects.requireNonNull(center, "center");
         Objects.requireNonNull(audience, "audience");
         Objects.requireNonNull(audio, "audio");
+        Objects.requireNonNull(priority, "priority");
         long segmentCount = (long)columns * rows;
         if (!Double.isFinite(center.x) || !Double.isFinite(center.y) || !Double.isFinite(center.z)
             || !Float.isFinite(yaw) || !Float.isFinite(pitch) || !Float.isFinite(roll)
@@ -49,6 +52,26 @@ public record SegmentedVisualEffectSpec(
             throw new IllegalArgumentException("Invalid segmented visual effect parameters");
         }
         audio.requireFitsWithin(durationTicks);
+    }
+
+    /** Source-compatible constructor for effects that use the default priority. */
+    public SegmentedVisualEffectSpec(
+        ResourceLocation effectId,
+        Vec3 center,
+        float yaw,
+        float pitch,
+        float roll,
+        float segmentScale,
+        int columns,
+        int rows,
+        double spacing,
+        int durationTicks,
+        long seed,
+        EffectAudience audience,
+        EffectAudioSpec audio
+    ) {
+        this(effectId, center, yaw, pitch, roll, segmentScale, columns, rows, spacing, durationTicks, seed, audience,
+            audio, EffectPriority.NORMAL);
     }
 
     public SegmentedVisualEffectSpec(
@@ -66,7 +89,7 @@ public record SegmentedVisualEffectSpec(
         EffectAudience audience
     ) {
         this(effectId, center, yaw, pitch, roll, segmentScale, columns, rows, spacing, durationTicks, seed, audience,
-            EffectAudioSpec.NONE);
+            EffectAudioSpec.NONE, EffectPriority.NORMAL);
     }
 
     public VisualEffectSpec segmentSpec(int column, int row) {
@@ -82,7 +105,8 @@ public record SegmentedVisualEffectSpec(
             this.durationTicks,
             this.segmentSeed(column, row),
             this.audience,
-            EffectAudioSpec.NONE
+            EffectAudioSpec.NONE,
+            this.priority
         );
     }
 

@@ -7,8 +7,10 @@ import com.google.gson.JsonParseException;
 import java.util.Locale;
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectPoint;
+import mafisher.quasar.effect.EffectPriority;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.VisualEffectSpec;
+import mafisher.quasar.effect.audio.EffectAudioSpec;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectSpec;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -28,7 +30,8 @@ final class CinematicTimelineJson {
         int updateInterval = GsonHelper.getAsInt(root, "transform_update_interval_ticks", 1);
         CinematicTimeline.Builder builder = CinematicTimeline.builder(id, durationTicks, seed)
             .transformUpdateIntervalTicks(updateInterval)
-            .audioMode(audioMode(root));
+            .audioMode(audioMode(root))
+            .priority(priority(root, EffectPriority.NORMAL));
 
         JsonArray cues = GsonHelper.getAsJsonArray(root, "cues");
         if (cues.isEmpty()) {
@@ -77,7 +80,9 @@ final class CinematicTimelineJson {
                     GsonHelper.getAsFloat(cue, "scale", 1.0F),
                     GsonHelper.getAsInt(cue, "duration_ticks"),
                     GsonHelper.getAsLong(cue, "seed", 0L),
-                    audience(cue)
+                    audience(cue),
+                    EffectAudioSpec.NONE,
+                    priority(cue, EffectPriority.NORMAL)
                 )
             );
             case "visual_stop" -> builder.stopVisual(GsonHelper.getAsString(cue, "key"), tick);
@@ -96,7 +101,9 @@ final class CinematicTimelineJson {
                     GsonHelper.getAsDouble(cue, "spacing"),
                     GsonHelper.getAsInt(cue, "duration_ticks"),
                     GsonHelper.getAsLong(cue, "seed", 0L),
-                    audience(cue)
+                    audience(cue),
+                    EffectAudioSpec.NONE,
+                    priority(cue, EffectPriority.NORMAL)
                 )
             );
             case "segmented_stop" -> builder.stopSegmented(GsonHelper.getAsString(cue, "key"), tick);
@@ -140,6 +147,18 @@ final class CinematicTimelineJson {
             return EffectEasing.valueOf(value);
         } catch (IllegalArgumentException exception) {
             throw new JsonParseException("Unknown cinematic easing: " + value, exception);
+        }
+    }
+
+    private static EffectPriority priority(JsonObject json, EffectPriority fallback) {
+        if (!json.has("priority")) {
+            return fallback;
+        }
+        String value = GsonHelper.getAsString(json, "priority").toUpperCase(Locale.ROOT);
+        try {
+            return EffectPriority.valueOf(value);
+        } catch (IllegalArgumentException exception) {
+            throw new JsonParseException("Unknown effect priority: " + value, exception);
         }
     }
 

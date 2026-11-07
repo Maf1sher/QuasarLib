@@ -1,7 +1,8 @@
 package mafisher.quasar.effect.cinematic;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyFloat;
@@ -13,6 +14,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import mafisher.quasar.effect.EffectAudience;
+import mafisher.quasar.effect.EffectPriority;
 import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.VisualEffectSpec;
 import mafisher.quasar.effect.audio.EffectAudioService;
@@ -183,19 +185,43 @@ class CinematicEffectServiceTest {
     }
 
     @Test
-    void rejectsAStartOverTheSessionCap() {
+    void cullsTheOldestLowestPriorityCinematicAtTheSessionBudget() {
         for (int index = 0; index < CinematicEffectService.MAX_ACTIVE_SESSIONS_PER_LEVEL; index++) {
             CinematicEffectService.start(this.level, timelineBuilder(100)
+                .priority(EffectPriority.LOW)
                 .sound(0, Vec3.ZERO, SOUND, SoundSource.PLAYERS, 1.0F, 1.0F)
                 .build());
         }
 
+        CinematicEffectHandle admitted = CinematicEffectService.start(this.level,
+            timelineBuilder(100)
+                .priority(EffectPriority.HIGH)
+                .sound(0, Vec3.ZERO, SOUND, SoundSource.PLAYERS, 1.0F, 1.0F)
+                .build());
+
+        assertTrue(CinematicEffectService.isActive(this.level, admitted));
         assertEquals(CinematicEffectService.MAX_ACTIVE_SESSIONS_PER_LEVEL,
             CinematicEffectService.activeCount(this.level));
-        assertThrows(IllegalStateException.class, () -> CinematicEffectService.start(this.level,
-            timelineBuilder(100)
+    }
+
+    @Test
+    void cullsALowerPriorityNewcomerWithoutThrowing() {
+        for (int index = 0; index < CinematicEffectService.MAX_ACTIVE_SESSIONS_PER_LEVEL; index++) {
+            CinematicEffectService.start(this.level, timelineBuilder(100)
+                .priority(EffectPriority.HIGH)
                 .sound(0, Vec3.ZERO, SOUND, SoundSource.PLAYERS, 1.0F, 1.0F)
-                .build()));
+                .build());
+        }
+
+        CinematicEffectHandle culled = CinematicEffectService.start(this.level,
+            timelineBuilder(100)
+                .priority(EffectPriority.BACKGROUND)
+                .sound(0, Vec3.ZERO, SOUND, SoundSource.PLAYERS, 1.0F, 1.0F)
+                .build());
+
+        assertFalse(CinematicEffectService.isActive(this.level, culled));
+        assertEquals(CinematicEffectService.MAX_ACTIVE_SESSIONS_PER_LEVEL,
+            CinematicEffectService.activeCount(this.level));
     }
 
     @Test
@@ -224,18 +250,22 @@ class CinematicEffectServiceTest {
     }
 
     @Test
-    void failedSegmentedCueRollsBackWhenTheSegmentBudgetIsFull() {
+    void cullsTheOldestCoordinatorToAdmitACinematicSegment() {
         int fullGrids = SegmentedVisualEffectService.MAX_ACTIVE_SEGMENTS_PER_LEVEL / 128;
         for (int index = 0; index < fullGrids; index++) {
             SegmentedVisualEffectService.start(this.level, largeSegmentedSpec(100));
         }
 
-        assertThrows(IllegalStateException.class, () -> CinematicEffectService.start(this.level,
-            timelineBuilder(100).segmented("field", 0, segmentedSpec(100)).build()));
+        CinematicEffectHandle handle = CinematicEffectService.start(this.level,
+            timelineBuilder(100).segmented("field", 0, segmentedSpec(100)).build());
 
-        assertEquals(0, CinematicEffectService.activeCount(this.level));
-        assertEquals(SegmentedVisualEffectService.MAX_ACTIVE_SEGMENTS_PER_LEVEL,
-            SegmentedVisualEffectService.activeSegmentCount(this.level));
+        assertTrue(CinematicEffectService.isActive(this.level, handle));
+        assertEquals(1, CinematicEffectService.activeCount(this.level));
+        // One 128-cell coordinator was culled to free room for the four-cell cue.
+        assertEquals(
+            (fullGrids - 1) * 128 + 4,
+            SegmentedVisualEffectService.activeSegmentCount(this.level)
+        );
     }
 
     private static CinematicTimeline.Builder timelineBuilder(int durationTicks) {
