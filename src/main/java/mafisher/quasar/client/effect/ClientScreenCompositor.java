@@ -74,7 +74,6 @@ final class ClientScreenCompositor {
             return;
         }
 
-        boolean sceneCaptured = false;
         try {
             EffectQualityTier quality = ClientQualityController.tier();
             int targetWidth = Math.max(1, Math.round(width * quality.screenScale()));
@@ -85,7 +84,6 @@ final class ClientScreenCompositor {
             }
 
             this.captureSceneColor(mainTarget, this.sceneColorTarget);
-            sceneCaptured = true;
 
             ScreenEffectCameraState camera = new ScreenEffectCameraState(
                 event.getCamera().getPosition(),
@@ -96,30 +94,27 @@ final class ClientScreenCompositor {
                 event.getPartialTick().getGameTimeDeltaPartialTick(false)
             );
 
-            RenderTarget currentColor = mainTarget;
+            RenderTarget currentColor = this.sceneColorTarget;
+            RenderTarget alternateColor = this.compositionTarget;
             for (ScreenEffectFrame screenEffect : screenEffects) {
                 this.renderMask(event, manager, mainTarget, screenEffect);
-                RenderTarget destination = currentColor == mainTarget ? this.compositionTarget : mainTarget;
-                this.renderOperation(currentColor, destination, screenEffect, camera, quality);
-                currentColor = destination;
+                this.renderOperation(currentColor, alternateColor, screenEffect, camera, quality);
+                RenderTarget previous = currentColor;
+                currentColor = alternateColor;
+                alternateColor = previous;
             }
 
-            if (currentColor != mainTarget) {
-                mainTarget.bindWrite(true);
-                currentColor.blitToScreen(mainTarget.viewWidth, mainTarget.viewHeight);
-            }
             if (this.failAfterCompositionOnce) {
                 this.failAfterCompositionOnce = false;
                 throw new IllegalStateException("Screen compositor failure injection");
             }
+
+            mainTarget.bindWrite(true);
+            currentColor.blitToScreen(mainTarget.viewWidth, mainTarget.viewHeight);
             this.restoreMainTargetState(mainTarget);
         } catch (RuntimeException exception) {
             this.failAfterCompositionOnce = false;
-            if (sceneCaptured) {
-                this.restoreCapturedScene(mainTarget);
-            } else {
-                this.restoreMainTargetState(mainTarget);
-            }
+            this.restoreMainTargetState(mainTarget);
             this.unavailableWidth = width;
             this.unavailableHeight = height;
             this.releaseTargets();
@@ -210,19 +205,6 @@ final class ClientScreenCompositor {
             COLOR_BUFFER_BIT, NEAREST_FILTER
         );
         mainTarget.bindWrite(false);
-    }
-
-    private void restoreCapturedScene(RenderTarget mainTarget) {
-        try {
-            mainTarget.bindWrite(true);
-            if (this.sceneColorTarget != null) {
-                this.sceneColorTarget.blitToScreen(mainTarget.viewWidth, mainTarget.viewHeight);
-            }
-        } catch (RuntimeException recoveryException) {
-            LOGGER.warn("Could not restore the captured scene after a compositor failure.", recoveryException);
-        } finally {
-            this.restoreMainTargetState(mainTarget);
-        }
     }
 
     private void restoreMainTargetState(RenderTarget mainTarget) {
