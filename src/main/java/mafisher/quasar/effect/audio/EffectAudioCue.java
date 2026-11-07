@@ -13,7 +13,9 @@ public record EffectAudioCue(
     SoundSource source,
     float volume,
     float pitch,
-    EffectAudioAttenuation attenuation
+    EffectAudioAttenuation attenuation,
+    EffectAudioEnvelope envelope,
+    EffectAudioMotion motion
 ) {
     public EffectAudioCue {
         if (tick < 0) {
@@ -23,11 +25,30 @@ public record EffectAudioCue(
         Objects.requireNonNull(soundId, "soundId");
         Objects.requireNonNull(source, "source");
         Objects.requireNonNull(attenuation, "attenuation");
+        Objects.requireNonNull(envelope, "envelope");
+        Objects.requireNonNull(motion, "motion");
         if (!Double.isFinite(position.x) || !Double.isFinite(position.y) || !Double.isFinite(position.z)
             || !Float.isFinite(volume) || volume < 0.0F
             || !Float.isFinite(pitch) || pitch <= 0.0F) {
             throw new IllegalArgumentException("Invalid effect audio cue");
         }
+        if (envelope.looping() && envelope.stopTick() != EffectAudioEnvelope.END_OF_EFFECT
+            && envelope.stopTick() <= tick) {
+            throw new IllegalArgumentException("Looping audio cues must stop after their start tick");
+        }
+    }
+
+    public EffectAudioCue(
+        int tick,
+        Vec3 position,
+        ResourceLocation soundId,
+        SoundSource source,
+        float volume,
+        float pitch,
+        EffectAudioAttenuation attenuation
+    ) {
+        this(tick, position, soundId, source, volume, pitch, attenuation,
+            EffectAudioEnvelope.ONE_SHOT, EffectAudioMotion.ANCHORED);
     }
 
     public EffectAudioCue(

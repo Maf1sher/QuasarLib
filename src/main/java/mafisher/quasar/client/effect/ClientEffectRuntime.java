@@ -2,6 +2,7 @@ package mafisher.quasar.client.effect;
 
 import mafisher.quasar.effect.EffectQualityTier;
 import mafisher.quasar.effect.network.EffectAudioPlanPayload;
+import mafisher.quasar.effect.network.EffectAudioTriggerPayload;
 import mafisher.quasar.effect.network.ResumeEffectsPayload;
 import mafisher.quasar.effect.network.StartSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
@@ -54,6 +55,10 @@ public final class ClientEffectRuntime {
 
     public static void stopEffectAudio(StopEffectAudioPayload payload) {
         ClientEffectFrameRuntime.stopEffectAudio(payload);
+    }
+
+    public static void effectAudioTrigger(EffectAudioTriggerPayload payload) {
+        ClientEffectFrameRuntime.effectAudioTrigger(payload);
     }
 
     /** Returns the quality tier currently used for client presentation. */

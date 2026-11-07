@@ -2,6 +2,8 @@ package mafisher.quasar.effect.audio;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -93,5 +95,85 @@ class EffectAudioSpecTest {
         assertTrue(spec.fitsWithin(10));
         assertFalse(spec.fitsWithin(9));
         assertThrows(IllegalArgumentException.class, () -> spec.requireFitsWithin(9));
+    }
+
+    @Test
+    void validatesLoopWindowsAgainstDuration() {
+        EffectAudioSpec valid = EffectAudioSpec.builder(100)
+            .cue(new EffectAudioCue(10, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F,
+                EffectAudioAttenuation.VANILLA,
+                EffectAudioEnvelope.loopUntil(50, 5, 10),
+                EffectAudioMotion.FOLLOW_EFFECT))
+            .build();
+
+        assertEquals(EffectAudioMotion.FOLLOW_EFFECT, valid.cues().getFirst().motion());
+        assertEquals(50, valid.cues().getFirst().envelope().stopTick());
+
+        assertThrows(IllegalArgumentException.class, () -> EffectAudioSpec.builder(100)
+            .cue(new EffectAudioCue(10, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F,
+                EffectAudioAttenuation.VANILLA,
+                EffectAudioEnvelope.loopUntil(101, 0, 0),
+                EffectAudioMotion.ANCHORED)));
+    }
+
+    @Test
+    void resolvesPhaseLoopsByShiftingTheWholeWindow() {
+        EffectPhasePlan phases = EffectPhasePlan.of(
+            new EffectPhase("charge", 20),
+            new EffectPhase("impact", 30)
+        );
+        EffectAudioCue cue = new EffectAudioCue(
+            0,
+            Vec3.ZERO,
+            SOUND,
+            SoundSource.MASTER,
+            1.0F,
+            1.0F,
+            EffectAudioAttenuation.VANILLA,
+            EffectAudioEnvelope.loopUntil(10, 2, 3),
+            EffectAudioMotion.ANCHORED
+        );
+
+        EffectAudioSpec spec = EffectAudioSpec.builder(phases)
+            .phaseCue("impact", 5, cue)
+            .build();
+
+        assertEquals(25, spec.cues().getFirst().tick());
+        assertEquals(35, spec.cues().getFirst().envelope().stopTick());
+    }
+
+    @Test
+    void registersTriggersAndRejectsDuplicates() {
+        EffectAudioSpec spec = EffectAudioSpec.builder(100)
+            .trigger(new EffectAudioTrigger(
+                "impact", Vec3.ZERO, SOUND, SoundSource.PLAYERS, 1.0F, 1.0F
+            ))
+            .build();
+
+        assertNotNull(spec.triggerOrNull("impact"));
+        assertNull(spec.triggerOrNull("missing"));
+        assertEquals(1, spec.triggerCount());
+
+        EffectAudioSpec.Builder builder = EffectAudioSpec.builder(100)
+            .trigger(new EffectAudioTrigger(
+                "impact", Vec3.ZERO, SOUND, SoundSource.PLAYERS, 1.0F, 1.0F
+            ));
+        assertThrows(IllegalArgumentException.class, () -> builder.trigger(new EffectAudioTrigger(
+            "impact", Vec3.ZERO, SOUND, SoundSource.PLAYERS, 1.0F, 1.0F
+        )));
+    }
+
+    @Test
+    void capsTheTriggerCount() {
+        EffectAudioSpec.Builder builder = EffectAudioSpec.builder(100);
+        for (int index = 0; index < EffectAudioSpec.MAX_TRIGGERS; index++) {
+            builder.trigger(new EffectAudioTrigger(
+                "trigger_" + index, Vec3.ZERO, SOUND, SoundSource.PLAYERS, 1.0F, 1.0F
+            ));
+        }
+
+        assertThrows(IllegalArgumentException.class, () -> builder.trigger(new EffectAudioTrigger(
+            "overflow", Vec3.ZERO, SOUND, SoundSource.PLAYERS, 1.0F, 1.0F
+        )));
     }
 }

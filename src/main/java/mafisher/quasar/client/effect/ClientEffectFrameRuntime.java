@@ -1,7 +1,9 @@
 package mafisher.quasar.client.effect;
 
 import java.util.List;
+import java.util.UUID;
 import mafisher.quasar.effect.network.EffectAudioPlanPayload;
+import mafisher.quasar.effect.network.EffectAudioTriggerPayload;
 import mafisher.quasar.effect.network.ResumeEffectsPayload;
 import mafisher.quasar.effect.network.StartSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
@@ -12,6 +14,7 @@ import mafisher.quasar.effect.network.UpdateSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateVisualEffectPayload;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.server.packs.resources.ResourceManager;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.common.NeoForge;
 
@@ -89,6 +92,16 @@ final class ClientEffectFrameRuntime {
 
     static void stopEffectAudio(StopEffectAudioPayload payload) {
         ClientEffectAudio.stop(payload);
+    }
+
+    static void effectAudioTrigger(EffectAudioTriggerPayload payload) {
+        ClientEffectAudio.trigger(payload);
+    }
+
+    /** Current interpolated world origin for one effect, or null when it has no visual instance. */
+    static Vec3 effectOrigin(UUID effectId) {
+        ClientVisualEffectManager current = manager;
+        return current == null ? null : current.effectOrigin(effectId);
     }
 
     static void render(RenderLevelStageEvent event) {

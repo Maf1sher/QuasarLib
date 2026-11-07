@@ -12,11 +12,28 @@ class EffectAudioCueTest {
     private static final ResourceLocation SOUND = ResourceLocation.withDefaultNamespace("test");
 
     @Test
-    void defaultsToVanillaAttenuation() {
+    void defaultsToVanillaAttenuationAndOneShotMotion() {
         EffectAudioCue cue = new EffectAudioCue(5, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F);
 
         assertEquals(EffectAudioAttenuation.VANILLA, cue.attenuation());
+        assertEquals(EffectAudioEnvelope.ONE_SHOT, cue.envelope());
+        assertEquals(EffectAudioMotion.ANCHORED, cue.motion());
         assertEquals(5, cue.tick());
+    }
+
+    @Test
+    void rejectsLoopsThatStopAtOrBeforeTheirStart() {
+        assertThrows(IllegalArgumentException.class, () -> new EffectAudioCue(
+            5,
+            Vec3.ZERO,
+            SOUND,
+            SoundSource.MASTER,
+            1.0F,
+            1.0F,
+            EffectAudioAttenuation.VANILLA,
+            EffectAudioEnvelope.loopUntil(5, 0, 0),
+            EffectAudioMotion.ANCHORED
+        ));
     }
 
     @Test

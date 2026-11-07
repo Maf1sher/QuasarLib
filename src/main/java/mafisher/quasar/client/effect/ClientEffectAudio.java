@@ -8,8 +8,11 @@ import java.util.Map;
 import java.util.UUID;
 import mafisher.quasar.effect.audio.EffectAudioAttenuation;
 import mafisher.quasar.effect.audio.EffectAudioCue;
+import mafisher.quasar.effect.audio.EffectAudioMotion;
 import mafisher.quasar.effect.audio.EffectAudioPlan;
+import mafisher.quasar.effect.audio.EffectAudioTrigger;
 import mafisher.quasar.effect.network.EffectAudioPlanPayload;
+import mafisher.quasar.effect.network.EffectAudioTriggerPayload;
 import mafisher.quasar.effect.network.StopEffectAudioPayload;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -17,10 +20,13 @@ import net.minecraft.client.resources.sounds.SoundInstance;
 import net.minecraft.client.sounds.SoundManager;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.sounds.SoundEvent;
+import net.minecraft.world.phys.Vec3;
 
 /** Client-side scheduler for effect sound plans; cue timing follows a server-relative timeline, not packet arrival. */
 public final class ClientEffectAudio {
     private static final int MAX_ACTIVE_PLANS = 128;
+    private static final int MAX_ACTIVE_LOOPS_PER_PLAN = 4;
+    private static final int MAX_TRIGGERS_PER_TICK_PER_PLAN = 8;
     private static final int GRACE_TICKS = EffectAudioPlan.GRACE_TICKS;
     private static final Map<UUID, State> PLANS = new LinkedHashMap<>();
 
@@ -64,6 +70,19 @@ public final class ClientEffectAudio {
         state.stop();
     }
 
+    static void trigger(EffectAudioTriggerPayload payload) {
+        Minecraft minecraft = Minecraft.getInstance();
+        ClientLevel level = minecraft.level;
+        if (level == null || !level.dimension().location().equals(payload.dimensionId())) {
+            return;
+        }
+        State state = PLANS.get(payload.effectId());
+        if (state == null) {
+            return;
+        }
+        state.playTrigger(level, payload);
+    }
+
     static void tick() {
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
@@ -86,8 +105,7 @@ public final class ClientEffectAudio {
                 iterator.remove();
                 continue;
             }
-            state.prune();
-            state.playDue(level, age);
+            state.tick(level, age);
         }
     }
 
@@ -106,11 +124,20 @@ public final class ClientEffectAudio {
     private static final class State {
         private final EffectAudioPlan plan;
         private final List<SoundInstance> activeInstances = new ArrayList<>();
+        private final List<LoopTrack> loops = new ArrayList<>();
         private int nextCueIndex;
+        private int triggersThisTick;
 
         private State(EffectAudioPlan plan, int nextCueIndex) {
             this.plan = plan;
             this.nextCueIndex = nextCueIndex;
+        }
+
+        private void tick(ClientLevel level, int age) {
+            this.triggersThisTick = 0;
+            this.prune();
+            this.tickLoops(age);
+            this.playDue(level, age);
         }
 
         private void playDue(ClientLevel level, int age) {
@@ -120,11 +147,77 @@ public final class ClientEffectAudio {
                     return;
                 }
                 this.nextCueIndex++;
+                if (cue.envelope().looping()) {
+                    int stopTick = cue.envelope().stopTickOr(this.plan.durationTicks());
+                    if (age < stopTick) {
+                        this.startLoop(level, cue, stopTick, age);
+                    }
+                    continue;
+                }
                 if (age - cue.tick() > GRACE_TICKS) {
                     continue;
                 }
                 this.play(level, cue);
             }
+        }
+
+        private void startLoop(ClientLevel level, EffectAudioCue cue, int stopTick, int age) {
+            SoundManager manager = Minecraft.getInstance().getSoundManager();
+            while (this.loops.size() >= MAX_ACTIVE_LOOPS_PER_PLAN) {
+                LoopTrack oldest = this.loops.remove(0);
+                oldest.instance.stopNow();
+                manager.stop(oldest.instance);
+            }
+            EffectLoopSoundInstance instance = new EffectLoopSoundInstance(cue);
+            instance.setPosition(this.resolvePosition(cue));
+            instance.setGain(cue.envelope().gainAt(age - cue.tick(), stopTick));
+            manager.play(instance);
+            this.loops.add(new LoopTrack(cue, stopTick, instance));
+        }
+
+        private void tickLoops(int age) {
+            SoundManager manager = Minecraft.getInstance().getSoundManager();
+            Iterator<LoopTrack> iterator = this.loops.iterator();
+            while (iterator.hasNext()) {
+                LoopTrack track = iterator.next();
+                if (age >= track.stopTick) {
+                    track.instance.stopNow();
+                    manager.stop(track.instance);
+                    iterator.remove();
+                    continue;
+                }
+                track.instance.setPosition(this.resolvePosition(track.cue));
+                track.instance.setGain(track.cue.envelope().gainAt(age - track.cue.tick(), track.stopTick));
+            }
+        }
+
+        private Vec3 resolvePosition(EffectAudioCue cue) {
+            Vec3 translation = Vec3.ZERO;
+            if (cue.motion() instanceof EffectAudioMotion.FollowEffect) {
+                Vec3 origin = ClientEffectFrameRuntime.effectOrigin(this.plan.effectId());
+                if (origin != null) {
+                    translation = origin.subtract(this.plan.center());
+                }
+            }
+            return cue.motion().resolve(cue.position(), translation);
+        }
+
+        private void playTrigger(ClientLevel level, EffectAudioTriggerPayload payload) {
+            EffectAudioTrigger trigger = this.plan.triggerOrNull(payload.triggerId());
+            if (trigger == null || this.triggersThisTick >= MAX_TRIGGERS_PER_TICK_PER_PLAN) {
+                return;
+            }
+            this.triggersThisTick++;
+            EffectAudioCue cue = new EffectAudioCue(
+                0,
+                payload.position(),
+                trigger.soundId(),
+                trigger.source(),
+                trigger.volume(),
+                trigger.pitch(),
+                trigger.attenuation()
+            );
+            this.play(level, cue);
         }
 
         private void play(ClientLevel level, EffectAudioCue cue) {
@@ -160,7 +253,24 @@ public final class ClientEffectAudio {
             for (SoundInstance instance : this.activeInstances) {
                 manager.stop(instance);
             }
+            for (LoopTrack track : this.loops) {
+                track.instance.stopNow();
+                manager.stop(track.instance);
+            }
             this.activeInstances.clear();
+            this.loops.clear();
+        }
+    }
+
+    private static final class LoopTrack {
+        private final EffectAudioCue cue;
+        private final int stopTick;
+        private final EffectLoopSoundInstance instance;
+
+        private LoopTrack(EffectAudioCue cue, int stopTick, EffectLoopSoundInstance instance) {
+            this.cue = cue;
+            this.stopTick = stopTick;
+            this.instance = instance;
         }
     }
 }

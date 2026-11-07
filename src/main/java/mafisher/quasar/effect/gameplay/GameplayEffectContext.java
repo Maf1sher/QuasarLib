@@ -1,5 +1,7 @@
 package mafisher.quasar.effect.gameplay;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -8,6 +10,7 @@ import mafisher.quasar.effect.EffectBudgetService;
 import mafisher.quasar.effect.EffectHitResult;
 import mafisher.quasar.effect.EffectHitbox;
 import mafisher.quasar.effect.EffectScope;
+import mafisher.quasar.effect.audio.EffectAudioService;
 import mafisher.quasar.effect.block.BlockChange;
 import mafisher.quasar.effect.block.BlockProtectionContext;
 import mafisher.quasar.effect.block.BlockProtectionService;
@@ -21,9 +24,12 @@ import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
 
 /** Read-mostly view of one active gameplay effect session. */
 public final class GameplayEffectContext {
+    private static final int MAX_PENDING_AUDIO_TRIGGERS = 16;
+
     private final ServerLevel level;
     private final EffectScope scope;
     private final GameplayEffectSpec spec;
@@ -32,7 +38,9 @@ public final class GameplayEffectContext {
     private final BlockJournal blockJournal;
     private final EffectTickBudgetState budgetState;
     private final PendingBlockChanges blockChanges = new PendingBlockChanges();
+    private final List<PendingAudioTrigger> pendingAudioTriggers = new ArrayList<>();
 
+    private boolean audioStarted;
     private int ageTicks;
     private RandomSource random;
     private boolean stopRequested;
@@ -123,6 +131,38 @@ public final class GameplayEffectContext {
 
     public float phaseProgress() {
         return this.spec.phases().phaseProgress(this.ageTicks);
+    }
+
+    /** Fires one audio trigger declared on the spec at its authored position. */
+    public boolean triggerAudio(String triggerId) {
+        return this.triggerAudio(triggerId, null);
+    }
+
+    /**
+     * Fires one audio trigger, optionally at a runtime event position. Calls made during
+     * {@code onStart}, {@code onPhaseEnter(0)}, or {@code onResume} are buffered until the
+     * session's audio plan starts; later calls send immediately.
+     *
+     * @return {@code false} when the spec does not declare the trigger or the plan is gone
+     */
+    public boolean triggerAudio(String triggerId, Vec3 position) {
+        this.ensureOpen();
+        Objects.requireNonNull(triggerId, "triggerId");
+        if (this.spec.audio().triggerOrNull(triggerId) == null) {
+            return false;
+        }
+        if (position != null
+            && (!Double.isFinite(position.x) || !Double.isFinite(position.y) || !Double.isFinite(position.z))) {
+            throw new IllegalArgumentException("Effect audio trigger position must be finite");
+        }
+        if (this.audioStarted) {
+            return EffectAudioService.trigger(this.level, this.sessionId, triggerId, position);
+        }
+        if (this.pendingAudioTriggers.size() >= MAX_PENDING_AUDIO_TRIGGERS) {
+            this.pendingAudioTriggers.remove(0);
+        }
+        this.pendingAudioTriggers.add(new PendingAudioTrigger(triggerId, position));
+        return true;
     }
 
     /** Returns the deterministic source for the current tick; call again after a tick boundary. */
@@ -315,6 +355,22 @@ public final class GameplayEffectContext {
         return this.stopRequested;
     }
 
+    void markAudioStarted() {
+        this.audioStarted = true;
+    }
+
+    void flushAudioTriggers() {
+        if (!this.audioStarted) {
+            return;
+        }
+        for (PendingAudioTrigger pending : this.pendingAudioTriggers) {
+            EffectAudioService.trigger(
+                this.level, this.sessionId, pending.triggerId(), pending.position()
+            );
+        }
+        this.pendingAudioTriggers.clear();
+    }
+
     void beginTick(int ageTicks) {
         if (ageTicks < 0) {
             throw new IllegalArgumentException("Effect age cannot be negative");
@@ -335,6 +391,10 @@ public final class GameplayEffectContext {
     void close() {
         this.open = false;
         this.blockChanges.clear();
+        this.pendingAudioTriggers.clear();
+    }
+
+    private record PendingAudioTrigger(String triggerId, Vec3 position) {
     }
 
     private void ensureOpen() {

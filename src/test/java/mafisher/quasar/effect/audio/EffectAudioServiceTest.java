@@ -1,6 +1,7 @@
 package mafisher.quasar.effect.audio;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -143,6 +144,39 @@ class EffectAudioServiceTest {
     }
 
     @Test
+    void triggerOnlyPlansStayActive() {
+        UUID effectId = UUID.randomUUID();
+        EffectAudioService.start(this.level, triggerPlan(effectId), EffectAudience.dimensionWide());
+
+        assertEquals(1, EffectAudioService.activeCount(this.level));
+        assertTrue(EffectAudioService.trigger(this.level, effectId, "impact"));
+    }
+
+    @Test
+    void unknownTriggersAndMissingPlansAreIgnored() {
+        UUID effectId = UUID.randomUUID();
+        EffectAudioService.start(this.level, triggerPlan(effectId), EffectAudience.dimensionWide());
+
+        assertFalse(EffectAudioService.trigger(this.level, effectId, "missing"));
+        assertFalse(EffectAudioService.trigger(this.level, UUID.randomUUID(), "impact"));
+    }
+
+    @Test
+    void capsTriggerEventsPerTick() {
+        UUID effectId = UUID.randomUUID();
+        EffectAudioService.start(this.level, triggerPlan(effectId), EffectAudience.dimensionWide());
+
+        for (int index = 0; index < EffectAudioService.MAX_TRIGGER_EVENTS_PER_TICK_PER_PLAN; index++) {
+            assertTrue(EffectAudioService.trigger(this.level, effectId, "impact"));
+        }
+        assertFalse(EffectAudioService.trigger(this.level, effectId, "impact"));
+
+        EffectAudioService.tick(this.level);
+
+        assertTrue(EffectAudioService.trigger(this.level, effectId, "impact"));
+    }
+
+    @Test
     void resumePlansMarksRecipientsSoTickDoesNotResend() {
         ServerPlayer player = player(new Vec3(0.0, 64.0, 0.0));
         when(this.level.players()).thenReturn(List.of(player));
@@ -214,6 +248,20 @@ class EffectAudioServiceTest {
             0L,
             durationTicks,
             cueTick < durationTicks ? List.of(cue(cueTick)) : List.of()
+        );
+    }
+
+    private static EffectAudioPlan triggerPlan(UUID effectId) {
+        return new EffectAudioPlan(
+            effectId,
+            DIMENSION,
+            Vec3.ZERO,
+            0L,
+            100,
+            List.of(),
+            List.of(new EffectAudioTrigger(
+                "impact", Vec3.ZERO, SOUND, SoundSource.PLAYERS, 1.0F, 1.0F
+            ))
         );
     }
 

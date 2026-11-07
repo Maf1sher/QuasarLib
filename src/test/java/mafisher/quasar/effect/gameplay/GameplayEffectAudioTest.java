@@ -1,11 +1,16 @@
 package mafisher.quasar.effect.gameplay;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.UUID;
+import mafisher.quasar.effect.network.EffectAudioTriggerPayload;
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectTransform;
@@ -19,14 +24,18 @@ import mafisher.quasar.effect.persistence.EffectKind;
 import mafisher.quasar.effect.persistence.EffectPersistence;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.players.PlayerList;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.network.PacketDistributor;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 
 class GameplayEffectAudioTest {
     private static final ResourceLocation TYPE_ID = ResourceLocation.fromNamespaceAndPath("quasar_lib", "audio_gameplay");
@@ -72,6 +81,29 @@ class GameplayEffectAudioTest {
     }
 
     @Test
+    void triggersFiredDuringOnStartReachRecipients() {
+        ServerPlayer player = player();
+        when(this.level.players()).thenReturn(List.of(player));
+        MinecraftServer server = mock(MinecraftServer.class);
+        PlayerList playerList = mock(PlayerList.class);
+        when(server.getPlayerList()).thenReturn(playerList);
+        when(playerList.getPlayer(player.getUUID())).thenReturn(player);
+        when(this.level.getServer()).thenReturn(server);
+
+        try (MockedStatic<PacketDistributor> packets = mockStatic(PacketDistributor.class)) {
+            GameplayEffectHandle handle = GameplayEffectService.start(
+                this.level, triggeredSpec(), new TriggerController()
+            );
+
+            packets.verify(
+                () -> PacketDistributor.sendToPlayer(eq(player), any(EffectAudioTriggerPayload.class)),
+                times(1)
+            );
+            GameplayEffectService.stop(this.level, handle, GameplayEffectEndReason.CANCELLED);
+        }
+    }
+
+    @Test
     void restoresAudioAtTheOriginalStartTime() {
         UUID sessionId = UUID.randomUUID();
         GameplayEffectSpec spec = spec();
@@ -105,6 +137,7 @@ class GameplayEffectAudioTest {
 
     private ServerPlayer player() {
         ServerPlayer player = mock(ServerPlayer.class);
+        when(player.getUUID()).thenReturn(UUID.randomUUID());
         when(player.level()).thenReturn(this.level);
         when(player.position()).thenReturn(Vec3.ZERO);
         return player;
@@ -139,7 +172,27 @@ class GameplayEffectAudioTest {
         );
     }
 
-    private static final class TestController implements GameplayEffectController {
+    private static GameplayEffectSpec triggeredSpec() {
+        EffectPhasePlan phases = EffectPhasePlan.of(
+            new EffectPhase("charge", 20),
+            new EffectPhase("impact", 30)
+        );
+        EffectAudioSpec audio = EffectAudioSpec.builder(phases)
+            .trigger("impact", Vec3.ZERO, SOUND, SoundSource.PLAYERS, 1.0F, 1.0F)
+            .build();
+        return new GameplayEffectSpec(
+            TYPE_ID,
+            null,
+            Vec3.ZERO,
+            phases,
+            7L,
+            new EffectTickBudget(0, 0, 0),
+            OwnerPolicy.CONTINUE,
+            audio
+        );
+    }
+
+    private static class TestController implements GameplayEffectController {
         @Override
         public void onStart(GameplayEffectContext context) {
         }
@@ -150,6 +203,13 @@ class GameplayEffectAudioTest {
 
         @Override
         public void onTick(GameplayEffectContext context) {
+        }
+    }
+
+    private static final class TriggerController extends TestController {
+        @Override
+        public void onStart(GameplayEffectContext context) {
+            context.triggerAudio("impact");
         }
     }
 }

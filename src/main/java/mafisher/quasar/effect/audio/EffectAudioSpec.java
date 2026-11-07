@@ -2,8 +2,10 @@ package mafisher.quasar.effect.audio;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
@@ -13,16 +15,24 @@ import net.minecraft.world.phys.Vec3;
  * Immutable server-authored audio declaration for one effect. Cues use effect-local ticks, so the
  * client can schedule them against the effect's absolute start time. A builder created from an
  * {@link EffectPhaseTiming} resolves phase-relative cues to absolute effect ticks on the server.
+ * Named triggers are one-shot sounds fired on demand through {@link EffectAudioService}.
  */
 public final class EffectAudioSpec {
     public static final int MAX_CUES = 128;
-    public static final EffectAudioSpec NONE = new EffectAudioSpec(List.of());
+    public static final int MAX_TRIGGERS = 32;
+    public static final EffectAudioSpec NONE = new EffectAudioSpec(List.of(), List.of());
 
     private final List<EffectAudioCue> cues;
+    private final List<EffectAudioTrigger> triggers;
 
-    private EffectAudioSpec(List<EffectAudioCue> cues) {
+    private EffectAudioSpec(List<EffectAudioCue> cues, List<EffectAudioTrigger> triggers) {
         if (cues.size() > MAX_CUES) {
             throw new IllegalArgumentException("An effect audio spec supports at most " + MAX_CUES + " cues");
+        }
+        if (triggers.size() > MAX_TRIGGERS) {
+            throw new IllegalArgumentException(
+                "An effect audio spec supports at most " + MAX_TRIGGERS + " triggers"
+            );
         }
         List<EffectAudioCue> sorted = new ArrayList<>(cues.size());
         for (EffectAudioCue cue : cues) {
@@ -30,6 +40,17 @@ public final class EffectAudioSpec {
         }
         sorted.sort(Comparator.comparingInt(EffectAudioCue::tick));
         this.cues = List.copyOf(sorted);
+
+        List<EffectAudioTrigger> copiedTriggers = new ArrayList<>(triggers.size());
+        Set<String> ids = new LinkedHashSet<>();
+        for (EffectAudioTrigger trigger : triggers) {
+            Objects.requireNonNull(trigger, "trigger");
+            if (!ids.add(trigger.id())) {
+                throw new IllegalArgumentException("Duplicate effect audio trigger ID: " + trigger.id());
+            }
+            copiedTriggers.add(trigger);
+        }
+        this.triggers = List.copyOf(copiedTriggers);
     }
 
     public static EffectAudioSpec of(EffectAudioCue... cues) {
@@ -38,8 +59,15 @@ public final class EffectAudioSpec {
     }
 
     public static EffectAudioSpec of(List<EffectAudioCue> cues) {
+        return of(cues, List.of());
+    }
+
+    public static EffectAudioSpec of(List<EffectAudioCue> cues, List<EffectAudioTrigger> triggers) {
         Objects.requireNonNull(cues, "cues");
-        return cues.isEmpty() ? NONE : new EffectAudioSpec(cues);
+        Objects.requireNonNull(triggers, "triggers");
+        return cues.isEmpty() && triggers.isEmpty()
+            ? NONE
+            : new EffectAudioSpec(cues, triggers);
     }
 
     public List<EffectAudioCue> cues() {
@@ -50,11 +78,30 @@ public final class EffectAudioSpec {
         return this.cues.size();
     }
 
-    public boolean isEmpty() {
-        return this.cues.isEmpty();
+    public List<EffectAudioTrigger> triggers() {
+        return this.triggers;
     }
 
-    /** True when every cue tick is before {@code durationTicks}. */
+    public int triggerCount() {
+        return this.triggers.size();
+    }
+
+    /** Returns the trigger declaration with {@code id}, or null when absent. */
+    public EffectAudioTrigger triggerOrNull(String id) {
+        Objects.requireNonNull(id, "id");
+        for (EffectAudioTrigger trigger : this.triggers) {
+            if (trigger.id().equals(id)) {
+                return trigger;
+            }
+        }
+        return null;
+    }
+
+    public boolean isEmpty() {
+        return this.cues.isEmpty() && this.triggers.isEmpty();
+    }
+
+    /** True when every cue tick and loop window fits before {@code durationTicks}. */
     public boolean fitsWithin(int durationTicks) {
         if (this.cues.isEmpty()) {
             return true;
@@ -63,7 +110,7 @@ public final class EffectAudioSpec {
             return false;
         }
         for (EffectAudioCue cue : this.cues) {
-            if (cue.tick() >= durationTicks) {
+            if (cue.tick() >= durationTicks || !cue.envelope().isValidFor(cue.tick(), durationTicks)) {
                 return false;
             }
         }
@@ -92,6 +139,7 @@ public final class EffectAudioSpec {
         private final int durationTicks;
         private final EffectPhaseTiming phases;
         private final List<EffectAudioCue> cues = new ArrayList<>();
+        private final List<EffectAudioTrigger> triggers = new ArrayList<>();
 
         private Builder(int durationTicks, EffectPhaseTiming phases) {
             if (durationTicks < 1 || durationTicks > EffectAudioPlan.MAX_DURATION_TICKS) {
@@ -99,6 +147,11 @@ public final class EffectAudioSpec {
             }
             this.durationTicks = durationTicks;
             this.phases = phases;
+        }
+
+        public Builder cue(EffectAudioCue cue) {
+            this.add(Objects.requireNonNull(cue, "cue"));
+            return this;
         }
 
         public Builder cue(
@@ -110,8 +163,7 @@ public final class EffectAudioSpec {
             float pitch,
             EffectAudioAttenuation attenuation
         ) {
-            this.add(new EffectAudioCue(tick, position, soundId, source, volume, pitch, attenuation));
-            return this;
+            return this.cue(new EffectAudioCue(tick, position, soundId, source, volume, pitch, attenuation));
         }
 
         public Builder cue(
@@ -147,6 +199,22 @@ public final class EffectAudioSpec {
             float pitch
         ) {
             return this.cue(tick, position, soundId, source, volume, pitch, EffectAudioAttenuation.VANILLA);
+        }
+
+        public Builder phaseCue(
+            int phaseIndex,
+            int offsetTicks,
+            EffectAudioCue cue
+        ) {
+            return this.cue(this.shiftTo(this.phaseTick(phaseIndex, offsetTicks), cue));
+        }
+
+        public Builder phaseCue(
+            String phaseName,
+            int offsetTicks,
+            EffectAudioCue cue
+        ) {
+            return this.phaseCue(this.phaseIndex(phaseName), offsetTicks, cue);
         }
 
         public Builder phaseCue(
@@ -293,8 +361,75 @@ public final class EffectAudioSpec {
             );
         }
 
+        public Builder trigger(EffectAudioTrigger trigger) {
+            Objects.requireNonNull(trigger, "trigger");
+            if (this.triggers.size() >= MAX_TRIGGERS) {
+                throw new IllegalArgumentException(
+                    "An effect audio spec supports at most " + MAX_TRIGGERS + " triggers"
+                );
+            }
+            for (EffectAudioTrigger existing : this.triggers) {
+                if (existing.id().equals(trigger.id())) {
+                    throw new IllegalArgumentException("Duplicate effect audio trigger ID: " + trigger.id());
+                }
+            }
+            this.triggers.add(trigger);
+            return this;
+        }
+
+        public Builder trigger(
+            String id,
+            Vec3 position,
+            ResourceLocation soundId,
+            SoundSource source,
+            float volume,
+            float pitch,
+            EffectAudioAttenuation attenuation
+        ) {
+            return this.trigger(new EffectAudioTrigger(id, position, soundId, source, volume, pitch, attenuation));
+        }
+
+        public Builder trigger(
+            String id,
+            Vec3 position,
+            SoundEvent sound,
+            SoundSource source,
+            float volume,
+            float pitch,
+            EffectAudioAttenuation attenuation
+        ) {
+            Objects.requireNonNull(sound, "sound");
+            return this.trigger(id, position, sound.getLocation(), source, volume, pitch, attenuation);
+        }
+
+        public Builder trigger(
+            String id,
+            Vec3 position,
+            ResourceLocation soundId,
+            SoundSource source,
+            float volume,
+            float pitch
+        ) {
+            return this.trigger(
+                id, position, soundId, source, volume, pitch, EffectAudioAttenuation.VANILLA
+            );
+        }
+
+        public Builder trigger(
+            String id,
+            Vec3 position,
+            SoundEvent sound,
+            SoundSource source,
+            float volume,
+            float pitch
+        ) {
+            return this.trigger(id, position, sound, source, volume, pitch, EffectAudioAttenuation.VANILLA);
+        }
+
         public EffectAudioSpec build() {
-            return this.cues.isEmpty() ? NONE : new EffectAudioSpec(this.cues);
+            return this.cues.isEmpty() && this.triggers.isEmpty()
+                ? NONE
+                : new EffectAudioSpec(this.cues, this.triggers);
         }
 
         private void add(EffectAudioCue cue) {
@@ -304,12 +439,42 @@ public final class EffectAudioSpec {
                     "Effect audio cue at tick " + cue.tick() + " must be before duration " + this.durationTicks
                 );
             }
+            cue.envelope().requireValidFor(cue.tick(), this.durationTicks);
             if (this.cues.size() >= MAX_CUES) {
                 throw new IllegalArgumentException(
                     "An effect audio spec supports at most " + MAX_CUES + " cues"
                 );
             }
             this.cues.add(cue);
+        }
+
+        private EffectAudioCue shiftTo(int startTick, EffectAudioCue cue) {
+            Objects.requireNonNull(cue, "cue");
+            EffectAudioEnvelope envelope = cue.envelope();
+            int stopTick = envelope.stopTick();
+            if (stopTick != EffectAudioEnvelope.END_OF_EFFECT) {
+                long shiftedStop = (long)stopTick + (startTick - cue.tick());
+                if (shiftedStop > Integer.MAX_VALUE) {
+                    throw new IllegalArgumentException("Phase cue stop tick overflows the effect timeline");
+                }
+                envelope = new EffectAudioEnvelope(
+                    true,
+                    envelope.fadeInTicks(),
+                    envelope.fadeOutTicks(),
+                    (int)shiftedStop
+                );
+            }
+            return new EffectAudioCue(
+                startTick,
+                cue.position(),
+                cue.soundId(),
+                cue.source(),
+                cue.volume(),
+                cue.pitch(),
+                cue.attenuation(),
+                envelope,
+                cue.motion()
+            );
         }
 
         private int phaseTick(int phaseIndex, int offsetTicks) {

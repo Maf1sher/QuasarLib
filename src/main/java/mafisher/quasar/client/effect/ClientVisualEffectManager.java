@@ -713,6 +713,25 @@ public final class ClientVisualEffectManager {
         return null;
     }
 
+    /** Interpolated origin used by transform-following audio cues, or null when no visual exists. */
+    Vec3 effectOrigin(UUID effectId) {
+        ClientLevel level = this.currentLevel;
+        if (level == null) {
+            return null;
+        }
+        VisualEffectInstance instance = this.activeEffects.get(effectId);
+        if (instance != null) {
+            EffectPoint position = instance.interpolatedTransform(level.getGameTime(), 0.0F).position();
+            return new Vec3(position.x(), position.y(), position.z());
+        }
+        ClientSegmentGroup group = this.segmentedGroups.get(effectId);
+        if (group != null) {
+            EffectPoint position = group.interpolatedBase(level.getGameTime(), 0.0F).position();
+            return new Vec3(position.x(), position.y(), position.z());
+        }
+        return null;
+    }
+
     private EffectRenderContext createRenderContext(VisualEffectInstance effect, long gameTime, float partialTick) {
         StartVisualEffectPayload payload = effect.payload();
         EffectTransform transform = effect.interpolatedTransform(gameTime, partialTick);

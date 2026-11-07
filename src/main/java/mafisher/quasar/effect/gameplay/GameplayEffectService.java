@@ -554,18 +554,19 @@ public final class GameplayEffectService {
     }
 
     private static void startAudio(ServerLevel level, ActiveSession session) {
-        if (session.spec.audio().isEmpty()) {
-            return;
+        if (!session.spec.audio().isEmpty()) {
+            EffectAudioPlan plan = EffectAudioPlan.from(
+                session.id,
+                level.dimension().location(),
+                session.spec.anchor(),
+                session.startGameTime,
+                session.spec.phases().totalDurationTicks(),
+                session.spec.audio()
+            );
+            EffectAudioService.start(level, plan, EffectAudience.dimensionWide());
         }
-        EffectAudioPlan plan = EffectAudioPlan.from(
-            session.id,
-            level.dimension().location(),
-            session.spec.anchor(),
-            session.startGameTime,
-            session.spec.phases().totalDurationTicks(),
-            session.spec.audio()
-        );
-        EffectAudioService.start(level, plan, EffectAudience.dimensionWide());
+        session.context.markAudioStarted();
+        session.context.flushAudioTriggers();
     }
 
     private static void finish(

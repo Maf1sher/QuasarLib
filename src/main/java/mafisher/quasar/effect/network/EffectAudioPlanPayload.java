@@ -8,7 +8,10 @@ import java.util.UUID;
 import mafisher.quasar.QuasarLib;
 import mafisher.quasar.effect.audio.EffectAudioAttenuation;
 import mafisher.quasar.effect.audio.EffectAudioCue;
+import mafisher.quasar.effect.audio.EffectAudioEnvelope;
+import mafisher.quasar.effect.audio.EffectAudioMotion;
 import mafisher.quasar.effect.audio.EffectAudioPlan;
+import mafisher.quasar.effect.audio.EffectAudioTrigger;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -67,6 +70,23 @@ public record EffectAudioPlanPayload(EffectAudioPlan plan, long serverGameTime) 
             buffer.writeFloat(cue.volume());
             buffer.writeFloat(cue.pitch());
             writeAttenuation(buffer, cue.attenuation());
+            buffer.writeBoolean(cue.envelope().looping());
+            buffer.writeVarInt(cue.envelope().fadeInTicks());
+            buffer.writeVarInt(cue.envelope().fadeOutTicks());
+            buffer.writeVarInt(cue.envelope().stopTick());
+            buffer.writeByte(cue.motion() instanceof EffectAudioMotion.FollowEffect ? 1 : 0);
+        }
+        buffer.writeVarInt(plan.triggerCount());
+        for (EffectAudioTrigger trigger : plan.triggers()) {
+            buffer.writeUtf(trigger.id());
+            buffer.writeDouble(trigger.position().x);
+            buffer.writeDouble(trigger.position().y);
+            buffer.writeDouble(trigger.position().z);
+            buffer.writeResourceLocation(trigger.soundId());
+            buffer.writeEnum(trigger.source());
+            buffer.writeFloat(trigger.volume());
+            buffer.writeFloat(trigger.pitch());
+            writeAttenuation(buffer, trigger.attenuation());
         }
     }
 
@@ -89,10 +109,38 @@ public record EffectAudioPlanPayload(EffectAudioPlan plan, long serverGameTime) 
                 buffer.readEnum(SoundSource.class),
                 buffer.readFloat(),
                 buffer.readFloat(),
+                readAttenuation(buffer),
+                new EffectAudioEnvelope(
+                    buffer.readBoolean(),
+                    buffer.readVarInt(),
+                    buffer.readVarInt(),
+                    buffer.readVarInt()
+                ),
+                buffer.readUnsignedByte() == 1
+                    ? EffectAudioMotion.FOLLOW_EFFECT
+                    : EffectAudioMotion.ANCHORED
+            ));
+        }
+
+        int triggerCount = buffer.readVarInt();
+        if (triggerCount < 0 || triggerCount > EffectAudioPlan.MAX_TRIGGERS) {
+            throw new DecoderException("Invalid effect audio trigger count: " + triggerCount);
+        }
+        List<EffectAudioTrigger> triggers = new ArrayList<>(triggerCount);
+        for (int index = 0; index < triggerCount; index++) {
+            triggers.add(new EffectAudioTrigger(
+                buffer.readUtf(EffectAudioTrigger.MAX_ID_LENGTH),
+                new Vec3(buffer.readDouble(), buffer.readDouble(), buffer.readDouble()),
+                buffer.readResourceLocation(),
+                buffer.readEnum(SoundSource.class),
+                buffer.readFloat(),
+                buffer.readFloat(),
                 readAttenuation(buffer)
             ));
         }
-        return new EffectAudioPlan(effectId, dimensionId, center, startGameTime, durationTicks, cues);
+        return new EffectAudioPlan(
+            effectId, dimensionId, center, startGameTime, durationTicks, cues, triggers
+        );
     }
 
     private static void writeAttenuation(FriendlyByteBuf buffer, EffectAudioAttenuation attenuation) {

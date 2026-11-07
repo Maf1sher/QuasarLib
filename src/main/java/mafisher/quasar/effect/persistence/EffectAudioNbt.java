@@ -4,7 +4,10 @@ import java.util.ArrayList;
 import java.util.List;
 import mafisher.quasar.effect.audio.EffectAudioAttenuation;
 import mafisher.quasar.effect.audio.EffectAudioCue;
+import mafisher.quasar.effect.audio.EffectAudioEnvelope;
+import mafisher.quasar.effect.audio.EffectAudioMotion;
 import mafisher.quasar.effect.audio.EffectAudioSpec;
+import mafisher.quasar.effect.audio.EffectAudioTrigger;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -49,9 +52,33 @@ public final class EffectAudioNbt {
             entry.putFloat("volume", cue.volume());
             entry.putFloat("pitch", cue.pitch());
             entry.put("attenuation", saveAttenuation(cue.attenuation()));
+            entry.putBoolean("looping", cue.envelope().looping());
+            entry.putInt("fade_in", cue.envelope().fadeInTicks());
+            entry.putInt("fade_out", cue.envelope().fadeOutTicks());
+            entry.putInt("stop_tick", cue.envelope().stopTick());
+            entry.putString(
+                "motion",
+                cue.motion() instanceof EffectAudioMotion.FollowEffect ? "follow_effect" : "anchored"
+            );
             cues.add(entry);
         }
         tag.put("cues", cues);
+
+        ListTag triggers = new ListTag();
+        for (EffectAudioTrigger trigger : spec.triggers()) {
+            CompoundTag entry = new CompoundTag();
+            entry.putString("id", trigger.id());
+            entry.putDouble("x", trigger.position().x);
+            entry.putDouble("y", trigger.position().y);
+            entry.putDouble("z", trigger.position().z);
+            entry.putString("sound", trigger.soundId().toString());
+            entry.putString("source", trigger.source().name());
+            entry.putFloat("volume", trigger.volume());
+            entry.putFloat("pitch", trigger.pitch());
+            entry.put("attenuation", saveAttenuation(trigger.attenuation()));
+            triggers.add(entry);
+        }
+        tag.put("triggers", triggers);
         return tag;
     }
 
@@ -65,8 +92,43 @@ public final class EffectAudioNbt {
                 if (soundId == null) {
                     throw new IllegalArgumentException("Invalid effect audio sound ID");
                 }
+                boolean looping = entry.getBoolean("looping");
+                EffectAudioEnvelope envelope = looping
+                    ? new EffectAudioEnvelope(
+                        true,
+                        entry.getInt("fade_in"),
+                        entry.getInt("fade_out"),
+                        entry.contains("stop_tick")
+                            ? entry.getInt("stop_tick")
+                            : EffectAudioEnvelope.END_OF_EFFECT
+                    )
+                    : EffectAudioEnvelope.ONE_SHOT;
+                EffectAudioMotion motion = "follow_effect".equals(entry.getString("motion"))
+                    ? EffectAudioMotion.FOLLOW_EFFECT
+                    : EffectAudioMotion.ANCHORED;
                 cues.add(new EffectAudioCue(
                     entry.getInt("tick"),
+                    new Vec3(entry.getDouble("x"), entry.getDouble("y"), entry.getDouble("z")),
+                    soundId,
+                    SoundSource.valueOf(entry.getString("source")),
+                    entry.getFloat("volume"),
+                    entry.getFloat("pitch"),
+                    loadAttenuation(entry.getCompound("attenuation")),
+                    envelope,
+                    motion
+                ));
+            }
+
+            ListTag storedTriggers = tag.getList("triggers", Tag.TAG_COMPOUND);
+            List<EffectAudioTrigger> triggers = new ArrayList<>(storedTriggers.size());
+            for (int index = 0; index < storedTriggers.size(); index++) {
+                CompoundTag entry = storedTriggers.getCompound(index);
+                ResourceLocation soundId = ResourceLocation.tryParse(entry.getString("sound"));
+                if (soundId == null) {
+                    throw new IllegalArgumentException("Invalid effect audio trigger sound ID");
+                }
+                triggers.add(new EffectAudioTrigger(
+                    entry.getString("id"),
                     new Vec3(entry.getDouble("x"), entry.getDouble("y"), entry.getDouble("z")),
                     soundId,
                     SoundSource.valueOf(entry.getString("source")),
@@ -75,7 +137,7 @@ public final class EffectAudioNbt {
                     loadAttenuation(entry.getCompound("attenuation"))
                 ));
             }
-            return EffectAudioSpec.of(cues);
+            return EffectAudioSpec.of(cues, triggers);
         } catch (RuntimeException exception) {
             throw new IllegalArgumentException("Invalid effect audio data", exception);
         }

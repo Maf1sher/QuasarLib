@@ -12,6 +12,7 @@ import java.util.UUID;
 import java.util.WeakHashMap;
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.network.EffectAudioPlanPayload;
+import mafisher.quasar.effect.network.EffectAudioTriggerPayload;
 import mafisher.quasar.effect.network.StopEffectAudioPayload;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -27,6 +28,8 @@ import org.slf4j.LoggerFactory;
 public final class EffectAudioService {
     /** Provisional safety cap; exceeding it mutes the oldest plan instead of rejecting the new effect. */
     public static final int MAX_ACTIVE_PLANS_PER_LEVEL = 128;
+    /** Runtime trigger events accepted per plan per server tick. */
+    public static final int MAX_TRIGGER_EVENTS_PER_TICK_PER_PLAN = 16;
 
     private static final int RESUME_GRACE_TICKS = EffectAudioPlan.GRACE_TICKS;
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
@@ -52,7 +55,7 @@ public final class EffectAudioService {
         if (replaced != null) {
             replaced.stop(level);
         }
-        if (plan.cueCount() == 0) {
+        if (plan.cueCount() == 0 && plan.triggerCount() == 0) {
             if (plans.isEmpty()) {
                 ACTIVE_PLANS.remove(level);
             }
@@ -88,6 +91,60 @@ public final class EffectAudioService {
         if (plans.isEmpty()) {
             ACTIVE_PLANS.remove(level);
         }
+    }
+
+    /** Fires one named trigger at its declared position. */
+    public static boolean trigger(ServerLevel level, UUID effectId, String triggerId) {
+        return trigger(level, effectId, triggerId, null);
+    }
+
+    /**
+     * Fires one named trigger, optionally overriding its position with a runtime event position.
+     *
+     * @return {@code true} when the plan and trigger exist and the per-tick trigger budget
+     *     accepted the event; {@code false} when the plan is gone, the trigger is unknown, or the
+     *     budget is exhausted
+     */
+    public static boolean trigger(ServerLevel level, UUID effectId, String triggerId, Vec3 position) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(effectId, "effectId");
+        Objects.requireNonNull(triggerId, "triggerId");
+        if (level.isClientSide()) {
+            throw new IllegalStateException("Effect audio is server-authoritative");
+        }
+        if (position != null
+            && (!Double.isFinite(position.x) || !Double.isFinite(position.y) || !Double.isFinite(position.z))) {
+            throw new IllegalArgumentException("Effect audio trigger position must be finite");
+        }
+
+        Map<UUID, ActiveAudio> plans = ACTIVE_PLANS.get(level);
+        ActiveAudio active = plans == null ? null : plans.get(effectId);
+        if (active == null) {
+            return false;
+        }
+        EffectAudioTrigger trigger = active.plan.triggerOrNull(triggerId);
+        if (trigger == null || active.triggersThisTick >= MAX_TRIGGER_EVENTS_PER_TICK_PER_PLAN) {
+            return false;
+        }
+        active.triggersThisTick++;
+
+        Vec3 resolved = position == null ? trigger.position() : position;
+        EffectAudioTriggerPayload payload = new EffectAudioTriggerPayload(
+            effectId,
+            level.dimension().location(),
+            triggerId,
+            resolved,
+            level.getGameTime()
+        );
+        if (level.getServer() != null) {
+            for (UUID playerId : active.recipients) {
+                ServerPlayer player = level.getServer().getPlayerList().getPlayer(playerId);
+                if (player != null && player.level() == level) {
+                    PacketDistributor.sendToPlayer(player, payload);
+                }
+            }
+        }
+        return true;
     }
 
     /** Stops every plan in one level and returns how many were active. */
@@ -127,6 +184,7 @@ public final class EffectAudioService {
                 iterator.remove();
                 continue;
             }
+            active.triggersThisTick = 0;
             active.syncAudience(level);
         }
         if (plans.isEmpty()) {
@@ -192,6 +250,7 @@ public final class EffectAudioService {
         private final EffectAudioPlan plan;
         private final EffectAudience audience;
         private final Set<UUID> recipients = new LinkedHashSet<>();
+        private int triggersThisTick;
 
         private ActiveAudio(EffectAudioPlan plan, EffectAudience audience) {
             this.plan = plan;

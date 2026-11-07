@@ -2,13 +2,17 @@ package mafisher.quasar.api;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.UUID;
 import mafisher.quasar.effect.audio.EffectAudioAttenuation;
 import mafisher.quasar.effect.audio.EffectAudioCue;
+import mafisher.quasar.effect.audio.EffectAudioEnvelope;
+import mafisher.quasar.effect.audio.EffectAudioMotion;
 import mafisher.quasar.effect.audio.EffectAudioPlan;
 import mafisher.quasar.effect.audio.EffectAudioService;
 import mafisher.quasar.effect.audio.EffectAudioSpec;
+import mafisher.quasar.effect.audio.EffectAudioTrigger;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.phys.Vec3;
@@ -35,6 +39,12 @@ class PublicAudioApiVisibilityTest {
         assertEquals(EffectAudioAttenuation.VANILLA, new EffectAudioCue(
             0, Vec3.ZERO, ResourceLocation.withDefaultNamespace("test"), SoundSource.MASTER, 1.0F, 1.0F
         ).attenuation());
+        assertTrue(EffectAudioEnvelope.loop(1, 2).looping());
+        assertEquals(Vec3.ZERO, EffectAudioMotion.ANCHORED.resolve(Vec3.ZERO, Vec3.ZERO));
+        assertEquals("impact", new EffectAudioTrigger(
+            "impact", Vec3.ZERO, ResourceLocation.withDefaultNamespace("test"),
+            SoundSource.MASTER, 1.0F, 1.0F
+        ).id());
         assertNotNull(EffectAudioService.class);
     }
 }

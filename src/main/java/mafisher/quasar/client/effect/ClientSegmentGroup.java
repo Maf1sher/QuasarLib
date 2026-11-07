@@ -176,6 +176,17 @@ final class ClientSegmentGroup {
         this.currentBaseGameTime = gameTime;
     }
 
+    /** Interpolated coordinator base for one frame; audio uses this for transform-following cues. */
+    EffectTransform interpolatedBase(long gameTime, float partialTick) {
+        if (this.previousBaseGameTime == this.currentBaseGameTime) {
+            return this.currentBase;
+        }
+        double renderGameTime = gameTime + (double)partialTick - 1.0;
+        float progress = (float)((renderGameTime - this.previousBaseGameTime)
+            / (this.currentBaseGameTime - this.previousBaseGameTime));
+        return EffectTransform.interpolate(this.previousBase, this.currentBase, progress);
+    }
+
     /** Conservative world bound for the index entry, covering both base endpoints and the interpolation path. */
     AABB indexBounds() {
         double radius = this.footprintRadius();

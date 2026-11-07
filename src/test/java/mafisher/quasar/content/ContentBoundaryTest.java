@@ -50,7 +50,10 @@ class ContentBoundaryTest {
         "mafisher.quasar.effect.VisualEffectService",
         "mafisher.quasar.effect.VisualEffectSpec",
         "mafisher.quasar.effect.audio.EffectAudioAttenuation",
+        "mafisher.quasar.effect.audio.EffectAudioEnvelope",
+        "mafisher.quasar.effect.audio.EffectAudioMotion",
         "mafisher.quasar.effect.audio.EffectAudioSpec",
+        "mafisher.quasar.effect.audio.EffectAudioTrigger",
         "mafisher.quasar.effect.scale.SegmentedVisualEffectService",
         "mafisher.quasar.effect.scale.SegmentedVisualEffectSpec"
     );
