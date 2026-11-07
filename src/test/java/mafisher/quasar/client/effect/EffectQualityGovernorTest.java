@@ -66,9 +66,59 @@ class EffectQualityGovernorTest {
         assertEquals(50L, governor.lastP95Nanos());
     }
 
+    @Test
+    void degradesFromGpuCostWhenItExceedsCpuCost() {
+        EffectQualityGovernor governor = new EffectQualityGovernor(EffectQualityTier.HIGH, BUDGET, 4, 2);
+
+        feed(governor, 4, 10L, 200L);
+
+        assertEquals(EffectQualityTier.MEDIUM, governor.tier());
+        assertEquals(200L, governor.lastP95Nanos());
+        assertEquals(200L, governor.lastGpuNanos());
+    }
+
+    @Test
+    void fallsBackToCpuCostWhenNoGpuResultExists() {
+        EffectQualityGovernor governor = new EffectQualityGovernor(EffectQualityTier.HIGH, BUDGET, 4, 2);
+        feed(governor, 4, 200L, -1L);
+        assertEquals(EffectQualityTier.MEDIUM, governor.tier());
+        assertEquals(-1L, governor.lastGpuNanos());
+
+        governor.reset(EffectQualityTier.HIGH);
+        feed(governor, 4, 200L, 0L);
+        assertEquals(EffectQualityTier.MEDIUM, governor.tier());
+        assertEquals(-1L, governor.lastGpuNanos());
+    }
+
+    @Test
+    void keepsTheLargerOfCpuAndGpuWithinOneSample() {
+        EffectQualityGovernor governor = new EffectQualityGovernor(EffectQualityTier.HIGH, BUDGET, 10, 5);
+
+        feed(governor, 5, 50L, 10L);
+
+        assertEquals(50L, governor.lastP95Nanos());
+        assertEquals(10L, governor.lastGpuNanos());
+    }
+
+    @Test
+    void resetClearsTheGpuSample() {
+        EffectQualityGovernor governor = new EffectQualityGovernor(EffectQualityTier.HIGH, BUDGET, 10, 5);
+        feed(governor, 1, 50L, 75L);
+
+        governor.reset(EffectQualityTier.HIGH);
+
+        assertEquals(-1L, governor.lastGpuNanos());
+    }
+
     private static void feed(EffectQualityGovernor governor, int samples, long nanos) {
         for (int index = 0; index < samples; index++) {
             governor.sample(nanos);
+        }
+    }
+
+    private static void feed(EffectQualityGovernor governor, int samples, long cpuNanos, long gpuNanos) {
+        for (int index = 0; index < samples; index++) {
+            governor.sample(cpuNanos, gpuNanos);
         }
     }
 }

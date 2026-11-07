@@ -28,6 +28,7 @@ final class EffectQualityGovernor {
     private int cooldownWindows;
     private EffectQualityTier tier;
     private long lastP95Nanos;
+    private long lastGpuNanos = -1L;
 
     EffectQualityGovernor(EffectQualityTier maximum, long budgetNanos) {
         this(maximum, budgetNanos, DEFAULT_WINDOW, DEFAULT_EVALUATION_INTERVAL);
@@ -63,9 +64,25 @@ final class EffectQualityGovernor {
         return this.lastP95Nanos;
     }
 
+    /** Most recent positive GPU sample, or {@code -1} when the last frame had no GPU result. */
+    long lastGpuNanos() {
+        return this.lastGpuNanos;
+    }
+
     /** Adds one frame sample and returns the current tier. */
     EffectQualityTier sample(long costNanos) {
-        long sample = Math.max(0L, costNanos);
+        return sample(costNanos, -1L);
+    }
+
+    /**
+     * Adds one frame sample and returns the current tier. The window uses the larger of CPU submission and GPU
+     * execution cost, because both measure the same passes and overlap in time. A non-positive GPU value means no
+     * available result, so CPU alone drives the sample.
+     */
+    EffectQualityTier sample(long costNanos, long gpuNanos) {
+        long cpuNanos = Math.max(0L, costNanos);
+        this.lastGpuNanos = gpuNanos > 0L ? gpuNanos : -1L;
+        long sample = this.lastGpuNanos > 0L ? Math.max(cpuNanos, this.lastGpuNanos) : cpuNanos;
         this.samples[this.sampleIndex] = sample;
         this.sampleIndex = (this.sampleIndex + 1) % this.samples.length;
         this.sampleCount = Math.min(this.sampleCount + 1, this.samples.length);
@@ -90,6 +107,7 @@ final class EffectQualityGovernor {
         this.windowsBelow = 0;
         this.cooldownWindows = 0;
         this.lastP95Nanos = 0L;
+        this.lastGpuNanos = -1L;
         Arrays.fill(this.samples, 0L);
     }
 

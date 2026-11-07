@@ -74,52 +74,57 @@ final class ClientScreenCompositor {
             return;
         }
 
+        ClientQualityController.beginLevelGpu();
         try {
-            EffectQualityTier quality = ClientQualityController.tier();
-            int targetWidth = Math.max(1, Math.round(width * quality.screenScale()));
-            int targetHeight = Math.max(1, Math.round(height * quality.screenScale()));
-            this.ensureTargets(targetWidth, targetHeight);
-            if (mainTarget.getDepthTextureId() <= 0 || this.screenMaskTarget.getDepthTextureId() <= 0) {
-                throw new IllegalStateException("The main render target has no sampleable depth attachment");
-            }
+            try {
+                EffectQualityTier quality = ClientQualityController.tier();
+                int targetWidth = Math.max(1, Math.round(width * quality.screenScale()));
+                int targetHeight = Math.max(1, Math.round(height * quality.screenScale()));
+                this.ensureTargets(targetWidth, targetHeight);
+                if (mainTarget.getDepthTextureId() <= 0 || this.screenMaskTarget.getDepthTextureId() <= 0) {
+                    throw new IllegalStateException("The main render target has no sampleable depth attachment");
+                }
 
-            this.captureSceneColor(mainTarget, this.sceneColorTarget);
+                this.captureSceneColor(mainTarget, this.sceneColorTarget);
 
-            ScreenEffectCameraState camera = new ScreenEffectCameraState(
-                event.getCamera().getPosition(),
-                new Matrix4f(event.getModelViewMatrix()),
-                new Matrix4f(event.getProjectionMatrix()),
-                targetWidth,
-                targetHeight,
-                event.getPartialTick().getGameTimeDeltaPartialTick(false)
-            );
+                ScreenEffectCameraState camera = new ScreenEffectCameraState(
+                    event.getCamera().getPosition(),
+                    new Matrix4f(event.getModelViewMatrix()),
+                    new Matrix4f(event.getProjectionMatrix()),
+                    targetWidth,
+                    targetHeight,
+                    event.getPartialTick().getGameTimeDeltaPartialTick(false)
+                );
 
-            RenderTarget currentColor = this.sceneColorTarget;
-            RenderTarget alternateColor = this.compositionTarget;
-            for (ScreenEffectBatch batch : batches) {
-                this.renderMask(event, manager, mainTarget, batch);
-                this.renderOperation(currentColor, alternateColor, batch, camera, quality);
-                RenderTarget previous = currentColor;
-                currentColor = alternateColor;
-                alternateColor = previous;
-            }
+                RenderTarget currentColor = this.sceneColorTarget;
+                RenderTarget alternateColor = this.compositionTarget;
+                for (ScreenEffectBatch batch : batches) {
+                    this.renderMask(event, manager, mainTarget, batch);
+                    this.renderOperation(currentColor, alternateColor, batch, camera, quality);
+                    RenderTarget previous = currentColor;
+                    currentColor = alternateColor;
+                    alternateColor = previous;
+                }
 
-            if (this.failAfterCompositionOnce) {
+                if (this.failAfterCompositionOnce) {
+                    this.failAfterCompositionOnce = false;
+                    throw new IllegalStateException("Screen compositor failure injection");
+                }
+
+                mainTarget.bindWrite(true);
+                currentColor.blitToScreen(mainTarget.viewWidth, mainTarget.viewHeight);
+                this.restoreMainTargetState(mainTarget);
+            } catch (RuntimeException exception) {
                 this.failAfterCompositionOnce = false;
-                throw new IllegalStateException("Screen compositor failure injection");
+                this.restoreMainTargetState(mainTarget);
+                this.unavailableWidth = width;
+                this.unavailableHeight = height;
+                this.releaseTargets();
+                LOGGER.warn("Depth-aware screen effects are unavailable at {}x{}; continuing without them.",
+                    width, height, exception);
             }
-
-            mainTarget.bindWrite(true);
-            currentColor.blitToScreen(mainTarget.viewWidth, mainTarget.viewHeight);
-            this.restoreMainTargetState(mainTarget);
-        } catch (RuntimeException exception) {
-            this.failAfterCompositionOnce = false;
-            this.restoreMainTargetState(mainTarget);
-            this.unavailableWidth = width;
-            this.unavailableHeight = height;
-            this.releaseTargets();
-            LOGGER.warn("Depth-aware screen effects are unavailable at {}x{}; continuing without them.",
-                width, height, exception);
+        } finally {
+            ClientQualityController.endLevelGpu();
         }
     }
 

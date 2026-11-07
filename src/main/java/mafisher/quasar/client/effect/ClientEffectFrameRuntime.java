@@ -98,11 +98,15 @@ final class ClientEffectFrameRuntime {
             ClientQualityController.recordWorldRender(System.nanoTime() - start);
         } else if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
             long start = System.nanoTime();
-            ClientVisualEffectManager effectManager = manager();
-            ClientScreenCompositor compositor = screenCompositor;
-            if (compositor != null) {
-                List<ScreenEffectBatch> batches = effectManager.screenEffects(event);
-                compositor.render(event, effectManager, batches);
+            try {
+                ClientVisualEffectManager effectManager = manager();
+                ClientScreenCompositor compositor = screenCompositor;
+                if (compositor != null) {
+                    List<ScreenEffectBatch> batches = effectManager.screenEffects(event);
+                    compositor.render(event, effectManager, batches);
+                }
+            } finally {
+                ClientQualityController.endFrameGpu();
             }
             ClientQualityController.recordLevelRender(System.nanoTime() - start);
         }

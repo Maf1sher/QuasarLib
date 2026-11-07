@@ -222,55 +222,60 @@ public final class ClientVisualEffectManager {
             return;
         }
 
-        Vec3 cameraPosition = event.getCamera().getPosition();
-        PoseStack poseStack = event.getPoseStack();
-        MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
-        Set<RenderType> usedRenderTypes = new LinkedHashSet<>();
-        InstancedBatchBuilder instancedBatches = new InstancedBatchBuilder(
-            this.instancedRenderer.maxInstancesPerDraw()
-        );
-        poseStack.pushPose();
-        poseStack.translate(-cameraPosition.x, -cameraPosition.y, -cameraPosition.z);
-        Matrix4f baseView = new Matrix4f(RenderSystem.getModelViewMatrix()).mul(poseStack.last().pose());
+        ClientQualityController.beginWorldGpu();
         try {
-            this.forEachVisibleEffect(event, (effect, context, renderer) -> {
-                if (renderer instanceof InstancedVisualEffectRenderer instanced) {
-                    List<EffectInstancedPass> instancedPasses = instanced.instancedPasses(context);
-                    if (!instancedPasses.isEmpty()) {
-                        instancedBatches.add(context, instancedPasses);
-                        return;
+            Vec3 cameraPosition = event.getCamera().getPosition();
+            PoseStack poseStack = event.getPoseStack();
+            MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
+            Set<RenderType> usedRenderTypes = new LinkedHashSet<>();
+            InstancedBatchBuilder instancedBatches = new InstancedBatchBuilder(
+                this.instancedRenderer.maxInstancesPerDraw()
+            );
+            poseStack.pushPose();
+            poseStack.translate(-cameraPosition.x, -cameraPosition.y, -cameraPosition.z);
+            Matrix4f baseView = new Matrix4f(RenderSystem.getModelViewMatrix()).mul(poseStack.last().pose());
+            try {
+                this.forEachVisibleEffect(event, (effect, context, renderer) -> {
+                    if (renderer instanceof InstancedVisualEffectRenderer instanced) {
+                        List<EffectInstancedPass> instancedPasses = instanced.instancedPasses(context);
+                        if (!instancedPasses.isEmpty()) {
+                            instancedBatches.add(context, instancedPasses);
+                            return;
+                        }
                     }
-                }
-                EffectTransform transform = context.transform();
-                List<EffectRenderPass> renderPasses = List.copyOf(renderer.renderPasses(context));
-                Set<String> passIds = new HashSet<>();
-                for (EffectRenderPass renderPass : renderPasses) {
-                    if (!passIds.add(renderPass.id())) {
-                        throw new IllegalStateException("Duplicate render pass ID '" + renderPass.id()
-                            + "' for effect " + effect.effectId());
-                    }
-                }
-                poseStack.pushPose();
-                try {
-                    poseStack.translate(transform.position().x(), transform.position().y(),
-                        transform.position().z());
-                    EffectRenderTransform.applyRotation(poseStack, transform.yaw(), transform.pitch(),
-                        transform.roll());
+                    EffectTransform transform = context.transform();
+                    List<EffectRenderPass> renderPasses = List.copyOf(renderer.renderPasses(context));
+                    Set<String> passIds = new HashSet<>();
                     for (EffectRenderPass renderPass : renderPasses) {
-                        usedRenderTypes.add(renderPass.renderType());
-                        renderer.render(context, renderPass, poseStack, buffers);
+                        if (!passIds.add(renderPass.id())) {
+                            throw new IllegalStateException("Duplicate render pass ID '" + renderPass.id()
+                                + "' for effect " + effect.effectId());
+                        }
                     }
-                } finally {
-                    poseStack.popPose();
+                    poseStack.pushPose();
+                    try {
+                        poseStack.translate(transform.position().x(), transform.position().y(),
+                            transform.position().z());
+                        EffectRenderTransform.applyRotation(poseStack, transform.yaw(), transform.pitch(),
+                            transform.roll());
+                        for (EffectRenderPass renderPass : renderPasses) {
+                            usedRenderTypes.add(renderPass.renderType());
+                            renderer.render(context, renderPass, poseStack, buffers);
+                        }
+                    } finally {
+                        poseStack.popPose();
+                    }
+                });
+            } finally {
+                poseStack.popPose();
+                for (RenderType renderType : usedRenderTypes) {
+                    buffers.endBatch(renderType);
                 }
-            });
-        } finally {
-            poseStack.popPose();
-            for (RenderType renderType : usedRenderTypes) {
-                buffers.endBatch(renderType);
             }
+            this.instancedRenderer.draw(instancedBatches.draws(), baseView, RenderSystem.getProjectionMatrix());
+        } finally {
+            ClientQualityController.endWorldGpu();
         }
-        this.instancedRenderer.draw(instancedBatches.draws(), baseView, RenderSystem.getProjectionMatrix());
     }
 
     List<ScreenEffectBatch> screenEffects(net.neoforged.neoforge.client.event.RenderLevelStageEvent event) {
