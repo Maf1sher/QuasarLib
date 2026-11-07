@@ -1,5 +1,6 @@
 package mafisher.quasar.client.effect;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
@@ -97,8 +98,18 @@ final class GpuMeshCache implements AutoCloseable {
             this.vertexCount = vertexCount;
         }
 
-        int vertexCount() {
-            return this.vertexCount;
+        int indexCount() {
+            return quadIndexCount(this.vertexCount);
+        }
+
+        /**
+         * Binds the shared sequential quad index buffer to the currently bound vertex array. Must run after
+         * {@link #bind()}, because the element buffer binding is vertex-array state.
+         */
+        RenderSystem.AutoStorageIndexBuffer bindSequentialIndices() {
+            RenderSystem.AutoStorageIndexBuffer indices = RenderSystem.getSequentialBuffer(VertexFormat.Mode.QUADS);
+            indices.bind(this.indexCount());
+            return indices;
         }
 
         void bind() {
@@ -113,5 +124,9 @@ final class GpuMeshCache implements AutoCloseable {
         public void close() {
             this.buffer.close();
         }
+    }
+
+    static int quadIndexCount(int vertexCount) {
+        return VertexFormat.Mode.QUADS.indexCount(vertexCount);
     }
 }

@@ -15,8 +15,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Draws batched instanced world passes with the engine's uniform-array contract. The instance arrays are sized from
- * {@code GL_MAX_VERTEX_UNIFORM_COMPONENTS}, so minimum-spec drivers split the same batch across several draws.
+ * Draws batched instanced world passes with the engine's uniform-array contract. Passes use {@code BLOCK}/{@code QUADS}
+ * meshes, so each draw binds the shared sequential quad index buffer and uses indexed instancing. The instance arrays
+ * are sized from {@code GL_MAX_VERTEX_UNIFORM_COMPONENTS}, so minimum-spec drivers split the same batch across several
+ * draws.
  */
 final class InstancedBatchRenderer implements AutoCloseable {
     static final int MAX_INSTANCES_PER_SHADER = 128;
@@ -102,7 +104,9 @@ final class InstancedBatchRenderer implements AutoCloseable {
             RenderSystem.glUniform4(dataLocation, this.data);
 
             mesh.bind();
-            GL31C.glDrawArraysInstanced(renderType.mode().asGLMode, 0, mesh.vertexCount(), instances.size());
+            RenderSystem.AutoStorageIndexBuffer indices = mesh.bindSequentialIndices();
+            GL31C.glDrawElementsInstanced(VertexFormat.Mode.QUADS.asGLMode, mesh.indexCount(),
+                indices.type().asGLType, 0L, instances.size());
         } finally {
             GpuMeshCache.GpuMesh.unbind();
             if (shader != null) {
