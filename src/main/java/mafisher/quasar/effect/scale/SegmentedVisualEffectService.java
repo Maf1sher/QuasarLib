@@ -1,23 +1,24 @@
 package mafisher.quasar.effect.scale;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.WeakHashMap;
+import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectPoint;
-import mafisher.quasar.effect.EffectScope;
+import mafisher.quasar.effect.EffectTimeline;
 import mafisher.quasar.effect.EffectTransform;
-import mafisher.quasar.effect.VisualEffectHandle;
 import mafisher.quasar.effect.VisualEffectService;
-import mafisher.quasar.effect.VisualEffectSpec;
 import mafisher.quasar.effect.audio.EffectAudioPlan;
 import mafisher.quasar.effect.audio.EffectAudioService;
+import mafisher.quasar.effect.network.StartSegmentedVisualEffectPayload;
+import mafisher.quasar.effect.network.StopSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.persistence.EffectAudioNbt;
 import mafisher.quasar.effect.persistence.EffectDescriptor;
@@ -28,16 +29,20 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.StringTag;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.network.PacketDistributor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Server-thread coordinator for segmented, giant-scale world effects. Each segment is a normal
- * {@link VisualEffectSpec} started through {@link VisualEffectService}, so existing caps, audience policy, and
- * transient lifetime rules still apply. A coordinator reserves capacity up front instead of evicting unrelated effects.
+ * Server-thread coordinator for segmented, giant-scale world effects. A coordinator owns its cells directly and
+ * reserves a dedicated per-level segment budget, so a large grid neither consumes standalone visual slots nor can be
+ * evicted by standalone starts. Start, stop, and updates are aggregated per coordinator.
  */
 public final class SegmentedVisualEffectService {
+    /** Dedicated per-level budget; segmented cells never count against the standalone visual cap. */
+    public static final int MAX_ACTIVE_SEGMENTS_PER_LEVEL = SegmentedEffectLimits.MAX_SEGMENTS_PER_LEVEL;
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
     private static final Map<ServerLevel, Map<UUID, ActiveSegmentedEffect>> ACTIVE_COORDINATORS = new WeakHashMap<>();
 
@@ -45,8 +50,8 @@ public final class SegmentedVisualEffectService {
     }
 
     /**
-     * Starts a segmented effect and returns its root handle. Throws when the level does not have enough visual-effect
-     * capacity; no segment is started and no unrelated effect is evicted in that case.
+     * Starts a segmented effect and returns its root handle. Throws when the level's dedicated segment budget is
+     * exhausted; standalone effects are never evicted in that case.
      */
     public static SegmentedVisualEffectHandle start(ServerLevel level, SegmentedVisualEffectSpec spec) {
         return start(level, spec, EffectPersistenceOptions.DEFAULT);
@@ -64,7 +69,7 @@ public final class SegmentedVisualEffectService {
             level, spec, UUID.randomUUID(), level.getGameTime(), options, null
         );
         if (handle == null) {
-            throw new IllegalStateException("Not enough visual effect capacity for segmented effect");
+            throw new IllegalStateException("Not enough segmented effect capacity");
         }
         return handle;
     }
@@ -95,13 +100,7 @@ public final class SegmentedVisualEffectService {
 
     /** Stable segment identity derived from its coordinator and cell index. */
     public static UUID segmentId(UUID coordinatorId, int index) {
-        Objects.requireNonNull(coordinatorId, "coordinatorId");
-        if (index < 0) {
-            throw new IllegalArgumentException("Segment index cannot be negative");
-        }
-        return UUID.nameUUIDFromBytes(
-            ("quasar:segment:" + coordinatorId + ":" + index).getBytes(java.nio.charset.StandardCharsets.UTF_8)
-        );
+        return SegmentIds.segmentId(coordinatorId, index);
     }
 
     /** Restores a coordinator with its original segment identities and start time. */
@@ -130,10 +129,7 @@ public final class SegmentedVisualEffectService {
         Objects.requireNonNull(spec, "spec");
         Objects.requireNonNull(coordinatorId, "coordinatorId");
         Objects.requireNonNull(options, "options");
-        List<UUID> ids = segmentIds == null
-            ? restoreSegmentIds(coordinatorId, spec.segmentCount())
-            : segmentIds;
-        return startInternal(level, spec, coordinatorId, startGameTime, options, ids, descriptor);
+        return startInternal(level, spec, coordinatorId, startGameTime, options, segmentIds, descriptor);
     }
 
     private static SegmentedVisualEffectHandle startInternal(
@@ -165,65 +161,36 @@ public final class SegmentedVisualEffectService {
             return null;
         }
 
-        int active = VisualEffectService.activeCount(level);
-        if (active + spec.segmentCount() > VisualEffectService.MAX_ACTIVE_EFFECTS_PER_LEVEL) {
+        Map<UUID, ActiveSegmentedEffect> active = activeSegments(level);
+        ActiveSegmentedEffect replaced = active.get(coordinatorId);
+        int replacedSegments = replaced == null ? 0 : replaced.spec.segmentCount();
+        int activeSegments = activeSegmentCount(active) - replacedSegments;
+        if (activeSegments + spec.segmentCount() > MAX_ACTIVE_SEGMENTS_PER_LEVEL) {
             LOGGER.warn(
                 "Rejected segmented effect {} in {}: requires {} segment slots but only {} of {} remain",
                 spec.effectId(),
                 level.dimension().location(),
                 spec.segmentCount(),
-                Math.max(0, VisualEffectService.MAX_ACTIVE_EFFECTS_PER_LEVEL - active),
-                VisualEffectService.MAX_ACTIVE_EFFECTS_PER_LEVEL
+                Math.max(0, MAX_ACTIVE_SEGMENTS_PER_LEVEL - activeSegments),
+                MAX_ACTIVE_SEGMENTS_PER_LEVEL
             );
             return null;
         }
 
-        SegmentGridLayout layout = spec.layout();
-        EffectScope scope = null;
-        List<UUID> segments = new ArrayList<>(spec.segmentCount());
-        int index = 0;
-        try {
-            scope = new EffectScope(level, coordinatorId);
-            for (int row = 0; row < spec.rows(); row++) {
-                for (int column = 0; column < spec.columns(); column++) {
-                    VisualEffectSpec segment = spec.segmentSpec(column, row);
-                    SegmentLink link = new SegmentLink(coordinatorId, index, layout);
-                    UUID segmentId = restoredSegmentIds == null
-                        ? segmentId(coordinatorId, index)
-                        : restoredSegmentIds.get(index);
-                    if (restoredSegmentIds == null) {
-                        VisualEffectHandle handle = VisualEffectService.startWithId(
-                            level, segment, segmentId, startGameTime, EffectPersistenceOptions.cosmetic(), link
-                        );
-                        scope.adoptVisual(segmentId, handle);
-                    } else {
-                        VisualEffectHandle handle = VisualEffectService.restoreSegment(
-                            level, segment, segmentId, startGameTime, link
-                        );
-                        if (handle == null) {
-                            throw new IllegalStateException("Could not restore segment " + index);
-                        }
-                        scope.adoptVisual(segmentId, handle);
-                    }
-                    segments.add(segmentId);
-                    index++;
-                }
-            }
-        } catch (RuntimeException | Error exception) {
-            if (scope != null) {
-                scope.close();
-            }
-            throw exception;
-        }
-
+        EffectTransform transform = new EffectTransform(
+            new EffectPoint(spec.center().x, spec.center().y, spec.center().z),
+            spec.yaw(),
+            spec.pitch(),
+            spec.roll()
+        );
         CompoundTag state = options.state();
         state.putInt("columns", spec.columns());
         state.putInt("rows", spec.rows());
         state.putDouble("spacing", spec.spacing());
         state.putFloat("segment_scale", spec.segmentScale());
         ListTag ids = new ListTag();
-        for (UUID segmentId : segments) {
-            ids.add(StringTag.valueOf(segmentId.toString()));
+        for (int index = 0; index < spec.segmentCount(); index++) {
+            ids.add(StringTag.valueOf(segmentId(coordinatorId, index).toString()));
         }
         state.put("segment_ids", ids);
         EffectAudioNbt.saveInto(state, spec.audio());
@@ -232,12 +199,7 @@ public final class SegmentedVisualEffectService {
             EffectKind.SEGMENTED,
             spec.effectId(),
             level.dimension().location(),
-            new EffectTransform(
-                new EffectPoint(spec.center().x, spec.center().y, spec.center().z),
-                spec.yaw(),
-                spec.pitch(),
-                spec.roll()
-            ),
+            transform,
             spec.segmentScale(),
             spec.seed(),
             startGameTime,
@@ -251,21 +213,34 @@ public final class SegmentedVisualEffectService {
 
         ActiveSegmentedEffect activeEffect = new ActiveSegmentedEffect(
             spec,
-            scope,
-            List.copyOf(segments),
+            transform,
             startGameTime,
             descriptor
         );
-        activeSegments(level).put(coordinatorId, activeEffect);
-        EffectPersistenceService.recordStart(level, descriptor);
-        startAudio(level, coordinatorId, spec, startGameTime);
+        active.put(coordinatorId, activeEffect);
+        if (replaced != null) {
+            sendStop(level, replaced);
+            EffectAudioService.stop(level, coordinatorId);
+        }
+
+        try {
+            Map<UUID, ServerPlayer> audience = new LinkedHashMap<>();
+            collectAudience(level, activeEffect, audience);
+            for (ServerPlayer player : audience.values()) {
+                sendStart(level, activeEffect, player);
+            }
+            EffectPersistenceService.recordStart(level, descriptor);
+            startAudio(level, coordinatorId, spec, startGameTime);
+        } catch (RuntimeException | Error exception) {
+            active.remove(coordinatorId);
+            sendStop(level, activeEffect);
+            EffectAudioService.stop(level, coordinatorId);
+            throw exception;
+        }
         return new SegmentedVisualEffectHandle(coordinatorId);
     }
 
-    /**
-     * Moves the root transform, stages every segment for late joiners, and sends one aggregated update per tracking
-     * player instead of one packet per segment. Unknown handles are no-ops.
-     */
+    /** Moves the root transform and sends one aggregated update per tracking player. Unknown handles are no-ops. */
     public static void update(ServerLevel level, SegmentedVisualEffectHandle handle, EffectTransform transform) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(handle, "handle");
@@ -275,24 +250,14 @@ public final class SegmentedVisualEffectService {
             return;
         }
 
-        SegmentedVisualEffectSpec spec = activeEffect.spec;
-        SegmentGridLayout layout = spec.layout();
-        Set<UUID> recipients = new LinkedHashSet<>();
-        int index = 0;
-        for (int row = 0; row < spec.rows(); row++) {
-            for (int column = 0; column < spec.columns(); column++) {
-                VisualEffectHandle segment = new VisualEffectHandle(activeEffect.segmentIds.get(index++));
-                VisualEffectService.stageTransform(level, segment, layout.transform(transform, column, row));
-                VisualEffectService.collectTrackingPlayers(level, segment, recipients);
-            }
-        }
+        activeEffect.transform = transform;
         if (activeEffect.descriptor != null) {
             activeEffect.descriptor = activeEffect.descriptor.withTransform(transform);
             EffectPersistenceService.recordUpdate(level, activeEffect.descriptor);
         }
         VisualEffectService.sendToTrackingPlayers(
             level,
-            recipients,
+            activeEffect.trackingPlayers,
             UpdateSegmentedVisualEffectPayload.of(
                 handle.coordinatorId(), level.dimension().location(), transform, level.getGameTime()
             )
@@ -309,7 +274,7 @@ public final class SegmentedVisualEffectService {
         }
         ActiveSegmentedEffect removed = active.remove(handle.coordinatorId());
         if (removed != null) {
-            removed.close(true);
+            sendStop(level, removed);
             EffectPersistenceService.recordStop(level, handle.coordinatorId());
         }
         EffectAudioService.stop(level, handle.coordinatorId());
@@ -334,7 +299,7 @@ public final class SegmentedVisualEffectService {
             return 0;
         }
         for (ActiveSegmentedEffect activeEffect : active.values()) {
-            activeEffect.close(persistRemoval);
+            sendStop(level, activeEffect);
             EffectAudioService.stop(level, activeEffect.descriptor.instanceId());
             if (persistRemoval) {
                 EffectPersistenceService.recordStop(level, activeEffect.descriptor.instanceId());
@@ -343,7 +308,7 @@ public final class SegmentedVisualEffectService {
         return active.size();
     }
 
-    /** Advances coordinator lifetimes in one level. */
+    /** Advances coordinator lifetimes and audience membership in one level. */
     public static void tick(ServerLevel level) {
         Objects.requireNonNull(level, "level");
         Map<UUID, ActiveSegmentedEffect> active = ACTIVE_COORDINATORS.get(level);
@@ -353,14 +318,41 @@ public final class SegmentedVisualEffectService {
         }
 
         long gameTime = level.getGameTime();
+        Map<UUID, ServerPlayer> audience = new LinkedHashMap<>();
         Iterator<Map.Entry<UUID, ActiveSegmentedEffect>> iterator = active.entrySet().iterator();
         while (iterator.hasNext()) {
             ActiveSegmentedEffect activeEffect = iterator.next().getValue();
-            if (gameTime - activeEffect.startGameTime >= activeEffect.spec.durationTicks()) {
-                activeEffect.close(true);
+            if (EffectTimeline.isFinished(gameTime, activeEffect.startGameTime,
+                activeEffect.spec.durationTicks())) {
+                sendStop(level, activeEffect);
                 iterator.remove();
                 EffectPersistenceService.recordStop(level, activeEffect.descriptor.instanceId());
                 EffectAudioService.stop(level, activeEffect.descriptor.instanceId());
+                continue;
+            }
+
+            audience.clear();
+            collectAudience(level, activeEffect, audience);
+            Iterator<UUID> trackers = activeEffect.trackingPlayers.iterator();
+            while (trackers.hasNext()) {
+                UUID playerId = trackers.next();
+                if (!audience.containsKey(playerId)) {
+                    ServerPlayer player = level.getServer() == null
+                        ? null
+                        : level.getServer().getPlayerList().getPlayer(playerId);
+                    if (player != null && player.level() == level) {
+                        PacketDistributor.sendToPlayer(player,
+                            new StopSegmentedVisualEffectPayload(
+                                activeEffect.descriptor.instanceId(), level.dimension().location()
+                            ));
+                    }
+                    trackers.remove();
+                }
+            }
+            for (ServerPlayer player : audience.values()) {
+                if (!activeEffect.trackingPlayers.contains(player.getUUID())) {
+                    sendStart(level, activeEffect, player);
+                }
             }
         }
         if (active.isEmpty()) {
@@ -372,6 +364,41 @@ public final class SegmentedVisualEffectService {
         Objects.requireNonNull(level, "level");
         Map<UUID, ActiveSegmentedEffect> active = ACTIVE_COORDINATORS.get(level);
         return active == null ? 0 : active.size();
+    }
+
+    /** Number of reserved segment cells in one level. */
+    public static int activeSegmentCount(ServerLevel level) {
+        Objects.requireNonNull(level, "level");
+        Map<UUID, ActiveSegmentedEffect> active = ACTIVE_COORDINATORS.get(level);
+        return active == null ? 0 : activeSegmentCount(active);
+    }
+
+    /**
+     * Builds the segmented part of a joining player's resume snapshot. Returned payloads mark the player as tracking;
+     * coordinators outside the player's audience are untracked so the next tick does not resend duplicates.
+     */
+    public static List<StartSegmentedVisualEffectPayload> resumePayloads(ServerLevel level, ServerPlayer player) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(player, "player");
+        Map<UUID, ActiveSegmentedEffect> active = ACTIVE_COORDINATORS.get(level);
+        if (active == null || active.isEmpty()) {
+            return List.of();
+        }
+
+        long serverGameTime = level.getGameTime();
+        List<StartSegmentedVisualEffectPayload> payloads = new ArrayList<>();
+        Map<UUID, ServerPlayer> audience = new LinkedHashMap<>();
+        for (ActiveSegmentedEffect activeEffect : active.values()) {
+            audience.clear();
+            collectAudience(level, activeEffect, audience);
+            if (audience.containsKey(player.getUUID())) {
+                payloads.add(currentPayload(level, activeEffect, serverGameTime));
+                activeEffect.trackingPlayers.add(player.getUUID());
+            } else {
+                activeEffect.trackingPlayers.remove(player.getUUID());
+            }
+        }
+        return List.copyOf(payloads);
     }
 
     private static void startAudio(
@@ -394,6 +421,85 @@ public final class SegmentedVisualEffectService {
         EffectAudioService.start(level, plan, spec.audience());
     }
 
+    private static void collectAudience(
+        ServerLevel level,
+        ActiveSegmentedEffect activeEffect,
+        Map<UUID, ServerPlayer> audience
+    ) {
+        if (!(activeEffect.spec.audience() instanceof EffectAudience.Nearby nearby)) {
+            for (ServerPlayer player : level.players()) {
+                audience.put(player.getUUID(), player);
+            }
+            return;
+        }
+
+        EffectPoint position = activeEffect.transform.position();
+        double radius = nearby.radius() + activeEffect.spec.layout().halfDiagonal();
+        double radiusSqr = radius * radius;
+        for (ServerPlayer player : level.players()) {
+            if (position.distanceToSqr(player.getX(), player.getY(), player.getZ()) <= radiusSqr) {
+                audience.put(player.getUUID(), player);
+            }
+        }
+    }
+
+    private static void sendStart(
+        ServerLevel level,
+        ActiveSegmentedEffect activeEffect,
+        ServerPlayer player
+    ) {
+        PacketDistributor.sendToPlayer(player, currentPayload(level, activeEffect));
+        activeEffect.trackingPlayers.add(player.getUUID());
+    }
+
+    private static void sendStop(ServerLevel level, ActiveSegmentedEffect activeEffect) {
+        if (activeEffect.trackingPlayers.isEmpty()) {
+            return;
+        }
+        VisualEffectService.sendToTrackingPlayers(
+            level,
+            activeEffect.trackingPlayers,
+            new StopSegmentedVisualEffectPayload(
+                activeEffect.descriptor.instanceId(), level.dimension().location()
+            )
+        );
+        activeEffect.trackingPlayers.clear();
+    }
+
+    private static StartSegmentedVisualEffectPayload currentPayload(
+        ServerLevel level,
+        ActiveSegmentedEffect activeEffect
+    ) {
+        return currentPayload(level, activeEffect, level.getGameTime());
+    }
+
+    private static StartSegmentedVisualEffectPayload currentPayload(
+        ServerLevel level,
+        ActiveSegmentedEffect activeEffect,
+        long serverGameTime
+    ) {
+        EffectPoint position = activeEffect.transform.position();
+        return new StartSegmentedVisualEffectPayload(
+            activeEffect.spec.effectId(),
+            activeEffect.descriptor.instanceId(),
+            level.dimension().location(),
+            position.x(),
+            position.y(),
+            position.z(),
+            activeEffect.transform.yaw(),
+            activeEffect.transform.pitch(),
+            activeEffect.transform.roll(),
+            activeEffect.spec.segmentScale(),
+            activeEffect.spec.columns(),
+            activeEffect.spec.rows(),
+            activeEffect.spec.spacing(),
+            activeEffect.spec.durationTicks(),
+            activeEffect.startGameTime,
+            serverGameTime,
+            activeEffect.spec.seed()
+        );
+    }
+
     private static ActiveSegmentedEffect find(ServerLevel level, SegmentedVisualEffectHandle handle) {
         Map<UUID, ActiveSegmentedEffect> active = ACTIVE_COORDINATORS.get(level);
         return active == null ? null : active.get(handle.coordinatorId());
@@ -403,29 +509,31 @@ public final class SegmentedVisualEffectService {
         return ACTIVE_COORDINATORS.computeIfAbsent(level, ignored -> new LinkedHashMap<>());
     }
 
+    private static int activeSegmentCount(Map<UUID, ActiveSegmentedEffect> active) {
+        int count = 0;
+        for (ActiveSegmentedEffect effect : active.values()) {
+            count += effect.spec.segmentCount();
+        }
+        return count;
+    }
+
     private static final class ActiveSegmentedEffect {
         private final SegmentedVisualEffectSpec spec;
-        private final EffectScope scope;
-        private final List<UUID> segmentIds;
         private final long startGameTime;
+        private final Set<UUID> trackingPlayers = new HashSet<>();
+        private EffectTransform transform;
         private EffectDescriptor descriptor;
 
         private ActiveSegmentedEffect(
             SegmentedVisualEffectSpec spec,
-            EffectScope scope,
-            List<UUID> segmentIds,
+            EffectTransform transform,
             long startGameTime,
             EffectDescriptor descriptor
         ) {
             this.spec = spec;
-            this.scope = scope;
-            this.segmentIds = segmentIds;
+            this.transform = transform;
             this.startGameTime = startGameTime;
             this.descriptor = descriptor;
-        }
-
-        private void close(boolean persistRemoval) {
-            this.scope.close(persistRemoval);
         }
     }
 }

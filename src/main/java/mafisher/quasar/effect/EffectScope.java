@@ -46,7 +46,7 @@ public final class EffectScope implements AutoCloseable {
         return this.playVisual(spec, lifetimePolicy, null);
     }
 
-    /** Plays a visual that carries a segment link, so its coordinator can drive it with aggregated updates. */
+    /** Plays a legacy coordinator-linked visual. New segmented effects use the segmented service. */
     public UUID playVisual(VisualEffectSpec spec, SegmentLink segmentLink) {
         return this.playVisual(spec, EffectLifetimePolicy.CANCEL_WITH_SCOPE, segmentLink);
     }

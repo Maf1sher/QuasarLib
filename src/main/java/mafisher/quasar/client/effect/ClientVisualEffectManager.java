@@ -8,10 +8,14 @@ import mafisher.quasar.effect.EffectQualityTier;
 import mafisher.quasar.effect.EffectTimeline;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.network.ResumeEffectsPayload;
+import mafisher.quasar.effect.network.StartSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
+import mafisher.quasar.effect.network.StopSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.StopVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateVisualEffectPayload;
+import mafisher.quasar.effect.scale.SegmentGridLayout;
+import mafisher.quasar.effect.scale.SegmentIds;
 import mafisher.quasar.effect.scale.SegmentLink;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -36,7 +40,7 @@ import org.slf4j.LoggerFactory;
 
 /** Instance-owned state and rendering for transient client visual effects. */
 public final class ClientVisualEffectManager {
-    private static final int MAX_ACTIVE_EFFECTS = 128;
+    private static final int MAX_ACTIVE_STANDALONE_EFFECTS = 128;
     private static final double INDEX_QUERY_MARGIN = 16.0;
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
 
@@ -81,11 +85,68 @@ public final class ClientVisualEffectManager {
             this.indexGroup(segmentLink.coordinatorId());
         } else {
             this.indexInstance(payload.instanceId());
+            while (this.standaloneCount() > MAX_ACTIVE_STANDALONE_EFFECTS) {
+                UUID oldest = this.oldestStandaloneId();
+                if (oldest == null) {
+                    break;
+                }
+                this.removeInstance(oldest);
+            }
         }
-        while (this.activeEffects.size() > MAX_ACTIVE_EFFECTS) {
-            UUID oldest = this.activeEffects.keySet().iterator().next();
-            this.removeInstance(oldest);
+    }
+
+    /** Starts every cell of one segmented coordinator from one aggregated payload. */
+    void startSegmented(StartSegmentedVisualEffectPayload payload) {
+        Minecraft minecraft = Minecraft.getInstance();
+        ClientLevel level = minecraft.level;
+        this.synchronizeLevel(level);
+        if (level == null || !level.dimension().location().equals(payload.dimensionId())) {
+            return;
         }
+        this.removeGroup(payload.coordinatorId());
+        if (this.rendererRegistry.find(payload.effectId()).isEmpty()) {
+            return;
+        }
+
+        ClientEffectClock.observe(payload.serverGameTime(), level.getGameTime());
+        SegmentGridLayout layout = payload.layout();
+        EffectTransform base = payload.transform();
+        int columnCount = payload.columns();
+        for (int index = 0; index < payload.segmentCount(); index++) {
+            int column = index % columnCount;
+            int row = index / columnCount;
+            EffectTransform cell = layout.transform(base, column, row);
+            UUID segmentId = SegmentIds.segmentId(payload.coordinatorId(), index);
+            long segmentSeed = SegmentIds.segmentSeed(payload.seed(), column, row);
+            this.start(new StartVisualEffectPayload(
+                payload.effectId(),
+                segmentId,
+                payload.dimensionId(),
+                cell.position().x(),
+                cell.position().y(),
+                cell.position().z(),
+                cell.yaw(),
+                cell.pitch(),
+                cell.roll(),
+                payload.segmentScale(),
+                payload.durationTicks(),
+                payload.startGameTime(),
+                payload.serverGameTime(),
+                segmentSeed,
+                new SegmentLink(payload.coordinatorId(), index, layout)
+            ));
+        }
+    }
+
+    /** Removes every cell of one segmented coordinator. */
+    void stopSegmented(StopSegmentedVisualEffectPayload payload) {
+        Minecraft minecraft = Minecraft.getInstance();
+        ClientLevel level = minecraft.level;
+        this.synchronizeLevel(level);
+        if (level == null || !level.dimension().location().equals(payload.dimensionId())) {
+            return;
+        }
+        this.removeGroup(payload.coordinatorId());
     }
 
     void stop(StopVisualEffectPayload payload) {
@@ -109,6 +170,9 @@ public final class ClientVisualEffectManager {
         this.clearState();
         for (StartVisualEffectPayload effect : payload.effects()) {
             this.start(effect);
+        }
+        for (StartSegmentedVisualEffectPayload effect : payload.segmentedEffects()) {
+            this.startSegmented(effect);
         }
     }
 
@@ -571,6 +635,39 @@ public final class ClientVisualEffectManager {
         } else {
             this.indexGroup(link.coordinatorId());
         }
+    }
+
+    /** Removes one coordinator group and every payload carrier it owns. */
+    private void removeGroup(UUID coordinatorId) {
+        ClientSegmentGroup group = this.segmentedGroups.remove(coordinatorId);
+        this.removeIndexEntry(ClientEffectSpatialIndex.Key.group(coordinatorId));
+        if (group == null) {
+            return;
+        }
+        for (UUID instanceId : group.memberIds()) {
+            this.activeEffects.remove(instanceId);
+            this.instanceSpatialRadii.remove(instanceId);
+            this.removeIndexEntry(ClientEffectSpatialIndex.Key.instance(instanceId));
+        }
+    }
+
+    private int standaloneCount() {
+        int count = 0;
+        for (VisualEffectInstance effect : this.activeEffects.values()) {
+            if (effect.payload().segmentLink() == null) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private UUID oldestStandaloneId() {
+        for (Map.Entry<UUID, VisualEffectInstance> entry : this.activeEffects.entrySet()) {
+            if (entry.getValue().payload().segmentLink() == null) {
+                return entry.getKey();
+            }
+        }
+        return null;
     }
 
     private EffectRenderContext createRenderContext(VisualEffectInstance effect, long gameTime, float partialTick) {

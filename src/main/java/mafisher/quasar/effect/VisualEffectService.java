@@ -35,7 +35,10 @@ import org.slf4j.LoggerFactory;
 public final class VisualEffectService {
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
 
-    /** Hard safety cap per level. The oldest effect is stopped and evicted when it is exceeded. */
+    /**
+     * Hard safety cap per level for visuals tracked by this service. Segmented coordinators use their own
+     * dedicated budget and are not stored here.
+     */
     public static final int MAX_ACTIVE_EFFECTS_PER_LEVEL = 128;
     private static final int GRID_MIN_PLAYERS = 8;
     private static final long GRID_MIN_QUERIES = 256L;
@@ -49,8 +52,8 @@ public final class VisualEffectService {
     }
 
     /**
-     * Starts a visual effect, optionally linked to a segmented coordinator. The link is sent to clients so one
-     * aggregated coordinator update can move every segment.
+     * Starts a visual effect with a legacy coordinator link. New segmented effects use
+     * {@code SegmentedVisualEffectService}, which sends the whole grid in one aggregated lifecycle.
      */
     public static VisualEffectHandle start(ServerLevel level, VisualEffectSpec spec, SegmentLink segmentLink) {
         return start(level, spec, segmentLink, EffectPersistenceOptions.DEFAULT);
@@ -216,7 +219,7 @@ public final class VisualEffectService {
         return new VisualEffectHandle(instanceId);
     }
 
-    /** Restores one coordinator-owned segment without recording it as a standalone descriptor. */
+    /** Restores one legacy coordinator-linked visual without recording a standalone descriptor. */
     public static VisualEffectHandle restoreSegment(
         ServerLevel level,
         VisualEffectSpec spec,

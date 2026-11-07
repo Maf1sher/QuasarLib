@@ -144,8 +144,8 @@ class EffectRestoreServiceTest {
             EffectAudience.nearby(64.0)
         );
         SegmentedVisualEffectService.start(this.level, spec);
-        int visualCount = VisualEffectService.activeCount(this.level);
-        assertEquals(4, visualCount);
+        assertEquals(4, SegmentedVisualEffectService.activeSegmentCount(this.level));
+        assertEquals(0, VisualEffectService.activeCount(this.level));
 
         SegmentedVisualEffectService.stopAll(this.level, false);
         VisualEffectService.clear(this.level);
@@ -155,7 +155,8 @@ class EffectRestoreServiceTest {
 
         assertEquals(1, report.restored());
         assertEquals(1, SegmentedVisualEffectService.activeCount(this.level));
-        assertEquals(4, VisualEffectService.activeCount(this.level));
+        assertEquals(4, SegmentedVisualEffectService.activeSegmentCount(this.level));
+        assertEquals(0, VisualEffectService.activeCount(this.level));
     }
 
     @Test

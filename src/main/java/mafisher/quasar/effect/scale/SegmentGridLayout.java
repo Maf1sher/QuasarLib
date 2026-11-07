@@ -10,8 +10,8 @@ import net.minecraft.world.phys.Vec3;
  * derive segment placement from the same math and one aggregated base transform is enough to move a whole grid.
  */
 public record SegmentGridLayout(int columns, int rows, double spacing) {
-    /** Maximum number of cells in one grid; matches the shared visual-effect ceiling. */
-    public static final int MAX_SEGMENTS = 128;
+    /** Maximum number of cells in one grid; independent of the standalone visual-effect cap. */
+    public static final int MAX_SEGMENTS = SegmentedEffectLimits.MAX_SEGMENTS_PER_GRID;
 
     public SegmentGridLayout {
         long segmentCount = (long)columns * rows;
@@ -24,6 +24,13 @@ public record SegmentGridLayout(int columns, int rows, double spacing) {
 
     public int segmentCount() {
         return this.columns * this.rows;
+    }
+
+    /** Maximum horizontal distance from the grid center to any cell, including rotation. */
+    public double halfDiagonal() {
+        double halfX = (this.columns - 1) * this.spacing / 2.0;
+        double halfZ = (this.rows - 1) * this.spacing / 2.0;
+        return Math.sqrt(halfX * halfX + halfZ * halfZ);
     }
 
     /** Horizontal offset from the grid center to one cell, rotated by {@code yaw}. */

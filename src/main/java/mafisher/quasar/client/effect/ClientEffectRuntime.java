@@ -3,8 +3,10 @@ package mafisher.quasar.client.effect;
 import mafisher.quasar.effect.EffectQualityTier;
 import mafisher.quasar.effect.network.EffectAudioPlanPayload;
 import mafisher.quasar.effect.network.ResumeEffectsPayload;
+import mafisher.quasar.effect.network.StartSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
 import mafisher.quasar.effect.network.StopEffectAudioPayload;
+import mafisher.quasar.effect.network.StopSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.StopVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateVisualEffectPayload;
@@ -34,8 +36,16 @@ public final class ClientEffectRuntime {
         ClientEffectFrameRuntime.update(payload);
     }
 
+    public static void startSegmented(StartSegmentedVisualEffectPayload payload) {
+        ClientEffectFrameRuntime.startSegmented(payload);
+    }
+
     public static void updateSegmented(UpdateSegmentedVisualEffectPayload payload) {
         ClientEffectFrameRuntime.updateSegmented(payload);
+    }
+
+    public static void stopSegmented(StopSegmentedVisualEffectPayload payload) {
+        ClientEffectFrameRuntime.stopSegmented(payload);
     }
 
     public static void effectAudioPlan(EffectAudioPlanPayload payload) {

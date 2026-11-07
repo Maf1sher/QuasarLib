@@ -11,11 +11,14 @@ import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.VisualEffectService;
+import mafisher.quasar.effect.VisualEffectSpec;
 import mafisher.quasar.effect.audio.EffectAudioAttenuation;
 import mafisher.quasar.effect.audio.EffectAudioService;
 import mafisher.quasar.effect.audio.EffectAudioSpec;
+import mafisher.quasar.effect.network.StartSegmentedVisualEffectPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
@@ -41,30 +44,65 @@ class SegmentedVisualEffectServiceTest {
     @AfterEach
     void tearDown() {
         SegmentedVisualEffectService.stopAll(this.level);
+        VisualEffectService.clear(this.level);
         EffectAudioService.clear(this.level);
     }
 
     @Test
-    void startsOneSegmentPerGridCell() {
+    void startsAWholeGridWithoutStandaloneSlots() {
         SegmentedVisualEffectHandle handle = SegmentedVisualEffectService.start(this.level, spec(2, 2, 200));
 
         assertEquals(1, SegmentedVisualEffectService.activeCount(this.level));
-        assertEquals(4, VisualEffectService.activeCount(this.level));
+        assertEquals(4, SegmentedVisualEffectService.activeSegmentCount(this.level));
+        assertEquals(0, VisualEffectService.activeCount(this.level));
 
         SegmentedVisualEffectService.stop(this.level, handle);
 
         assertEquals(0, SegmentedVisualEffectService.activeCount(this.level));
-        assertEquals(0, VisualEffectService.activeCount(this.level));
+        assertEquals(0, SegmentedVisualEffectService.activeSegmentCount(this.level));
     }
 
     @Test
-    void rejectsAStartThatDoesNotFitTheSharedEffectCap() {
+    void aLargeGridStartsWithEveryStandaloneSlotFull() {
+        for (int index = 0; index < VisualEffectService.MAX_ACTIVE_EFFECTS_PER_LEVEL; index++) {
+            VisualEffectService.start(this.level, visualSpec());
+        }
+
         SegmentedVisualEffectService.start(this.level, spec(16, 8, 200));
 
-        assertEquals(128, VisualEffectService.activeCount(this.level));
+        assertEquals(VisualEffectService.MAX_ACTIVE_EFFECTS_PER_LEVEL,
+            VisualEffectService.activeCount(this.level));
+        assertEquals(128, SegmentedVisualEffectService.activeSegmentCount(this.level));
+    }
+
+    @Test
+    void standaloneStartsNeverEvictSegmentedCells() {
+        SegmentedVisualEffectService.start(this.level, spec(2, 2, 200));
+        for (int index = 0; index < VisualEffectService.MAX_ACTIVE_EFFECTS_PER_LEVEL; index++) {
+            VisualEffectService.start(this.level, visualSpec());
+        }
+
+        VisualEffectService.start(this.level, visualSpec());
+
+        assertEquals(VisualEffectService.MAX_ACTIVE_EFFECTS_PER_LEVEL,
+            VisualEffectService.activeCount(this.level));
+        assertEquals(4, SegmentedVisualEffectService.activeSegmentCount(this.level));
+        assertEquals(1, SegmentedVisualEffectService.activeCount(this.level));
+    }
+
+    @Test
+    void rejectsAStartBeyondTheDedicatedSegmentBudget() {
+        int fullGrids = SegmentedVisualEffectService.MAX_ACTIVE_SEGMENTS_PER_LEVEL / 128;
+        for (int index = 0; index < fullGrids; index++) {
+            SegmentedVisualEffectService.start(this.level, spec(16, 8, 200));
+        }
+
+        assertEquals(SegmentedVisualEffectService.MAX_ACTIVE_SEGMENTS_PER_LEVEL,
+            SegmentedVisualEffectService.activeSegmentCount(this.level));
         assertThrows(IllegalStateException.class,
             () -> SegmentedVisualEffectService.start(this.level, spec(1, 1, 200)));
-        assertEquals(128, VisualEffectService.activeCount(this.level));
+        assertEquals(SegmentedVisualEffectService.MAX_ACTIVE_SEGMENTS_PER_LEVEL,
+            SegmentedVisualEffectService.activeSegmentCount(this.level));
     }
 
     @Test
@@ -78,7 +116,7 @@ class SegmentedVisualEffectServiceTest {
         SegmentedVisualEffectService.tick(this.level);
 
         assertEquals(0, SegmentedVisualEffectService.activeCount(this.level));
-        assertEquals(0, VisualEffectService.activeCount(this.level));
+        assertEquals(0, SegmentedVisualEffectService.activeSegmentCount(this.level));
     }
 
     @Test
@@ -91,7 +129,8 @@ class SegmentedVisualEffectServiceTest {
         SegmentedVisualEffectService.stop(this.level, handle);
         SegmentedVisualEffectService.update(this.level, handle, transform);
 
-        assertEquals(0, VisualEffectService.activeCount(this.level));
+        assertEquals(0, SegmentedVisualEffectService.activeCount(this.level));
+        assertEquals(0, SegmentedVisualEffectService.activeSegmentCount(this.level));
     }
 
     @Test
@@ -102,7 +141,7 @@ class SegmentedVisualEffectServiceTest {
         assertEquals(2, SegmentedVisualEffectService.stopAll(this.level));
 
         assertEquals(0, SegmentedVisualEffectService.activeCount(this.level));
-        assertEquals(0, VisualEffectService.activeCount(this.level));
+        assertEquals(0, SegmentedVisualEffectService.activeSegmentCount(this.level));
     }
 
     @Test
@@ -122,10 +161,37 @@ class SegmentedVisualEffectServiceTest {
     void aSingleCellIsAllowed() {
         SegmentedVisualEffectHandle handle = SegmentedVisualEffectService.start(this.level, spec(1, 1, 200));
 
-        assertEquals(1, VisualEffectService.activeCount(this.level));
+        assertEquals(1, SegmentedVisualEffectService.activeSegmentCount(this.level));
+        assertEquals(0, VisualEffectService.activeCount(this.level));
 
         SegmentedVisualEffectService.stop(this.level, handle);
-        assertEquals(0, VisualEffectService.activeCount(this.level));
+        assertEquals(0, SegmentedVisualEffectService.activeSegmentCount(this.level));
+    }
+
+    @Test
+    void resumeIncludesTheCurrentBaseAndMarksTracking() {
+        SegmentedVisualEffectHandle handle = SegmentedVisualEffectService.start(this.level, spec(2, 2, 200));
+        EffectTransform moved = new EffectTransform(
+            new EffectPoint(10.0, 70.0, -10.0), 45.0F, 12.0F, 3.0F
+        );
+        SegmentedVisualEffectService.update(this.level, handle, moved);
+        ServerPlayer player = player(new Vec3(10.0, 70.0, -10.0));
+        when(this.level.players()).thenReturn(List.of(player));
+        this.gameTime = 50L;
+
+        List<StartSegmentedVisualEffectPayload> payloads =
+            SegmentedVisualEffectService.resumePayloads(this.level, player);
+
+        assertEquals(1, payloads.size());
+        StartSegmentedVisualEffectPayload payload = payloads.getFirst();
+        assertEquals(10.0, payload.x());
+        assertEquals(70.0, payload.y());
+        assertEquals(-10.0, payload.z());
+        assertEquals(45.0F, payload.yaw());
+        assertEquals(12.0F, payload.pitch());
+        assertEquals(3.0F, payload.roll());
+        assertEquals(50L, payload.serverGameTime());
+        assertEquals(4, payload.segmentCount());
     }
 
     private static SegmentedVisualEffectSpec spec(int columns, int rows, int durationTicks) {
@@ -140,6 +206,20 @@ class SegmentedVisualEffectServiceTest {
             rows,
             columns * rows > 1 ? 8.0 : 0.0,
             durationTicks,
+            42L,
+            EffectAudience.dimensionWide()
+        );
+    }
+
+    private static VisualEffectSpec visualSpec() {
+        return new VisualEffectSpec(
+            EFFECT_ID,
+            new Vec3(0.0, 64.0, 0.0),
+            0.0F,
+            0.0F,
+            0.0F,
+            1.0F,
+            200,
             42L,
             EffectAudience.dimensionWide()
         );
@@ -172,5 +252,16 @@ class SegmentedVisualEffectServiceTest {
             EffectAudience.dimensionWide(),
             audio
         );
+    }
+
+    private ServerPlayer player(Vec3 position) {
+        ServerPlayer player = mock(ServerPlayer.class);
+        when(player.getUUID()).thenReturn(UUID.fromString("00000000-0000-0000-0000-000000000002"));
+        when(player.level()).thenReturn(this.level);
+        when(player.position()).thenReturn(position);
+        when(player.getX()).thenReturn(position.x);
+        when(player.getY()).thenReturn(position.y);
+        when(player.getZ()).thenReturn(position.z);
+        return player;
     }
 }

@@ -28,6 +28,53 @@ class ResumeEffectsPayloadTest {
     }
 
     @Test
+    void roundTripsSegmentedSnapshots() {
+        StartSegmentedVisualEffectPayload segmented = new StartSegmentedVisualEffectPayload(
+            EFFECT,
+            UUID.randomUUID(),
+            DIMENSION,
+            1.0,
+            64.0,
+            -3.0,
+            15.0F,
+            20.0F,
+            25.0F,
+            4.0F,
+            4,
+            4,
+            8.0,
+            200,
+            40L,
+            55L,
+            99L
+        );
+        ResumeEffectsPayload payload = new ResumeEffectsPayload(
+            DIMENSION, List.of(start(0L, 200)), List.of(segmented)
+        );
+
+        ResumeEffectsPayload decoded = roundTrip(payload);
+
+        assertEquals(payload, decoded);
+        assertEquals(1, decoded.segmentedEffects().size());
+        assertEquals(4, decoded.segmentedEffects().getFirst().columns());
+        assertEquals(55L, decoded.segmentedEffects().getFirst().serverGameTime());
+    }
+
+    @Test
+    void rejectsSegmentedEntriesFromAnotherDimension() {
+        StartSegmentedVisualEffectPayload entry = new StartSegmentedVisualEffectPayload(
+            EFFECT,
+            UUID.randomUUID(),
+            ResourceLocation.fromNamespaceAndPath("minecraft", "the_nether"),
+            0.0, 64.0, 0.0, 0.0F, 0.0F, 0.0F, 1.0F,
+            1, 1, 0.0, 100, 0L, 0L, 1L
+        );
+
+        assertThrows(IllegalArgumentException.class,
+            () -> new ResumeEffectsPayload(DIMENSION, List.of(), List.of(entry)));
+    }
+
+    @Test
     void rejectsEntriesFromAnotherDimension() {
         StartVisualEffectPayload entry = new StartVisualEffectPayload(
             EFFECT,

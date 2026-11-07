@@ -8,8 +8,9 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * Server-authored parameters for a segmented, giant-scale world effect. The spec is only a layout: every segment is a
- * normal {@link VisualEffectSpec} subject to the existing scale, audience, duration, and capacity ceilings.
+ * Server-authored parameters for a segmented, giant-scale world effect. The spec is only a layout: cell placement,
+ * identity, and seeds are derived from it, and the coordinator delivers the whole grid in one aggregated lifecycle.
+ * Segmented cells use the dedicated segment budget instead of standalone visual slots.
  *
  * <p>Segments are placed on a horizontal {@code columns x rows} grid centered on {@code center}. The grid is rotated
  * by {@code yaw}; pitch and roll are inherited by every segment but do not tilt the grid.
@@ -99,12 +100,7 @@ public record SegmentedVisualEffectSpec(
     /** Deterministic per-segment seed derived from the root seed and the segment cell. */
     public long segmentSeed(int column, int row) {
         requireCell(column, row);
-        long value = this.seed
-            + 0x9E3779B97F4A7C15L * (column + 1L)
-            + 0xC2B2AE3D27D4EB4FL * (row + 1L);
-        value = (value ^ (value >>> 30)) * 0xBF58476D1CE4E5B9L;
-        value = (value ^ (value >>> 27)) * 0x94D049BB133111EBL;
-        return value ^ (value >>> 31);
+        return SegmentIds.segmentSeed(this.seed, column, row);
     }
 
     public int segmentCount() {

@@ -7,7 +7,9 @@ import mafisher.quasar.effect.audio.EffectAudioPlan;
 import mafisher.quasar.effect.audio.EffectAudioService;
 import mafisher.quasar.effect.network.EffectAudioPlanPayload;
 import mafisher.quasar.effect.network.ResumeEffectsPayload;
+import mafisher.quasar.effect.network.StartSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
+import mafisher.quasar.effect.scale.SegmentedVisualEffectService;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -70,9 +72,11 @@ public final class EffectPersistenceEvents {
     private static void sendResume(ServerPlayer player) {
         ServerLevel level = player.serverLevel();
         List<StartVisualEffectPayload> effects = VisualEffectService.resumePayloads(level, player);
+        List<StartSegmentedVisualEffectPayload> segmentedEffects =
+            SegmentedVisualEffectService.resumePayloads(level, player);
         PacketDistributor.sendToPlayer(
             player,
-            new ResumeEffectsPayload(level.dimension().location(), effects)
+            new ResumeEffectsPayload(level.dimension().location(), effects, segmentedEffects)
         );
         for (EffectAudioPlan plan : EffectAudioService.resumePlans(level, player)) {
             PacketDistributor.sendToPlayer(player, new EffectAudioPlanPayload(plan, level.getGameTime()));

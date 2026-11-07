@@ -15,7 +15,7 @@ public final class EffectNetwork {
 
     @SubscribeEvent
     public static void registerPayloads(RegisterPayloadHandlersEvent event) {
-        var registrar = event.registrar("7");
+        var registrar = event.registrar("8");
         registrar.playToClient(ResumeEffectsPayload.TYPE, ResumeEffectsPayload.STREAM_CODEC,
             (payload, context) -> {
                 if (FMLEnvironment.dist == Dist.CLIENT) {
@@ -40,10 +40,22 @@ public final class EffectNetwork {
                     context.enqueueWork(() -> ClientEffectRuntime.update(payload));
                 }
             });
+        registrar.playToClient(StartSegmentedVisualEffectPayload.TYPE,
+            StartSegmentedVisualEffectPayload.STREAM_CODEC, (payload, context) -> {
+                if (FMLEnvironment.dist == Dist.CLIENT) {
+                    context.enqueueWork(() -> ClientEffectRuntime.startSegmented(payload));
+                }
+            });
         registrar.playToClient(UpdateSegmentedVisualEffectPayload.TYPE,
             UpdateSegmentedVisualEffectPayload.STREAM_CODEC, (payload, context) -> {
                 if (FMLEnvironment.dist == Dist.CLIENT) {
                     context.enqueueWork(() -> ClientEffectRuntime.updateSegmented(payload));
+                }
+            });
+        registrar.playToClient(StopSegmentedVisualEffectPayload.TYPE,
+            StopSegmentedVisualEffectPayload.STREAM_CODEC, (payload, context) -> {
+                if (FMLEnvironment.dist == Dist.CLIENT) {
+                    context.enqueueWork(() -> ClientEffectRuntime.stopSegmented(payload));
                 }
             });
         registrar.playToClient(StopVisualEffectPayload.TYPE, StopVisualEffectPayload.STREAM_CODEC,

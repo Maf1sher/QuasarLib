@@ -172,13 +172,14 @@ class CinematicEffectServiceTest {
             .segmented("field", 0, segmentedSpec(20))
             .build());
 
-        assertEquals(4, VisualEffectService.activeCount(this.level));
+        assertEquals(4, SegmentedVisualEffectService.activeSegmentCount(this.level));
+        assertEquals(0, VisualEffectService.activeCount(this.level));
 
         this.gameTime = 20;
         CinematicEffectService.tick(this.level);
 
         assertEquals(0, CinematicEffectService.activeCount(this.level));
-        assertEquals(0, VisualEffectService.activeCount(this.level));
+        assertEquals(0, SegmentedVisualEffectService.activeSegmentCount(this.level));
     }
 
     @Test
@@ -208,17 +209,33 @@ class CinematicEffectServiceTest {
     }
 
     @Test
-    void failedSegmentedCueRollsBackTheSession() {
+    void segmentedCueDoesNotConsumeTheStandaloneCap() {
         for (int index = 0; index < VisualEffectService.MAX_ACTIVE_EFFECTS_PER_LEVEL; index++) {
             VisualEffectService.start(this.level, visualSpec(100));
+        }
+
+        CinematicEffectService.start(this.level,
+            timelineBuilder(100).segmented("field", 0, segmentedSpec(100)).build());
+
+        assertEquals(1, CinematicEffectService.activeCount(this.level));
+        assertEquals(1, SegmentedVisualEffectService.activeCount(this.level));
+        assertEquals(VisualEffectService.MAX_ACTIVE_EFFECTS_PER_LEVEL,
+            VisualEffectService.activeCount(this.level));
+    }
+
+    @Test
+    void failedSegmentedCueRollsBackWhenTheSegmentBudgetIsFull() {
+        int fullGrids = SegmentedVisualEffectService.MAX_ACTIVE_SEGMENTS_PER_LEVEL / 128;
+        for (int index = 0; index < fullGrids; index++) {
+            SegmentedVisualEffectService.start(this.level, largeSegmentedSpec(100));
         }
 
         assertThrows(IllegalStateException.class, () -> CinematicEffectService.start(this.level,
             timelineBuilder(100).segmented("field", 0, segmentedSpec(100)).build()));
 
         assertEquals(0, CinematicEffectService.activeCount(this.level));
-        assertEquals(VisualEffectService.MAX_ACTIVE_EFFECTS_PER_LEVEL,
-            VisualEffectService.activeCount(this.level));
+        assertEquals(SegmentedVisualEffectService.MAX_ACTIVE_SEGMENTS_PER_LEVEL,
+            SegmentedVisualEffectService.activeSegmentCount(this.level));
     }
 
     private static CinematicTimeline.Builder timelineBuilder(int durationTicks) {
@@ -232,6 +249,11 @@ class CinematicEffectServiceTest {
 
     private static SegmentedVisualEffectSpec segmentedSpec(int durationTicks) {
         return new SegmentedVisualEffectSpec(VISUAL_ID, Vec3.ZERO, 0.0F, 0.0F, 0.0F, 2.0F, 2, 2, 2.0,
+            durationTicks, 1L, EffectAudience.nearby(32.0));
+    }
+
+    private static SegmentedVisualEffectSpec largeSegmentedSpec(int durationTicks) {
+        return new SegmentedVisualEffectSpec(VISUAL_ID, Vec3.ZERO, 0.0F, 0.0F, 0.0F, 2.0F, 16, 8, 2.0,
             durationTicks, 1L, EffectAudience.nearby(32.0));
     }
 }

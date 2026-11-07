@@ -1,0 +1,56 @@
+package mafisher.quasar.effect.scale;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+import java.util.UUID;
+import mafisher.quasar.effect.EffectAudience;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.phys.Vec3;
+import org.junit.jupiter.api.Test;
+
+class SegmentIdsTest {
+    @Test
+    void derivesStableSegmentIds() {
+        UUID coordinatorId = UUID.fromString("00000000-0000-0000-0000-000000000010");
+
+        assertEquals(SegmentIds.segmentId(coordinatorId, 5),
+            SegmentIds.segmentId(coordinatorId, 5));
+        assertNotEquals(SegmentIds.segmentId(coordinatorId, 5),
+            SegmentIds.segmentId(coordinatorId, 6));
+        assertEquals(SegmentIds.segmentId(coordinatorId, 5),
+            SegmentedVisualEffectService.segmentId(coordinatorId, 5));
+    }
+
+    @Test
+    void rejectsNegativeSegmentIndexes() {
+        assertThrows(IllegalArgumentException.class,
+            () -> SegmentIds.segmentId(UUID.randomUUID(), -1));
+    }
+
+    @Test
+    void matchesTheSpecSeedDerivation() {
+        SegmentedVisualEffectSpec spec = new SegmentedVisualEffectSpec(
+            ResourceLocation.fromNamespaceAndPath("quasar_lib", "test"),
+            new Vec3(0.0, 64.0, 0.0),
+            0.0F,
+            0.0F,
+            0.0F,
+            4.0F,
+            4,
+            4,
+            8.0,
+            200,
+            42L,
+            EffectAudience.dimensionWide()
+        );
+
+        for (int row = 0; row < spec.rows(); row++) {
+            for (int column = 0; column < spec.columns(); column++) {
+                assertEquals(SegmentIds.segmentSeed(42L, column, row),
+                    spec.segmentSeed(column, row));
+            }
+        }
+    }
+}

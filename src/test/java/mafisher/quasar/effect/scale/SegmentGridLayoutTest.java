@@ -58,6 +58,15 @@ class SegmentGridLayoutTest {
     }
 
     @Test
+    void reportsTheHalfDiagonalOfTheGrid() {
+        assertEquals(0.0, new SegmentGridLayout(1, 1, 0.0).halfDiagonal());
+        assertEquals(Math.sqrt(2.0) * 4.0,
+            new SegmentGridLayout(2, 2, 8.0).halfDiagonal(), 1.0E-9);
+        assertEquals(Math.sqrt(2.0) * 12.0,
+            new SegmentGridLayout(4, 4, 8.0).halfDiagonal(), 1.0E-9);
+    }
+
+    @Test
     void rejectsInvalidLayouts() {
         assertThrows(IllegalArgumentException.class, () -> new SegmentGridLayout(0, 1, 4.0));
         assertThrows(IllegalArgumentException.class, () -> new SegmentGridLayout(1, 0, 4.0));

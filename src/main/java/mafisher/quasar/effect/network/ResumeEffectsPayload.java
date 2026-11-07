@@ -3,6 +3,7 @@ package mafisher.quasar.effect.network;
 import io.netty.buffer.ByteBuf;
 import java.util.List;
 import java.util.Objects;
+import mafisher.quasar.effect.scale.SegmentedEffectLimits;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
@@ -13,9 +14,11 @@ import net.minecraft.resources.ResourceLocation;
  */
 public record ResumeEffectsPayload(
     ResourceLocation dimensionId,
-    List<StartVisualEffectPayload> effects
+    List<StartVisualEffectPayload> effects,
+    List<StartSegmentedVisualEffectPayload> segmentedEffects
 ) implements CustomPacketPayload {
     public static final int MAX_EFFECTS = 128;
+    public static final int MAX_SEGMENTED_EFFECTS = SegmentedEffectLimits.MAX_SEGMENTS_PER_LEVEL;
     public static final Type<ResumeEffectsPayload> TYPE = new Type<>(
         ResourceLocation.fromNamespaceAndPath("quasar_lib", "resume_effects")
     );
@@ -28,16 +31,33 @@ public record ResumeEffectsPayload(
     public ResumeEffectsPayload {
         Objects.requireNonNull(dimensionId, "dimensionId");
         Objects.requireNonNull(effects, "effects");
+        Objects.requireNonNull(segmentedEffects, "segmentedEffects");
         if (effects.size() > MAX_EFFECTS) {
             throw new IllegalArgumentException("A resume payload supports at most " + MAX_EFFECTS + " effects");
         }
+        if (segmentedEffects.size() > MAX_SEGMENTED_EFFECTS) {
+            throw new IllegalArgumentException(
+                "A resume payload supports at most " + MAX_SEGMENTED_EFFECTS + " segmented effects"
+            );
+        }
         effects = List.copyOf(effects);
+        segmentedEffects = List.copyOf(segmentedEffects);
         for (StartVisualEffectPayload effect : effects) {
             Objects.requireNonNull(effect, "effect");
             if (!effect.dimensionId().equals(dimensionId)) {
                 throw new IllegalArgumentException("Resume entries must match the payload dimension");
             }
         }
+        for (StartSegmentedVisualEffectPayload effect : segmentedEffects) {
+            Objects.requireNonNull(effect, "segmented effect");
+            if (!effect.dimensionId().equals(dimensionId)) {
+                throw new IllegalArgumentException("Segmented resume entries must match the payload dimension");
+            }
+        }
+    }
+
+    public ResumeEffectsPayload(ResourceLocation dimensionId, List<StartVisualEffectPayload> effects) {
+        this(dimensionId, effects, List.of());
     }
 
     @Override
@@ -51,6 +71,10 @@ public record ResumeEffectsPayload(
         for (StartVisualEffectPayload effect : payload.effects) {
             StartVisualEffectPayload.encode(buffer, effect);
         }
+        buffer.writeInt(payload.segmentedEffects.size());
+        for (StartSegmentedVisualEffectPayload effect : payload.segmentedEffects) {
+            StartSegmentedVisualEffectPayload.encode(buffer, effect);
+        }
     }
 
     private static ResumeEffectsPayload decode(ByteBuf buffer) {
@@ -63,6 +87,15 @@ public record ResumeEffectsPayload(
         for (int index = 0; index < size; index++) {
             effects.add(StartVisualEffectPayload.decode(buffer));
         }
-        return new ResumeEffectsPayload(dimensionId, effects);
+        int segmentedSize = buffer.readInt();
+        if (segmentedSize < 0 || segmentedSize > MAX_SEGMENTED_EFFECTS) {
+            throw new IllegalArgumentException("Invalid segmented resume payload size: " + segmentedSize);
+        }
+        java.util.ArrayList<StartSegmentedVisualEffectPayload> segmentedEffects =
+            new java.util.ArrayList<>(segmentedSize);
+        for (int index = 0; index < segmentedSize; index++) {
+            segmentedEffects.add(StartSegmentedVisualEffectPayload.decode(buffer));
+        }
+        return new ResumeEffectsPayload(dimensionId, effects, segmentedEffects);
     }
 }

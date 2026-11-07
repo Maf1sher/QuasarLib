@@ -1,5 +1,7 @@
 package mafisher.quasar.client.effect;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -35,9 +37,7 @@ final class ClientSegmentGroup {
         this.currentBase = initialBase;
         this.previousBaseGameTime = initialGameTime;
         this.currentBaseGameTime = initialGameTime;
-        double halfX = (layout.columns() - 1) * layout.spacing() / 2.0;
-        double halfZ = (layout.rows() - 1) * layout.spacing() / 2.0;
-        this.halfDiagonal = Math.sqrt(halfX * halfX + halfZ * halfZ);
+        this.halfDiagonal = layout.halfDiagonal();
     }
 
     /**
@@ -106,6 +106,17 @@ final class ClientSegmentGroup {
 
     boolean isEmpty() {
         return this.memberCount == 0;
+    }
+
+    /** Snapshot of every member instance ID, used when a whole coordinator is removed. */
+    List<UUID> memberIds() {
+        List<UUID> ids = new ArrayList<>(this.memberCount);
+        for (SegmentMember member : this.cells) {
+            if (member != null) {
+                ids.add(member.instanceId());
+            }
+        }
+        return ids;
     }
 
     int memberCount() {
