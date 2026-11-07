@@ -63,6 +63,18 @@ class ContentRuneCircleRendererTest {
     }
 
     @Test
+    void crossFadesReducedLevelOfDetailWithTheFullRepresentation() {
+        ContentRuneCircleRenderer renderer = new ContentRuneCircleRenderer();
+        EffectRenderContext context = context().withLod(new EffectLod(1, 0, 0.5, 128.0, 8.0));
+
+        List<EffectInstancedPass> passes = renderer.instancedPasses(context);
+
+        assertEquals(List.of("prev_outer", "prev_middle", "prev_inner", "next_outer"),
+            passes.stream().map(EffectInstancedPass::id).toList());
+        assertEquals(4, passes.stream().map(EffectInstancedPass::id).distinct().count());
+    }
+
+    @Test
     void trimsLayersByQualityTier() {
         ContentRuneCircleRenderer renderer = new ContentRuneCircleRenderer();
         EffectRenderContext context = context();

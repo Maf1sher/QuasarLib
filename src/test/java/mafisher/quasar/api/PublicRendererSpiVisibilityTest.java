@@ -1,6 +1,7 @@
 package mafisher.quasar.api;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -15,13 +16,16 @@ import mafisher.quasar.client.effect.EffectMeshes;
 import mafisher.quasar.client.effect.EffectRenderContext;
 import mafisher.quasar.client.effect.EffectRenderTypeOptions;
 import mafisher.quasar.client.effect.EffectShader;
+import mafisher.quasar.client.effect.EffectStaticMeshPass;
 import mafisher.quasar.client.effect.InstancedVisualEffectRenderer;
 import mafisher.quasar.client.effect.QuasarRenderTypes;
 import mafisher.quasar.client.effect.RegisterVisualEffectRenderersEvent;
+import mafisher.quasar.client.effect.StaticMeshVisualEffectRenderer;
 import mafisher.quasar.client.effect.VisualEffectInstance;
 import mafisher.quasar.client.effect.VisualEffectRenderer;
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
 import mafisher.quasar.effect.EffectQualityTier;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.ResourceLocation;
 import org.joml.Matrix4f;
 import org.junit.jupiter.api.Test;
@@ -136,6 +140,14 @@ class PublicRendererSpiVisibilityTest {
             .withLod(new EffectLod(2, 64.0, 8.0))
             .lod()
             .level());
+        EffectLod steady = new EffectLod(2, 64.0, 8.0);
+        assertEquals(2, steady.previousLevel());
+        assertEquals(1.0, steady.blend());
+        assertFalse(steady.isTransitioning());
+        EffectLod transition = new EffectLod(2, 1, 0.5, 64.0, 8.0);
+        assertEquals(1, transition.previousLevel());
+        assertEquals(0.5, transition.blend());
+        assertTrue(transition.isTransitioning());
     }
 
     @Test
@@ -172,5 +184,24 @@ class PublicRendererSpiVisibilityTest {
         assertEquals(1, passes.size());
         assertEquals("core", passes.getFirst().id());
         assertTrue(passes.getFirst().localTransform().isFinite());
+    }
+
+    @Test
+    void exposesStaticMeshPasses() {
+        ResourceLocation texture = ResourceLocation.fromNamespaceAndPath("test", "textures/effect/cached.png");
+        EffectStaticMeshPass pass = new EffectStaticMeshPass("core", QuasarRenderTypes.worldVisual(texture),
+            EffectMeshes.horizontalQuad(), new Matrix4f().scale(2.0F), 0.0F, 0.0F, 0.0F, 1.0F);
+
+        assertEquals(EffectStaticMeshPass.FULLBRIGHT_LIGHT, pass.light());
+        assertEquals(OverlayTexture.NO_OVERLAY, pass.overlay());
+        assertTrue(pass.localTransform().isFinite());
+
+        StaticMeshVisualEffectRenderer renderer = new StaticMeshVisualEffectRenderer() {
+            @Override
+            public List<EffectStaticMeshPass> staticMeshPasses(EffectRenderContext ignored) {
+                return List.of(pass);
+            }
+        };
+        assertEquals(List.of(pass), renderer.staticMeshPasses(null));
     }
 }

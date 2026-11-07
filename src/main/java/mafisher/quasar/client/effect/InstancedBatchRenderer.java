@@ -4,6 +4,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import java.nio.FloatBuffer;
 import java.util.List;
+import java.util.Objects;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.ShaderInstance;
@@ -30,12 +31,16 @@ final class InstancedBatchRenderer implements AutoCloseable {
     private static final int UNIFORM_RESERVE = 64;
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
 
-    private final GpuMeshCache meshes = new GpuMeshCache();
+    private final GpuMeshCache meshes;
     private int maxInstancesPerDraw = -1;
     private int bufferCapacity = -1;
     private FloatBuffer matrices;
     private FloatBuffer colors;
     private FloatBuffer data;
+
+    InstancedBatchRenderer(GpuMeshCache meshes) {
+        this.meshes = Objects.requireNonNull(meshes, "meshes");
+    }
 
     int maxInstancesPerDraw() {
         if (this.maxInstancesPerDraw < 0) {
@@ -159,7 +164,6 @@ final class InstancedBatchRenderer implements AutoCloseable {
 
     @Override
     public void close() {
-        this.meshes.close();
         this.freeBuffers();
     }
 }

@@ -47,11 +47,14 @@ public final class ClientVisualEffectManager {
     private final Map<UUID, VisualEffectInstance> activeEffects = new LinkedHashMap<>();
     private final Map<UUID, ClientSegmentGroup> segmentedGroups = new LinkedHashMap<>();
     private final Map<UUID, Double> instanceSpatialRadii = new LinkedHashMap<>();
+    private final Map<UUID, EffectLodTracker.State> lodStates = new LinkedHashMap<>();
     private final ClientEffectSpatialIndex spatialIndex = new ClientEffectSpatialIndex();
     private final Set<ClientEffectSpatialIndex.Key> unindexedInstances = new LinkedHashSet<>();
     private final Set<ClientEffectSpatialIndex.Key> unindexedGroups = new LinkedHashSet<>();
     private final VisualEffectRendererRegistry rendererRegistry;
-    private final InstancedBatchRenderer instancedRenderer = new InstancedBatchRenderer();
+    private final GpuMeshCache meshCache = new GpuMeshCache();
+    private final InstancedBatchRenderer instancedRenderer = new InstancedBatchRenderer(this.meshCache);
+    private final CachedMeshRenderer cachedMeshRenderer = new CachedMeshRenderer(this.meshCache);
     private ClientLevel currentLevel;
 
     ClientVisualEffectManager(VisualEffectRendererRegistry rendererRegistry) {
@@ -229,13 +232,32 @@ public final class ClientVisualEffectManager {
             MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
             Set<RenderType> usedRenderTypes = new LinkedHashSet<>();
             InstancedBatchBuilder instancedBatches = new InstancedBatchBuilder(
-                this.instancedRenderer.maxInstancesPerDraw()
+                this.instancedRenderer.maxInstancesPerDraw(),
+                cameraPosition.x, cameraPosition.y, cameraPosition.z
             );
+            Matrix4f viewMatrix = new Matrix4f(RenderSystem.getModelViewMatrix());
             poseStack.pushPose();
             poseStack.translate(-cameraPosition.x, -cameraPosition.y, -cameraPosition.z);
             Matrix4f baseView = new Matrix4f(RenderSystem.getModelViewMatrix()).mul(poseStack.last().pose());
             try {
                 this.forEachVisibleEffect(event, (effect, context, renderer) -> {
+                    if (renderer instanceof StaticMeshVisualEffectRenderer staticRenderer) {
+                        List<EffectStaticMeshPass> staticPasses = staticRenderer.staticMeshPasses(context);
+                        if (!staticPasses.isEmpty()) {
+                            EffectTransform staticTransform = context.transform();
+                            poseStack.pushPose();
+                            try {
+                                poseStack.translate(staticTransform.position().x(),
+                                    staticTransform.position().y(), staticTransform.position().z());
+                                EffectRenderTransform.applyRotation(poseStack, staticTransform.yaw(),
+                                    staticTransform.pitch(), staticTransform.roll());
+                                this.cachedMeshRenderer.draw(staticPasses, poseStack, viewMatrix,
+                                    RenderSystem.getProjectionMatrix());
+                            } finally {
+                                poseStack.popPose();
+                            }
+                        }
+                    }
                     if (renderer instanceof InstancedVisualEffectRenderer instanced) {
                         List<EffectInstancedPass> instancedPasses = instanced.instancedPasses(context);
                         if (!instancedPasses.isEmpty()) {
@@ -421,7 +443,8 @@ public final class ClientVisualEffectManager {
         if (!this.isVisible(renderer, context, event, radius)) {
             return;
         }
-        consumer.accept(effect, context.withLod(selectLod(renderer, event, context, radius, quality)), renderer);
+        consumer.accept(effect, context.withLod(selectLod(instanceId, renderer, event, context, radius, quality,
+            gameTime, partialTick)), renderer);
     }
 
     private void visitMember(
@@ -443,26 +466,35 @@ public final class ClientVisualEffectManager {
         if (!this.isVisible(renderer, context, event, member.spatialRadius())) {
             return;
         }
-        consumer.accept(effect, context.withLod(selectLod(renderer, event, context, member.spatialRadius(),
-            quality)), renderer);
+        consumer.accept(effect, context.withLod(selectLod(member.instanceId(), renderer, event, context,
+            member.spatialRadius(), quality, gameTime, partialTick)), renderer);
     }
 
     /**
      * Selects the LOD for one visible instance or segment cell. Selection uses the interpolated transform and the
-     * renderer's lifetime-conservative spatial radius, so it never needs a per-frame renderer callback.
+     * renderer's lifetime-conservative spatial radius, so it never needs a per-frame renderer callback. A small
+     * per-instance state adds threshold hysteresis and a transition blend.
      */
-    private static EffectLod selectLod(
+    private EffectLod selectLod(
+        UUID key,
         VisualEffectRenderer renderer,
         net.neoforged.neoforge.client.event.RenderLevelStageEvent event,
         EffectRenderContext context,
         double spatialRadius,
-        EffectQualityTier quality
+        EffectQualityTier quality,
+        long gameTime,
+        float partialTick
     ) {
         Vec3 cameraPosition = event.getCamera().getPosition();
         EffectPoint position = context.transform().position();
-        return EffectLodSelection.select(renderer.lodProfile(), cameraPosition.x, cameraPosition.y,
+        EffectLodProfile profile = renderer.lodProfile();
+        EffectLod selected = EffectLodSelection.select(profile, cameraPosition.x, cameraPosition.y,
             cameraPosition.z, position.x(), position.y(), position.z(), spatialRadius,
             quality.lodDistanceMultiplier());
+        EffectLodTracker.State state = this.lodStates.computeIfAbsent(key,
+            ignored -> new EffectLodTracker.State());
+        return EffectLodTracker.update(state, profile, selected.cameraDistance(),
+            selected.gapInRadii(), gameTime + (double)partialTick);
     }
 
     private boolean isVisible(
@@ -623,6 +655,7 @@ public final class ClientVisualEffectManager {
             return;
         }
         this.instanceSpatialRadii.remove(instanceId);
+        this.lodStates.remove(instanceId);
         this.removeIndexEntry(ClientEffectSpatialIndex.Key.instance(instanceId));
 
         SegmentLink link = removed.payload().segmentLink();
@@ -652,6 +685,7 @@ public final class ClientVisualEffectManager {
         for (UUID instanceId : group.memberIds()) {
             this.activeEffects.remove(instanceId);
             this.instanceSpatialRadii.remove(instanceId);
+            this.lodStates.remove(instanceId);
             this.removeIndexEntry(ClientEffectSpatialIndex.Key.instance(instanceId));
         }
     }
@@ -713,10 +747,12 @@ public final class ClientVisualEffectManager {
         this.activeEffects.clear();
         this.segmentedGroups.clear();
         this.instanceSpatialRadii.clear();
+        this.lodStates.clear();
         this.spatialIndex.clear();
         this.unindexedInstances.clear();
         this.unindexedGroups.clear();
         this.instancedRenderer.close();
+        this.meshCache.close();
     }
 
     @FunctionalInterface

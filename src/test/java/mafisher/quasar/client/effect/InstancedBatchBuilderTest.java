@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.List;
 import java.util.UUID;
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.resources.ResourceLocation;
 import org.joml.Matrix4f;
@@ -17,6 +18,12 @@ class InstancedBatchBuilderTest {
     private static final ResourceLocation DIMENSION = ResourceLocation.fromNamespaceAndPath("minecraft", "overworld");
     private static final RenderType RENDER_TYPE = QuasarRenderTypes.instancedWorldVisual(
         ResourceLocation.fromNamespaceAndPath("test", "textures/effect/instanced.png")
+    );
+    private static final RenderType UNSORTED_RENDER_TYPE = QuasarRenderTypes.worldVisual(
+        EffectShader.create(ResourceLocation.fromNamespaceAndPath("test", "shader/unsorted"),
+            DefaultVertexFormat.BLOCK),
+        ResourceLocation.fromNamespaceAndPath("test", "textures/effect/unsorted.png"),
+        EffectRenderTypeOptions.WORLD_DEPTH_WRITING
     );
 
     @Test
@@ -76,8 +83,53 @@ class InstancedBatchBuilderTest {
         assertThrows(IllegalArgumentException.class, () -> new InstancedBatchBuilder(0));
     }
 
+    @Test
+    void sortsTranslucentBatchesBackToFrontFromTheCamera() {
+        InstancedBatchBuilder builder = new InstancedBatchBuilder(8);
+        builder.add(context(1.0, 0.0, 0.0), List.of(pass("outer")));
+        builder.add(context(5.0, 0.0, 0.0), List.of(pass("outer")));
+        builder.add(context(3.0, 0.0, 0.0), List.of(pass("outer")));
+
+        List<InstancedBatchBuilder.Instance> instances = builder.draws().getFirst().instances();
+        assertEquals(5.0, instances.get(0).model().m30());
+        assertEquals(3.0, instances.get(1).model().m30());
+        assertEquals(1.0, instances.get(2).model().m30());
+    }
+
+    @Test
+    void chunkSplittingKeepsBackToFrontOrder() {
+        InstancedBatchBuilder builder = new InstancedBatchBuilder(2);
+        for (int index = 1; index <= 4; index++) {
+            builder.add(context(index, 0.0, 0.0), List.of(pass("outer")));
+        }
+
+        List<InstancedBatchBuilder.InstancedDraw> draws = builder.draws();
+        assertEquals(2, draws.size());
+        assertEquals(4.0, draws.get(0).instances().get(0).model().m30());
+        assertEquals(3.0, draws.get(0).instances().get(1).model().m30());
+        assertEquals(2.0, draws.get(1).instances().get(0).model().m30());
+        assertEquals(1.0, draws.get(1).instances().get(1).model().m30());
+    }
+
+    @Test
+    void keepsUnsortedBatchesInInsertionOrder() {
+        InstancedBatchBuilder builder = new InstancedBatchBuilder(8);
+        builder.add(context(1.0, 0.0, 0.0), List.of(pass("opaque", UNSORTED_RENDER_TYPE)));
+        builder.add(context(5.0, 0.0, 0.0), List.of(pass("opaque", UNSORTED_RENDER_TYPE)));
+        builder.add(context(3.0, 0.0, 0.0), List.of(pass("opaque", UNSORTED_RENDER_TYPE)));
+
+        List<InstancedBatchBuilder.Instance> instances = builder.draws().getFirst().instances();
+        assertEquals(1.0, instances.get(0).model().m30());
+        assertEquals(5.0, instances.get(1).model().m30());
+        assertEquals(3.0, instances.get(2).model().m30());
+    }
+
     private static EffectInstancedPass pass(String id) {
-        return new EffectInstancedPass(id, RENDER_TYPE, EffectMeshes.horizontalQuad(), new Matrix4f(),
+        return pass(id, RENDER_TYPE);
+    }
+
+    private static EffectInstancedPass pass(String id, RenderType renderType) {
+        return new EffectInstancedPass(id, renderType, EffectMeshes.horizontalQuad(), new Matrix4f(),
             1.0F, 1.0F, 1.0F, 1.0F, 0.5F, 0.25F);
     }
 

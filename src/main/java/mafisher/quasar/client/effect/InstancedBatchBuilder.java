@@ -1,6 +1,7 @@
 package mafisher.quasar.client.effect;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -14,16 +15,36 @@ import org.joml.Matrix4f;
 /**
  * Groups instanced passes across visible effects and segment cells and splits them into bounded GPU draws. This class
  * is pure: matrix composition and batching are covered by headless tests, while the renderer owns GL resources.
+ *
+ * <p>Batches whose render type sorts on upload are ordered back to front from the camera, so translucent instances
+ * blend in the expected order even though an instanced draw cannot use {@code MultiBufferSource} sorting. Opaque and
+ * unsorted types keep insertion order.</p>
  */
 final class InstancedBatchBuilder {
+    private static final Comparator<Instance> BACK_TO_FRONT =
+        Comparator.comparingDouble(Instance::cameraDistanceSquared).reversed();
+
     private final int maxInstancesPerDraw;
+    private final double cameraX;
+    private final double cameraY;
+    private final double cameraZ;
     private final Map<BatchKey, Batch> batches = new LinkedHashMap<>();
 
     InstancedBatchBuilder(int maxInstancesPerDraw) {
+        this(maxInstancesPerDraw, 0.0, 0.0, 0.0);
+    }
+
+    InstancedBatchBuilder(int maxInstancesPerDraw, double cameraX, double cameraY, double cameraZ) {
         if (maxInstancesPerDraw < 1) {
             throw new IllegalArgumentException("An instanced draw needs at least one slot");
         }
+        if (!Double.isFinite(cameraX) || !Double.isFinite(cameraY) || !Double.isFinite(cameraZ)) {
+            throw new IllegalArgumentException("Instanced batch camera position must be finite");
+        }
         this.maxInstancesPerDraw = maxInstancesPerDraw;
+        this.cameraX = cameraX;
+        this.cameraY = cameraY;
+        this.cameraZ = cameraZ;
     }
 
     int maxInstancesPerDraw() {
@@ -46,7 +67,8 @@ final class InstancedBatchBuilder {
                     + "' for effect " + context.effect().effectId());
             }
             BatchKey key = new BatchKey(pass.id(), pass.renderType(), pass.mesh());
-            this.batches.computeIfAbsent(key, Batch::new).add(context.transform(), pass);
+            this.batches.computeIfAbsent(key, Batch::new).add(context.transform(), pass,
+                this.cameraX, this.cameraY, this.cameraZ);
         }
     }
 
@@ -55,6 +77,10 @@ final class InstancedBatchBuilder {
         List<InstancedDraw> draws = new ArrayList<>();
         for (Batch batch : this.batches.values()) {
             List<Instance> instances = batch.instances;
+            if (batch.key.renderType().sortOnUpload() && instances.size() > 1) {
+                instances = new ArrayList<>(instances);
+                instances.sort(BACK_TO_FRONT);
+            }
             for (int start = 0; start < instances.size(); start += this.maxInstancesPerDraw) {
                 int end = Math.min(start + this.maxInstancesPerDraw, instances.size());
                 draws.add(new InstancedDraw(batch.key, List.copyOf(instances.subList(start, end))));
@@ -94,11 +120,15 @@ final class InstancedBatchBuilder {
         float blue,
         float alpha,
         float effectDataX,
-        float effectDataY
+        float effectDataY,
+        double cameraDistanceSquared
     ) {
         Instance {
             Objects.requireNonNull(model, "model");
             model = new Matrix4f(model);
+            if (!Double.isFinite(cameraDistanceSquared) || cameraDistanceSquared < 0.0) {
+                throw new IllegalArgumentException("Invalid instance camera distance");
+            }
         }
     }
 
@@ -121,7 +151,11 @@ final class InstancedBatchBuilder {
             this.key = key;
         }
 
-        private void add(EffectTransform transform, EffectInstancedPass pass) {
+        private void add(EffectTransform transform, EffectInstancedPass pass, double cameraX, double cameraY,
+            double cameraZ) {
+            double dx = transform.position().x() - cameraX;
+            double dy = transform.position().y() - cameraY;
+            double dz = transform.position().z() - cameraZ;
             this.instances.add(new Instance(
                 modelMatrix(transform, pass.localTransform()),
                 pass.red(),
@@ -129,7 +163,8 @@ final class InstancedBatchBuilder {
                 pass.blue(),
                 pass.alpha(),
                 pass.effectDataX(),
-                pass.effectDataY()
+                pass.effectDataY(),
+                dx * dx + dy * dy + dz * dz
             ));
         }
     }

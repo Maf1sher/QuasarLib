@@ -15,9 +15,10 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.phys.AABB;
+import org.joml.Matrix4f;
 
 /** Debug renderer for a cinematic, three-dimensional black hole and its plasma flows. */
-final class BlackHoleRenderer implements ScreenEffectRenderer {
+final class BlackHoleRenderer implements ScreenEffectRenderer, StaticMeshVisualEffectRenderer {
     private static final ResourceLocation TEXTURE = ResourceLocation.fromNamespaceAndPath(
         QuasarLib.MOD_ID, "textures/effect/rune_circle.png"
     );
@@ -29,7 +30,6 @@ final class BlackHoleRenderer implements ScreenEffectRenderer {
     private static final float CORE_RADIUS_FACTOR = 0.38F;
     private static final BlackHoleScreenSettings SCREEN_SETTINGS = BlackHoleScreenSettings.CINEMATIC_DEFAULT;
     private static final List<EffectRenderPass> RENDER_PASSES = List.of(
-        new EffectRenderPass(CORE_PASS, CORE_RENDER_TYPE),
         new EffectRenderPass(DISK_PASS, DISK_RENDER_TYPE)
     );
     private static final EffectLodProfile LOD_PROFILE = EffectLodProfile.of(2.0, 8.0);
@@ -37,6 +37,20 @@ final class BlackHoleRenderer implements ScreenEffectRenderer {
     @Override
     public List<EffectRenderPass> renderPasses(EffectRenderContext context) {
         return RENDER_PASSES;
+    }
+
+    @Override
+    public List<EffectStaticMeshPass> staticMeshPasses(EffectRenderContext context) {
+        float scale = animatedScale(context);
+        if (scale <= 0.0F) {
+            return List.of();
+        }
+        int sphereLod = sphereLod(context);
+        float radius = scale * CORE_RADIUS_FACTOR;
+        Matrix4f localTransform = new Matrix4f().scale(radius, radius, radius);
+        return List.of(new EffectStaticMeshPass(CORE_PASS, CORE_RENDER_TYPE,
+            BlackHoleGeometry.sphere(sphereLod), localTransform, 0.0F, 0.0F, 0.0F, 1.0F,
+            OverlayTexture.NO_OVERLAY, EffectStaticMeshPass.FULLBRIGHT_LIGHT));
     }
 
     @Override
@@ -53,19 +67,12 @@ final class BlackHoleRenderer implements ScreenEffectRenderer {
         }
 
         int shaderData = shaderData(context);
-        int sphereLod = context.lod().level();
-        if (context.quality() == EffectQualityTier.LOW) {
-            sphereLod = Math.max(sphereLod, 2);
-        } else if (context.quality() == EffectQualityTier.MEDIUM) {
-            sphereLod = Math.max(sphereLod, 1);
-        }
-        switch (pass.id()) {
-            case CORE_PASS -> renderCore(poseStack, bufferSource.getBuffer(CORE_RENDER_TYPE),
-                scale * CORE_RADIUS_FACTOR, sphereLod, shaderData);
-            case DISK_PASS -> renderDisk(poseStack, bufferSource.getBuffer(DISK_RENDER_TYPE), context,
+        if (DISK_PASS.equals(pass.id())) {
+            renderDisk(poseStack, bufferSource.getBuffer(DISK_RENDER_TYPE), context,
                 scale, EffectTimeline.fadeEnvelope(context.progress(), 0.08F, 0.12F),
                 BlackHoleLighting.emissionScale(daylightFactor(context)), shaderData);
-            default -> throw new IllegalArgumentException("Unknown black-hole render pass: " + pass.id());
+        } else {
+            throw new IllegalArgumentException("Unknown black-hole render pass: " + pass.id());
         }
     }
 
@@ -109,16 +116,14 @@ final class BlackHoleRenderer implements ScreenEffectRenderer {
             context.scale() * SCREEN_SETTINGS.lensRadiusScale(), alpha);
     }
 
-    private static void renderCore(PoseStack poseStack, VertexConsumer vertices, float radius, int lodLevel,
-        int shaderData) {
-        poseStack.pushPose();
-        try {
-            poseStack.scale(radius, radius, radius);
-            BlackHoleGeometry.sphere(lodLevel).emit(vertices, poseStack.last(), 0.0F, 0.0F, 0.0F, 1.0F,
-                shaderData, 0x00F000F0);
-        } finally {
-            poseStack.popPose();
+    private static int sphereLod(EffectRenderContext context) {
+        int sphereLod = context.lod().level();
+        if (context.quality() == EffectQualityTier.LOW) {
+            sphereLod = Math.max(sphereLod, 2);
+        } else if (context.quality() == EffectQualityTier.MEDIUM) {
+            sphereLod = Math.max(sphereLod, 1);
         }
+        return sphereLod;
     }
 
     private static void renderInfluenceMask(PoseStack poseStack, VertexConsumer vertices, float radius, float alpha) {

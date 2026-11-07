@@ -12,10 +12,15 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.ShaderInstance;
+import org.joml.Matrix4f;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** Client-owned cache of static GPU meshes used by instanced world passes. */
+/**
+ * Client-owned cache of static GPU meshes used by instanced and single-mesh world passes. Meshes are keyed by format,
+ * mode, mesh identity, baked tint, overlay, and light, because those vertex values are uploaded once.
+ */
 final class GpuMeshCache implements AutoCloseable {
     private static final int MAX_MESHES = 256;
     private static final int FULLBRIGHT_LIGHT = 0x00F000F0;
@@ -23,23 +28,30 @@ final class GpuMeshCache implements AutoCloseable {
 
     private final Map<GpuMeshKey, GpuMesh> meshes = new LinkedHashMap<>(16, 0.75F, true);
 
-    /** Returns a cached mesh or uploads it. Must run on the render thread. */
+    /** Returns a cached white, fullbright mesh or uploads it. Must run on the render thread. */
     GpuMesh get(RenderType renderType, EffectMesh mesh) {
+        return get(renderType, mesh, 1.0F, 1.0F, 1.0F, 1.0F, 0, FULLBRIGHT_LIGHT);
+    }
+
+    /** Returns a cached mesh with baked vertex tint, overlay, and light, or uploads it. */
+    GpuMesh get(RenderType renderType, EffectMesh mesh, float red, float green, float blue, float alpha,
+        int overlay, int light) {
         if (!DefaultVertexFormat.BLOCK.equals(renderType.format())
             || renderType.mode() != VertexFormat.Mode.QUADS) {
-            LOGGER.warn("Instanced pass {} requires BLOCK/QUADS; skipping", renderType);
+            LOGGER.warn("Effect mesh pass {} requires BLOCK/QUADS; skipping", renderType);
             return null;
         }
-        GpuMeshKey key = new GpuMeshKey(renderType.format(), renderType.mode(), mesh);
+        GpuMeshKey key = new GpuMeshKey(renderType.format(), renderType.mode(), mesh,
+            red, green, blue, alpha, overlay, light);
         GpuMesh existing = this.meshes.get(key);
         if (existing != null) {
             return existing;
         }
         GpuMesh created;
         try {
-            created = upload(mesh, key.format(), key.mode());
+            created = upload(mesh, key);
         } catch (RuntimeException exception) {
-            LOGGER.error("Could not upload instanced effect mesh", exception);
+            LOGGER.error("Could not upload effect mesh", exception);
             return null;
         }
         this.meshes.put(key, created);
@@ -51,12 +63,14 @@ final class GpuMeshCache implements AutoCloseable {
         return this.meshes.size();
     }
 
-    private static GpuMesh upload(EffectMesh mesh, VertexFormat format, VertexFormat.Mode mode) {
+    private static GpuMesh upload(EffectMesh mesh, GpuMeshKey key) {
+        VertexFormat format = key.format();
         int capacity = Math.max(1_024, mesh.vertexCount() * format.getVertexSize());
         ByteBufferBuilder bytes = new ByteBufferBuilder(capacity);
-        BufferBuilder builder = new BufferBuilder(bytes, mode, format);
+        BufferBuilder builder = new BufferBuilder(bytes, key.mode(), format);
         PoseStack poseStack = new PoseStack();
-        mesh.emit(builder, poseStack.last(), 1.0F, 1.0F, 1.0F, 1.0F, 0, FULLBRIGHT_LIGHT);
+        mesh.emit(builder, poseStack.last(), key.red(), key.green(), key.blue(), key.alpha(),
+            key.overlay(), key.light());
         MeshData data = builder.buildOrThrow();
         VertexBuffer buffer = new VertexBuffer(VertexBuffer.Usage.STATIC);
         try {
@@ -86,7 +100,17 @@ final class GpuMeshCache implements AutoCloseable {
         this.meshes.clear();
     }
 
-    private record GpuMeshKey(VertexFormat format, VertexFormat.Mode mode, EffectMesh mesh) {
+    private record GpuMeshKey(
+        VertexFormat format,
+        VertexFormat.Mode mode,
+        EffectMesh mesh,
+        float red,
+        float green,
+        float blue,
+        float alpha,
+        int overlay,
+        int light
+    ) {
     }
 
     static final class GpuMesh implements AutoCloseable {
@@ -114,6 +138,11 @@ final class GpuMeshCache implements AutoCloseable {
 
         void bind() {
             this.buffer.bind();
+        }
+
+        /** Draws this static mesh with the supplied matrices and the currently active shader. */
+        void drawWithShader(Matrix4f modelView, Matrix4f projection, ShaderInstance shader) {
+            this.buffer.drawWithShader(modelView, projection, shader);
         }
 
         static void unbind() {

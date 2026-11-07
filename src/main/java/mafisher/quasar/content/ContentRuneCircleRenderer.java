@@ -56,21 +56,39 @@ final class ContentRuneCircleRenderer implements ScreenEffectRenderer, Instanced
         float seedRotation = seedRotationDegrees(context.seed());
         float seedData = (Long.hashCode(context.seed()) & 0xFFFF) / 65535.0F;
 
-        List<EffectInstancedPass> passes = new ArrayList<>(layerCount(context));
-        passes.add(instancedLayer(OUTER_PASS, SETTINGS.outer(), worldScale,
+        int fullLayers = fullLayerCount(context);
+        int selectedLayers = reduced(context) ? 1 : fullLayers;
+        List<EffectInstancedPass> passes = new ArrayList<>(selectedLayers * 2);
+        if (context.lod().isTransitioning()) {
+            int previousLayers = context.lod().previousLevel() > 0 ? 1 : fullLayers;
+            if (previousLayers != selectedLayers) {
+                float blend = (float)context.lod().blend();
+                addLayers(passes, previousLayers, alpha * (1.0F - blend), worldScale, seedRotation,
+                    context, seedData, "prev_");
+                addLayers(passes, selectedLayers, alpha * blend, worldScale, seedRotation,
+                    context, seedData, "next_");
+                return List.copyOf(passes);
+            }
+        }
+        addLayers(passes, selectedLayers, alpha, worldScale, seedRotation, context, seedData, "");
+        return List.copyOf(passes);
+    }
+
+    private static void addLayers(List<EffectInstancedPass> passes, int layers, float alpha,
+        float worldScale, float seedRotation, EffectRenderContext context, float seedData, String idSuffix) {
+        passes.add(instancedLayer(idSuffix + OUTER_PASS, SETTINGS.outer(), worldScale,
             seedRotation + context.ageTicks() * SETTINGS.outer().rotationSpeed(), alpha,
             context.progress(), seedData));
-        if (layerCount(context) >= 2) {
-            passes.add(instancedLayer(MIDDLE_PASS, SETTINGS.middle(), worldScale,
+        if (layers >= 2) {
+            passes.add(instancedLayer(idSuffix + MIDDLE_PASS, SETTINGS.middle(), worldScale,
                 seedRotation + context.ageTicks() * SETTINGS.middle().rotationSpeed(), alpha,
                 context.progress(), seedData));
         }
-        if (layerCount(context) >= 3) {
-            passes.add(instancedLayer(INNER_PASS, SETTINGS.inner(), worldScale,
+        if (layers >= 3) {
+            passes.add(instancedLayer(idSuffix + INNER_PASS, SETTINGS.inner(), worldScale,
                 seedRotation + context.ageTicks() * SETTINGS.inner().rotationSpeed(), alpha,
                 context.progress(), seedData));
         }
-        return List.copyOf(passes);
     }
 
     @Override
@@ -153,7 +171,11 @@ final class ContentRuneCircleRenderer implements ScreenEffectRenderer, Instanced
     }
 
     private static int layerCount(EffectRenderContext context) {
-        if (reduced(context) || context.quality() == EffectQualityTier.LOW) {
+        return reduced(context) ? 1 : fullLayerCount(context);
+    }
+
+    private static int fullLayerCount(EffectRenderContext context) {
+        if (context.quality() == EffectQualityTier.LOW) {
             return 1;
         }
         return context.quality() == EffectQualityTier.MEDIUM ? 2 : 3;
