@@ -49,6 +49,10 @@ final class EffectRenderTypes {
         return shaderWorld(EffectShaders.BLACK_HOLE_VISUAL, texture, BLACK_HOLE_DISK_OPTIONS);
     }
 
+    static RenderType instancedWorld(ResourceLocation texture) {
+        return shaderWorld(EffectShaders.INSTANCED_VISUAL, texture, EffectRenderTypeOptions.WORLD_DEFAULT);
+    }
+
     static RenderType screenMask(ResourceLocation texture) {
         return shaderMask(EffectShaders.SCREEN_MASK, texture, EffectRenderTypeOptions.MASK_DEFAULT);
     }

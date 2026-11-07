@@ -58,6 +58,36 @@ public final class QuasarRenderTypes {
     }
 
     /**
+     * Returns the engine's instanced world render type. Use it with
+     * {@link InstancedVisualEffectRenderer} and {@link EffectInstancedPass}; the shader consumes
+     * {@code Instances[128]}, {@code InstanceColors[128]}, and {@code InstanceData[128]}.
+     *
+     * @param texture the effect texture
+     * @return an instanced world-visual render type
+     */
+    public static RenderType instancedWorldVisual(ResourceLocation texture) {
+        return EffectRenderTypes.instancedWorld(Objects.requireNonNull(texture, "texture"));
+    }
+
+    /**
+     * Returns an instanced world render type backed by a consumer shader. The shader must declare the engine instance
+     * uniforms and use the {@code BLOCK}/{@code QUADS} vertex layout.
+     *
+     * @param shader the consumer-owned instanced shader
+     * @param texture the effect texture
+     * @param options the render-state options
+     * @return an instanced shader-backed world render type
+     */
+    public static RenderType instancedWorldVisual(EffectShader shader, ResourceLocation texture,
+        EffectRenderTypeOptions options) {
+        return EffectRenderTypes.shaderWorld(
+            Objects.requireNonNull(shader, "shader"),
+            Objects.requireNonNull(texture, "texture"),
+            Objects.requireNonNull(options, "options")
+        );
+    }
+
+    /**
      * Returns a render type that writes texture coverage into the screen-effect mask target. Use it only from
      * {@link ScreenEffectRenderer#screenMaskRenderType(EffectRenderContext)} while the compositor has bound its mask
      * target; returning it from a world pass is unsupported.

@@ -14,6 +14,9 @@ final class EffectShaders {
     static final EffectShader BLACK_HOLE_VISUAL = EffectShader.create(
         id("black_hole_visual"), DefaultVertexFormat.BLOCK
     );
+    static final EffectShader INSTANCED_VISUAL = EffectShader.create(
+        id("instanced_visual"), DefaultVertexFormat.BLOCK
+    );
     static final EffectShader SCREEN_MASK = EffectShader.create(
         id("screen_mask"), DefaultVertexFormat.BLOCK
     );
@@ -33,6 +36,7 @@ final class EffectShaders {
     static void registerAll(RegisterShadersEvent event) throws IOException {
         EFFECT_VISUAL.register(event);
         BLACK_HOLE_VISUAL.register(event);
+        INSTANCED_VISUAL.register(event);
         SCREEN_MASK.register(event);
         BLACK_HOLE_SCREEN_MASK.register(event);
         SCREEN_COMPOSITE.register(event);

@@ -7,9 +7,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.UUID;
+import mafisher.quasar.client.effect.EffectInstancedPass;
 import mafisher.quasar.client.effect.EffectLod;
 import mafisher.quasar.client.effect.EffectRenderContext;
-import mafisher.quasar.client.effect.EffectRenderPass;
 import mafisher.quasar.client.effect.ScreenEffectMask;
 import mafisher.quasar.client.effect.ScreenEffectSettings;
 import mafisher.quasar.client.effect.VisualEffectInstance;
@@ -20,14 +20,16 @@ import org.junit.jupiter.api.Test;
 
 class ContentRuneCircleRendererTest {
     @Test
-    void declaresOrderedDistinctPasses() {
+    void declaresOrderedDistinctInstancedPasses() {
         ContentRuneCircleRenderer renderer = new ContentRuneCircleRenderer();
 
-        List<EffectRenderPass> passes = renderer.renderPasses(context());
+        List<EffectInstancedPass> passes = renderer.instancedPasses(context());
 
+        assertTrue(renderer.renderPasses(context()).isEmpty());
         assertEquals(3, passes.size());
-        assertEquals(3, passes.stream().map(EffectRenderPass::id).distinct().count());
-        assertTrue(passes.stream().allMatch(pass -> pass.renderType() != null));
+        assertEquals(3, passes.stream().map(EffectInstancedPass::id).distinct().count());
+        assertTrue(passes.stream().allMatch(pass -> pass.renderType() != null && pass.mesh() != null));
+        assertTrue(passes.stream().allMatch(pass -> pass.localTransform().isFinite()));
     }
 
     @Test
@@ -49,9 +51,9 @@ class ContentRuneCircleRendererTest {
         EffectRenderContext full = context();
         EffectRenderContext reduced = full.withLod(new EffectLod(1, 128.0, 8.0));
 
-        assertEquals(3, renderer.renderPasses(full).size());
+        assertEquals(3, renderer.instancedPasses(full).size());
         assertEquals(List.of("outer"),
-            renderer.renderPasses(reduced).stream().map(EffectRenderPass::id).toList());
+            renderer.instancedPasses(reduced).stream().map(EffectInstancedPass::id).toList());
     }
 
     @Test

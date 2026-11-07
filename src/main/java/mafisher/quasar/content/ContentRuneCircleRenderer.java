@@ -3,29 +3,33 @@ package mafisher.quasar.content;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
+import java.util.ArrayList;
+import java.util.List;
+import mafisher.quasar.client.effect.EffectInstancedPass;
 import mafisher.quasar.client.effect.EffectLodProfile;
 import mafisher.quasar.client.effect.EffectMeshes;
 import mafisher.quasar.client.effect.EffectRenderContext;
 import mafisher.quasar.client.effect.EffectRenderPass;
 import mafisher.quasar.client.effect.EffectRenderTypeOptions;
+import mafisher.quasar.client.effect.InstancedVisualEffectRenderer;
 import mafisher.quasar.client.effect.QuasarRenderTypes;
 import mafisher.quasar.client.effect.ScreenEffectMask;
 import mafisher.quasar.client.effect.ScreenEffectRenderer;
 import mafisher.quasar.client.effect.ScreenEffectSettings;
 import mafisher.quasar.effect.EffectTimeline;
-import java.util.List;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.AABB;
+import org.joml.Matrix4f;
 
 /** Content-owned rune circle, custom shaders, and masked screen glow. */
-final class ContentRuneCircleRenderer implements ScreenEffectRenderer {
+final class ContentRuneCircleRenderer implements ScreenEffectRenderer, InstancedVisualEffectRenderer {
     private static final ResourceLocation TEXTURE = ResourceLocation.fromNamespaceAndPath(
         ContentBootstrap.NAMESPACE, "textures/effect/rune_circle.png"
     );
-    private static final RenderType RENDER_TYPE = QuasarRenderTypes.worldVisual(
+    private static final RenderType RENDER_TYPE = QuasarRenderTypes.instancedWorldVisual(
         ContentShaders.RUNE_CIRCLE, TEXTURE, EffectRenderTypeOptions.WORLD_DEFAULT
     );
     private static final RenderType SCREEN_MASK_RENDER_TYPE = QuasarRenderTypes.screenEffectMask(
@@ -36,49 +40,39 @@ final class ContentRuneCircleRenderer implements ScreenEffectRenderer {
     private static final String OUTER_PASS = "outer";
     private static final String MIDDLE_PASS = "middle";
     private static final String INNER_PASS = "inner";
-    private static final List<EffectRenderPass> RENDER_PASSES = List.of(
-        new EffectRenderPass(OUTER_PASS, RENDER_TYPE),
-        new EffectRenderPass(MIDDLE_PASS, RENDER_TYPE),
-        new EffectRenderPass(INNER_PASS, RENDER_TYPE)
-    );
-    private static final List<EffectRenderPass> REDUCED_RENDER_PASSES = List.of(
-        new EffectRenderPass(OUTER_PASS, RENDER_TYPE)
-    );
     private static final EffectLodProfile LOD_PROFILE = EffectLodProfile.of(4.0);
 
     @Override
     public List<EffectRenderPass> renderPasses(EffectRenderContext context) {
-        return reduced(context) ? REDUCED_RENDER_PASSES : RENDER_PASSES;
+        return List.of();
+    }
+
+    @Override
+    public List<EffectInstancedPass> instancedPasses(EffectRenderContext context) {
+        float entrance = EffectTimeline.easeOutCubic(Math.min(1.0F, context.progress() / 0.15F));
+        float alpha = EffectTimeline.fadeEnvelope(context.progress(), 0.10F, 0.25F);
+        float worldScale = context.scale() * entrance;
+        float seedRotation = seedRotation(context.seed());
+        float seedData = (Long.hashCode(context.seed()) & 0xFFFF) / 65535.0F;
+
+        List<EffectInstancedPass> passes = new ArrayList<>(reduced(context) ? 1 : 3);
+        passes.add(instancedLayer(OUTER_PASS, SETTINGS.outer(), worldScale,
+            seedRotation + context.ageTicks() * SETTINGS.outer().rotationSpeed(), alpha,
+            context.progress(), seedData));
+        if (!reduced(context)) {
+            passes.add(instancedLayer(MIDDLE_PASS, SETTINGS.middle(), worldScale,
+                seedRotation + context.ageTicks() * SETTINGS.middle().rotationSpeed(), alpha,
+                context.progress(), seedData));
+            passes.add(instancedLayer(INNER_PASS, SETTINGS.inner(), worldScale,
+                seedRotation + context.ageTicks() * SETTINGS.inner().rotationSpeed(), alpha,
+                context.progress(), seedData));
+        }
+        return List.copyOf(passes);
     }
 
     @Override
     public EffectLodProfile lodProfile() {
         return LOD_PROFILE;
-    }
-
-    @Override
-    public void render(
-        EffectRenderContext context,
-        EffectRenderPass pass,
-        PoseStack poseStack,
-        MultiBufferSource bufferSource
-    ) {
-        float entrance = EffectTimeline.easeOutCubic(Math.min(1.0F, context.progress() / 0.15F));
-        float alpha = EffectTimeline.fadeEnvelope(context.progress(), 0.10F, 0.25F);
-        float worldScale = context.scale() * entrance;
-        float seedRotation = seedRotation(context.seed());
-        int effectData = effectData(context);
-        VertexConsumer vertices = bufferSource.getBuffer(pass.renderType());
-
-        switch (pass.id()) {
-            case OUTER_PASS -> renderLayer(poseStack, vertices, worldScale, SETTINGS.outer(),
-                seedRotation + context.ageTicks() * SETTINGS.outer().rotationSpeed(), alpha, effectData);
-            case MIDDLE_PASS -> renderLayer(poseStack, vertices, worldScale, SETTINGS.middle(),
-                seedRotation + context.ageTicks() * SETTINGS.middle().rotationSpeed(), alpha, effectData);
-            case INNER_PASS -> renderLayer(poseStack, vertices, worldScale, SETTINGS.inner(),
-                seedRotation + context.ageTicks() * SETTINGS.inner().rotationSpeed(), alpha, effectData);
-            default -> throw new IllegalArgumentException("Unknown content rune render pass: " + pass.id());
-        }
     }
 
     @Override
@@ -136,6 +130,23 @@ final class ContentRuneCircleRenderer implements ScreenEffectRenderer {
         }
     }
 
+    private static EffectInstancedPass instancedLayer(
+        String id,
+        ContentRuneCircleSettings.ContentRuneLayer layer,
+        float worldScale,
+        float rotation,
+        float alpha,
+        float progress,
+        float seedData
+    ) {
+        Matrix4f localTransform = new Matrix4f()
+            .translate(0.0F, layer.height(), 0.0F)
+            .rotateY((float)Math.toRadians(rotation))
+            .scale(worldScale * layer.scale(), 1.0F, worldScale * layer.scale());
+        return new EffectInstancedPass(id, RENDER_TYPE, EffectMeshes.horizontalQuad(), localTransform,
+            layer.red(), layer.green(), layer.blue(), alpha * layer.alpha(), progress, seedData);
+    }
+
     private static boolean reduced(EffectRenderContext context) {
         return context.lod().level() > 0;
     }
@@ -160,12 +171,5 @@ final class ContentRuneCircleRenderer implements ScreenEffectRenderer {
 
     private static float seedRotation(long seed) {
         return (Long.hashCode(seed) & 0xFFFF) / 65535.0F * 360.0F;
-    }
-
-    /** Packs per-effect progress and seed into the overlay attribute read by the content shader. */
-    private static int effectData(EffectRenderContext context) {
-        int progress = Math.round(context.progress() * 32767.0F);
-        int seed = Math.floorMod(Long.hashCode(context.seed()), 32768);
-        return OverlayTexture.pack(progress, seed);
     }
 }

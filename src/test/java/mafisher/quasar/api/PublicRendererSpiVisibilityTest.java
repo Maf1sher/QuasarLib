@@ -2,9 +2,12 @@ package mafisher.quasar.api;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import java.util.List;
 import java.util.UUID;
+import mafisher.quasar.client.effect.EffectInstancedPass;
 import mafisher.quasar.client.effect.EffectLod;
 import mafisher.quasar.client.effect.EffectLodProfile;
 import mafisher.quasar.client.effect.EffectMesh;
@@ -12,12 +15,14 @@ import mafisher.quasar.client.effect.EffectMeshes;
 import mafisher.quasar.client.effect.EffectRenderContext;
 import mafisher.quasar.client.effect.EffectRenderTypeOptions;
 import mafisher.quasar.client.effect.EffectShader;
+import mafisher.quasar.client.effect.InstancedVisualEffectRenderer;
 import mafisher.quasar.client.effect.QuasarRenderTypes;
 import mafisher.quasar.client.effect.RegisterVisualEffectRenderersEvent;
 import mafisher.quasar.client.effect.VisualEffectInstance;
 import mafisher.quasar.client.effect.VisualEffectRenderer;
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
 import net.minecraft.resources.ResourceLocation;
+import org.joml.Matrix4f;
 import org.junit.jupiter.api.Test;
 
 /** Compiles from outside the implementation package to pin the public SPI surface. */
@@ -41,6 +46,7 @@ class PublicRendererSpiVisibilityTest {
         assertNotNull(EffectMeshes.unitSphere(8, 16));
         assertNotNull(QuasarRenderTypes.worldVisual(texture));
         assertNotNull(QuasarRenderTypes.screenEffectMask(texture));
+        assertNotNull(QuasarRenderTypes.instancedWorldVisual(texture));
         assertNotNull(RegisterVisualEffectRenderersEvent.class);
     }
 
@@ -123,5 +129,41 @@ class PublicRendererSpiVisibilityTest {
             .withLod(new EffectLod(2, 64.0, 8.0))
             .lod()
             .level());
+    }
+
+    @Test
+    void exposesInstancedPasses() {
+        ResourceLocation texture = ResourceLocation.fromNamespaceAndPath("test", "textures/effect/instanced.png");
+        StartVisualEffectPayload payload = new StartVisualEffectPayload(
+            ResourceLocation.fromNamespaceAndPath("test", "effect"),
+            UUID.randomUUID(),
+            ResourceLocation.fromNamespaceAndPath("minecraft", "overworld"),
+            0.0,
+            64.0,
+            0.0,
+            0.0F,
+            0.0F,
+            0.0F,
+            1.0F,
+            100,
+            0L,
+            1L
+        );
+        EffectRenderContext context = new EffectRenderContext(
+            new VisualEffectInstance(payload), payload.transform(), 0.0F, 0.0F, 0.0F
+        );
+        InstancedVisualEffectRenderer renderer = new InstancedVisualEffectRenderer() {
+            @Override
+            public List<EffectInstancedPass> instancedPasses(EffectRenderContext ignored) {
+                return List.of(new EffectInstancedPass("core", QuasarRenderTypes.instancedWorldVisual(texture),
+                    EffectMeshes.horizontalQuad(), new Matrix4f().scale(2.0F), 1.0F, 1.0F, 1.0F, 1.0F, 0.0F,
+                    0.0F));
+            }
+        };
+
+        List<EffectInstancedPass> passes = renderer.instancedPasses(context);
+        assertEquals(1, passes.size());
+        assertEquals("core", passes.getFirst().id());
+        assertTrue(passes.getFirst().localTransform().isFinite());
     }
 }

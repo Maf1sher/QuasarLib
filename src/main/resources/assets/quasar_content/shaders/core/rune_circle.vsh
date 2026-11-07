@@ -16,6 +16,9 @@ uniform mat4 ModelViewMat;
 uniform mat4 ProjMat;
 uniform vec3 ChunkOffset;
 uniform int FogShape;
+uniform mat4 Instances[128];
+uniform vec4 InstanceColors[128];
+uniform vec4 InstanceData[128];
 
 out float vertexDistance;
 out vec4 vertexColor;
@@ -23,11 +26,13 @@ out vec2 texCoord0;
 flat out vec2 effectData;
 
 void main() {
-    vec3 pos = Position + ChunkOffset;
-    gl_Position = ProjMat * ModelViewMat * vec4(pos, 1.0);
+    vec3 local = Position + ChunkOffset;
+    vec3 world = (Instances[gl_InstanceID] * vec4(local, 1.0)).xyz;
+    vec3 viewPos = (ModelViewMat * vec4(world, 1.0)).xyz;
+    gl_Position = ProjMat * vec4(viewPos, 1.0);
 
-    vertexDistance = fog_distance(pos, FogShape);
-    vertexColor = Color * minecraft_sample_lightmap(Sampler2, UV2);
+    vertexDistance = fog_distance(viewPos, FogShape);
+    vertexColor = InstanceColors[gl_InstanceID] * minecraft_sample_lightmap(Sampler2, UV2);
     texCoord0 = UV0;
-    effectData = vec2(UV1) / 32767.0;
+    effectData = InstanceData[gl_InstanceID].xy;
 }

@@ -17,6 +17,7 @@ class EffectRenderTypesTest {
         assertNotNull(EffectRenderTypes.debugVisual(TEXTURE));
         assertNotNull(EffectRenderTypes.blackHoleCore(TEXTURE));
         assertNotNull(EffectRenderTypes.blackHoleDisk(TEXTURE));
+        assertNotNull(EffectRenderTypes.instancedWorld(TEXTURE));
         assertNotNull(EffectRenderTypes.screenMask(TEXTURE));
         assertNotNull(EffectRenderTypes.blackHoleScreenMask(TEXTURE));
         assertNotNull(EffectRenderTypes.entityUnsorted(TEXTURE));
@@ -27,6 +28,7 @@ class EffectRenderTypesTest {
         assertSame(EffectRenderTypes.debugVisual(TEXTURE), EffectRenderTypes.debugVisual(TEXTURE));
         assertSame(EffectRenderTypes.blackHoleCore(TEXTURE), EffectRenderTypes.blackHoleCore(TEXTURE));
         assertSame(EffectRenderTypes.blackHoleDisk(TEXTURE), EffectRenderTypes.blackHoleDisk(TEXTURE));
+        assertSame(EffectRenderTypes.instancedWorld(TEXTURE), EffectRenderTypes.instancedWorld(TEXTURE));
         assertSame(EffectRenderTypes.screenMask(TEXTURE), EffectRenderTypes.screenMask(TEXTURE));
         assertSame(EffectRenderTypes.blackHoleScreenMask(TEXTURE),
             EffectRenderTypes.blackHoleScreenMask(TEXTURE));

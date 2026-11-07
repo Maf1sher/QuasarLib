@@ -28,11 +28,13 @@ class ContentBoundaryTest {
     private static final Set<String> PUBLIC_ENGINE_API = Set.of(
         "mafisher.quasar.client.effect.EffectLod",
         "mafisher.quasar.client.effect.EffectLodProfile",
+        "mafisher.quasar.client.effect.EffectInstancedPass",
         "mafisher.quasar.client.effect.EffectMeshes",
         "mafisher.quasar.client.effect.EffectRenderContext",
         "mafisher.quasar.client.effect.EffectRenderPass",
         "mafisher.quasar.client.effect.EffectRenderTypeOptions",
         "mafisher.quasar.client.effect.EffectShader",
+        "mafisher.quasar.client.effect.InstancedVisualEffectRenderer",
         "mafisher.quasar.client.effect.QuasarRenderTypes",
         "mafisher.quasar.client.effect.RegisterScreenEffectOperationsEvent",
         "mafisher.quasar.client.effect.RegisterVisualEffectRenderersEvent",

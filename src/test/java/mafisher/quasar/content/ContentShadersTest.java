@@ -47,12 +47,14 @@ class ContentShadersTest {
     }
 
     @Test
-    void worldShaderDeclaresUv1EffectData() throws IOException {
-        String path = "assets/quasar_content/shaders/core/rune_circle.json";
+    void worldShaderDeclaresInstanceArrays() throws IOException {
+        String path = "assets/quasar_content/shaders/core/rune_circle.vsh";
         try (InputStream stream = getClass().getClassLoader().getResourceAsStream(path)) {
             assertNotNull(stream, path);
-            String json = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
-            assertTrue(json.contains("\"UV1\""), json);
+            String source = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+            assertTrue(source.contains("Instances[128]"), source);
+            assertTrue(source.contains("InstanceColors[128]"), source);
+            assertTrue(source.contains("InstanceData[128]"), source);
         }
     }
 }

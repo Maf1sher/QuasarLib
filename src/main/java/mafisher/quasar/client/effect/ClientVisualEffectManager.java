@@ -46,6 +46,7 @@ public final class ClientVisualEffectManager {
     private final Set<ClientEffectSpatialIndex.Key> unindexedInstances = new LinkedHashSet<>();
     private final Set<ClientEffectSpatialIndex.Key> unindexedGroups = new LinkedHashSet<>();
     private final VisualEffectRendererRegistry rendererRegistry;
+    private final InstancedBatchRenderer instancedRenderer = new InstancedBatchRenderer();
     private ClientLevel currentLevel;
 
     ClientVisualEffectManager(VisualEffectRendererRegistry rendererRegistry) {
@@ -157,10 +158,21 @@ public final class ClientVisualEffectManager {
         PoseStack poseStack = event.getPoseStack();
         MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
         Set<RenderType> usedRenderTypes = new LinkedHashSet<>();
+        InstancedBatchBuilder instancedBatches = new InstancedBatchBuilder(
+            this.instancedRenderer.maxInstancesPerDraw()
+        );
         poseStack.pushPose();
         poseStack.translate(-cameraPosition.x, -cameraPosition.y, -cameraPosition.z);
+        Matrix4f baseView = new Matrix4f(RenderSystem.getModelViewMatrix()).mul(poseStack.last().pose());
         try {
             this.forEachVisibleEffect(event, (effect, context, renderer) -> {
+                if (renderer instanceof InstancedVisualEffectRenderer instanced) {
+                    List<EffectInstancedPass> instancedPasses = instanced.instancedPasses(context);
+                    if (!instancedPasses.isEmpty()) {
+                        instancedBatches.add(context, instancedPasses);
+                        return;
+                    }
+                }
                 EffectTransform transform = context.transform();
                 List<EffectRenderPass> renderPasses = List.copyOf(renderer.renderPasses(context));
                 Set<String> passIds = new HashSet<>();
@@ -190,6 +202,7 @@ public final class ClientVisualEffectManager {
                 buffers.endBatch(renderType);
             }
         }
+        this.instancedRenderer.draw(instancedBatches.draws(), baseView, RenderSystem.getProjectionMatrix());
     }
 
     List<ScreenEffectFrame> screenEffects(net.neoforged.neoforge.client.event.RenderLevelStageEvent event) {
@@ -575,6 +588,7 @@ public final class ClientVisualEffectManager {
         this.spatialIndex.clear();
         this.unindexedInstances.clear();
         this.unindexedGroups.clear();
+        this.instancedRenderer.close();
     }
 
     @FunctionalInterface
