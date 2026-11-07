@@ -7,6 +7,7 @@ import java.util.function.Function;
 import net.minecraft.Util;
 import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.resources.ResourceLocation;
 
 /** Built-in render types and the shared shader-backed render-type factory. */
@@ -22,6 +23,7 @@ final class EffectRenderTypes {
     private static final Function<ResourceLocation, RenderType> ENTITY_UNSORTED = Util.memoize(
         EffectRenderTypes::createEntity
     );
+    private static final RenderType DEBRIS = createDebrisType();
     private static final EffectRenderTypeOptions BLACK_HOLE_DISK_OPTIONS = new EffectRenderTypeOptions(
         EffectRenderTypeOptions.Transparency.TRANSLUCENT, true, true, false, false, true, true
     );
@@ -51,6 +53,10 @@ final class EffectRenderTypes {
 
     static RenderType instancedWorld(ResourceLocation texture) {
         return shaderWorld(EffectShaders.INSTANCED_VISUAL, texture, EffectRenderTypeOptions.WORLD_DEFAULT);
+    }
+
+    static RenderType debris() {
+        return DEBRIS;
     }
 
     static RenderType screenMask(ResourceLocation texture) {
@@ -108,6 +114,28 @@ final class EffectRenderTypes {
             case TRANSLUCENT -> RenderStateShard.TRANSLUCENT_TRANSPARENCY;
             case ADDITIVE -> RenderStateShard.ADDITIVE_TRANSPARENCY;
         };
+    }
+
+    private static RenderType createDebrisType() {
+        RenderType.CompositeState state = RenderType.CompositeState.builder()
+            .setShaderState(new RenderStateShard.ShaderStateShard(EffectShaders.EFFECT_DEBRIS::shaderInstance))
+            .setTextureState(new RenderStateShard.TextureStateShard(TextureAtlas.LOCATION_BLOCKS, false, true))
+            .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
+            .setDepthTestState(RenderStateShard.LEQUAL_DEPTH_TEST)
+            .setCullState(RenderStateShard.NO_CULL)
+            .setLightmapState(RenderStateShard.LIGHTMAP)
+            .setOutputState(RenderStateShard.MAIN_TARGET)
+            .setWriteMaskState(RenderStateShard.COLOR_DEPTH_WRITE)
+            .createCompositeState(true);
+        return RenderType.create(
+            "quasar_lib_effect_debris",
+            DefaultVertexFormat.BLOCK,
+            VertexFormat.Mode.QUADS,
+            65_536,
+            true,
+            false,
+            state
+        );
     }
 
     private static RenderType createVisual(ResourceLocation texture) {

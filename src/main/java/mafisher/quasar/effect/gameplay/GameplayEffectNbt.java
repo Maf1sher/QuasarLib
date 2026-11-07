@@ -53,6 +53,8 @@ public final class GameplayEffectNbt {
         budget.putInt("max_spawns", spec.budget().maxEntitySpawns());
         budget.putInt("max_block_changes", spec.budget().maxBlockChanges());
         budget.putInt("max_world_samples", spec.budget().maxWorldSamples());
+        budget.putInt("max_force_targets", spec.budget().maxForceTargets());
+        budget.putInt("max_debris_pieces", spec.budget().maxDebrisPieces());
         tag.put("budget", budget);
         tag.putString("owner_policy", spec.ownerPolicy().name());
         tag.putString("priority", spec.priority().name());
@@ -88,7 +90,9 @@ public final class GameplayEffectNbt {
                 budgetTag.getInt("max_hitboxes"),
                 budgetTag.getInt("max_spawns"),
                 budgetTag.getInt("max_block_changes"),
-                budgetTag.getInt("max_world_samples")
+                budgetTag.getInt("max_world_samples"),
+                budgetTag.getInt("max_force_targets"),
+                budgetTag.getInt("max_debris_pieces")
             ),
             OwnerPolicy.valueOf(tag.getString("owner_policy")),
             audio,

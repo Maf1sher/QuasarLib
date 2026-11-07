@@ -49,6 +49,21 @@ class EffectTickBudgetStateTest {
     }
 
     @Test
+    void tracksForceTargetsAndDebrisWithoutChangingOlderCounters() {
+        EffectTickBudgetState state = new EffectTickBudgetState(new EffectTickBudget(0, 0, 0, 0, 0, 2, 3));
+
+        assertTrue(state.tryConsumeForceTarget());
+        state.recordForceAffected();
+        assertTrue(state.tryConsumeForceTarget());
+        assertFalse(state.tryConsumeForceTarget());
+        state.recordDebrisPieces(2);
+        assertEquals(1, state.remainingDebrisPieces());
+        state.recordDebrisPieces(1);
+
+        assertEquals(new EffectTickCounters(0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 3), state.counters());
+    }
+
+    @Test
     void returnsNoWorkWhenEitherLimitIsZero() {
         EffectTickBudgetState noTargets = new EffectTickBudgetState(new EffectTickBudget(0, 5, 0));
         EffectTickBudgetState noCalls = new EffectTickBudgetState(new EffectTickBudget(5, 0, 0));
@@ -65,6 +80,10 @@ class EffectTickBudgetStateTest {
         assertThrows(IllegalArgumentException.class, () -> new EffectTickBudget(0, 0, -1));
         assertThrows(IllegalArgumentException.class, () -> new EffectTickBudget(0, 0, 0, -1));
         assertThrows(IllegalArgumentException.class, () -> new EffectTickBudget(0, 0, 0, 0, -1));
+        assertThrows(IllegalArgumentException.class,
+            () -> new EffectTickBudget(0, 0, 0, 0, 0, -1, 0));
+        assertThrows(IllegalArgumentException.class,
+            () -> new EffectTickBudget(0, 0, 0, 0, 0, 0, -1));
         assertThrows(IllegalArgumentException.class, () -> new EffectTickCounters(-1, 0, 0, 0));
         assertThrows(IllegalArgumentException.class, () -> new EffectTickCounters(1, 2, 0, 0));
         assertThrows(IllegalArgumentException.class, () -> new EffectTickCounters(0, 0, 0, 0, -1, 0));

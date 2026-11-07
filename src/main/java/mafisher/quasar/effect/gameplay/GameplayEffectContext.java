@@ -7,6 +7,9 @@ import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import mafisher.quasar.effect.EffectBudgetService;
+import mafisher.quasar.effect.EffectDebrisSpec;
+import mafisher.quasar.effect.EffectForceField;
+import mafisher.quasar.effect.EffectForceResult;
 import mafisher.quasar.effect.EffectHitResult;
 import mafisher.quasar.effect.EffectHitbox;
 import mafisher.quasar.effect.EffectScope;
@@ -202,6 +205,39 @@ public final class GameplayEffectContext {
         );
         this.budgetState.recordHitResult(result);
         return result;
+    }
+
+    /**
+     * Applies one force field to server entities within this tick's force-target budget. Candidates
+     * are ordered by distance from the field center and then by UUID, so a cap selects the same
+     * targets for the same world state. Force fields never damage targets; they only add velocity.
+     * Budget exhaustion is soft: the scan stops and reports {@code truncated}.
+     */
+    public EffectForceResult applyForceField(
+        EffectForceField field,
+        Predicate<Entity> targetPolicy
+    ) {
+        this.ensureOpen();
+        Objects.requireNonNull(field, "field");
+        Objects.requireNonNull(targetPolicy, "targetPolicy");
+        return EffectForceApplication.apply(this.level, field, targetPolicy, this.budgetState);
+    }
+
+    /**
+     * Emits a transient client-only block-debris burst. The server sends one compact payload to
+     * players in the audience; clients derive every piece from the effect seed. Overflow is
+     * degraded by emitting fewer pieces and returning the accepted count.
+     */
+    public int spawnDebris(EffectDebrisSpec spec) {
+        this.ensureOpen();
+        Objects.requireNonNull(spec, "spec");
+        int pieces = Math.min(spec.pieces(), this.budgetState.remainingDebrisPieces());
+        if (pieces <= 0) {
+            return 0;
+        }
+        int sent = EffectDebrisService.send(this.level, spec, pieces, this.random.nextLong());
+        this.budgetState.recordDebrisPieces(sent);
+        return sent;
     }
 
     /** Whether this session and its level may spawn more entities on the current tick. */

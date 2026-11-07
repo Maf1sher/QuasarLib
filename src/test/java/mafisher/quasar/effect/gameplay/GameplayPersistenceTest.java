@@ -283,6 +283,33 @@ class GameplayPersistenceTest {
     }
 
     @Test
+    void preservesTheForceAndDebrisBudgetsInDescriptorNbt() {
+        GameplayEffectSpec spec = spec(new EffectTickBudget(1, 2, 3, 32, 64, 16, 24));
+        EffectDescriptor descriptor = descriptor(spec, new CompoundTag());
+
+        EffectDescriptor loaded = EffectDescriptorNbt.load(EffectDescriptorNbt.save(descriptor));
+
+        assertEquals(16, GameplayEffectNbt.loadSpec(loaded).budget().maxForceTargets());
+        assertEquals(24, GameplayEffectNbt.loadSpec(loaded).budget().maxDebrisPieces());
+    }
+
+    @Test
+    void defaultsTheForceAndDebrisBudgetsForOlderDescriptors() {
+        GameplayEffectSpec spec = spec(new EffectTickBudget(1, 2, 3, 32, 64, 16, 24));
+        CompoundTag tag = EffectDescriptorNbt.save(descriptor(spec, new CompoundTag()));
+        tag.getCompound("state").getCompound("spec").getCompound("budget")
+            .remove("max_force_targets");
+        tag.getCompound("state").getCompound("spec").getCompound("budget")
+            .remove("max_debris_pieces");
+
+        EffectDescriptor loaded = EffectDescriptorNbt.load(tag);
+
+        assertEquals(0, GameplayEffectNbt.loadSpec(loaded).budget().maxForceTargets());
+        assertEquals(0, GameplayEffectNbt.loadSpec(loaded).budget().maxDebrisPieces());
+    }
+
+
+    @Test
     void defaultsTheWorldSampleBudgetForOlderDescriptors() {
         GameplayEffectSpec spec = spec(new EffectTickBudget(1, 2, 3, 32, 64));
         CompoundTag tag = EffectDescriptorNbt.save(descriptor(spec, new CompoundTag()));

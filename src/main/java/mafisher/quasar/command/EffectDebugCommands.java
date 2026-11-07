@@ -10,6 +10,8 @@ import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectBudgetReport;
 import mafisher.quasar.effect.EffectBudgetService;
 import mafisher.quasar.effect.EffectDamageShape;
+import mafisher.quasar.effect.EffectDebrisSpec;
+import mafisher.quasar.effect.EffectForceField;
 import mafisher.quasar.effect.EffectHitbox;
 import mafisher.quasar.effect.EffectLifetimePolicy;
 import mafisher.quasar.effect.EffectPoint;
@@ -43,12 +45,15 @@ import java.util.function.ToIntFunction;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.ResourceLocationArgument;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -302,7 +307,7 @@ public final class EffectDebugCommands {
                 new EffectPhase("fade", GAMEPLAY_FADE_TICKS)
             ),
             level.getRandom().nextLong(),
-            new EffectTickBudget(8, GAMEPLAY_STRIKE_TICKS, 0),
+            new EffectTickBudget(8, GAMEPLAY_STRIKE_TICKS, 0, 0, 0, 16, 24),
             OwnerPolicy.STOP_WHEN_UNAVAILABLE
         );
         GameplayEffectHandle handle;
@@ -579,6 +584,7 @@ public final class EffectDebugCommands {
         private final Vec3 position;
         private final DamageSource damageSource;
         private final EffectHitbox hitbox;
+        private final EffectForceField shockwave;
 
         private GameplayPulseController(Vec3 position, DamageSource damageSource) {
             this.position = position;
@@ -591,6 +597,14 @@ public final class EffectDebugCommands {
                 4.0F,
                 0,
                 8
+            );
+            this.shockwave = new EffectForceField.Shockwave(
+                new EffectPoint(position.x, position.y, position.z),
+                6.0,
+                0.6,
+                0.35,
+                1.0,
+                16
             );
         }
 
@@ -619,6 +633,25 @@ public final class EffectDebugCommands {
                     0.8F,
                     1.0F
                 );
+                BlockPos origin = BlockPos.containing(this.position);
+                BlockState state = context.level().getBlockState(origin.below());
+                if (state.isAir()) {
+                    state = context.level().getBlockState(origin);
+                }
+                if (state.isAir()) {
+                    state = Blocks.STONE.defaultBlockState();
+                }
+                context.spawnDebris(new EffectDebrisSpec(
+                    this.position.add(0.0, 0.5, 0.0),
+                    state,
+                    16,
+                    new Vec3(0.0, 0.4, 0.0),
+                    0.5,
+                    0.7,
+                    0.08,
+                    40,
+                    EffectAudience.nearby(128.0)
+                ));
             }
         }
 
@@ -626,6 +659,7 @@ public final class EffectDebugCommands {
         public void onTick(GameplayEffectContext context) {
             if (context.phaseIndex() == 1) {
                 context.applyHitbox(this.hitbox, this.damageSource, target -> true);
+                context.applyForceField(this.shockwave, target -> true);
             }
         }
     }

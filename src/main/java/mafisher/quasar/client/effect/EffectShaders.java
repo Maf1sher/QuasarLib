@@ -17,6 +17,9 @@ final class EffectShaders {
     static final EffectShader INSTANCED_VISUAL = EffectShader.create(
         id("instanced_visual"), DefaultVertexFormat.BLOCK
     );
+    static final EffectShader EFFECT_DEBRIS = EffectShader.create(
+        id("effect_debris"), DefaultVertexFormat.BLOCK
+    );
     static final EffectShader SCREEN_MASK = EffectShader.create(
         id("screen_mask"), DefaultVertexFormat.BLOCK
     );
@@ -40,6 +43,7 @@ final class EffectShaders {
         EFFECT_VISUAL.register(event);
         BLACK_HOLE_VISUAL.register(event);
         INSTANCED_VISUAL.register(event);
+        EFFECT_DEBRIS.register(event);
         SCREEN_MASK.register(event);
         BLACK_HOLE_SCREEN_MASK.register(event);
         SCREEN_COMPOSITE.register(event);

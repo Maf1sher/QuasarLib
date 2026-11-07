@@ -139,7 +139,8 @@ final class InstancedBatchRenderer implements AutoCloseable {
         for (InstancedBatchBuilder.Instance instance : instances) {
             instance.model().get(this.matrices);
             this.colors.put(instance.red()).put(instance.green()).put(instance.blue()).put(instance.alpha());
-            this.data.put(instance.effectDataX()).put(instance.effectDataY()).put(0.0F).put(0.0F);
+            this.data.put(instance.effectDataX()).put(instance.effectDataY())
+                .put(instance.effectDataZ()).put(instance.effectDataW());
         }
         this.matrices.flip();
         this.colors.flip();

@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.UUID;
 import mafisher.quasar.effect.network.EffectAudioPlanPayload;
 import mafisher.quasar.effect.network.EffectAudioTriggerPayload;
+import mafisher.quasar.effect.network.EffectDebrisPayload;
 import mafisher.quasar.effect.network.ResumeEffectsPayload;
 import mafisher.quasar.effect.network.StartSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
@@ -62,6 +63,7 @@ final class ClientEffectFrameRuntime {
 
     static void resume(ResumeEffectsPayload payload) {
         ClientEffectAudio.clear();
+        ClientEffectDebris.clear();
         ClientEffectClock.reset();
         manager().resume(payload);
     }
@@ -98,6 +100,10 @@ final class ClientEffectFrameRuntime {
         ClientEffectAudio.trigger(payload);
     }
 
+    static void effectDebris(EffectDebrisPayload payload) {
+        ClientEffectDebris.accept(payload);
+    }
+
     /** Current interpolated world origin for one effect, or null when it has no visual instance. */
     static Vec3 effectOrigin(UUID effectId) {
         ClientVisualEffectManager current = manager;
@@ -108,6 +114,7 @@ final class ClientEffectFrameRuntime {
         if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_PARTICLES) {
             long start = System.nanoTime();
             manager().render(event);
+            ClientEffectDebris.render(event);
             ClientQualityController.recordWorldRender(System.nanoTime() - start);
         } else if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
             long start = System.nanoTime();
@@ -137,6 +144,7 @@ final class ClientEffectFrameRuntime {
         ClientQualityController.reset();
         ClientEffectClock.reset();
         ClientEffectAudio.clear();
+        ClientEffectDebris.clear();
         ClientEffectImpulses.clear();
         ScreenFlashRenderer.onResourceReload();
         ClientScreenCompositor compositor = screenCompositor;
@@ -154,6 +162,7 @@ final class ClientEffectFrameRuntime {
         ClientQualityController.reset();
         ClientEffectClock.reset();
         ClientEffectAudio.clear();
+        ClientEffectDebris.clear();
         ClientEffectImpulses.clear();
         ScreenFlashRenderer.onResourceReload();
         ClientScreenCompositor compositor = screenCompositor;
@@ -167,6 +176,7 @@ final class ClientEffectFrameRuntime {
         if (current != null) {
             current.onResourceReload(resourceManager);
         }
+        ClientEffectDebris.onResourceReload();
         ScreenFlashRenderer.onResourceReload();
         ClientScreenCompositor compositor = screenCompositor;
         if (compositor != null) {

@@ -121,6 +121,8 @@ final class InstancedBatchBuilder {
         float alpha,
         float effectDataX,
         float effectDataY,
+        float effectDataZ,
+        float effectDataW,
         double cameraDistanceSquared
     ) {
         Instance {
@@ -129,6 +131,21 @@ final class InstancedBatchBuilder {
             if (!Double.isFinite(cameraDistanceSquared) || cameraDistanceSquared < 0.0) {
                 throw new IllegalArgumentException("Invalid instance camera distance");
             }
+        }
+
+        /** Source-compatible constructor for passes that only carry two data values. */
+        Instance(
+            Matrix4f model,
+            float red,
+            float green,
+            float blue,
+            float alpha,
+            float effectDataX,
+            float effectDataY,
+            double cameraDistanceSquared
+        ) {
+            this(model, red, green, blue, alpha, effectDataX, effectDataY, 0.0F, 0.0F,
+                cameraDistanceSquared);
         }
     }
 

@@ -14,6 +14,9 @@ final class EffectTickBudgetState {
     private int blockChangesApplied;
     private int blockChangesVetoed;
     private int worldSamples;
+    private int forceTargetsExamined;
+    private int forceTargetsAffected;
+    private int debrisPieces;
 
     EffectTickBudgetState(EffectTickBudget budget) {
         this.budget = Objects.requireNonNull(budget, "budget");
@@ -28,6 +31,9 @@ final class EffectTickBudgetState {
         this.blockChangesApplied = 0;
         this.blockChangesVetoed = 0;
         this.worldSamples = 0;
+        this.forceTargetsExamined = 0;
+        this.forceTargetsAffected = 0;
+        this.debrisPieces = 0;
     }
 
     int remainingTargets() {
@@ -80,6 +86,34 @@ final class EffectTickBudgetState {
         return true;
     }
 
+    int remainingForceTargets() {
+        return Math.max(0, this.budget.maxForceTargets() - this.forceTargetsExamined);
+    }
+
+    /** Consumes one force-field candidate; returns {@code false} when the budget is exhausted. */
+    boolean tryConsumeForceTarget() {
+        if (this.remainingForceTargets() <= 0) {
+            return false;
+        }
+        this.forceTargetsExamined++;
+        return true;
+    }
+
+    void recordForceAffected() {
+        this.forceTargetsAffected++;
+    }
+
+    int remainingDebrisPieces() {
+        return Math.max(0, this.budget.maxDebrisPieces() - this.debrisPieces);
+    }
+
+    void recordDebrisPieces(int pieces) {
+        if (pieces < 0) {
+            throw new IllegalArgumentException("Debris piece count cannot be negative");
+        }
+        this.debrisPieces += pieces;
+    }
+
     EffectTickCounters counters() {
         return new EffectTickCounters(
             this.targetsExamined,
@@ -89,7 +123,10 @@ final class EffectTickBudgetState {
             this.blockChangesQueued,
             this.blockChangesApplied,
             this.blockChangesVetoed,
-            this.worldSamples
+            this.worldSamples,
+            this.forceTargetsExamined,
+            this.forceTargetsAffected,
+            this.debrisPieces
         );
     }
 }
