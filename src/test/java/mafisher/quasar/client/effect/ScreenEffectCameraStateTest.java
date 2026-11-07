@@ -31,6 +31,34 @@ class ScreenEffectCameraStateTest {
     }
 
     @Test
+    void exposesInverseMatricesThatRoundTrip() {
+        Matrix4f modelView = new Matrix4f().translate(-10.0F, 4.0F, 7.0F)
+            .rotateY(0.5F).rotateX(-0.2F);
+        Matrix4f projection = new Matrix4f().perspective(
+            (float) Math.toRadians(70.0), 1.5F, 0.05F, 1000.0F);
+        ScreenEffectCameraState camera = new ScreenEffectCameraState(
+            Vec3.ZERO, modelView, projection, 800, 600, 0.0F
+        );
+
+        assertIdentity(new Matrix4f(modelView).mul(camera.inverseViewMatrix()));
+        assertIdentity(new Matrix4f(projection).mul(camera.inverseProjectionMatrix()));
+
+        Matrix4f returned = camera.inverseViewMatrix();
+        returned.identity();
+        assertIdentity(new Matrix4f(modelView).mul(camera.inverseViewMatrix()));
+    }
+
+    @Test
+    void rejectsSingularMatrices() {
+        assertThrows(IllegalArgumentException.class, () -> new ScreenEffectCameraState(
+            Vec3.ZERO, new Matrix4f().zero(), new Matrix4f(), 1, 1, 0.0F
+        ));
+        assertThrows(IllegalArgumentException.class, () -> new ScreenEffectCameraState(
+            Vec3.ZERO, new Matrix4f(), new Matrix4f().zero(), 1, 1, 0.0F
+        ));
+    }
+
+    @Test
     void rejectsInvalidDimensionsOrPartialTick() {
         assertThrows(IllegalArgumentException.class, () -> new ScreenEffectCameraState(
             Vec3.ZERO, new Matrix4f(), new Matrix4f(), 0, 1, 0.0F
@@ -54,5 +82,24 @@ class ScreenEffectCameraStateTest {
         assertThrows(NullPointerException.class, () -> new ScreenEffectCameraState(
             Vec3.ZERO, new Matrix4f(), null, 1, 1, 0.0F
         ));
+    }
+
+    private static void assertIdentity(Matrix4f matrix) {
+        assertEquals(1.0F, matrix.m00(), 0.0001F);
+        assertEquals(0.0F, matrix.m01(), 0.0001F);
+        assertEquals(0.0F, matrix.m02(), 0.0001F);
+        assertEquals(0.0F, matrix.m03(), 0.0001F);
+        assertEquals(0.0F, matrix.m10(), 0.0001F);
+        assertEquals(1.0F, matrix.m11(), 0.0001F);
+        assertEquals(0.0F, matrix.m12(), 0.0001F);
+        assertEquals(0.0F, matrix.m13(), 0.0001F);
+        assertEquals(0.0F, matrix.m20(), 0.0001F);
+        assertEquals(0.0F, matrix.m21(), 0.0001F);
+        assertEquals(1.0F, matrix.m22(), 0.0001F);
+        assertEquals(0.0F, matrix.m23(), 0.0001F);
+        assertEquals(0.0F, matrix.m30(), 0.0001F);
+        assertEquals(0.0F, matrix.m31(), 0.0001F);
+        assertEquals(0.0F, matrix.m32(), 0.0001F);
+        assertEquals(1.0F, matrix.m33(), 0.0001F);
     }
 }

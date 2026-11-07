@@ -29,6 +29,9 @@ final class EffectShaders {
     static final EffectShader SCREEN_BLOOM = EffectShader.create(
         id("screen_bloom"), DefaultVertexFormat.POSITION
     );
+    static final EffectShader SCREEN_FLASH = EffectShader.create(
+        id("screen_flash"), DefaultVertexFormat.POSITION
+    );
 
     private EffectShaders() {
     }
@@ -41,6 +44,7 @@ final class EffectShaders {
         BLACK_HOLE_SCREEN_MASK.register(event);
         SCREEN_COMPOSITE.register(event);
         SCREEN_BLOOM.register(event);
+        SCREEN_FLASH.register(event);
     }
 
     private static ResourceLocation id(String path) {

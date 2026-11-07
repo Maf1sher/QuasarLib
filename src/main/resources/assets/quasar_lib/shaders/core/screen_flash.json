@@ -1,0 +1,11 @@
+{
+  "vertex": "quasar_lib:screen_flash",
+  "fragment": "quasar_lib:screen_flash",
+  "attributes": [
+    "Position"
+  ],
+  "uniforms": [
+    { "name": "FlashColor", "type": "float", "count": 3, "values": [ 1.0, 1.0, 1.0 ] },
+    { "name": "FlashStrength", "type": "float", "count": 1, "values": [ 0.0 ] }
+  ]
+}

@@ -12,6 +12,8 @@ import com.mojang.blaze3d.vertex.VertexFormat;
 import java.util.Objects;
 import mafisher.quasar.effect.EffectQualityTier;
 import net.minecraft.client.renderer.ShaderInstance;
+import net.minecraft.world.phys.Vec3;
+import org.joml.Matrix4f;
 
 /**
  * Per-frame inputs and draw helpers available to a registered
@@ -193,6 +195,35 @@ public final class ScreenEffectOperationContext {
     public void setUniform(ShaderInstance shader, String name, float x, float y, float z) {
         AbstractUniform uniform = uniform(shader, name);
         uniform.set(x, y, z);
+    }
+
+    /** Sets a three-component uniform from a world position, failing when undeclared. */
+    public void setUniform(ShaderInstance shader, String name, Vec3 value) {
+        Objects.requireNonNull(value, "value");
+        this.setUniform(shader, name, (float) value.x, (float) value.y, (float) value.z);
+    }
+
+    /** Sets a 4x4 matrix uniform, failing when the shader does not declare it. */
+    public void setUniform(ShaderInstance shader, String name, Matrix4f value) {
+        Objects.requireNonNull(value, "value");
+        uniform(shader, name).set(value);
+    }
+
+    /**
+     * Binds the camera inputs used by depth-reconstruction screen shaders:
+     * {@code InvProjMat}, {@code InvViewMat}, {@code CameraPosition},
+     * {@code ViewportWidth}, and {@code ViewportHeight}.
+     *
+     * <p>The shader must declare all five uniforms. Forward {@code ProjMat} and
+     * {@code ModelViewMat} are supplied by {@link ShaderInstance#apply()}.</p>
+     */
+    public void bindCameraInputs(ShaderInstance shader) {
+        Objects.requireNonNull(shader, "shader");
+        this.setUniform(shader, "InvProjMat", this.camera.inverseProjectionMatrix());
+        this.setUniform(shader, "InvViewMat", this.camera.inverseViewMatrix());
+        this.setUniform(shader, "CameraPosition", this.camera.position());
+        this.setUniform(shader, "ViewportWidth", this.camera.viewportWidth());
+        this.setUniform(shader, "ViewportHeight", this.camera.viewportHeight());
     }
 
     /** Binds a sampler by name. */

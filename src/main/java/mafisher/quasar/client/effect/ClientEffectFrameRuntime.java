@@ -105,6 +105,10 @@ final class ClientEffectFrameRuntime {
                     List<ScreenEffectBatch> batches = effectManager.screenEffects(event);
                     compositor.render(event, effectManager, batches);
                 }
+                ScreenFlashRenderer.render(
+                    event.getCamera().getPosition(),
+                    (float) event.getPartialTick().getGameTimeDeltaPartialTick(false)
+                );
             } finally {
                 ClientQualityController.endFrameGpu();
             }
@@ -120,6 +124,8 @@ final class ClientEffectFrameRuntime {
         ClientQualityController.reset();
         ClientEffectClock.reset();
         ClientEffectAudio.clear();
+        ClientEffectImpulses.clear();
+        ScreenFlashRenderer.onResourceReload();
         ClientScreenCompositor compositor = screenCompositor;
         if (compositor != null) {
             compositor.onLevelUnload();
@@ -135,6 +141,8 @@ final class ClientEffectFrameRuntime {
         ClientQualityController.reset();
         ClientEffectClock.reset();
         ClientEffectAudio.clear();
+        ClientEffectImpulses.clear();
+        ScreenFlashRenderer.onResourceReload();
         ClientScreenCompositor compositor = screenCompositor;
         if (compositor != null) {
             compositor.onLevelUnload();
@@ -146,6 +154,7 @@ final class ClientEffectFrameRuntime {
         if (current != null) {
             current.onResourceReload(resourceManager);
         }
+        ScreenFlashRenderer.onResourceReload();
         ClientScreenCompositor compositor = screenCompositor;
         if (compositor != null) {
             compositor.onResourceReload();

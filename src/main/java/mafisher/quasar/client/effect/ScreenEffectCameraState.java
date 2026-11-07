@@ -31,6 +31,8 @@ public record ScreenEffectCameraState(
         }
         modelViewMatrix = new Matrix4f(modelViewMatrix);
         projectionMatrix = new Matrix4f(projectionMatrix);
+        requireInvertible(modelViewMatrix, "modelViewMatrix");
+        requireInvertible(projectionMatrix, "projectionMatrix");
     }
 
     @Override
@@ -41,5 +43,27 @@ public record ScreenEffectCameraState(
     @Override
     public Matrix4f projectionMatrix() {
         return new Matrix4f(this.projectionMatrix);
+    }
+
+    /**
+     * Returns the inverse view matrix in a fresh copy.
+     *
+     * <p>Screen operations use it with {@link #inverseProjectionMatrix()} to
+     * reconstruct world-space positions from the sampled scene depth.</p>
+     */
+    public Matrix4f inverseViewMatrix() {
+        return new Matrix4f(this.modelViewMatrix).invert();
+    }
+
+    /** Returns the inverse projection matrix in a fresh copy. */
+    public Matrix4f inverseProjectionMatrix() {
+        return new Matrix4f(this.projectionMatrix).invert();
+    }
+
+    private static void requireInvertible(Matrix4f matrix, String name) {
+        float determinant = matrix.determinant();
+        if (!Float.isFinite(determinant) || determinant == 0.0F) {
+            throw new IllegalArgumentException(name + " must be finite and invertible");
+        }
     }
 }
