@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 class EffectTickBudgetStateTest {
     @Test
     void enforcesTargetsCallsAndSpawnsThenResets() {
-        EffectTickBudgetState state = new EffectTickBudgetState(new EffectTickBudget(2, 2, 1));
+        EffectTickBudgetState state = new EffectTickBudgetState(new EffectTickBudget(2, 2, 1, 0, 2));
 
         assertTrue(state.canApplyHitbox());
         state.recordHitboxCall();
@@ -32,13 +32,20 @@ class EffectTickBudgetStateTest {
         state.recordBlockChangesApplied(2);
         state.recordBlockChangesVetoed(3);
 
-        assertEquals(new EffectTickCounters(2, 1, 2, 1, 1, 2, 3), state.counters());
+        assertTrue(state.canSampleWorld());
+        assertTrue(state.trySampleWorld());
+        assertTrue(state.trySampleWorld());
+        assertFalse(state.trySampleWorld());
+        assertFalse(state.canSampleWorld());
+
+        assertEquals(new EffectTickCounters(2, 1, 2, 1, 1, 2, 3, 2), state.counters());
 
         state.reset();
         assertEquals(EffectTickCounters.EMPTY, state.counters());
         assertEquals(2, state.remainingTargets());
         assertTrue(state.canApplyHitbox());
         assertTrue(state.canSpawnEntity());
+        assertTrue(state.canSampleWorld());
     }
 
     @Test
@@ -57,10 +64,12 @@ class EffectTickBudgetStateTest {
         assertThrows(IllegalArgumentException.class, () -> new EffectTickBudget(0, -1, 0));
         assertThrows(IllegalArgumentException.class, () -> new EffectTickBudget(0, 0, -1));
         assertThrows(IllegalArgumentException.class, () -> new EffectTickBudget(0, 0, 0, -1));
+        assertThrows(IllegalArgumentException.class, () -> new EffectTickBudget(0, 0, 0, 0, -1));
         assertThrows(IllegalArgumentException.class, () -> new EffectTickCounters(-1, 0, 0, 0));
         assertThrows(IllegalArgumentException.class, () -> new EffectTickCounters(1, 2, 0, 0));
         assertThrows(IllegalArgumentException.class, () -> new EffectTickCounters(0, 0, 0, 0, -1, 0));
         assertThrows(IllegalArgumentException.class, () -> new EffectTickCounters(0, 0, 0, 0, 0, -1));
         assertThrows(IllegalArgumentException.class, () -> new EffectTickCounters(0, 0, 0, 0, 0, 0, -1));
+        assertThrows(IllegalArgumentException.class, () -> new EffectTickCounters(0, 0, 0, 0, 0, 0, 0, -1));
     }
 }

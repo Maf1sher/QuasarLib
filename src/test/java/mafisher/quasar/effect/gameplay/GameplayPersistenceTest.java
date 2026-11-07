@@ -273,6 +273,27 @@ class GameplayPersistenceTest {
     }
 
     @Test
+    void preservesTheWorldSampleBudgetInDescriptorNbt() {
+        GameplayEffectSpec spec = spec(new EffectTickBudget(1, 2, 3, 32, 64));
+        EffectDescriptor descriptor = descriptor(spec, new CompoundTag());
+
+        EffectDescriptor loaded = EffectDescriptorNbt.load(EffectDescriptorNbt.save(descriptor));
+
+        assertEquals(64, GameplayEffectNbt.loadSpec(loaded).budget().maxWorldSamples());
+    }
+
+    @Test
+    void defaultsTheWorldSampleBudgetForOlderDescriptors() {
+        GameplayEffectSpec spec = spec(new EffectTickBudget(1, 2, 3, 32, 64));
+        CompoundTag tag = EffectDescriptorNbt.save(descriptor(spec, new CompoundTag()));
+        tag.getCompound("state").getCompound("spec").getCompound("budget").remove("max_world_samples");
+
+        EffectDescriptor loaded = EffectDescriptorNbt.load(tag);
+
+        assertEquals(0, GameplayEffectNbt.loadSpec(loaded).budget().maxWorldSamples());
+    }
+
+    @Test
     void preservesPriorityInDescriptorNbt() {
         GameplayEffectSpec spec = specWithPriority(EffectPriority.HIGH);
         EffectDescriptor descriptor = descriptor(spec, new CompoundTag());

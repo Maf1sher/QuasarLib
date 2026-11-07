@@ -39,6 +39,7 @@ public final class GameplayEffectContext {
     private boolean open = true;
     private CompoundTag persistentState;
     private boolean stateDirty;
+    private EffectWorldQuery world;
 
     GameplayEffectContext(
         ServerLevel level,
@@ -105,6 +106,19 @@ public final class GameplayEffectContext {
 
     public int phaseAgeTicks() {
         return this.spec.phases().phaseAgeTicks(this.ageTicks);
+    }
+
+    /**
+     * Budgeted world sampling for this session. Queries never load chunks; see
+     * {@link EffectWorldQuery}. The configured per-tick limit is
+     * {@link EffectTickBudget#maxWorldSamples()}.
+     */
+    public EffectWorldQuery world() {
+        this.ensureOpen();
+        if (this.world == null) {
+            this.world = new EffectWorldQuery(this.level, this.budgetState, this::ensureOpen);
+        }
+        return this.world;
     }
 
     public float phaseProgress() {

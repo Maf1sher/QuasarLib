@@ -13,6 +13,7 @@ final class EffectTickBudgetState {
     private int blockChangesQueued;
     private int blockChangesApplied;
     private int blockChangesVetoed;
+    private int worldSamples;
 
     EffectTickBudgetState(EffectTickBudget budget) {
         this.budget = Objects.requireNonNull(budget, "budget");
@@ -26,6 +27,7 @@ final class EffectTickBudgetState {
         this.blockChangesQueued = 0;
         this.blockChangesApplied = 0;
         this.blockChangesVetoed = 0;
+        this.worldSamples = 0;
     }
 
     int remainingTargets() {
@@ -65,6 +67,19 @@ final class EffectTickBudgetState {
         this.blockChangesVetoed += vetoed;
     }
 
+    boolean canSampleWorld() {
+        return this.worldSamples < this.budget.maxWorldSamples();
+    }
+
+    /** Consumes one world sample; refuses and returns {@code false} when the budget is exhausted. */
+    boolean trySampleWorld() {
+        if (!this.canSampleWorld()) {
+            return false;
+        }
+        this.worldSamples++;
+        return true;
+    }
+
     EffectTickCounters counters() {
         return new EffectTickCounters(
             this.targetsExamined,
@@ -73,7 +88,8 @@ final class EffectTickBudgetState {
             this.entitiesSpawned,
             this.blockChangesQueued,
             this.blockChangesApplied,
-            this.blockChangesVetoed
+            this.blockChangesVetoed,
+            this.worldSamples
         );
     }
 }
