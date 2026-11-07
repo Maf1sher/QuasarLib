@@ -75,7 +75,7 @@ public final class EffectPersistenceEvents {
             new ResumeEffectsPayload(level.dimension().location(), effects)
         );
         for (EffectAudioPlan plan : EffectAudioService.resumePlans(level, player)) {
-            PacketDistributor.sendToPlayer(player, new EffectAudioPlanPayload(plan));
+            PacketDistributor.sendToPlayer(player, new EffectAudioPlanPayload(plan, level.getGameTime()));
         }
     }
 }

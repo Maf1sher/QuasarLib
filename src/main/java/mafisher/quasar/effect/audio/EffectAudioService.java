@@ -134,7 +134,11 @@ public final class EffectAudioService {
         }
     }
 
-    /** Plans that a joining player should schedule now; past-only plans are omitted. */
+    /**
+     * Plans that a joining player should schedule now, and reconciles the player's recipient state.
+     * Returned plans mark the player as a recipient so the next tick does not send duplicates;
+     * plans outside the player's audience are untracked. Past-only plans are omitted.
+     */
     public static List<EffectAudioPlan> resumePlans(ServerLevel level, ServerPlayer player) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(player, "player");
@@ -144,19 +148,20 @@ public final class EffectAudioService {
         }
 
         List<EffectAudioPlan> result = new ArrayList<>();
+        long gameTime = level.getGameTime();
         for (ActiveAudio active : plans.values()) {
-            if (!active.plan.dimensionId().equals(level.dimension().location())) {
-                continue;
-            }
             int planAge = (int)Math.min(Integer.MAX_VALUE,
-                Math.max(0L, level.getGameTime() - active.plan.startGameTime()));
-            if (planAge >= active.plan.durationTicks()
-                || !active.plan.hasPlayableCues(planAge, RESUME_GRACE_TICKS)) {
+                Math.max(0L, gameTime - active.plan.startGameTime()));
+            boolean playable = active.plan.dimensionId().equals(level.dimension().location())
+                && planAge < active.plan.durationTicks()
+                && active.plan.hasPlayableCues(planAge, RESUME_GRACE_TICKS)
+                && active.audienceContains(level, player);
+            if (!playable) {
+                active.recipients.remove(player.getUUID());
                 continue;
             }
-            if (active.audienceContains(level, player)) {
-                result.add(active.plan);
-            }
+            result.add(active.plan);
+            active.recipients.add(player.getUUID());
         }
         return List.copyOf(result);
     }
@@ -221,7 +226,8 @@ public final class EffectAudioService {
             }
             for (ServerPlayer player : current.values()) {
                 if (this.recipients.add(player.getUUID())) {
-                    PacketDistributor.sendToPlayer(player, new EffectAudioPlanPayload(this.plan));
+                    PacketDistributor.sendToPlayer(player,
+                        new EffectAudioPlanPayload(this.plan, level.getGameTime()));
                 }
             }
         }

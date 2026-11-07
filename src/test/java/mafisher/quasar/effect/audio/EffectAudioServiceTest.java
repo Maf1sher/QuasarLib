@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
@@ -18,9 +19,11 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.network.PacketDistributor;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 
 class EffectAudioServiceTest {
     private static final ResourceLocation DIMENSION = ResourceLocation.withDefaultNamespace("overworld");
@@ -137,6 +140,23 @@ class EffectAudioServiceTest {
         EffectAudioService.start(this.level, empty, EffectAudience.dimensionWide());
 
         assertEquals(0, EffectAudioService.activeCount(this.level));
+    }
+
+    @Test
+    void resumePlansMarksRecipientsSoTickDoesNotResend() {
+        ServerPlayer player = player(new Vec3(0.0, 64.0, 0.0));
+        when(this.level.players()).thenReturn(List.of(player));
+
+        try (MockedStatic<PacketDistributor> packets = mockStatic(PacketDistributor.class)) {
+            EffectAudioService.start(this.level, plan(UUID.randomUUID(), 100, 10),
+                EffectAudience.dimensionWide());
+            packets.clearInvocations();
+
+            assertEquals(1, EffectAudioService.resumePlans(this.level, player).size());
+
+            EffectAudioService.tick(this.level);
+            packets.verifyNoInteractions();
+        }
     }
 
     @Test

@@ -127,6 +127,7 @@ public final class VisualEffectService {
             spec.scale(),
             spec.durationTicks(),
             startGameTime,
+            level.getGameTime(),
             spec.seed(),
             segmentLink
         );
@@ -152,7 +153,7 @@ public final class VisualEffectService {
         Map<UUID, ServerPlayer> audience = new LinkedHashMap<>();
         collectAudience(level, active, null, audience);
         for (ServerPlayer player : audience.values()) {
-            sendStart(player, active);
+            sendStart(level, player, active);
         }
         while (effects.size() > MAX_ACTIVE_EFFECTS_PER_LEVEL) {
             UUID oldest = effects.keySet().iterator().next();
@@ -200,6 +201,7 @@ public final class VisualEffectService {
             spec.scale(),
             spec.durationTicks(),
             startGameTime,
+            level.getGameTime(),
             spec.seed(),
             null
         );
@@ -208,7 +210,7 @@ public final class VisualEffectService {
         Map<UUID, ServerPlayer> audience = new LinkedHashMap<>();
         collectAudience(level, active, null, audience);
         for (ServerPlayer player : audience.values()) {
-            sendStart(player, active);
+            sendStart(level, player, active);
         }
         startAudio(level, instanceId, spec, startGameTime);
         return new VisualEffectHandle(instanceId);
@@ -255,6 +257,7 @@ public final class VisualEffectService {
             spec.scale(),
             spec.durationTicks(),
             startGameTime,
+            level.getGameTime(),
             spec.seed(),
             link
         );
@@ -263,7 +266,7 @@ public final class VisualEffectService {
         Map<UUID, ServerPlayer> audience = new LinkedHashMap<>();
         collectAudience(level, active, null, audience);
         for (ServerPlayer player : audience.values()) {
-            sendStart(player, active);
+            sendStart(level, player, active);
         }
         if (link == null) {
             startAudio(level, instanceId, spec, startGameTime);
@@ -420,7 +423,7 @@ public final class VisualEffectService {
             }
             for (ServerPlayer player : nearby.values()) {
                 if (!active.trackingPlayers().contains(player.getUUID())) {
-                    sendStart(player, active);
+                    sendStart(level, player, active);
                 }
             }
         }
@@ -434,8 +437,9 @@ public final class VisualEffectService {
     }
 
     /**
-     * Builds a resume snapshot for one joining player. The client replaces its visual state with
-     * the snapshot; normal tick reconciliation still sends a start when needed.
+     * Builds and applies a resume snapshot for one joining player. Returned effects are marked as
+     * tracked and effects outside the player's audience are untracked, so the next tick does not
+     * resend duplicate starts. Callers are responsible for sending the returned payloads.
      */
     public static List<StartVisualEffectPayload> resumePayloads(ServerLevel level, ServerPlayer player) {
         Objects.requireNonNull(level, "level");
@@ -445,13 +449,17 @@ public final class VisualEffectService {
             return List.of();
         }
 
+        long serverGameTime = level.getGameTime();
         List<StartVisualEffectPayload> payloads = new ArrayList<>();
         Map<UUID, ServerPlayer> audience = new LinkedHashMap<>();
         for (ActiveEffect active : effects.values()) {
             audience.clear();
             collectAudience(level, active, null, audience);
             if (audience.containsKey(player.getUUID())) {
-                payloads.add(active.currentPayload());
+                payloads.add(active.currentPayload(serverGameTime));
+                active.trackingPlayers().add(player.getUUID());
+            } else {
+                active.trackingPlayers().remove(player.getUUID());
             }
         }
         return List.copyOf(payloads);
@@ -535,8 +543,8 @@ public final class VisualEffectService {
         return active;
     }
 
-    private static void sendStart(ServerPlayer player, ActiveEffect active) {
-        PacketDistributor.sendToPlayer(player, active.currentPayload());
+    private static void sendStart(ServerLevel level, ServerPlayer player, ActiveEffect active) {
+        PacketDistributor.sendToPlayer(player, active.currentPayload(level.getGameTime()));
         active.trackingPlayers().add(player.getUUID());
     }
 
@@ -596,7 +604,7 @@ public final class VisualEffectService {
             this.transform = transform;
         }
 
-        private StartVisualEffectPayload currentPayload() {
+        private StartVisualEffectPayload currentPayload(long serverGameTime) {
             EffectPoint position = this.transform.position();
             return new StartVisualEffectPayload(
                 this.payload.effectId(),
@@ -611,6 +619,7 @@ public final class VisualEffectService {
                 this.payload.scale(),
                 this.payload.durationTicks(),
                 this.payload.startGameTime(),
+                serverGameTime,
                 this.payload.seed(),
                 this.payload.segmentLink()
             );
