@@ -24,6 +24,7 @@ class StartVisualEffectPayloadTest {
 
         assertEquals(payload, decoded);
         assertNull(decoded.segmentLink());
+        assertEquals(140L, decoded.serverGameTime());
     }
 
     @Test
@@ -52,12 +53,12 @@ class StartVisualEffectPayloadTest {
 
     private static StartVisualEffectPayload standalone() {
         return new StartVisualEffectPayload(EFFECT_ID, UUID.randomUUID(), DIMENSION, 1.0, 64.0, 2.0,
-            0.0F, 0.0F, 0.0F, 2.0F, 200, 100L, 42L);
+            0.0F, 0.0F, 0.0F, 2.0F, 200, 100L, 140L, 42L, null);
     }
 
     private static StartVisualEffectPayload withLink(SegmentLink link) {
         return new StartVisualEffectPayload(EFFECT_ID, UUID.randomUUID(), DIMENSION, 1.0, 64.0, 2.0,
-            0.0F, 0.0F, 0.0F, 2.0F, 200, 100L, 42L, link);
+            0.0F, 0.0F, 0.0F, 2.0F, 200, 100L, 140L, 42L, link);
     }
 
     private static StartVisualEffectPayload roundTrip(StartVisualEffectPayload payload) {

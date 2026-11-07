@@ -16,18 +16,31 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.phys.Vec3;
 
-/** Server-to-client sound schedule for one effect instance. */
-public record EffectAudioPlanPayload(EffectAudioPlan plan) implements CustomPacketPayload {
+/**
+ * Server-to-client sound schedule for one effect instance.
+ *
+ * @param plan immutable cue schedule
+ * @param serverGameTime server game time when this payload was created; clients use it to age the
+ *     plan without trusting their own clock
+ */
+public record EffectAudioPlanPayload(EffectAudioPlan plan, long serverGameTime) implements CustomPacketPayload {
     public static final Type<EffectAudioPlanPayload> TYPE = new Type<>(
         ResourceLocation.fromNamespaceAndPath(QuasarLib.MOD_ID, "effect_audio_plan")
     );
     public static final StreamCodec<FriendlyByteBuf, EffectAudioPlanPayload> STREAM_CODEC = StreamCodec.of(
-        (buffer, payload) -> writePlan(buffer, payload.plan()),
-        buffer -> new EffectAudioPlanPayload(readPlan(buffer))
+        (buffer, payload) -> {
+            writePlan(buffer, payload.plan());
+            buffer.writeLong(payload.serverGameTime());
+        },
+        buffer -> new EffectAudioPlanPayload(readPlan(buffer), buffer.readLong())
     );
 
     public EffectAudioPlanPayload {
         Objects.requireNonNull(plan, "plan");
+    }
+
+    public EffectAudioPlanPayload(EffectAudioPlan plan) {
+        this(plan, plan.startGameTime());
     }
 
     @Override

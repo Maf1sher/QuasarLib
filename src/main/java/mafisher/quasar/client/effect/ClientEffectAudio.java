@@ -18,7 +18,7 @@ import net.minecraft.client.sounds.SoundManager;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.sounds.SoundEvent;
 
-/** Client-side scheduler for effect sound plans; cue timing follows client game time, not packet arrival. */
+/** Client-side scheduler for effect sound plans; cue timing follows a server-relative timeline, not packet arrival. */
 public final class ClientEffectAudio {
     private static final int MAX_ACTIVE_PLANS = 128;
     private static final int GRACE_TICKS = EffectAudioPlan.GRACE_TICKS;
@@ -34,6 +34,7 @@ public final class ClientEffectAudio {
         if (level == null || !level.dimension().location().equals(plan.dimensionId())) {
             return;
         }
+        ClientEffectClock.observe(payload.serverGameTime(), level.getGameTime());
         int age = ageTicks(level, plan);
         if (age >= plan.durationTicks() + GRACE_TICKS || !plan.hasPlayableCues(age, GRACE_TICKS)) {
             return;
@@ -98,7 +99,8 @@ public final class ClientEffectAudio {
     }
 
     private static int ageTicks(ClientLevel level, EffectAudioPlan plan) {
-        return (int)Math.min(Integer.MAX_VALUE, Math.max(0L, level.getGameTime() - plan.startGameTime()));
+        long serverGameTime = ClientEffectClock.estimate(level.getGameTime());
+        return (int)Math.min(Integer.MAX_VALUE, Math.max(0L, serverGameTime - plan.startGameTime()));
     }
 
     private static final class State {

@@ -65,15 +65,16 @@ public final class ClientVisualEffectManager {
         if (renderer == null) {
             return;
         }
+        ClientEffectClock.observe(payload.serverGameTime(), level.getGameTime());
         this.removeInstance(payload.instanceId());
-        VisualEffectInstance effect = new VisualEffectInstance(payload, level.getGameTime());
+        VisualEffectInstance effect = new VisualEffectInstance(payload, payload.startGameTime());
         double radius = this.spatialRadius(renderer, effect);
         this.activeEffects.put(payload.instanceId(), effect);
         this.instanceSpatialRadii.put(payload.instanceId(), radius);
 
         SegmentLink segmentLink = payload.segmentLink();
         if (segmentLink != null) {
-            ClientSegmentGroup group = this.segmentedGroup(segmentLink, payload, level.getGameTime());
+            ClientSegmentGroup group = this.segmentedGroup(segmentLink, payload, payload.startGameTime());
             group.add(new ClientSegmentGroup.SegmentMember(
                 payload.instanceId(), payload, segmentLink, radius
             ));
@@ -120,6 +121,7 @@ public final class ClientVisualEffectManager {
         }
         VisualEffectInstance effect = this.activeEffects.get(payload.instanceId());
         if (effect != null && effect.payload().segmentLink() == null) {
+            ClientEffectClock.observe(payload.updateGameTime(), level.getGameTime());
             this.activeEffects.put(payload.instanceId(),
                 effect.withTransform(payload.transform(), payload.updateGameTime()));
             this.indexInstance(payload.instanceId());
@@ -138,6 +140,7 @@ public final class ClientVisualEffectManager {
         if (group == null) {
             return;
         }
+        ClientEffectClock.observe(payload.updateGameTime(), level.getGameTime());
         group.applyBase(payload.transform(), payload.updateGameTime());
         this.indexGroup(payload.coordinatorId());
     }
@@ -149,7 +152,7 @@ public final class ClientVisualEffectManager {
         if (level == null) {
             return;
         }
-        long gameTime = level.getGameTime();
+        long gameTime = ClientEffectClock.estimate(level.getGameTime());
         this.removeFinishedEffects(level, gameTime);
         if (this.activeEffects.isEmpty()) {
             return;
@@ -214,7 +217,7 @@ public final class ClientVisualEffectManager {
             return List.of();
         }
 
-        long gameTime = level.getGameTime();
+        long gameTime = ClientEffectClock.estimate(level.getGameTime());
         this.removeFinishedEffects(level, gameTime);
         if (this.activeEffects.isEmpty()) {
             return List.of();
@@ -300,7 +303,7 @@ public final class ClientVisualEffectManager {
         if (level == null) {
             return;
         }
-        long gameTime = level.getGameTime();
+        long gameTime = ClientEffectClock.estimate(level.getGameTime());
         float partialTick = event.getPartialTick().getGameTimeDeltaPartialTick(false);
         AABB query = this.queryBox(event.getCamera().getPosition());
 
@@ -586,6 +589,12 @@ public final class ClientVisualEffectManager {
         }
     }
 
+    /** Drops every client-side instance and GPU resource without waiting for a level reference. */
+    void clear() {
+        this.clearState();
+        this.currentLevel = null;
+    }
+
     void onResourceReload(ResourceManager resourceManager) {
         this.rendererRegistry.onResourceReload(resourceManager);
     }
@@ -598,6 +607,7 @@ public final class ClientVisualEffectManager {
     }
 
     private void clearState() {
+        ClientEffectClock.reset();
         this.activeEffects.clear();
         this.segmentedGroups.clear();
         this.instanceSpatialRadii.clear();

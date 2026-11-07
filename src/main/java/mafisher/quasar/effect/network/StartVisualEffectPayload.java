@@ -12,7 +12,13 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/** Server-to-client start event for one short-lived, client-rendered effect. */
+/**
+ * Server-to-client start event for one short-lived, client-rendered effect.
+ *
+ * @param startGameTime absolute server game time at which the effect started
+ * @param serverGameTime server game time when this payload was created; clients use it to
+ *     calibrate their own monotonic server timeline
+ */
 public record StartVisualEffectPayload(
     ResourceLocation effectId,
     UUID instanceId,
@@ -26,6 +32,7 @@ public record StartVisualEffectPayload(
     float scale,
     int durationTicks,
     long startGameTime,
+    long serverGameTime,
     long seed,
     SegmentLink segmentLink
 ) implements CustomPacketPayload {
@@ -48,6 +55,26 @@ public record StartVisualEffectPayload(
             || durationTicks < 1 || durationTicks > 72_000) {
             throw new IllegalArgumentException("Invalid visual effect payload");
         }
+    }
+
+    public StartVisualEffectPayload(
+        ResourceLocation effectId,
+        UUID instanceId,
+        ResourceLocation dimensionId,
+        double x,
+        double y,
+        double z,
+        float yaw,
+        float pitch,
+        float roll,
+        float scale,
+        int durationTicks,
+        long startGameTime,
+        long seed,
+        SegmentLink segmentLink
+    ) {
+        this(effectId, instanceId, dimensionId, x, y, z, yaw, pitch, roll, scale, durationTicks, startGameTime,
+            startGameTime, seed, segmentLink);
     }
 
     public StartVisualEffectPayload(
@@ -109,6 +136,7 @@ public record StartVisualEffectPayload(
         buffer.writeFloat(payload.scale);
         buffer.writeInt(payload.durationTicks);
         buffer.writeLong(payload.startGameTime);
+        buffer.writeLong(payload.serverGameTime);
         buffer.writeLong(payload.seed);
         SegmentLink link = payload.segmentLink;
         buffer.writeBoolean(link != null);
@@ -134,6 +162,7 @@ public record StartVisualEffectPayload(
             buffer.readFloat(),
             buffer.readFloat(),
             buffer.readInt(),
+            buffer.readLong(),
             buffer.readLong(),
             buffer.readLong(),
             decodeSegmentLink(buffer)

@@ -35,9 +35,11 @@ class EffectAudioPlanPayloadTest {
         );
         FriendlyByteBuf buffer = new FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
 
-        EffectAudioPlanPayload.STREAM_CODEC.encode(buffer, new EffectAudioPlanPayload(plan));
-        EffectAudioPlan decoded = EffectAudioPlanPayload.STREAM_CODEC.decode(buffer).plan();
+        EffectAudioPlanPayload.STREAM_CODEC.encode(buffer, new EffectAudioPlanPayload(plan, 1300L));
+        EffectAudioPlanPayload decodedPayload = EffectAudioPlanPayload.STREAM_CODEC.decode(buffer);
+        EffectAudioPlan decoded = decodedPayload.plan();
 
+        assertEquals(1300L, decodedPayload.serverGameTime());
         assertEquals(effectId, decoded.effectId());
         assertEquals(DIMENSION, decoded.dimensionId());
         assertEquals(1234L, decoded.startGameTime());
