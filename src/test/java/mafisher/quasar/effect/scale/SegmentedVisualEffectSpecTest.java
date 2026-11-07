@@ -6,7 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import mafisher.quasar.effect.EffectAudience;
+import mafisher.quasar.effect.EffectPriority;
 import mafisher.quasar.effect.VisualEffectSpec;
+import mafisher.quasar.effect.audio.EffectAudioSpec;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
@@ -85,6 +87,56 @@ class SegmentedVisualEffectSpecTest {
                 1, 1, 0.0, 0, 42L, EffectAudience.dimensionWide()
             ));
         assertThrows(IndexOutOfBoundsException.class, () -> spec(2, 2, 4.0, 0.0F).segmentSpec(2, 0));
+    }
+
+    @Test
+    void supportsVerticalLayers() {
+        SegmentedVisualEffectSpec spec = layeredSpec(1, 1, 3, 0.0, 6.0);
+
+        assertEquals(3, spec.segmentCount());
+        assertEquals(58.0, spec.segmentSpec(0, 0, 0).position().y, 1.0E-9);
+        assertEquals(64.0, spec.segmentSpec(0, 0, 1).position().y, 1.0E-9);
+        assertEquals(70.0, spec.segmentSpec(0, 0, 2).position().y, 1.0E-9);
+        assertNotEquals(spec.segmentSeed(0, 0, 0), spec.segmentSeed(0, 0, 1));
+        assertNotEquals(spec.segmentSeed(0, 0, 1), spec.segmentSeed(0, 0, 2));
+    }
+
+    @Test
+    void validatesLayersAndTerrainParameters() {
+        assertThrows(IllegalArgumentException.class, () -> layeredSpec(1, 1, 0, 0.0, 6.0));
+        assertThrows(IllegalArgumentException.class, () -> layeredSpec(1, 1, 2, 0.0, 0.0));
+        assertThrows(IllegalArgumentException.class, () -> layeredSpec(16, 8, 2, 4.0, 4.0));
+        assertThrows(IllegalArgumentException.class,
+            () -> new SegmentTerrainConform(SegmentHeightSource.WORLD_SURFACE, Double.NaN));
+        assertThrows(IllegalArgumentException.class,
+            () -> new SegmentTerrainConform(SegmentHeightSource.WORLD_SURFACE, 4097.0));
+    }
+
+    private static SegmentedVisualEffectSpec layeredSpec(
+        int columns,
+        int rows,
+        int layers,
+        double spacing,
+        double layerSpacing
+    ) {
+        return new SegmentedVisualEffectSpec(
+            EFFECT_ID,
+            new Vec3(0.0, 64.0, 0.0),
+            0.0F,
+            0.0F,
+            0.0F,
+            4.0F,
+            columns,
+            rows,
+            spacing,
+            200,
+            42L,
+            EffectAudience.dimensionWide(),
+            EffectAudioSpec.NONE,
+            EffectPriority.NORMAL,
+            layers,
+            layerSpacing
+        );
     }
 
     private static SegmentedVisualEffectSpec spec(int columns, int rows, double spacing, float yaw) {

@@ -30,8 +30,10 @@ import mafisher.quasar.effect.persistence.EffectPersistenceService;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.StringTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.slf4j.Logger;
@@ -159,6 +161,7 @@ public final class SegmentedVisualEffectService {
                 coordinatorId, spec.segmentCount(), restoredSegmentIds.size());
             return null;
         }
+        SegmentHeightProfile heights = resolveHeights(level, spec, restoredDescriptor);
 
         Map<UUID, ActiveSegmentedEffect> active = activeSegments(level);
         ActiveSegmentedEffect replaced = active.get(coordinatorId);
@@ -179,8 +182,13 @@ public final class SegmentedVisualEffectService {
         CompoundTag state = options.state();
         state.putInt("columns", spec.columns());
         state.putInt("rows", spec.rows());
+        state.putInt("layers", spec.layers());
         state.putDouble("spacing", spec.spacing());
+        state.putDouble("layer_spacing", spec.layerSpacing());
         state.putFloat("segment_scale", spec.segmentScale());
+        state.putString("terrain_source", spec.terrain().source().name());
+        state.putDouble("terrain_offset", spec.terrain().verticalOffset());
+        saveHeights(state, heights);
         ListTag ids = new ListTag();
         for (int index = 0; index < spec.segmentCount(); index++) {
             ids.add(StringTag.valueOf(segmentId(coordinatorId, index).toString()));
@@ -209,7 +217,8 @@ public final class SegmentedVisualEffectService {
             spec,
             transform,
             startGameTime,
-            descriptor
+            descriptor,
+            heights
         );
         active.put(coordinatorId, activeEffect);
         if (replaced != null) {
@@ -505,7 +514,8 @@ public final class SegmentedVisualEffectService {
         }
 
         EffectPoint position = activeEffect.transform.position();
-        double radius = nearby.radius() + activeEffect.spec.layout().halfDiagonal();
+        double heightDeviation = activeEffect.heights.maxAbsDeviation(position.y());
+        double radius = nearby.radius() + activeEffect.spec.layout().halfDiagonal() + heightDeviation;
         double radiusSqr = radius * radius;
         for (ServerPlayer player : level.players()) {
             if (position.distanceToSqr(player.getX(), player.getY(), player.getZ()) <= radiusSqr) {
@@ -567,8 +577,75 @@ public final class SegmentedVisualEffectService {
             activeEffect.spec.durationTicks(),
             activeEffect.startGameTime,
             serverGameTime,
-            activeEffect.spec.seed()
+            activeEffect.spec.seed(),
+            activeEffect.spec.layers(),
+            activeEffect.spec.layerSpacing(),
+            activeEffect.heights
         );
+    }
+
+    private static SegmentHeightProfile resolveHeights(
+        ServerLevel level,
+        SegmentedVisualEffectSpec spec,
+        EffectDescriptor restoredDescriptor
+    ) {
+        if (restoredDescriptor != null) {
+            SegmentHeightProfile stored = readHeights(restoredDescriptor.state());
+            if (!stored.isEmpty()) {
+                return stored;
+            }
+        }
+        if (spec.terrain().isNone()) {
+            return SegmentHeightProfile.NONE;
+        }
+        return sampleHeights(level, spec);
+    }
+
+    private static SegmentHeightProfile sampleHeights(ServerLevel level, SegmentedVisualEffectSpec spec) {
+        SegmentGridLayout layout = spec.layout();
+        double[] values = new double[layout.columns() * layout.rows()];
+        for (int row = 0; row < layout.rows(); row++) {
+            for (int column = 0; column < layout.columns(); column++) {
+                Vec3 offset = layout.offset(column, row, 0, spec.yaw());
+                int x = Mth.floor(spec.center().x + offset.x);
+                int z = Mth.floor(spec.center().z + offset.z);
+                values[column + row * layout.columns()] = level.hasChunkAt(x, z)
+                    ? level.getHeight(spec.terrain().source().heightmap(), x, z)
+                        + spec.terrain().verticalOffset()
+                    : spec.center().y;
+            }
+        }
+        return SegmentHeightProfile.of(layout.columns(), layout.rows(), values);
+    }
+
+    private static void saveHeights(CompoundTag state, SegmentHeightProfile heights) {
+        if (heights.isEmpty()) {
+            state.remove("column_heights");
+            return;
+        }
+        double[] values = heights.values();
+        long[] bits = new long[values.length];
+        for (int index = 0; index < values.length; index++) {
+            bits[index] = Double.doubleToRawLongBits(values[index]);
+        }
+        state.putLongArray("column_heights", bits);
+    }
+
+    private static SegmentHeightProfile readHeights(CompoundTag state) {
+        int columns = state.getInt("columns");
+        int rows = state.getInt("rows");
+        if (columns < 1 || rows < 1 || !state.contains("column_heights", Tag.TAG_LONG_ARRAY)) {
+            return SegmentHeightProfile.NONE;
+        }
+        long[] bits = state.getLongArray("column_heights");
+        if (bits.length != columns * rows) {
+            return SegmentHeightProfile.NONE;
+        }
+        double[] values = new double[bits.length];
+        for (int index = 0; index < bits.length; index++) {
+            values[index] = Double.longBitsToDouble(bits[index]);
+        }
+        return SegmentHeightProfile.of(columns, rows, values);
     }
 
     private static ActiveSegmentedEffect find(ServerLevel level, SegmentedVisualEffectHandle handle) {
@@ -591,6 +668,7 @@ public final class SegmentedVisualEffectService {
     private static final class ActiveSegmentedEffect {
         private final SegmentedVisualEffectSpec spec;
         private final long startGameTime;
+        private final SegmentHeightProfile heights;
         private final Set<UUID> trackingPlayers = new HashSet<>();
         private EffectTransform transform;
         private EffectDescriptor descriptor;
@@ -599,11 +677,13 @@ public final class SegmentedVisualEffectService {
             SegmentedVisualEffectSpec spec,
             EffectTransform transform,
             long startGameTime,
-            EffectDescriptor descriptor
+            EffectDescriptor descriptor,
+            SegmentHeightProfile heights
         ) {
             this.spec = spec;
             this.transform = transform;
             this.startGameTime = startGameTime;
+            this.heights = heights;
             this.descriptor = descriptor;
         }
     }

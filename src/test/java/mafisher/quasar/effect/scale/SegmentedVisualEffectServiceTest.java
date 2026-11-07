@@ -3,6 +3,8 @@ package mafisher.quasar.effect.scale;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -23,6 +25,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -222,6 +225,67 @@ class SegmentedVisualEffectServiceTest {
         assertEquals(3.0F, payload.roll());
         assertEquals(50L, payload.serverGameTime());
         assertEquals(4, payload.segmentCount());
+    }
+
+    @Test
+    void samplesTerrainHeightsOnceAndSendsThemInTheAggregatedStart() {
+        when(this.level.hasChunkAt(anyInt(), anyInt())).thenReturn(true);
+        when(this.level.getHeight(eq(Heightmap.Types.WORLD_SURFACE), anyInt(), anyInt()))
+            .thenAnswer(call -> 70 + (int) call.getArgument(1));
+        SegmentedVisualEffectHandle handle = SegmentedVisualEffectService.start(
+            this.level, terrainSpec(2, 2, 8.0)
+        );
+        ServerPlayer player = player(new Vec3(0.0, 64.0, 0.0));
+        when(this.level.players()).thenReturn(List.of(player));
+
+        StartSegmentedVisualEffectPayload payload =
+            SegmentedVisualEffectService.resumePayloads(this.level, player).getFirst();
+
+        assertEquals(8, payload.segmentCount());
+        assertEquals(2, payload.layers());
+        assertFalse(payload.heights().isEmpty());
+        assertEquals(70.0 - 4.0, payload.heights().y(0, 0));
+        assertEquals(70.0 + 4.0, payload.heights().y(1, 0));
+        assertTrue(SegmentedVisualEffectService.isActive(this.level, handle));
+    }
+
+    @Test
+    void unloadedTerrainColumnsFallBackToTheCenterY() {
+        when(this.level.hasChunkAt(anyInt(), anyInt())).thenReturn(false);
+        SegmentedVisualEffectService.start(this.level, terrainSpec(2, 2, 8.0));
+        ServerPlayer player = player(new Vec3(0.0, 64.0, 0.0));
+        when(this.level.players()).thenReturn(List.of(player));
+
+        StartSegmentedVisualEffectPayload payload =
+            SegmentedVisualEffectService.resumePayloads(this.level, player).getFirst();
+
+        for (int row = 0; row < 2; row++) {
+            for (int column = 0; column < 2; column++) {
+                assertEquals(64.0, payload.heights().y(column, row));
+            }
+        }
+    }
+
+    private static SegmentedVisualEffectSpec terrainSpec(int columns, int rows, double spacing) {
+        return new SegmentedVisualEffectSpec(
+            EFFECT_ID,
+            new Vec3(0.0, 64.0, 0.0),
+            0.0F,
+            0.0F,
+            0.0F,
+            4.0F,
+            columns,
+            rows,
+            spacing,
+            200,
+            42L,
+            EffectAudience.dimensionWide(),
+            EffectAudioSpec.NONE,
+            EffectPriority.NORMAL,
+            2,
+            4.0,
+            new SegmentTerrainConform(SegmentHeightSource.WORLD_SURFACE, 0.0)
+        );
     }
 
     private static SegmentedVisualEffectSpec spec(int columns, int rows, int durationTicks) {

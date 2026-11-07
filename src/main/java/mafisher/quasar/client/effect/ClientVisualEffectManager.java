@@ -114,13 +114,17 @@ public final class ClientVisualEffectManager {
         ClientEffectClock.observe(payload.serverGameTime(), level.getGameTime());
         SegmentGridLayout layout = payload.layout();
         EffectTransform base = payload.transform();
-        int columnCount = payload.columns();
+        this.segmentedGroups.put(
+            payload.coordinatorId(),
+            new ClientSegmentGroup(layout, payload.heights(), base, payload.startGameTime())
+        );
         for (int index = 0; index < payload.segmentCount(); index++) {
-            int column = index % columnCount;
-            int row = index / columnCount;
-            EffectTransform cell = layout.transform(base, column, row);
+            int column = layout.column(index);
+            int row = layout.row(index);
+            int layer = layout.layer(index);
+            EffectTransform cell = layout.transform(base, column, row, layer, payload.heights());
             UUID segmentId = SegmentIds.segmentId(payload.coordinatorId(), index);
-            long segmentSeed = SegmentIds.segmentSeed(payload.seed(), column, row);
+            long segmentSeed = SegmentIds.segmentSeed(payload.seed(), column, row, layer);
             this.start(new StartVisualEffectPayload(
                 payload.effectId(),
                 segmentId,

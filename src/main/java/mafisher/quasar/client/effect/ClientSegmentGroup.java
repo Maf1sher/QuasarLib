@@ -9,6 +9,7 @@ import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
 import mafisher.quasar.effect.scale.SegmentGridLayout;
+import mafisher.quasar.effect.scale.SegmentHeightProfile;
 import mafisher.quasar.effect.scale.SegmentLink;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -21,6 +22,9 @@ final class ClientSegmentGroup {
     private static final double RANGE_EPSILON = 1.0E-6;
 
     private final SegmentGridLayout layout;
+    private final SegmentHeightProfile heights;
+    private final double heightSpread;
+    private final double verticalHalfExtent;
     private final SegmentMember[] cells;
     private final double halfDiagonal;
     private EffectTransform previousBase;
@@ -31,7 +35,22 @@ final class ClientSegmentGroup {
     private int memberCount;
 
     ClientSegmentGroup(SegmentGridLayout layout, EffectTransform initialBase, long initialGameTime) {
+        this(layout, SegmentHeightProfile.NONE, initialBase, initialGameTime);
+    }
+
+    ClientSegmentGroup(
+        SegmentGridLayout layout,
+        SegmentHeightProfile heights,
+        EffectTransform initialBase,
+        long initialGameTime
+    ) {
         this.layout = Objects.requireNonNull(layout, "layout");
+        this.heights = Objects.requireNonNull(heights, "heights");
+        if (!heights.isEmpty() && !heights.matches(layout.columns(), layout.rows())) {
+            throw new IllegalArgumentException("Height profile does not match the grid columns");
+        }
+        this.heightSpread = heights.isEmpty() ? 0.0 : heights.spread();
+        this.verticalHalfExtent = (layout.layers() - 1) * layout.layerSpacing() / 2.0;
         this.cells = new SegmentMember[layout.segmentCount()];
         this.previousBase = Objects.requireNonNull(initialBase, "initialBase");
         this.currentBase = initialBase;
@@ -47,7 +66,9 @@ final class ClientSegmentGroup {
     static EffectTransform baseFromSegment(SegmentLink link, EffectTransform segmentTransform) {
         Objects.requireNonNull(link, "link");
         Objects.requireNonNull(segmentTransform, "segmentTransform");
-        Vec3 offset = link.layout().offset(link.column(), link.row(), segmentTransform.yaw());
+        Vec3 offset = link.layout().offset(
+            link.column(), link.row(), link.layer(), segmentTransform.yaw()
+        );
         EffectPoint position = segmentTransform.position();
         return new EffectTransform(
             new EffectPoint(position.x() - offset.x, position.y() - offset.y, position.z() - offset.z),
@@ -165,18 +186,24 @@ final class ClientSegmentGroup {
         double dy = this.currentBase.position().y() - this.previousBase.position().y();
         double dz = this.currentBase.position().z() - this.previousBase.position().z();
         double movement = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        double total = radius + movement / 2.0;
         double x = (this.previousBase.position().x() + this.currentBase.position().x()) / 2.0;
         double y = (this.previousBase.position().y() + this.currentBase.position().y()) / 2.0;
         double z = (this.previousBase.position().z() + this.currentBase.position().z()) / 2.0;
+        double heightDeviation = this.heights.isEmpty() ? 0.0 : this.heights.maxAbsDeviation(y);
+        double total = radius + heightDeviation + movement / 2.0;
         return new AABB(x - total, y - total, z - total, x + total, y + total, z + total);
     }
 
     /** Builds the render-time instance for one segment; the stored start instance remains a payload carrier. */
     VisualEffectInstance renderInstance(SegmentMember member) {
         Objects.requireNonNull(member, "member");
-        EffectTransform from = this.layout.transform(this.previousBase, member.link().column(), member.link().row());
-        EffectTransform to = this.layout.transform(this.currentBase, member.link().column(), member.link().row());
+        SegmentLink link = member.link();
+        EffectTransform from = this.layout.transform(
+            this.previousBase, link.column(), link.row(), link.layer(), this.heights
+        );
+        EffectTransform to = this.layout.transform(
+            this.currentBase, link.column(), link.row(), link.layer(), this.heights
+        );
         if (this.previousBaseGameTime == this.currentBaseGameTime) {
             return new VisualEffectInstance(member.payload(), to, to, this.currentBaseGameTime,
                 this.currentBaseGameTime);
@@ -205,7 +232,24 @@ final class ClientSegmentGroup {
         double yawDelta = shortestAngle(this.currentBase.yaw() - this.previousBase.yaw());
         double rotationMovement = 2.0 * this.halfDiagonal
             * Math.abs(Math.sin(Math.toRadians(yawDelta) / 2.0));
-        AABB expanded = query.inflate((baseMovement + rotationMovement) / 2.0 + this.maxSpatialRadius);
+        AABB expanded = query.inflate(
+            (baseMovement + rotationMovement) / 2.0 + this.maxSpatialRadius + this.heightSpread
+        );
+
+        double verticalMin;
+        double verticalMax;
+        if (this.heights.isEmpty()) {
+            double baseMin = Math.min(this.previousBase.position().y(), this.currentBase.position().y());
+            double baseMax = Math.max(this.previousBase.position().y(), this.currentBase.position().y());
+            verticalMin = baseMin - this.verticalHalfExtent;
+            verticalMax = baseMax + this.verticalHalfExtent;
+        } else {
+            verticalMin = this.heights.minimumY() - this.verticalHalfExtent;
+            verticalMax = this.heights.maximumY() + this.verticalHalfExtent;
+        }
+        if (expanded.maxY < verticalMin || expanded.minY > verticalMax) {
+            return;
+        }
 
         int[] range = {Integer.MAX_VALUE, Integer.MIN_VALUE, Integer.MAX_VALUE, Integer.MIN_VALUE};
         this.accumulateRange(expanded, this.previousBase, range);
@@ -218,12 +262,13 @@ final class ClientSegmentGroup {
             return;
         }
 
-        for (int row = minRow; row <= maxRow; row++) {
-            int baseIndex = row * this.layout.columns();
-            for (int column = minColumn; column <= maxColumn; column++) {
-                SegmentMember member = this.cells[baseIndex + column];
-                if (member != null) {
-                    consumer.accept(member);
+        for (int layer = 0; layer < this.layout.layers(); layer++) {
+            for (int row = minRow; row <= maxRow; row++) {
+                for (int column = minColumn; column <= maxColumn; column++) {
+                    SegmentMember member = this.cells[this.layout.index(column, row, layer)];
+                    if (member != null) {
+                        consumer.accept(member);
+                    }
                 }
             }
         }

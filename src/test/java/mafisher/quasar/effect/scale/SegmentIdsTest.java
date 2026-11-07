@@ -30,6 +30,21 @@ class SegmentIdsTest {
     }
 
     @Test
+    void keepsExistingFlatSeedsAndSeparatesLayers() {
+        assertEquals(SegmentIds.segmentSeed(42L, 2, 3), SegmentIds.segmentSeed(42L, 2, 3, 0));
+        assertNotEquals(SegmentIds.segmentSeed(42L, 2, 3, 0), SegmentIds.segmentSeed(42L, 2, 3, 1));
+        assertNotEquals(SegmentIds.segmentSeed(42L, 2, 3, 1), SegmentIds.segmentSeed(42L, 2, 3, 2));
+    }
+
+    @Test
+    void rejectsNegativeCells() {
+        assertThrows(IllegalArgumentException.class,
+            () -> SegmentIds.segmentSeed(42L, -1, 0, 0));
+        assertThrows(IllegalArgumentException.class,
+            () -> SegmentIds.segmentSeed(42L, 0, 0, -1));
+    }
+
+    @Test
     void matchesTheSpecSeedDerivation() {
         SegmentedVisualEffectSpec spec = new SegmentedVisualEffectSpec(
             ResourceLocation.fromNamespaceAndPath("quasar_lib", "test"),

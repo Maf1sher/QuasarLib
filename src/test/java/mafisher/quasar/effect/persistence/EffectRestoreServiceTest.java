@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -14,6 +15,7 @@ import java.util.List;
 import java.util.UUID;
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectPoint;
+import mafisher.quasar.effect.EffectPriority;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.audio.EffectAudioAttenuation;
@@ -26,6 +28,7 @@ import mafisher.quasar.effect.gameplay.EffectTickBudget;
 import mafisher.quasar.effect.gameplay.GameplayEffectNbt;
 import mafisher.quasar.effect.gameplay.GameplayEffectSpec;
 import mafisher.quasar.effect.gameplay.OwnerPolicy;
+import mafisher.quasar.effect.network.StartSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.persistence.BlockJournal;
 import mafisher.quasar.effect.persistence.BlockRollbackService;
 import mafisher.quasar.effect.persistence.EffectAudioNbt;
@@ -33,16 +36,20 @@ import mafisher.quasar.effect.persistence.EffectCapabilities;
 import mafisher.quasar.effect.persistence.EffectDescriptor;
 import mafisher.quasar.effect.persistence.EffectKind;
 import mafisher.quasar.effect.persistence.EffectPersistence;
+import mafisher.quasar.effect.scale.SegmentHeightSource;
+import mafisher.quasar.effect.scale.SegmentTerrainConform;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectService;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectSpec;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.saveddata.SavedData;
 import net.minecraft.world.level.storage.DimensionDataStorage;
 import org.junit.jupiter.api.AfterEach;
@@ -157,6 +164,70 @@ class EffectRestoreServiceTest {
         assertEquals(1, SegmentedVisualEffectService.activeCount(this.level));
         assertEquals(4, SegmentedVisualEffectService.activeSegmentCount(this.level));
         assertEquals(0, VisualEffectService.activeCount(this.level));
+    }
+
+    @Test
+    void restoresLayeredAndTerrainAlignedCoordinators() {
+        SegmentedVisualEffectSpec spec = new SegmentedVisualEffectSpec(
+            EFFECT,
+            new net.minecraft.world.phys.Vec3(0.0, 64.0, 0.0),
+            0.0F, 0.0F, 0.0F,
+            1.0F, 2, 2, 4.0,
+            200,
+            7L,
+            EffectAudience.nearby(64.0),
+            EffectAudioSpec.NONE,
+            EffectPriority.NORMAL,
+            4,
+            6.0,
+            new SegmentTerrainConform(SegmentHeightSource.WORLD_SURFACE, 0.0)
+        );
+        SegmentedVisualEffectService.start(this.level, spec);
+        assertEquals(16, SegmentedVisualEffectService.activeSegmentCount(this.level));
+
+        SegmentedVisualEffectService.stopAll(this.level, false);
+        VisualEffectService.clear(this.level);
+        this.gameTime = 80L;
+
+        EffectRecoveryReport report = EffectRestoreService.restoreLevel(this.level);
+
+        assertEquals(1, report.restored());
+        assertEquals(1, SegmentedVisualEffectService.activeCount(this.level));
+        assertEquals(16, SegmentedVisualEffectService.activeSegmentCount(this.level));
+    }
+
+    @Test
+    void restoreReusesBakedTerrainHeights() {
+        SegmentedVisualEffectSpec spec = new SegmentedVisualEffectSpec(
+            EFFECT,
+            new net.minecraft.world.phys.Vec3(0.0, 64.0, 0.0),
+            0.0F, 0.0F, 0.0F,
+            1.0F, 1, 1, 0.0,
+            200,
+            7L,
+            EffectAudience.dimensionWide(),
+            EffectAudioSpec.NONE,
+            EffectPriority.NORMAL,
+            1,
+            0.0,
+            new SegmentTerrainConform(SegmentHeightSource.WORLD_SURFACE, 0.0)
+        );
+        SegmentedVisualEffectService.start(this.level, spec);
+        SegmentedVisualEffectService.stopAll(this.level, false);
+        VisualEffectService.clear(this.level);
+        this.gameTime = 80L;
+        when(this.level.hasChunkAt(anyInt(), anyInt())).thenReturn(true);
+        when(this.level.getHeight(eq(Heightmap.Types.WORLD_SURFACE), anyInt(), anyInt())).thenReturn(120);
+
+        EffectRecoveryReport report = EffectRestoreService.restoreLevel(this.level);
+
+        ServerPlayer player = mock(ServerPlayer.class);
+        when(player.getUUID()).thenReturn(UUID.randomUUID());
+        when(this.level.players()).thenReturn(List.of(player));
+        StartSegmentedVisualEffectPayload payload =
+            SegmentedVisualEffectService.resumePayloads(this.level, player).getFirst();
+        assertEquals(1, report.restored());
+        assertEquals(64.0, payload.heights().y(0, 0));
     }
 
     @Test

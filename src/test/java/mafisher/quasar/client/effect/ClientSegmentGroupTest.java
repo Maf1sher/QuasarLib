@@ -12,6 +12,7 @@ import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
 import mafisher.quasar.effect.scale.SegmentGridLayout;
+import mafisher.quasar.effect.scale.SegmentHeightProfile;
 import mafisher.quasar.effect.scale.SegmentLink;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.AABB;
@@ -22,6 +23,9 @@ class ClientSegmentGroupTest {
     private static final ResourceLocation DIMENSION = ResourceLocation.fromNamespaceAndPath("minecraft", "overworld");
     private static final UUID COORDINATOR_ID = UUID.fromString("00000000-0000-0000-0000-000000000010");
     private static final SegmentGridLayout LAYOUT = new SegmentGridLayout(4, 4, 8.0);
+    private static final SegmentGridLayout LAYERED_LAYOUT = new SegmentGridLayout(2, 2, 3, 8.0, 4.0);
+    private static final SegmentHeightProfile TERRAIN_HEIGHTS =
+        SegmentHeightProfile.of(2, 2, new double[] {64.0, 66.0, 68.0, 70.0});
 
     @Test
     void derivesTheCoordinatorBaseFromEveryCell() {
@@ -177,6 +181,88 @@ class ClientSegmentGroupTest {
         assertTrue(group.isEmpty());
     }
 
+    @Test
+    void layeredTerrainTransformsUseAbsoluteColumnHeights() {
+        EffectTransform base = base(0.0, 64.0, 0.0, 0.0F);
+        ClientSegmentGroup group = new ClientSegmentGroup(LAYERED_LAYOUT, TERRAIN_HEIGHTS, base, 0L);
+        for (int layer = 0; layer < LAYERED_LAYOUT.layers(); layer++) {
+            for (int row = 0; row < LAYERED_LAYOUT.rows(); row++) {
+                for (int column = 0; column < LAYERED_LAYOUT.columns(); column++) {
+                    ClientSegmentGroup.SegmentMember member =
+                        layeredMember(column, row, layer, base, 1.0);
+                    VisualEffectInstance instance = group.renderInstance(member);
+                    EffectTransform expected =
+                        LAYERED_LAYOUT.transform(base, column, row, layer, TERRAIN_HEIGHTS);
+
+                    assertTransformEquals(expected, instance.currentTransform());
+                    assertTrue(Math.abs(instance.currentTransform().position().y()
+                        - (TERRAIN_HEIGHTS.y(column, row) + (layer - 1) * 4.0)) < 1.0E-9);
+                }
+            }
+        }
+
+        EffectTransform moved = base(30.0, 90.0, -12.0, 35.0F);
+        group.applyBase(moved, 20L);
+        for (int layer = 0; layer < LAYERED_LAYOUT.layers(); layer++) {
+            for (int row = 0; row < LAYERED_LAYOUT.rows(); row++) {
+                for (int column = 0; column < LAYERED_LAYOUT.columns(); column++) {
+                    ClientSegmentGroup.SegmentMember member =
+                        layeredMember(column, row, layer, base, 1.0);
+                    EffectTransform expected =
+                        LAYERED_LAYOUT.transform(moved, column, row, layer, TERRAIN_HEIGHTS);
+
+                    assertTransformEquals(expected, group.renderInstance(member).currentTransform());
+                }
+            }
+        }
+    }
+
+    @Test
+    void indexBoundsCoverLayeredTerrainCells() {
+        EffectTransform first = base(0.0, 0.0, 0.0, 15.0F);
+        EffectTransform second = base(6.0, 10.0, 3.0, 75.0F);
+        ClientSegmentGroup group = new ClientSegmentGroup(LAYERED_LAYOUT, TERRAIN_HEIGHTS, first, 0L);
+        for (int layer = 0; layer < LAYERED_LAYOUT.layers(); layer++) {
+            for (int row = 0; row < LAYERED_LAYOUT.rows(); row++) {
+                for (int column = 0; column < LAYERED_LAYOUT.columns(); column++) {
+                    group.add(layeredMember(column, row, layer, first, 1.0));
+                }
+            }
+        }
+        group.applyBase(second, 20L);
+
+        AABB bounds = group.indexBounds();
+        for (int layer = 0; layer < LAYERED_LAYOUT.layers(); layer++) {
+            for (int row = 0; row < LAYERED_LAYOUT.rows(); row++) {
+                for (int column = 0; column < LAYERED_LAYOUT.columns(); column++) {
+                    assertContainsSphere(bounds,
+                        LAYERED_LAYOUT.transform(first, column, row, layer, TERRAIN_HEIGHTS), 1.0);
+                    assertContainsSphere(bounds,
+                        LAYERED_LAYOUT.transform(second, column, row, layer, TERRAIN_HEIGHTS), 1.0);
+                }
+            }
+        }
+    }
+
+    @Test
+    void culledRangeExcludesCellsOutsideTheVerticalSpan() {
+        EffectTransform base = base(0.0, 64.0, 0.0, 0.0F);
+        ClientSegmentGroup group = new ClientSegmentGroup(LAYERED_LAYOUT, TERRAIN_HEIGHTS, base, 0L);
+        for (int layer = 0; layer < LAYERED_LAYOUT.layers(); layer++) {
+            for (int row = 0; row < LAYERED_LAYOUT.rows(); row++) {
+                for (int column = 0; column < LAYERED_LAYOUT.columns(); column++) {
+                    group.add(layeredMember(column, row, layer, base, 1.0));
+                }
+            }
+        }
+
+        int[] visited = {0};
+        group.forEachCellIn(new AABB(-100.0, 200.0, -100.0, 100.0, 220.0, 100.0),
+            member -> visited[0]++);
+
+        assertEquals(0, visited[0]);
+    }
+
     private static ClientSegmentGroup group(EffectTransform base, long gameTime, double radius) {
         ClientSegmentGroup group = new ClientSegmentGroup(LAYOUT, base, gameTime);
         for (int row = 0; row < LAYOUT.rows(); row++) {
@@ -199,6 +285,36 @@ class ClientSegmentGroupTest {
             }
         });
         return found[0];
+    }
+
+    private static ClientSegmentGroup.SegmentMember layeredMember(
+        int column,
+        int row,
+        int layer,
+        EffectTransform base,
+        double radius
+    ) {
+        SegmentLink link = new SegmentLink(
+            COORDINATOR_ID, LAYERED_LAYOUT.index(column, row, layer), LAYERED_LAYOUT
+        );
+        EffectTransform transform = LAYERED_LAYOUT.transform(base, column, row, layer, TERRAIN_HEIGHTS);
+        StartVisualEffectPayload payload = new StartVisualEffectPayload(
+            EFFECT_ID,
+            UUID.randomUUID(),
+            DIMENSION,
+            transform.position().x(),
+            transform.position().y(),
+            transform.position().z(),
+            transform.yaw(),
+            transform.pitch(),
+            transform.roll(),
+            2.0F,
+            100,
+            0L,
+            1234L,
+            link
+        );
+        return new ClientSegmentGroup.SegmentMember(payload.instanceId(), payload, link, radius);
     }
 
     private static ClientSegmentGroup.SegmentMember member(

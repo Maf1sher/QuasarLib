@@ -17,6 +17,16 @@ class SegmentLinkTest {
     }
 
     @Test
+    void resolvesTheLayerFromTheFlatIndex() {
+        SegmentGridLayout layout = new SegmentGridLayout(2, 2, 3, 8.0, 4.0);
+        SegmentLink link = new SegmentLink(UUID.randomUUID(), 9, layout);
+
+        assertEquals(1, link.column());
+        assertEquals(0, link.row());
+        assertEquals(2, link.layer());
+    }
+
+    @Test
     void rejectsIndexesOutsideTheGrid() {
         SegmentGridLayout layout = new SegmentGridLayout(2, 2, 8.0);
 

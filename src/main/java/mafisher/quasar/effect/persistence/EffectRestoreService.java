@@ -24,6 +24,8 @@ import mafisher.quasar.effect.gameplay.GameplayEffectNbt;
 import mafisher.quasar.effect.gameplay.GameplayEffectService;
 import mafisher.quasar.effect.gameplay.GameplayEffectSpec;
 import mafisher.quasar.effect.gameplay.GameplayEffectTypeRegistry;
+import mafisher.quasar.effect.scale.SegmentHeightSource;
+import mafisher.quasar.effect.scale.SegmentTerrainConform;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectService;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectSpec;
 import net.minecraft.nbt.CompoundTag;
@@ -194,6 +196,10 @@ public final class EffectRestoreService {
     private static boolean restoreSegmented(ServerLevel level, EffectDescriptor descriptor) {
         CompoundTag state = descriptor.state();
         EffectAudioSpec audio = EffectAudioNbt.loadFrom(state);
+        SegmentTerrainConform terrain = new SegmentTerrainConform(
+            SegmentHeightSource.byName(state.getString("terrain_source"), SegmentHeightSource.NONE),
+            state.getDouble("terrain_offset")
+        );
         SegmentedVisualEffectSpec spec = new SegmentedVisualEffectSpec(
             descriptor.typeId(),
             transformPosition(descriptor),
@@ -208,7 +214,10 @@ public final class EffectRestoreService {
             descriptor.seed(),
             descriptor.audience(),
             audio,
-            priority(descriptor)
+            priority(descriptor),
+            Math.max(1, state.getInt("layers")),
+            state.getDouble("layer_spacing"),
+            terrain
         );
         List<UUID> segmentIds = segmentIds(descriptor);
         return SegmentedVisualEffectService.restore(
@@ -268,7 +277,8 @@ public final class EffectRestoreService {
 
     private static List<UUID> segmentIds(EffectDescriptor descriptor) {
         CompoundTag state = descriptor.state();
-        int count = Math.max(0, state.getInt("columns") * state.getInt("rows"));
+        int count = Math.max(0, state.getInt("columns") * state.getInt("rows")
+            * Math.max(1, state.getInt("layers")));
         if (!state.contains("segment_ids")) {
             return SegmentedVisualEffectService.restoreSegmentIds(descriptor.instanceId(), count);
         }

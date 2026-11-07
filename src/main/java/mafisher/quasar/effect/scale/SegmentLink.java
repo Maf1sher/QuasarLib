@@ -17,10 +17,14 @@ public record SegmentLink(UUID coordinatorId, int segmentIndex, SegmentGridLayou
     }
 
     public int column() {
-        return this.segmentIndex % this.layout.columns();
+        return this.layout.column(this.segmentIndex);
     }
 
     public int row() {
-        return this.segmentIndex / this.layout.columns();
+        return this.layout.row(this.segmentIndex);
+    }
+
+    public int layer() {
+        return this.layout.layer(this.segmentIndex);
     }
 }

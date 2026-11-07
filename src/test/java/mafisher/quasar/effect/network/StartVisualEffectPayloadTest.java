@@ -29,7 +29,9 @@ class StartVisualEffectPayloadTest {
 
     @Test
     void roundTripsASegmentLink() {
-        SegmentLink link = new SegmentLink(UUID.randomUUID(), 5, new SegmentGridLayout(4, 3, 8.0));
+        SegmentLink link = new SegmentLink(
+            UUID.randomUUID(), 17, new SegmentGridLayout(4, 3, 2, 8.0, 4.0)
+        );
         StartVisualEffectPayload payload = withLink(link);
 
         StartVisualEffectPayload decoded = roundTrip(payload);
@@ -38,6 +40,7 @@ class StartVisualEffectPayloadTest {
         assertEquals(link, decoded.segmentLink());
         assertEquals(1, decoded.segmentLink().row());
         assertEquals(1, decoded.segmentLink().column());
+        assertEquals(1, decoded.segmentLink().layer());
     }
 
     @Test
@@ -47,7 +50,7 @@ class StartVisualEffectPayloadTest {
             UUID.randomUUID(), 0, new SegmentGridLayout(8, 8, 4.0)
         )));
 
-        assertTrue(linkedSize - standaloneSize <= 32,
+        assertTrue(linkedSize - standaloneSize <= 48,
             "segment link overhead was " + (linkedSize - standaloneSize) + " bytes");
     }
 

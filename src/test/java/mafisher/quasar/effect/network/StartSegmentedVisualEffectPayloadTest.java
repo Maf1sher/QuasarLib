@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.util.UUID;
+import mafisher.quasar.effect.scale.SegmentHeightProfile;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 
@@ -35,6 +36,45 @@ class StartSegmentedVisualEffectPayloadTest {
 
         assertTrue(encodedSize(payload) < encodedSize(cell) * 4,
             "one grid start should not scale with cell count");
+    }
+
+    @Test
+    void roundTripsLayersAndTerrainHeights() {
+        SegmentHeightProfile heights = SegmentHeightProfile.of(2, 2, new double[] {64.0, 66.0, 68.0, 70.0});
+        StartSegmentedVisualEffectPayload payload = new StartSegmentedVisualEffectPayload(
+            EFFECT_ID, UUID.randomUUID(), DIMENSION, 1.0, 64.0, -3.0,
+            15.0F, 20.0F, 25.0F, 4.0F, 2, 2, 8.0, 200, 100L, 140L, 42L,
+            3, 5.0, heights
+        );
+
+        StartSegmentedVisualEffectPayload decoded = roundTrip(payload);
+
+        assertEquals(payload, decoded);
+        assertEquals(12, decoded.segmentCount());
+        assertEquals(3, decoded.layers());
+        assertEquals(5.0, decoded.layerSpacing());
+        assertEquals(70.0, decoded.heights().y(1, 1));
+    }
+
+    @Test
+    void rejectsMismatchedHeightProfiles() {
+        SegmentHeightProfile heights = SegmentHeightProfile.of(2, 2, new double[] {64.0, 66.0, 68.0, 70.0});
+
+        assertThrows(IllegalArgumentException.class, () -> new StartSegmentedVisualEffectPayload(
+            EFFECT_ID, UUID.randomUUID(), DIMENSION, 1.0, 64.0, -3.0,
+            15.0F, 20.0F, 25.0F, 4.0F, 2, 1, 8.0, 200, 100L, 140L, 42L,
+            1, 0.0, heights
+        ));
+    }
+
+    @Test
+    void flatStartsCarryNoHeightData() {
+        StartSegmentedVisualEffectPayload payload = payload(2, 2);
+
+        StartSegmentedVisualEffectPayload decoded = roundTrip(payload);
+
+        assertTrue(decoded.heights().isEmpty());
+        assertEquals(4, decoded.segmentCount());
     }
 
     @Test

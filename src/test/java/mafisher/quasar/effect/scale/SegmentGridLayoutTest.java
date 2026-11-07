@@ -82,4 +82,53 @@ class SegmentGridLayoutTest {
         assertEquals(1, layout.segmentCount());
         assertEquals(Vec3.ZERO, layout.offset(0, 0, 0.0F));
     }
+
+    @Test
+    void placesCellsInVerticalLayers() {
+        SegmentGridLayout layout = new SegmentGridLayout(1, 1, 3, 0.0, 6.0);
+
+        assertEquals(3, layout.segmentCount());
+        assertEquals(0, layout.index(0, 0, 0));
+        assertEquals(2, layout.index(0, 0, 2));
+        assertEquals(0, layout.layer(0));
+        assertEquals(2, layout.layer(2));
+        assertEquals(new Vec3(0.0, -6.0, 0.0), layout.offset(0, 0, 0, 0.0F));
+        assertEquals(new Vec3(0.0, 0.0, 0.0), layout.offset(0, 0, 1, 0.0F));
+        assertEquals(new Vec3(0.0, 6.0, 0.0), layout.offset(0, 0, 2, 0.0F));
+        assertEquals(6.0, layout.halfDiagonal(), 1.0E-9);
+    }
+
+    @Test
+    void decomposesLayeredFlatIndexes() {
+        SegmentGridLayout layout = new SegmentGridLayout(2, 2, 2, 8.0, 4.0);
+
+        assertEquals(8, layout.segmentCount());
+        assertEquals(7, layout.index(1, 1, 1));
+        assertEquals(1, layout.column(7));
+        assertEquals(1, layout.row(7));
+        assertEquals(1, layout.layer(7));
+        assertEquals(4, layout.index(0, 0, 1));
+        assertEquals(0, layout.column(4));
+        assertEquals(0, layout.row(4));
+        assertEquals(1, layout.layer(4));
+    }
+
+    @Test
+    void appliesAPerColumnHeightProfile() {
+        SegmentGridLayout layout = new SegmentGridLayout(1, 1, 2, 0.0, 6.0);
+        SegmentHeightProfile heights = SegmentHeightProfile.of(1, 1, new double[] {70.0});
+        EffectTransform base = new EffectTransform(new EffectPoint(0.0, 64.0, 0.0), 0.0F, 0.0F, 0.0F);
+
+        assertEquals(67.0, layout.transform(base, 0, 0, 0, heights).position().y());
+        assertEquals(73.0, layout.transform(base, 0, 0, 1, heights).position().y());
+        assertEquals(61.0, layout.transform(base, 0, 0, 0).position().y());
+    }
+
+    @Test
+    void rejectsInvalidLayeredLayouts() {
+        assertThrows(IllegalArgumentException.class, () -> new SegmentGridLayout(1, 1, 0, 0.0, 4.0));
+        assertThrows(IllegalArgumentException.class, () -> new SegmentGridLayout(1, 1, 2, 0.0, 0.0));
+        assertThrows(IllegalArgumentException.class, () -> new SegmentGridLayout(16, 8, 2, 4.0, 4.0));
+        assertThrows(IllegalArgumentException.class, () -> new SegmentGridLayout(2, 1, 1, 0.0, 0.0));
+    }
 }

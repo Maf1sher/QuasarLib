@@ -145,7 +145,9 @@ public record StartVisualEffectPayload(
             buffer.writeByte(link.segmentIndex());
             buffer.writeByte(link.layout().columns());
             buffer.writeByte(link.layout().rows());
+            buffer.writeByte(link.layout().layers());
             buffer.writeDouble(link.layout().spacing());
+            buffer.writeDouble(link.layout().layerSpacing());
         }
     }
 
@@ -177,8 +179,10 @@ public record StartVisualEffectPayload(
         int segmentIndex = buffer.readUnsignedByte();
         int columns = buffer.readUnsignedByte();
         int rows = buffer.readUnsignedByte();
+        int layers = buffer.readUnsignedByte();
         double spacing = buffer.readDouble();
+        double layerSpacing = buffer.readDouble();
         return new SegmentLink(coordinatorId, segmentIndex,
-            new SegmentGridLayout(columns, rows, spacing));
+            new SegmentGridLayout(columns, rows, layers, spacing, layerSpacing));
     }
 }
