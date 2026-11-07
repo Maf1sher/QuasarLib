@@ -5,18 +5,23 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import java.util.List;
 import java.util.UUID;
 import mafisher.quasar.client.effect.EffectInstancedPass;
 import mafisher.quasar.client.effect.EffectLod;
+import mafisher.quasar.client.effect.EffectMeshes;
 import mafisher.quasar.client.effect.EffectRenderContext;
 import mafisher.quasar.client.effect.ScreenEffectMask;
 import mafisher.quasar.client.effect.ScreenEffectSettings;
 import mafisher.quasar.client.effect.VisualEffectInstance;
 import mafisher.quasar.effect.EffectQualityTier;
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
+import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.AABB;
+import org.joml.Vector3f;
 import org.junit.jupiter.api.Test;
 
 class ContentRuneCircleRendererTest {
@@ -82,6 +87,24 @@ class ContentRuneCircleRendererTest {
         assertTrue(renderer.spatialRadius(context()) >= (bounds.maxX - bounds.minX) / 2.0);
     }
 
+    @Test
+    void worldAndMaskLayersUseTheSameRotation() {
+        ContentRuneCircleRenderer renderer = new ContentRuneCircleRenderer();
+        EffectRenderContext context = context().withQuality(EffectQualityTier.LOW);
+        EffectInstancedPass pass = renderer.instancedPasses(context).getFirst();
+
+        RecordingVertexConsumer recorder = new RecordingVertexConsumer();
+        MultiBufferSource bufferSource = renderType -> recorder;
+        renderer.renderScreenMask(context, renderer.screenMaskRenderType(context), new PoseStack(), bufferSource);
+
+        var meshVertex = EffectMeshes.horizontalQuad().vertex(0);
+        Vector3f expected = pass.localTransform().transformPosition(
+            new Vector3f(meshVertex.x(), meshVertex.y(), meshVertex.z()));
+        assertEquals(expected.x(), recorder.x, 1.0E-3F);
+        assertEquals(expected.y(), recorder.y, 1.0E-3F);
+        assertEquals(expected.z(), recorder.z, 1.0E-3F);
+    }
+
     private static EffectRenderContext context() {
         StartVisualEffectPayload payload = new StartVisualEffectPayload(
             ContentEffectIds.RUNE_CIRCLE,
@@ -99,5 +122,48 @@ class ContentRuneCircleRendererTest {
             12_345L
         );
         return new EffectRenderContext(new VisualEffectInstance(payload), payload.transform(), 10.0F, 0.1F, 0.5F);
+    }
+
+    private static final class RecordingVertexConsumer implements VertexConsumer {
+        private float x;
+        private float y;
+        private float z;
+        private boolean recorded;
+
+        @Override
+        public VertexConsumer addVertex(float x, float y, float z) {
+            if (!this.recorded) {
+                this.x = x;
+                this.y = y;
+                this.z = z;
+                this.recorded = true;
+            }
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setColor(int red, int green, int blue, int alpha) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv(float u, float v) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv1(int u, int v) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv2(int u, int v) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setNormal(float normalX, float normalY, float normalZ) {
+            return this;
+        }
     }
 }

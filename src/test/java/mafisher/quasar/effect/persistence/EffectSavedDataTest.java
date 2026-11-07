@@ -70,7 +70,7 @@ class EffectSavedDataTest {
     }
 
     @Test
-    void removesAndQuarantinesExistingDescriptors() {
+    void quarantinesRuntimeDescriptorsOnDemand() {
         EffectSavedData data = new EffectSavedData();
         EffectDescriptor descriptor = descriptor(3L);
         data.put(descriptor);
@@ -79,6 +79,8 @@ class EffectSavedDataTest {
 
         assertFalse(data.contains(descriptor.instanceId()));
         assertEquals(1, data.quarantineCount());
+        assertEquals(descriptor.instanceId(),
+            data.quarantineEntries().getCompound(0).getUUID("instance_id"));
     }
 
     @Test

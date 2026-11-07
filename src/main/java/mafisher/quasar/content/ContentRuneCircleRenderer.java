@@ -53,7 +53,7 @@ final class ContentRuneCircleRenderer implements ScreenEffectRenderer, Instanced
         float entrance = EffectTimeline.easeOutCubic(Math.min(1.0F, context.progress() / 0.15F));
         float alpha = EffectTimeline.fadeEnvelope(context.progress(), 0.10F, 0.25F);
         float worldScale = context.scale() * entrance;
-        float seedRotation = seedRotation(context.seed());
+        float seedRotation = seedRotationDegrees(context.seed());
         float seedData = (Long.hashCode(context.seed()) & 0xFFFF) / 65535.0F;
 
         List<EffectInstancedPass> passes = new ArrayList<>(layerCount(context));
@@ -117,7 +117,7 @@ final class ContentRuneCircleRenderer implements ScreenEffectRenderer, Instanced
         float entrance = EffectTimeline.easeOutCubic(Math.min(1.0F, context.progress() / 0.15F));
         float alpha = EffectTimeline.fadeEnvelope(context.progress(), 0.10F, 0.25F);
         float worldScale = context.scale() * entrance;
-        float seedRotation = seedRotation(context.seed());
+        float seedRotation = seedRotationDegrees(context.seed());
         VertexConsumer vertices = bufferSource.getBuffer(maskRenderType);
 
         renderLayer(poseStack, vertices, worldScale, SETTINGS.outer(),
@@ -139,14 +139,14 @@ final class ContentRuneCircleRenderer implements ScreenEffectRenderer, Instanced
         String id,
         ContentRuneCircleSettings.ContentRuneLayer layer,
         float worldScale,
-        float rotation,
+        float rotationDegrees,
         float alpha,
         float progress,
         float seedData
     ) {
         Matrix4f localTransform = new Matrix4f()
             .translate(0.0F, layer.height(), 0.0F)
-            .rotateY((float)Math.toRadians(rotation))
+            .rotateY((float)Math.toRadians(rotationDegrees))
             .scale(worldScale * layer.scale(), 1.0F, worldScale * layer.scale());
         return new EffectInstancedPass(id, RENDER_TYPE, EffectMeshes.horizontalQuad(), localTransform,
             layer.red(), layer.green(), layer.blue(), alpha * layer.alpha(), progress, seedData);
@@ -168,20 +168,21 @@ final class ContentRuneCircleRenderer implements ScreenEffectRenderer, Instanced
         VertexConsumer vertices,
         float worldScale,
         ContentRuneCircleSettings.ContentRuneLayer layer,
-        float rotation,
+        float rotationDegrees,
         float alpha,
         int overlay
     ) {
         poseStack.pushPose();
         poseStack.translate(0.0, layer.height(), 0.0);
-        poseStack.mulPose(Axis.YP.rotation(rotation));
+        poseStack.mulPose(Axis.YP.rotationDegrees(rotationDegrees));
         poseStack.scale(worldScale * layer.scale(), 1.0F, worldScale * layer.scale());
         EffectMeshes.horizontalQuad().emit(vertices, poseStack.last(), layer.red(), layer.green(),
             layer.blue(), alpha * layer.alpha(), overlay, 0x00F000F0);
         poseStack.popPose();
     }
 
-    private static float seedRotation(long seed) {
+    /** Settings rotations are degrees per tick; both world and mask paths convert them to radians. */
+    private static float seedRotationDegrees(long seed) {
         return (Long.hashCode(seed) & 0xFFFF) / 65535.0F * 360.0F;
     }
 }

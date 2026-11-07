@@ -17,8 +17,9 @@ import org.slf4j.LoggerFactory;
 /**
  * Per-level effect store. Invalid descriptors are moved to a quarantine list instead of being
  * discarded, and a store written by a newer schema is kept verbatim instead of being
- * overwritten. Block journals live in the same file, keyed by effect ID, so they do not have to be
- * reserialized with consumer state every tick.
+ * overwritten. Descriptors and block journals stay in memory and serialize only when the level
+ * saves, so per-tick transform updates do not allocate NBT. Block journals live in the same file,
+ * keyed by effect ID, so they do not have to be reserialized with consumer state every tick.
  */
 public final class EffectSavedData extends SavedData {
     public static final String FILE_ID = "quasar_lib_effects";
@@ -27,6 +28,7 @@ public final class EffectSavedData extends SavedData {
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
 
     private final Map<UUID, EffectDescriptor> descriptors = new LinkedHashMap<>();
+    /** Raw NBT from the last load, preserved so unsupported entries can be quarantined verbatim. */
     private final Map<UUID, CompoundTag> rawDescriptors = new LinkedHashMap<>();
     private final Map<UUID, BlockJournal> journals = new LinkedHashMap<>();
     private final ListTag quarantine = new ListTag();
@@ -142,7 +144,6 @@ public final class EffectSavedData extends SavedData {
             return;
         }
         this.descriptors.put(descriptor.instanceId(), descriptor);
-        this.rawDescriptors.put(descriptor.instanceId(), EffectDescriptorNbt.save(descriptor));
         this.setDirty();
     }
 
@@ -165,7 +166,16 @@ public final class EffectSavedData extends SavedData {
         if (this.newerSchema) {
             return;
         }
-        CompoundTag raw = this.rawDescriptors.remove(instanceId);
+        CompoundTag raw = this.rawDescriptors.get(instanceId);
+        EffectDescriptor descriptor = this.descriptors.get(instanceId);
+        if (raw == null && descriptor != null) {
+            try {
+                raw = EffectDescriptorNbt.save(descriptor);
+            } catch (RuntimeException exception) {
+                LOGGER.warn("Could not serialize quarantined effect {}", instanceId, exception);
+            }
+        }
+        this.rawDescriptors.remove(instanceId);
         this.descriptors.remove(instanceId);
         BlockJournal journal = this.journals.remove(instanceId);
         if (raw != null) {
