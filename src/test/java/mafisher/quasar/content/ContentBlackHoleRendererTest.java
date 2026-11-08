@@ -14,6 +14,7 @@ import mafisher.quasar.client.effect.VisualEffectInstance;
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 
 class ContentBlackHoleRendererTest {
@@ -45,6 +46,15 @@ class ContentBlackHoleRendererTest {
         assertEquals(360.0, bounds.maxY - bounds.minY, 0.001);
         assertEquals(360.0, bounds.maxZ - bounds.minZ, 0.001);
         assertTrue(renderer.spatialRadius(context()) >= (bounds.maxX - bounds.minX) / 2.0);
+    }
+
+    @Test
+    void maskQuadCoversTheViewportFromAnyOnScreenDistance() {
+        ContentBlackHoleRenderer renderer = new ContentBlackHoleRenderer();
+        EffectRenderContext context = context();
+
+        assertEquals(12.0 * 15.0, renderer.maskQuadRadius(context, new Vec3(0.0, 100.0, -160.0)), 1.0E-6);
+        assertEquals(160.0 * 8.0, renderer.maskQuadRadius(context, new Vec3(0.0, 100.0, 0.0)), 1.0E-6);
     }
 
     @Test

@@ -1,6 +1,8 @@
 package mafisher.quasar.content;
 
+import java.util.Objects;
 import org.joml.Matrix4f;
+import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
 /** Pure orientation, timeline, and quality math for the content black hole. */
@@ -53,12 +55,31 @@ final class ContentBlackHoleGeometry {
         );
     }
 
-    /** Returns the effect rotation in the engine's yaw/pitch/roll order. */
+    /**
+     * Returns the effect rotation in the engine's yaw/pitch/roll order.
+     *
+     * <p>Use the composing {@code rotate*} methods, not the {@code rotation*} setters: those replace the whole
+     * matrix, so chaining them would keep only the final roll and silently drop yaw and pitch.</p>
+     */
     static Matrix4f rotation(float yaw, float pitch, float roll) {
         return new Matrix4f()
-            .rotationY((float)Math.toRadians(yaw))
-            .rotationX((float)Math.toRadians(pitch))
-            .rotationZ((float)Math.toRadians(roll));
+            .rotateY((float)Math.toRadians(yaw))
+            .rotateX((float)Math.toRadians(pitch))
+            .rotateZ((float)Math.toRadians(roll));
+    }
+
+    /**
+     * Returns the effect-local facing that projects a mask quad as a screen-aligned rectangle.
+     *
+     * <p>The mask pose stack already contains {@link #rotation(float, float, float)}, so composing that rotation
+     * with this facing yields the camera-to-world rotation: the quad's local X/Y map to the camera's right/up axes
+     * and its normal points at the camera. A look-vector {@code rotationTo} only pins the normal and leaves an
+     * arbitrary pitch-dependent roll, which lets a hard coverage edge cut through the screen-space effect.</p>
+     */
+    static Matrix4f maskFacing(float yaw, float pitch, float roll, Quaternionf cameraRotation) {
+        Objects.requireNonNull(cameraRotation, "cameraRotation");
+        Matrix4f cameraToWorld = new Matrix4f().rotation(cameraRotation);
+        return rotation(yaw, pitch, roll).invert().mul(cameraToWorld);
     }
 
     /**

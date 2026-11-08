@@ -18,9 +18,9 @@ import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
-import org.joml.Vector3f;
 
 /**
  * Screen-space raymarched black hole. The world pass is deliberately empty: the only world geometry is a large,
@@ -49,6 +49,12 @@ final class ContentBlackHoleRenderer implements ScreenEffectRenderer {
     private static final EffectLodProfile LOD_PROFILE = EffectLodProfile.of(1.5, 4.0, 9.0);
     private static final int FULLBRIGHT_LIGHT = 0x00F000F0;
     private static final float MASK_STRENGTH = 1.0F;
+    /**
+     * The screen-space raymarch owns its radial fade and per-pixel depth occlusion, so the mask only marks the
+     * composited region. Sizing its quad from the effect distance keeps the whole viewport covered for any FOV,
+     * aspect ratio, and camera angle, including near effects whose disk reaches closer than the effect centre.
+     */
+    private static final double SCREEN_COVER_MULTIPLIER = 8.0;
 
     @Override
     public List<EffectRenderPass> renderPasses(EffectRenderContext context) {
@@ -93,27 +99,14 @@ final class ContentBlackHoleRenderer implements ScreenEffectRenderer {
     @Override
     public void renderScreenMask(EffectRenderContext context, RenderType maskRenderType,
         PoseStack poseStack, MultiBufferSource bufferSource) {
-        float radius = (float)spatialRadius(context);
-        Vector3f cameraLook = Minecraft.getInstance().gameRenderer.getMainCamera().getLookVector();
-        Vector3f look = new Vector3f(cameraLook);
-        if (look.lengthSquared() < 1.0E-6F) {
-            look.set(0.0F, 0.0F, 1.0F);
-        } else {
-            look.normalize();
-        }
-        // A camera-facing billboard is perpendicular to the ray to the effect,
-        // not to the image plane. For an off-centre black hole its projection is
-        // a keystone and the far edge can cut through the effect, which looks
-        // like a smaller screen inside the frame. Keep the mask parallel to the
-        // image plane instead so it projects as a screen-space rectangle.
-        Matrix4f inverseEffectRotation = ContentBlackHoleGeometry.rotation(
+        var camera = Minecraft.getInstance().gameRenderer.getMainCamera();
+        float radius = (float)maskQuadRadius(context, camera.getPosition());
+        Matrix4f facing = ContentBlackHoleGeometry.maskFacing(
             context.transform().yaw(),
             context.transform().pitch(),
-            context.transform().roll()
-        ).invert();
-        Vector3f localLook = inverseEffectRotation.transformDirection(look).normalize();
-        Quaternionf facing = new Quaternionf().rotationTo(
-            new Vector3f(0.0F, 0.0F, 1.0F), localLook
+            context.transform().roll(),
+            // Copy the live camera quaternion so the pose cannot observe later mutation.
+            new Quaternionf(camera.rotation())
         );
 
         poseStack.pushPose();
@@ -134,5 +127,15 @@ final class ContentBlackHoleRenderer implements ScreenEffectRenderer {
         } finally {
             poseStack.popPose();
         }
+    }
+
+    /** Returns the camera-aligned mask half-size, widened when needed to keep the whole viewport covered. */
+    double maskQuadRadius(EffectRenderContext context, Vec3 cameraPosition) {
+        var position = context.transform().position();
+        double dx = position.x() - cameraPosition.x;
+        double dy = position.y() - cameraPosition.y;
+        double dz = position.z() - cameraPosition.z;
+        double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        return Math.max(spatialRadius(context), distance * SCREEN_COVER_MULTIPLIER);
     }
 }
