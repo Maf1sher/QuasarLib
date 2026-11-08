@@ -1,8 +1,10 @@
 package mafisher.quasar.client.effect;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
@@ -46,6 +48,23 @@ class ScreenEffectCameraStateTest {
         Matrix4f returned = camera.inverseViewMatrix();
         returned.identity();
         assertIdentity(new Matrix4f(modelView).mul(camera.inverseViewMatrix()));
+    }
+
+    @Test
+    void detectsUsableMatricesWithoutThrowing() {
+        assertTrue(ScreenEffectCameraState.isUsable(new Matrix4f(), new Matrix4f()));
+        assertTrue(ScreenEffectCameraState.isUsable(
+            new Matrix4f().translation(1.0F, 2.0F, 3.0F),
+            new Matrix4f().perspective((float)Math.toRadians(70.0), 1.5F, 0.05F, 1000.0F)
+        ));
+        assertFalse(ScreenEffectCameraState.isUsable(new Matrix4f().zero(), new Matrix4f()));
+        assertFalse(ScreenEffectCameraState.isUsable(new Matrix4f(), new Matrix4f().zero()));
+        assertFalse(ScreenEffectCameraState.isUsable(null, new Matrix4f()));
+        assertFalse(ScreenEffectCameraState.isUsable(new Matrix4f(), null));
+
+        Matrix4f notFinite = new Matrix4f();
+        notFinite.m00(Float.NaN);
+        assertFalse(ScreenEffectCameraState.isUsable(new Matrix4f(), notFinite));
     }
 
     @Test

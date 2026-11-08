@@ -43,7 +43,7 @@ final class ScreenFlashRenderer {
             return;
         }
 
-        mainTarget.bindWrite(true);
+        EffectRenderState.bindTarget(mainTarget);
         RenderSystem.colorMask(true, true, true, true);
         RenderSystem.depthMask(false);
         RenderSystem.disableDepthTest();
@@ -75,6 +75,7 @@ final class ScreenFlashRenderer {
             RenderSystem.enableCull();
             RenderSystem.depthMask(true);
             RenderSystem.enableDepthTest();
+            EffectRenderState.forceViewport(mainTarget.width, mainTarget.height);
         }
     }
 

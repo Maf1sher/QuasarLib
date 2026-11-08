@@ -168,7 +168,7 @@ public final class ScreenEffectOperationContext {
     public void drawFullscreen(RenderTarget destination, ShaderInstance shader) {
         Objects.requireNonNull(destination, "destination");
         Objects.requireNonNull(shader, "shader");
-        destination.bindWrite(true);
+        EffectRenderState.bindTarget(destination);
         RenderSystem.disableScissor();
         RenderSystem.disableCull();
         RenderSystem.colorMask(true, true, true, true);

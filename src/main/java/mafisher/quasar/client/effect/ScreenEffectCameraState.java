@@ -60,9 +60,25 @@ public record ScreenEffectCameraState(
         return new Matrix4f(this.projectionMatrix).invert();
     }
 
-    private static void requireInvertible(Matrix4f matrix, String name) {
+    /**
+     * Returns whether both matrices can be inverted. The compositor calls this
+     * before constructing a camera snapshot so a single degenerate frame does
+     * not disable screen effects for the rest of the session.
+     */
+    static boolean isUsable(Matrix4f modelViewMatrix, Matrix4f projectionMatrix) {
+        return isInvertible(modelViewMatrix) && isInvertible(projectionMatrix);
+    }
+
+    private static boolean isInvertible(Matrix4f matrix) {
+        if (matrix == null) {
+            return false;
+        }
         float determinant = matrix.determinant();
-        if (!Float.isFinite(determinant) || determinant == 0.0F) {
+        return Float.isFinite(determinant) && determinant != 0.0F;
+    }
+
+    private static void requireInvertible(Matrix4f matrix, String name) {
+        if (!isInvertible(matrix)) {
             throw new IllegalArgumentException(name + " must be finite and invertible");
         }
     }

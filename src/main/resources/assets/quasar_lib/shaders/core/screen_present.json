@@ -1,0 +1,10 @@
+{
+  "vertex": "quasar_lib:screen_present",
+  "fragment": "quasar_lib:screen_present",
+  "samplers": [
+    { "name": "DiffuseSampler" }
+  ],
+  "attributes": [
+    "Position"
+  ]
+}

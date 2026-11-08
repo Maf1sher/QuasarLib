@@ -35,6 +35,9 @@ final class EffectShaders {
     static final EffectShader SCREEN_FLASH = EffectShader.create(
         id("screen_flash"), DefaultVertexFormat.POSITION
     );
+    static final EffectShader SCREEN_PRESENT = EffectShader.create(
+        id("screen_present"), DefaultVertexFormat.POSITION
+    );
 
     private EffectShaders() {
     }
@@ -49,6 +52,7 @@ final class EffectShaders {
         SCREEN_COMPOSITE.register(event);
         SCREEN_BLOOM.register(event);
         SCREEN_FLASH.register(event);
+        SCREEN_PRESENT.register(event);
     }
 
     private static ResourceLocation id(String path) {

@@ -4,13 +4,20 @@ import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.pipeline.TextureTarget;
 import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.BufferUploader;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.logging.LogUtils;
 import java.util.List;
 import java.util.Objects;
 import mafisher.quasar.effect.EffectQualityTier;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.ShaderInstance;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import org.joml.Matrix4f;
+import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL30;
 import org.slf4j.Logger;
 
 /** Optional depth-aware per-effect mask composition for client screen effects. */
@@ -30,6 +37,8 @@ final class ClientScreenCompositor {
     private boolean hadScreenEffects;
     private boolean failAfterCompositionOnce;
     private boolean warnedPresentationViewport;
+    private boolean warnedDegenerateCamera;
+    private boolean diagnosticsRequested;
     private int unavailableWidth = -1;
     private int unavailableHeight = -1;
 
@@ -82,21 +91,39 @@ final class ClientScreenCompositor {
                 EffectQualityTier quality = ClientQualityController.tier();
                 int targetWidth = Math.max(1, Math.round(width * quality.screenScale()));
                 int targetHeight = Math.max(1, Math.round(height * quality.screenScale()));
+
+                Matrix4f modelViewMatrix = new Matrix4f(event.getModelViewMatrix());
+                Matrix4f projectionMatrix = new Matrix4f(event.getProjectionMatrix());
+                if (!ScreenEffectCameraState.isUsable(modelViewMatrix, projectionMatrix)) {
+                    this.warnDegenerateCameraOnce(projectionMatrix);
+                    return;
+                }
+
+                ScreenEffectCameraState camera;
+                try {
+                    camera = new ScreenEffectCameraState(
+                        event.getCamera().getPosition(),
+                        modelViewMatrix,
+                        projectionMatrix,
+                        targetWidth,
+                        targetHeight,
+                        event.getPartialTick().getGameTimeDeltaPartialTick(false)
+                    );
+                } catch (IllegalArgumentException degenerateCamera) {
+                    // A single frame can have a degenerate projection while the
+                    // FOV interpolation is still at zero. Skip that frame only;
+                    // never disable screen composition for the session.
+                    this.warnDegenerateCameraOnce(projectionMatrix);
+                    return;
+                }
+                this.warnedDegenerateCamera = false;
+
                 this.ensureTargets(targetWidth, targetHeight);
                 if (mainTarget.getDepthTextureId() <= 0 || this.screenMaskTarget.getDepthTextureId() <= 0) {
                     throw new IllegalStateException("The main render target has no sampleable depth attachment");
                 }
 
                 this.captureSceneColor(mainTarget, this.rawSceneTarget);
-
-                ScreenEffectCameraState camera = new ScreenEffectCameraState(
-                    event.getCamera().getPosition(),
-                    new Matrix4f(event.getModelViewMatrix()),
-                    new Matrix4f(event.getProjectionMatrix()),
-                    targetWidth,
-                    targetHeight,
-                    event.getPartialTick().getGameTimeDeltaPartialTick(false)
-                );
 
                 RenderTarget currentColor = this.rawSceneTarget;
                 RenderTarget alternateColor = this.sceneColorTarget;
@@ -119,7 +146,17 @@ final class ClientScreenCompositor {
                     throw new IllegalStateException("Screen compositor failure injection");
                 }
 
+                boolean diagnose = this.diagnosticsRequested;
+                if (diagnose) {
+                    this.diagnosticsRequested = false;
+                    this.logPresentationDiagnostics("before present", mainTarget, currentColor, quality,
+                        batches.size());
+                }
                 this.presentToMain(mainTarget, currentColor);
+                if (diagnose) {
+                    this.logPresentationDiagnostics("after present", mainTarget, currentColor, quality,
+                        batches.size());
+                }
                 this.restoreMainTargetState(mainTarget);
             } catch (RuntimeException exception) {
                 this.failAfterCompositionOnce = false;
@@ -138,6 +175,8 @@ final class ClientScreenCompositor {
     void onLevelUnload() {
         this.hadScreenEffects = false;
         this.failAfterCompositionOnce = false;
+        this.diagnosticsRequested = false;
+        this.warnedDegenerateCamera = false;
         this.unavailableWidth = -1;
         this.unavailableHeight = -1;
         this.releaseTargets();
@@ -145,6 +184,8 @@ final class ClientScreenCompositor {
 
     void onResourceReload() {
         this.failAfterCompositionOnce = false;
+        this.diagnosticsRequested = false;
+        this.warnedDegenerateCamera = false;
         this.unavailableWidth = -1;
         this.unavailableHeight = -1;
         this.releaseTargets();
@@ -152,6 +193,12 @@ final class ClientScreenCompositor {
 
     boolean armFailureAfterCompositionOnce() {
         this.failAfterCompositionOnce = true;
+        return true;
+    }
+
+    /** Logs one frame of presentation GL state and target dimensions on the next composed frame. */
+    boolean requestDiagnostics() {
+        this.diagnosticsRequested = true;
         return true;
     }
 
@@ -186,7 +233,7 @@ final class ClientScreenCompositor {
         this.screenMaskTarget.setClearColor(0.0F, 0.0F, 0.0F, 0.0F);
         this.screenMaskTarget.clear(false);
         this.screenMaskTarget.copyDepthFrom(mainTarget);
-        this.screenMaskTarget.bindWrite(true);
+        EffectRenderState.bindTarget(this.screenMaskTarget);
         try {
             manager.renderScreenMask(event, batch);
         } finally {
@@ -230,23 +277,44 @@ final class ClientScreenCompositor {
                 width, height, mainTarget.viewWidth, mainTarget.viewHeight);
         }
 
-        mainTarget.bindWrite(true);
+        ShaderInstance shader = EffectShaders.SCREEN_PRESENT.shaderInstance();
+        if (shader == null) {
+            // Shader reload in progress; leave the main target untouched.
+            return;
+        }
+
+        // Bind through the raw framebuffer path and force the viewport instead
+        // of relying on the vanilla blit_screen path or Sodium's cached
+        // GlStateManager viewport. A stale viewport cache would draw the
+        // composition into only the smaller quality-scaled rectangle.
+        EffectRenderState.bindTarget(mainTarget);
         RenderSystem.disableScissor();
-        RenderSystem.colorMask(true, true, true, true);
+        RenderSystem.colorMask(true, true, true, false);
         RenderSystem.depthMask(false);
         RenderSystem.disableDepthTest();
         RenderSystem.disableBlend();
         RenderSystem.disableCull();
+        boolean shaderApplied = false;
         try {
-            // blitToScreen sets the viewport from its arguments. Always pass the
-            // physical framebuffer size, never viewWidth/viewHeight or the scaled
-            // composition size.
-            composition.blitToScreen(width, height);
+            shader.setSampler("DiffuseSampler", composition.getColorTextureId());
+            shader.apply();
+            shaderApplied = true;
+            BufferBuilder builder = RenderSystem.renderThreadTesselator()
+                .begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION);
+            builder.addVertex(0.0F, 0.0F, 0.0F);
+            builder.addVertex(1.0F, 0.0F, 0.0F);
+            builder.addVertex(1.0F, 1.0F, 0.0F);
+            builder.addVertex(0.0F, 1.0F, 0.0F);
+            BufferUploader.draw(builder.buildOrThrow());
         } finally {
+            if (shaderApplied) {
+                shader.clear();
+            }
+            RenderSystem.colorMask(true, true, true, true);
             RenderSystem.enableCull();
             RenderSystem.depthMask(true);
             RenderSystem.enableDepthTest();
-            RenderSystem.viewport(0, 0, width, height);
+            EffectRenderState.forceViewport(width, height);
         }
     }
 
@@ -263,8 +331,7 @@ final class ClientScreenCompositor {
     }
 
     private void restoreMainTargetState(RenderTarget mainTarget) {
-        mainTarget.bindWrite(true);
-        RenderSystem.viewport(0, 0, mainTarget.width, mainTarget.height);
+        EffectRenderState.bindTarget(mainTarget);
         this.restoreOperationState();
     }
 
@@ -275,6 +342,46 @@ final class ClientScreenCompositor {
         RenderSystem.disableBlend();
         RenderSystem.disableScissor();
         RenderSystem.enableCull();
+    }
+
+    private void warnDegenerateCameraOnce(Matrix4f projection) {
+        if (this.warnedDegenerateCamera) {
+            return;
+        }
+        this.warnedDegenerateCamera = true;
+        LOGGER.debug("Skipping screen composition for a frame with a degenerate camera matrix; "
+                + "projection m00={}, m11={}, m22={}, m32={}, determinant={}, fov={}, window={}x{}. "
+                + "Composition retries on the next frame.",
+            projection.m00(), projection.m11(), projection.m22(), projection.m32(),
+            projection.determinant(), Minecraft.getInstance().options.fov().get(),
+            Minecraft.getInstance().getWindow().getWidth(), Minecraft.getInstance().getWindow().getHeight());
+    }
+
+    private void logPresentationDiagnostics(String phase, RenderTarget mainTarget, RenderTarget composition,
+        EffectQualityTier quality, int batchCount) {
+        int errorBefore = GlStateManager._getError();
+        int[] viewport = new int[4];
+        int[] scissor = new int[4];
+        GL11.glGetIntegerv(GL11.GL_VIEWPORT, viewport);
+        GL11.glGetIntegerv(GL11.GL_SCISSOR_BOX, scissor);
+        int drawFramebuffer = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+        var window = Minecraft.getInstance().getWindow();
+        LOGGER.info("Screen compositor {}: viewport=[{}, {}, {}, {}] scissor=[{}, {}, {}, {}] "
+                + "scissorEnabled={} depth={} blend={} cull={} drawFbo={} main={}x{} view={}x{} fbo={} "
+                + "composition={}x{} quality={}({}) batches={} window={}x{} glError={}",
+            phase,
+            viewport[0], viewport[1], viewport[2], viewport[3],
+            scissor[0], scissor[1], scissor[2], scissor[3],
+            GL11.glIsEnabled(GL11.GL_SCISSOR_TEST),
+            GL11.glIsEnabled(GL11.GL_DEPTH_TEST),
+            GL11.glIsEnabled(GL11.GL_BLEND),
+            GL11.glIsEnabled(GL11.GL_CULL_FACE),
+            drawFramebuffer,
+            mainTarget.width, mainTarget.height, mainTarget.viewWidth, mainTarget.viewHeight,
+            mainTarget.frameBufferId,
+            composition.width, composition.height,
+            quality, quality.screenScale(), batchCount,
+            window.getWidth(), window.getHeight(), errorBefore);
     }
 
     private void releaseTargets() {
