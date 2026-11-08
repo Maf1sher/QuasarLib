@@ -11,6 +11,8 @@ import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.logging.LogUtils;
 import java.util.List;
 import java.util.Objects;
+import mafisher.quasar.compat.CompatRegistry;
+import mafisher.quasar.compat.RenderEnvironment;
 import mafisher.quasar.effect.EffectQualityTier;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.ShaderInstance;
@@ -46,8 +48,14 @@ final class ClientScreenCompositor {
         this.operationRegistry = Objects.requireNonNull(operationRegistry, "operationRegistry");
     }
 
-    void render(RenderLevelStageEvent event, ClientVisualEffectManager manager, List<ScreenEffectBatch> batches) {
+    void render(RenderLevelStageEvent event, ClientVisualEffectManager manager, List<ScreenEffectBatch> batches,
+        RenderEnvironment environment) {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_LEVEL) {
+            return;
+        }
+        Objects.requireNonNull(environment, "environment");
+        if (environment.shadowPass()) {
+            // Iris owns the shadow pass; QuasarLib must not compose into it.
             return;
         }
 
@@ -119,8 +127,10 @@ final class ClientScreenCompositor {
                 this.warnedDegenerateCamera = false;
 
                 this.ensureTargets(targetWidth, targetHeight);
-                if (mainTarget.getDepthTextureId() <= 0 || this.screenMaskTarget.getDepthTextureId() <= 0) {
-                    throw new IllegalStateException("The main render target has no sampleable depth attachment");
+                RenderTarget depthTarget = CompatRegistry.sceneDepthTarget(mainTarget);
+                if (depthTarget.getDepthTextureId() <= 0 || this.screenMaskTarget.getDepthTextureId() <= 0) {
+                    throw new IllegalStateException(
+                        "The " + environment.depthSource() + " depth source has no sampleable depth attachment");
                 }
 
                 this.captureSceneColor(mainTarget, this.rawSceneTarget);
@@ -129,8 +139,8 @@ final class ClientScreenCompositor {
                 RenderTarget alternateColor = this.sceneColorTarget;
                 boolean firstBatch = true;
                 for (ScreenEffectBatch batch : batches) {
-                    this.renderMask(event, manager, mainTarget, batch);
-                    this.renderOperation(currentColor, alternateColor, batch, camera, quality);
+                    this.renderMask(event, manager, depthTarget, batch);
+                    this.renderOperation(currentColor, alternateColor, batch, camera, quality, environment);
                     currentColor = alternateColor;
                     if (firstBatch) {
                         firstBatch = false;
@@ -203,7 +213,8 @@ final class ClientScreenCompositor {
     }
 
     private void renderOperation(RenderTarget sourceColor, RenderTarget destination,
-        ScreenEffectBatch batch, ScreenEffectCameraState camera, EffectQualityTier quality) {
+        ScreenEffectBatch batch, ScreenEffectCameraState camera, EffectQualityTier quality,
+        RenderEnvironment environment) {
         ScreenEffectOperationRenderer renderer = this.operationRegistry.find(batch.settings().operation())
             .orElseThrow(() -> new IllegalStateException("No screen effect operation registered for "
                 + batch.settings().operation().id()));
@@ -214,6 +225,7 @@ final class ClientScreenCompositor {
                 batch.mask(),
                 camera,
                 quality,
+                environment,
                 sourceColor,
                 this.rawSceneTarget,
                 destination,
@@ -227,12 +239,12 @@ final class ClientScreenCompositor {
         }
     }
 
-    private void renderMask(RenderLevelStageEvent event, ClientVisualEffectManager manager, RenderTarget mainTarget,
+    private void renderMask(RenderLevelStageEvent event, ClientVisualEffectManager manager, RenderTarget depthTarget,
         ScreenEffectBatch batch) {
         RenderSystem.disableScissor();
         this.screenMaskTarget.setClearColor(0.0F, 0.0F, 0.0F, 0.0F);
         this.screenMaskTarget.clear(false);
-        this.screenMaskTarget.copyDepthFrom(mainTarget);
+        this.screenMaskTarget.copyDepthFrom(depthTarget);
         EffectRenderState.bindTarget(this.screenMaskTarget);
         try {
             manager.renderScreenMask(event, batch);

@@ -2,6 +2,9 @@ package mafisher.quasar.client.effect;
 
 import java.util.List;
 import java.util.UUID;
+import mafisher.quasar.compat.CompatRegistry;
+import mafisher.quasar.compat.RegisterCompatProvidersEvent;
+import mafisher.quasar.compat.RenderEnvironment;
 import mafisher.quasar.effect.network.EffectAudioPlanPayload;
 import mafisher.quasar.effect.network.EffectAudioTriggerPayload;
 import mafisher.quasar.effect.network.EffectDebrisPayload;
@@ -13,6 +16,7 @@ import mafisher.quasar.effect.network.StopSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.StopVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateVisualEffectPayload;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.world.phys.Vec3;
@@ -50,6 +54,11 @@ final class ClientEffectFrameRuntime {
                 rendererRegistry.registerBuiltIns();
                 NeoForge.EVENT_BUS.post(new RegisterVisualEffectRenderersEvent(rendererRegistry));
                 rendererRegistry.freeze();
+                try {
+                    NeoForge.EVENT_BUS.post(new RegisterCompatProvidersEvent());
+                } finally {
+                    CompatRegistry.freezeClientProviders();
+                }
                 screenCompositor = new ClientScreenCompositor(operationRegistry);
                 manager = new ClientVisualEffectManager(rendererRegistry);
             }
@@ -113,17 +122,19 @@ final class ClientEffectFrameRuntime {
     static void render(RenderLevelStageEvent event) {
         if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_PARTICLES) {
             long start = System.nanoTime();
-            manager().render(event);
+            RenderEnvironment environment = currentEnvironment();
+            manager().render(event, environment);
             ClientEffectDebris.render(event);
             ClientQualityController.recordWorldRender(System.nanoTime() - start);
         } else if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
             long start = System.nanoTime();
             try {
+                RenderEnvironment environment = currentEnvironment();
                 ClientVisualEffectManager effectManager = manager();
                 ClientScreenCompositor compositor = screenCompositor;
                 if (compositor != null) {
                     List<ScreenEffectBatch> batches = effectManager.screenEffects(event);
-                    compositor.render(event, effectManager, batches);
+                    compositor.render(event, effectManager, batches, environment);
                 }
                 ScreenFlashRenderer.render(
                     event.getCamera().getPosition(),
@@ -134,6 +145,13 @@ final class ClientEffectFrameRuntime {
             }
             ClientQualityController.recordLevelRender(System.nanoTime() - start);
         }
+    }
+
+    /** Resolves the compatibility environment for the current frame. */
+    private static RenderEnvironment currentEnvironment() {
+        Minecraft minecraft = Minecraft.getInstance();
+        double farPlane = minecraft.gameRenderer == null ? 256.0 : minecraft.gameRenderer.getDepthFar();
+        return CompatRegistry.environment(farPlane);
     }
 
     static void onLevelUnload(ClientLevel level) {

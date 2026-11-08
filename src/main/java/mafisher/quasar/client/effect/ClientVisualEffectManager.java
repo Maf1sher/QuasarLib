@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import mafisher.quasar.compat.RenderEnvironment;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -55,6 +56,7 @@ public final class ClientVisualEffectManager {
     private final GpuMeshCache meshCache = new GpuMeshCache();
     private final InstancedBatchRenderer instancedRenderer = new InstancedBatchRenderer(this.meshCache);
     private final CachedMeshRenderer cachedMeshRenderer = new CachedMeshRenderer(this.meshCache);
+    private RenderEnvironment frameEnvironment = RenderEnvironment.VANILLA;
     private ClientLevel currentLevel;
 
     ClientVisualEffectManager(VisualEffectRendererRegistry rendererRegistry) {
@@ -216,7 +218,9 @@ public final class ClientVisualEffectManager {
         this.indexGroup(payload.coordinatorId());
     }
 
-    void render(net.neoforged.neoforge.client.event.RenderLevelStageEvent event) {
+    void render(net.neoforged.neoforge.client.event.RenderLevelStageEvent event,
+        RenderEnvironment environment) {
+        this.frameEnvironment = Objects.requireNonNull(environment, "environment");
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
         this.synchronizeLevel(level);
@@ -523,7 +527,7 @@ public final class ClientVisualEffectManager {
     private AABB queryBox(Vec3 cameraPosition) {
         Minecraft minecraft = Minecraft.getInstance();
         double far = minecraft.gameRenderer == null ? 256.0 : minecraft.gameRenderer.getDepthFar();
-        double radius = Math.max(64.0, far) + INDEX_QUERY_MARGIN;
+        double radius = Math.max(64.0, Math.max(far, this.frameEnvironment.horizonDistance())) + INDEX_QUERY_MARGIN;
         return new AABB(
             cameraPosition.x - radius, Double.NEGATIVE_INFINITY, cameraPosition.z - radius,
             cameraPosition.x + radius, Double.POSITIVE_INFINITY, cameraPosition.z + radius
@@ -738,7 +742,8 @@ public final class ClientVisualEffectManager {
         float age = (float)EffectTimeline.ageTicks(gameTime, partialTick, payload.startGameTime());
         float progress = EffectTimeline.progress(gameTime, partialTick, payload.startGameTime(),
             payload.durationTicks());
-        return new EffectRenderContext(effect, transform, age, progress, partialTick);
+        return new EffectRenderContext(effect, transform, age, progress, partialTick,
+            EffectLod.FULL, EffectQualityTier.HIGH, this.frameEnvironment);
     }
 
     void onLevelUnload(ClientLevel level) {

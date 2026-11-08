@@ -10,6 +10,7 @@ import com.mojang.blaze3d.vertex.BufferUploader;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import java.util.Objects;
+import mafisher.quasar.compat.RenderEnvironment;
 import mafisher.quasar.effect.EffectQualityTier;
 import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.world.phys.Vec3;
@@ -36,6 +37,7 @@ public final class ScreenEffectOperationContext {
     private final ScreenEffectMask mask;
     private final ScreenEffectCameraState camera;
     private final EffectQualityTier quality;
+    private final RenderEnvironment environment;
     private final RenderTarget sourceColor;
     private final RenderTarget rawSceneColor;
     private final RenderTarget destination;
@@ -44,6 +46,7 @@ public final class ScreenEffectOperationContext {
 
     ScreenEffectOperationContext(ScreenEffectSettings settings, EffectRenderContext effect,
         ScreenEffectMask mask, ScreenEffectCameraState camera, EffectQualityTier quality,
+        RenderEnvironment environment,
         RenderTarget sourceColor, RenderTarget rawSceneColor, RenderTarget destination, RenderTarget maskTarget,
         ScreenEffectScratchTargetPool scratchTargets) {
         this.settings = Objects.requireNonNull(settings, "settings");
@@ -51,6 +54,7 @@ public final class ScreenEffectOperationContext {
         this.mask = Objects.requireNonNull(mask, "mask");
         this.camera = Objects.requireNonNull(camera, "camera");
         this.quality = Objects.requireNonNull(quality, "quality");
+        this.environment = Objects.requireNonNull(environment, "environment");
         this.sourceColor = Objects.requireNonNull(sourceColor, "sourceColor");
         this.rawSceneColor = Objects.requireNonNull(rawSceneColor, "rawSceneColor");
         this.destination = Objects.requireNonNull(destination, "destination");
@@ -94,6 +98,11 @@ public final class ScreenEffectOperationContext {
     /** Returns the quality tier selected for this frame. */
     public EffectQualityTier quality() {
         return this.quality;
+    }
+
+    /** Returns the resolved compatibility environment for this frame. */
+    public RenderEnvironment environment() {
+        return this.environment;
     }
 
     /** Returns the color captured before this operation; later batches see earlier output. */

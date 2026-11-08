@@ -6,6 +6,7 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
+import mafisher.quasar.compat.CompatRegistry;
 import mafisher.quasar.effect.EffectBudgetService;
 import mafisher.quasar.effect.EffectDebrisSpec;
 import mafisher.quasar.effect.EffectForceField;
@@ -16,7 +17,6 @@ import mafisher.quasar.effect.EffectScope;
 import mafisher.quasar.effect.audio.EffectAudioService;
 import mafisher.quasar.effect.block.BlockChange;
 import mafisher.quasar.effect.block.BlockProtectionContext;
-import mafisher.quasar.effect.block.BlockProtectionService;
 import mafisher.quasar.effect.persistence.BlockJournal;
 import mafisher.quasar.effect.persistence.EffectCapabilities;
 import net.minecraft.core.BlockPos;
@@ -335,7 +335,7 @@ public final class GameplayEffectContext {
     }
 
     private boolean allowsBlockChange(BlockChange change, BlockState currentState) {
-        return BlockProtectionService.allows(new BlockProtectionContext(
+        return CompatRegistry.protection().allows(new BlockProtectionContext(
             this.level,
             change,
             currentState,
