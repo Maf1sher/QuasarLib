@@ -38,6 +38,8 @@ public final class ScreenEffectOperationContext {
     private final ScreenEffectCameraState camera;
     private final EffectQualityTier quality;
     private final RenderEnvironment environment;
+    private final ScreenEffectFogState fogState;
+    private final ScreenEffectMediumState mediumState;
     private final RenderTarget sourceColor;
     private final RenderTarget rawSceneColor;
     private final RenderTarget destination;
@@ -46,7 +48,7 @@ public final class ScreenEffectOperationContext {
 
     ScreenEffectOperationContext(ScreenEffectSettings settings, EffectRenderContext effect,
         ScreenEffectMask mask, ScreenEffectCameraState camera, EffectQualityTier quality,
-        RenderEnvironment environment,
+        RenderEnvironment environment, ScreenEffectFogState fogState, ScreenEffectMediumState mediumState,
         RenderTarget sourceColor, RenderTarget rawSceneColor, RenderTarget destination, RenderTarget maskTarget,
         ScreenEffectScratchTargetPool scratchTargets) {
         this.settings = Objects.requireNonNull(settings, "settings");
@@ -55,6 +57,8 @@ public final class ScreenEffectOperationContext {
         this.camera = Objects.requireNonNull(camera, "camera");
         this.quality = Objects.requireNonNull(quality, "quality");
         this.environment = Objects.requireNonNull(environment, "environment");
+        this.fogState = Objects.requireNonNull(fogState, "fogState");
+        this.mediumState = Objects.requireNonNull(mediumState, "mediumState");
         this.sourceColor = Objects.requireNonNull(sourceColor, "sourceColor");
         this.rawSceneColor = Objects.requireNonNull(rawSceneColor, "rawSceneColor");
         this.destination = Objects.requireNonNull(destination, "destination");
@@ -103,6 +107,16 @@ public final class ScreenEffectOperationContext {
     /** Returns the resolved compatibility environment for this frame. */
     public RenderEnvironment environment() {
         return this.environment;
+    }
+
+    /** Returns the active fog snapshot captured from the render stack. */
+    public ScreenEffectFogState fogState() {
+        return this.fogState;
+    }
+
+    /** Returns the camera and effect medium snapshot for this operation. */
+    public ScreenEffectMediumState medium() {
+        return this.mediumState;
     }
 
     /** Returns the color captured before this operation; later batches see earlier output. */

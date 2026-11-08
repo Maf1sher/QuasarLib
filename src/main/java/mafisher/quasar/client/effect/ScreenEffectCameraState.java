@@ -1,8 +1,12 @@
 package mafisher.quasar.client.effect;
 
 import java.util.Objects;
+import java.util.Optional;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
+import org.joml.Vector2f;
+import org.joml.Vector3f;
+import org.joml.Vector4f;
 
 /**
  * Immutable camera snapshot for a screen operation.
@@ -58,6 +62,51 @@ public record ScreenEffectCameraState(
     /** Returns the inverse projection matrix in a fresh copy. */
     public Matrix4f inverseProjectionMatrix() {
         return new Matrix4f(this.projectionMatrix).invert();
+    }
+
+    /**
+     * Reconstructs the world-space camera ray for normalized screen coordinates.
+     *
+     * <p>The ray is sampled on the far plane. Minecraft folds the first-person
+     * view bob into the projection as a view-space translation; inverting that on
+     * the near plane turns a small bob into a large angular error.</p>
+     *
+     * @param u normalized horizontal coordinate in {@code [0, 1]}
+     * @param v normalized vertical coordinate in {@code [0, 1]}
+     * @return a normalized world-space direction
+     */
+    public Vector3f worldRay(float u, float v) {
+        Vector4f clip = new Vector4f(u * 2.0F - 1.0F, v * 2.0F - 1.0F, 1.0F, 1.0F);
+        Vector4f view = new Vector4f(clip).mul(this.inverseProjectionMatrix());
+        if (Math.abs(view.w) < 1.0E-6F || !Float.isFinite(view.w)) {
+            throw new IllegalArgumentException("Cannot reconstruct a camera ray from a degenerate projection");
+        }
+        view.div(view.w);
+        Vector3f direction = new Vector3f(view.x, view.y, view.z);
+        this.inverseViewMatrix().transformDirection(direction);
+        return direction.normalize();
+    }
+
+    /**
+     * Projects a world-space direction to normalized screen coordinates.
+     *
+     * @param direction a world-space direction; it does not need to be normalized
+     * @return the screen position, or empty when the direction is behind the camera
+     */
+    public Optional<Vector2f> screenUv(Vector3f direction) {
+        Objects.requireNonNull(direction, "direction");
+        Vector4f view = new Vector4f(direction, 0.0F).mul(this.modelViewMatrix());
+        Vector4f clip = new Vector4f(view).mul(this.projectionMatrix());
+        if (!(clip.w > 1.0E-5F) || !Float.isFinite(clip.w)
+            || !Float.isFinite(clip.x) || !Float.isFinite(clip.y)) {
+            return Optional.empty();
+        }
+        float u = clip.x / clip.w * 0.5F + 0.5F;
+        float v = clip.y / clip.w * 0.5F + 0.5F;
+        if (!Float.isFinite(u) || !Float.isFinite(v)) {
+            return Optional.empty();
+        }
+        return Optional.of(new Vector2f(u, v));
     }
 
     /**

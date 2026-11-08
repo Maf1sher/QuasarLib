@@ -6,8 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Optional;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
+import org.joml.Vector2f;
+import org.joml.Vector3f;
 import org.junit.jupiter.api.Test;
 
 class ScreenEffectCameraStateTest {
@@ -48,6 +51,58 @@ class ScreenEffectCameraStateTest {
         Matrix4f returned = camera.inverseViewMatrix();
         returned.identity();
         assertIdentity(new Matrix4f(modelView).mul(camera.inverseViewMatrix()));
+    }
+
+    @Test
+    void reconstructsTheForwardRayAtScreenCentre() {
+        Matrix4f projection = new Matrix4f().perspective(
+            (float)Math.toRadians(70.0), 16.0F / 9.0F, 0.05F, 1000.0F);
+        ScreenEffectCameraState camera = new ScreenEffectCameraState(
+            Vec3.ZERO, new Matrix4f(), projection, 800, 600, 0.0F
+        );
+
+        Vector3f ray = camera.worldRay(0.5F, 0.5F);
+
+        assertEquals(0.0F, ray.x(), 1.0E-5F);
+        assertEquals(0.0F, ray.y(), 1.0E-5F);
+        assertEquals(-1.0F, ray.z(), 1.0E-5F);
+    }
+
+    @Test
+    void projectsTheForwardDirectionToScreenCentre() {
+        Matrix4f projection = new Matrix4f().perspective(
+            (float)Math.toRadians(70.0), 16.0F / 9.0F, 0.05F, 1000.0F);
+        ScreenEffectCameraState camera = new ScreenEffectCameraState(
+            Vec3.ZERO, new Matrix4f(), projection, 800, 600, 0.0F
+        );
+
+        Optional<Vector2f> uv = camera.screenUv(new Vector3f(0.0F, 0.0F, -1.0F));
+
+        assertTrue(uv.isPresent());
+        assertEquals(0.5F, uv.get().x, 1.0E-5F);
+        assertEquals(0.5F, uv.get().y, 1.0E-5F);
+        assertTrue(camera.screenUv(new Vector3f(0.0F, 0.0F, 1.0F)).isEmpty());
+    }
+
+    @Test
+    void worldRayAndScreenUvRoundTrip() {
+        Matrix4f modelView = new Matrix4f().translate(-4.0F, 2.0F, 9.0F)
+            .rotateY(0.7F).rotateX(-0.3F).rotateZ(0.15F);
+        Matrix4f projection = new Matrix4f().perspective(
+            (float)Math.toRadians(80.0), 1.6F, 0.05F, 1500.0F);
+        ScreenEffectCameraState camera = new ScreenEffectCameraState(
+            Vec3.ZERO, modelView, projection, 1280, 720, 0.0F
+        );
+
+        for (float u : new float[] { 0.2F, 0.5F, 0.8F }) {
+            for (float v : new float[] { 0.2F, 0.5F, 0.8F }) {
+                Vector3f ray = camera.worldRay(u, v);
+                Optional<Vector2f> projected = camera.screenUv(ray);
+                assertTrue(projected.isPresent());
+                assertEquals(u, projected.get().x, 1.0E-4F);
+                assertEquals(v, projected.get().y, 1.0E-4F);
+            }
+        }
     }
 
     @Test

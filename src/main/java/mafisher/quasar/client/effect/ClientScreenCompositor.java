@@ -14,8 +14,15 @@ import java.util.Objects;
 import mafisher.quasar.compat.CompatRegistry;
 import mafisher.quasar.compat.RenderEnvironment;
 import mafisher.quasar.effect.EffectQualityTier;
+import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.ShaderInstance;
+import net.minecraft.core.BlockPos;
+import net.minecraft.tags.FluidTags;
+import net.minecraft.world.level.material.FluidState;
+import net.minecraft.world.level.material.FogType;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL11;
@@ -134,13 +141,15 @@ final class ClientScreenCompositor {
                 }
 
                 this.captureSceneColor(mainTarget, this.rawSceneTarget);
+                ScreenEffectFogState fogState = captureFogState();
 
                 RenderTarget currentColor = this.rawSceneTarget;
                 RenderTarget alternateColor = this.sceneColorTarget;
                 boolean firstBatch = true;
                 for (ScreenEffectBatch batch : batches) {
                     this.renderMask(event, manager, depthTarget, batch);
-                    this.renderOperation(currentColor, alternateColor, batch, camera, quality, environment);
+                    this.renderOperation(currentColor, alternateColor, batch, camera, quality, environment,
+                        fogState);
                     currentColor = alternateColor;
                     if (firstBatch) {
                         firstBatch = false;
@@ -214,11 +223,15 @@ final class ClientScreenCompositor {
 
     private void renderOperation(RenderTarget sourceColor, RenderTarget destination,
         ScreenEffectBatch batch, ScreenEffectCameraState camera, EffectQualityTier quality,
-        RenderEnvironment environment) {
+        RenderEnvironment environment, ScreenEffectFogState fogState) {
         ScreenEffectOperationRenderer renderer = this.operationRegistry.find(batch.settings().operation())
             .orElseThrow(() -> new IllegalStateException("No screen effect operation registered for "
                 + batch.settings().operation().id()));
         try {
+            var effectPosition = batch.operationContext().transform().position();
+            ScreenEffectMediumState medium = captureMedium(
+                new Vec3(effectPosition.x(), effectPosition.y(), effectPosition.z()),
+                camera.position());
             ScreenEffectOperationContext context = new ScreenEffectOperationContext(
                 batch.settings(),
                 batch.operationContext(),
@@ -226,6 +239,8 @@ final class ClientScreenCompositor {
                 camera,
                 quality,
                 environment,
+                fogState,
+                medium,
                 sourceColor,
                 this.rawSceneTarget,
                 destination,
@@ -237,6 +252,81 @@ final class ClientScreenCompositor {
             this.scratchTargets.releaseOperation();
             this.restoreOperationState();
         }
+    }
+
+    private static ScreenEffectFogState captureFogState() {
+        float start = RenderSystem.getShaderFogStart();
+        float end = RenderSystem.getShaderFogEnd();
+        float[] color = RenderSystem.getShaderFogColor();
+        if (!Float.isFinite(start) || !Float.isFinite(end) || !(end > start)
+            || start >= Float.MAX_VALUE || color == null || color.length < 3
+            || !Float.isFinite(color[0]) || !Float.isFinite(color[1]) || !Float.isFinite(color[2])) {
+            return ScreenEffectFogState.NONE;
+        }
+        return new ScreenEffectFogState(start, end, new Vec3(color[0], color[1], color[2]));
+    }
+
+    private static ScreenEffectMediumState captureMedium(Vec3 effectPosition, Vec3 cameraPosition) {
+        Minecraft minecraft = Minecraft.getInstance();
+        Camera camera = minecraft.gameRenderer == null ? null : minecraft.gameRenderer.getMainCamera();
+        FogType fluid = camera == null ? null : camera.getFluidInCamera();
+        ScreenEffectMedium cameraMedium = fluid == null
+            ? ScreenEffectMedium.NONE : mediumOf(fluid);
+        ClientLevel level = minecraft.level;
+        ScreenEffectMedium effectMedium = level == null
+            ? ScreenEffectMedium.NONE : mediumOf(level.getFluidState(
+                BlockPos.containing(effectPosition.x, effectPosition.y, effectPosition.z)));
+        float cameraSurface = waterSurfaceY(level, cameraPosition);
+        float effectSurface = waterSurfaceY(level, effectPosition);
+        return new ScreenEffectMediumState(
+            cameraMedium,
+            effectMedium,
+            Float.isNaN(cameraSurface) ? Float.NaN : cameraSurface - (float)cameraPosition.y,
+            Float.isNaN(effectSurface) ? Float.NaN : effectSurface - (float)cameraPosition.y
+        );
+    }
+
+    private static ScreenEffectMedium mediumOf(FogType type) {
+        return switch (type) {
+            case WATER -> ScreenEffectMedium.WATER;
+            case LAVA -> ScreenEffectMedium.LAVA;
+            case POWDER_SNOW -> ScreenEffectMedium.POWDER_SNOW;
+            default -> ScreenEffectMedium.NONE;
+        };
+    }
+
+    private static ScreenEffectMedium mediumOf(FluidState state) {
+        if (state.is(FluidTags.WATER)) {
+            return ScreenEffectMedium.WATER;
+        }
+        if (state.is(FluidTags.LAVA)) {
+            return ScreenEffectMedium.LAVA;
+        }
+        return ScreenEffectMedium.NONE;
+    }
+
+    /** Returns the top water surface above {@code position}, or {@link Float#NaN} when unknown. */
+    private static float waterSurfaceY(ClientLevel level, Vec3 position) {
+        if (level == null) {
+            return Float.NaN;
+        }
+        BlockPos.MutableBlockPos cursor = BlockPos.containing(
+            position.x, position.y, position.z).mutable();
+        if (!isWater(level, cursor)) {
+            return Float.NaN;
+        }
+        for (int step = 0; step < 128; step++) {
+            BlockPos above = cursor.above();
+            if (!isWater(level, above)) {
+                return cursor.getY() + 1.0F;
+            }
+            cursor.set(above);
+        }
+        return cursor.getY() + 1.0F;
+    }
+
+    private static boolean isWater(ClientLevel level, BlockPos position) {
+        return level.getFluidState(position).is(FluidTags.WATER);
     }
 
     private void renderMask(RenderLevelStageEvent event, ClientVisualEffectManager manager, RenderTarget depthTarget,
