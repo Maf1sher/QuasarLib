@@ -18,7 +18,6 @@ import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
@@ -95,26 +94,26 @@ final class ContentBlackHoleRenderer implements ScreenEffectRenderer {
     public void renderScreenMask(EffectRenderContext context, RenderType maskRenderType,
         PoseStack poseStack, MultiBufferSource bufferSource) {
         float radius = (float)spatialRadius(context);
-        var effectPosition = context.transform().position();
-        Vec3 cameraPosition = Minecraft.getInstance().gameRenderer.getMainCamera().getPosition();
-        Vector3f toCamera = new Vector3f(
-            (float)(cameraPosition.x - effectPosition.x()),
-            (float)(cameraPosition.y - effectPosition.y()),
-            (float)(cameraPosition.z - effectPosition.z())
-        );
-        if (toCamera.lengthSquared() < 1.0E-6F) {
-            toCamera.set(0.0F, 0.0F, 1.0F);
+        Vector3f cameraLook = Minecraft.getInstance().gameRenderer.getMainCamera().getLookVector();
+        Vector3f look = new Vector3f(cameraLook);
+        if (look.lengthSquared() < 1.0E-6F) {
+            look.set(0.0F, 0.0F, 1.0F);
         } else {
-            toCamera.normalize();
+            look.normalize();
         }
+        // A camera-facing billboard is perpendicular to the ray to the effect,
+        // not to the image plane. For an off-centre black hole its projection is
+        // a keystone and the far edge can cut through the effect, which looks
+        // like a smaller screen inside the frame. Keep the mask parallel to the
+        // image plane instead so it projects as a screen-space rectangle.
         Matrix4f inverseEffectRotation = ContentBlackHoleGeometry.rotation(
             context.transform().yaw(),
             context.transform().pitch(),
             context.transform().roll()
         ).invert();
-        Vector3f localToCamera = inverseEffectRotation.transformDirection(toCamera).normalize();
+        Vector3f localLook = inverseEffectRotation.transformDirection(look).normalize();
         Quaternionf facing = new Quaternionf().rotationTo(
-            new Vector3f(0.0F, 0.0F, 1.0F), localToCamera
+            new Vector3f(0.0F, 0.0F, 1.0F), localLook
         );
 
         poseStack.pushPose();
