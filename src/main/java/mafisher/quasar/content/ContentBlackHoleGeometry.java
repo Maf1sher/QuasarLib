@@ -61,15 +61,19 @@ final class ContentBlackHoleGeometry {
             .rotationZ((float)Math.toRadians(roll));
     }
 
-    /** Selects a raymarch step budget from the engine LOD level and quality-tier ordinal. */
+    /**
+     * Selects a raymarch step budget from the quality tier and engine LOD. The march starts at the
+     * black-hole bounding sphere, so traversal no longer scales with camera distance; LOD may trim
+     * cosmetic work but never starves the disk/shadow traversal.
+     */
     static int stepCount(int lodLevel, int qualityLevel) {
         int base = switch (qualityLevel) {
-            case 0 -> 48;
-            case 1 -> 72;
+            case 0 -> 64;
+            case 1 -> 80;
             case 2 -> 96;
             default -> 112;
         };
-        return Math.max(32, base - Math.max(0, lodLevel) * 16);
+        return Math.max(64, base - Math.max(0, lodLevel) * 8);
     }
 
     /** Matches the engine's visual fade envelope: short fade in and slightly longer fade out. */

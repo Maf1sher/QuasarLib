@@ -30,13 +30,14 @@ class ContentBlackHoleGeometryTest {
     }
 
     @Test
-    void stepBudgetFallsWithLodAndRisesWithQuality() {
-        assertEquals(48, ContentBlackHoleGeometry.stepCount(0, 0));
-        assertEquals(72, ContentBlackHoleGeometry.stepCount(0, 1));
+    void stepBudgetKeepsATraversalFloorAndScalesWithQuality() {
+        assertEquals(64, ContentBlackHoleGeometry.stepCount(0, 0));
+        assertEquals(80, ContentBlackHoleGeometry.stepCount(0, 1));
         assertEquals(96, ContentBlackHoleGeometry.stepCount(0, 2));
         assertEquals(112, ContentBlackHoleGeometry.stepCount(0, 3));
-        assertEquals(32, ContentBlackHoleGeometry.stepCount(1, 0));
-        assertEquals(32, ContentBlackHoleGeometry.stepCount(8, 0));
+        assertEquals(64, ContentBlackHoleGeometry.stepCount(1, 0));
+        assertEquals(64, ContentBlackHoleGeometry.stepCount(8, 0));
+        assertEquals(96, ContentBlackHoleGeometry.stepCount(2, 3));
         assertTrue(ContentBlackHoleGeometry.stepCount(2, 3)
             < ContentBlackHoleGeometry.stepCount(1, 3));
     }

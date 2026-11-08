@@ -68,7 +68,7 @@ class ContentShadersTest {
             "BlackHoleOffset", "BlackHoleRadius", "DiskInnerRadius", "DiskOuterRadius",
             "DiskThickness", "DiskRight", "DiskForward", "DiskNormal",
             "AgeTicks", "Progress", "Seed", "Charge", "Fade", "LensStrength",
-            "RingStrength", "DiskBrightness", "Turbulence", "StepCount",
+            "LensGravity", "RingStrength", "DiskBrightness", "Turbulence", "StepCount",
             "Pass", "BloomStrength", "BloomThreshold", "BloomRadiusPixels"
         )) {
             assertTrue(json.contains("\"" + name + "\""), name);

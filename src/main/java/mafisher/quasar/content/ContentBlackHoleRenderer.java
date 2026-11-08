@@ -32,9 +32,11 @@ final class ContentBlackHoleRenderer implements ScreenEffectRenderer {
     private static final ContentBlackHoleSettings SETTINGS = ContentBlackHoleSettings.DEFAULT;
     private static final ResourceLocation MASK_TEXTURE =
         ResourceLocation.withDefaultNamespace("textures/misc/white.png");
+    // The operation shader resolves scene depth per pixel; a depth-tested flat proxy would clip
+    // the screen-space lens against terrain and near planes.
     private static final EffectRenderTypeOptions MASK_OPTIONS = new EffectRenderTypeOptions(
         EffectRenderTypeOptions.Transparency.TRANSLUCENT,
-        true,
+        false,
         true,
         false,
         false,

@@ -6,6 +6,7 @@ record ContentBlackHoleSettings(
     float diskOuterFactor,
     float diskThicknessFactor,
     float lensStrength,
+    float lensGravity,
     float diskBrightness,
     float ringBrightness,
     float turbulence,
@@ -16,8 +17,9 @@ record ContentBlackHoleSettings(
     static final ContentBlackHoleSettings DEFAULT = new ContentBlackHoleSettings(
         3.0F,
         9.0F,
-        0.14F,
+        0.32F,
         1.8F,
+        0.5F,
         1.35F,
         4.0F,
         1.0F,
@@ -32,6 +34,7 @@ record ContentBlackHoleSettings(
             || !Float.isFinite(diskThicknessFactor) || diskThicknessFactor < 0.0F
             || diskThicknessFactor > 0.5F
             || !Float.isFinite(lensStrength) || lensStrength < 0.0F || lensStrength > 4.0F
+            || !Float.isFinite(lensGravity) || lensGravity < 0.05F || lensGravity > 1.0F
             || !Float.isFinite(diskBrightness) || diskBrightness < 0.0F || diskBrightness > 8.0F
             || !Float.isFinite(ringBrightness) || ringBrightness < 0.0F || ringBrightness > 16.0F
             || !Float.isFinite(turbulence) || turbulence < 0.0F || turbulence > 3.0F

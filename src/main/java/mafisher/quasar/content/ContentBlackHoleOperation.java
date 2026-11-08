@@ -46,13 +46,16 @@ final class ContentBlackHoleOperation implements ScreenEffectOperationRenderer {
     }
 
     private static float raymarchScale(EffectQualityTier quality) {
+        if (quality == EffectQualityTier.ULTRA) {
+            return 1.0F;
+        }
         if (quality.atLeast(EffectQualityTier.HIGH)) {
             return 0.85F;
         }
         if (quality == EffectQualityTier.MEDIUM) {
             return 0.7F;
         }
-        return 1.0F;
+        return 0.55F;
     }
 
     private static void bindCommonInputs(ScreenEffectOperationContext context, ShaderInstance shader,
@@ -103,6 +106,7 @@ final class ContentBlackHoleOperation implements ScreenEffectOperationRenderer {
         context.setUniform(shader, "Fade",
             ContentBlackHoleGeometry.fadeEnvelope(context.effect().progress()));
         context.setUniform(shader, "LensStrength", settings.lensStrength());
+        context.setUniform(shader, "LensGravity", settings.lensGravity());
         context.setUniform(shader, "RingStrength", settings.ringBrightness());
         context.setUniform(shader, "DiskBrightness", settings.diskBrightness());
         context.setUniform(shader, "Turbulence", settings.turbulence());
