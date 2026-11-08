@@ -26,3 +26,10 @@ type="required"
 versionRange="${minecraft_version_range}"
 ordering="NONE"
 side="BOTH"
+
+[[dependencies.${mod_id}]]
+modId="sodium"
+type="required"
+versionRange="${sodium_version_range}"
+ordering="NONE"
+side="CLIENT"

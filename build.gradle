@@ -19,12 +19,26 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
 repositories {
     mavenCentral()
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = 'Modrinth'
+                url = 'https://api.modrinth.com/maven'
+            }
+        }
+        filter {
+            includeGroup 'maven.modrinth'
+        }
+    }
 }
 
 dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
     testImplementation 'org.mockito:mockito-core:5.14.2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
+    // Sodium is a required client dependency; keep the dev runs launchable. Sodium
+    // declares @Mod(dist = CLIENT), so dedicated-server runs skip it.
+    runtimeOnly 'maven.modrinth:sodium:mc1.21.1-0.6.13-neoforge'
 }
 
 tasks.named('test', Test).configure {
@@ -78,6 +92,7 @@ def generateModMetadata = tasks.register('generateModMetadata', ProcessResources
             neo_version            : neo_version,
             neo_version_range      : neo_version_range,
             loader_version_range   : loader_version_range,
+            sodium_version_range   : sodium_version_range,
             mod_id                 : mod_id,
             mod_name               : mod_name,
             mod_license            : mod_license,
