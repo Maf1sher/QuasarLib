@@ -118,12 +118,10 @@ final class ContentBlackHoleGeodesic {
 
     /**
      * Per-pixel visibility rule mirrored by the shader: the scene must be at least
-     * as far as the physical front of the black hole.
+     * as far as the effect surface at that pixel (ring, disk, or lens shell).
      */
-    static boolean isVisibleAtDepth(double sceneDistance, double holeDistance, double horizonRadius,
-        double depthBias) {
-        double entry = Math.max(0.0, holeDistance - Math.max(horizonRadius, 0.001));
-        return sceneDistance >= entry - depthBias;
+    static boolean isVisibleAtDepth(double sceneDistance, double effectEntry, double depthBias) {
+        return sceneDistance >= Math.max(0.0, effectEntry) - depthBias;
     }
 
     private static double stepLength(double radius, double horizonRadius) {

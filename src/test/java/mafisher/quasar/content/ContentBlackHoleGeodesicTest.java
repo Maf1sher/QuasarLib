@@ -64,32 +64,29 @@ class ContentBlackHoleGeodesicTest {
 
     @Test
     void foregroundGeometryHidesTheEffectPerPixel() {
-        double holeDistance = 160.0;
-        double horizon = 6.0;
+        double ringEntry = 145.0;
+        double diskEntry = 106.0;
         double bias = 0.1;
 
-        assertFalse(ContentBlackHoleGeodesic.isVisibleAtDepth(50.0, holeDistance, horizon, bias),
-            "a tree in front of the hole must stay untouched");
-        assertTrue(ContentBlackHoleGeodesic.isVisibleAtDepth(1000.0, holeDistance, horizon, bias),
+        assertFalse(ContentBlackHoleGeodesic.isVisibleAtDepth(140.0, ringEntry, bias),
+            "a tree in front of the ring must stay untouched");
+        assertTrue(ContentBlackHoleGeodesic.isVisibleAtDepth(150.0, ringEntry, bias),
+            "a tree behind the ring may still show the ring");
+        assertTrue(ContentBlackHoleGeodesic.isVisibleAtDepth(1000.0, ringEntry, bias),
             "terrain beyond the hole must not clip the ring");
-        assertTrue(ContentBlackHoleGeodesic.isVisibleAtDepth(155.0, holeDistance, horizon, bias),
-            "geometry behind the physical front may still show the effect");
-        assertFalse(ContentBlackHoleGeodesic.isVisibleAtDepth(153.0, holeDistance, horizon, bias));
+        assertFalse(ContentBlackHoleGeodesic.isVisibleAtDepth(105.0, diskEntry, bias));
+        assertTrue(ContentBlackHoleGeodesic.isVisibleAtDepth(110.0, diskEntry, bias));
     }
 
     @Test
     void partialCoverageOnlyHidesCoveredPixels() {
-        double holeDistance = 160.0;
-        double horizon = 6.0;
-        double bias = 0.1;
-
-        assertFalse(ContentBlackHoleGeodesic.isVisibleAtDepth(40.0, holeDistance, horizon, bias));
-        assertTrue(ContentBlackHoleGeodesic.isVisibleAtDepth(900.0, holeDistance, horizon, bias));
+        assertFalse(ContentBlackHoleGeodesic.isVisibleAtDepth(40.0, 145.0, 0.1));
+        assertTrue(ContentBlackHoleGeodesic.isVisibleAtDepth(900.0, 145.0, 0.1));
     }
 
     @Test
     void cameraInsideTheHoleStillSeesTheEffect() {
-        assertTrue(ContentBlackHoleGeodesic.isVisibleAtDepth(0.5, 3.0, 6.0, 0.1));
+        assertTrue(ContentBlackHoleGeodesic.isVisibleAtDepth(0.5, 0.0, 0.1));
     }
 
     @Test

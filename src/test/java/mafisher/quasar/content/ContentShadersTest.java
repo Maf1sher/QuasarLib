@@ -104,6 +104,8 @@ class ContentShadersTest {
         String shader = readAsset("assets/quasar_content/shaders/core/black_hole.fsh");
         assertTrue(shader.contains("lensEntry") || shader.contains("tEntry"),
             "the effect surface must be depth-tested against the scene");
+        assertTrue(shader.contains("shadowEntry") && shader.contains("diskEntry"),
+            "the ring and disk need their own effect depths");
         assertTrue(shader.contains("sceneDistance"),
             "the scene depth must participate in visibility");
         assertTrue(!shader.contains("centerSceneDistance"),
@@ -127,6 +129,8 @@ class ContentShadersTest {
         assertTrue(shader.contains("SurfaceY") && shader.contains("SurfaceActive"));
         assertTrue(shader.contains("BloomSampler") && shader.contains("EmissiveOnly"),
             "bloom must sample the emissive layer instead of the lensed background");
+        assertTrue(shader.contains("innerOcclusion"),
+            "the shadow-to-ring gap must not show the lensed background");
     }
 
     @Test

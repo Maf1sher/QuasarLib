@@ -397,7 +397,10 @@ vec4 renderBlackHole(vec2 uv) {
                     edgeFade);
             }
         }
-        color += background * transmittance;
+        float innerOcclusion = 1.0 - smoothstep(
+            shadowImpact * 1.05, shadowImpact * 1.35, impact
+        );
+        color += background * transmittance * (1.0 - innerOcclusion);
     }
 
     // Cinematic photon-ring glow. It is symmetric in the impact parameter and is not
@@ -449,16 +452,37 @@ void main() {
     bool insideLens = length(cameraRelative) <= lensRadius;
     float sceneDistance = viewDistance(texture(DepthSampler, texCoord).r, texCoord);
     float depthBias = max(0.05, sceneDistance * 0.001);
-    // Occlusion uses the physical front of the black hole, not the optical lens
-    // shell. A wall between the lens shell and the horizon must still occlude the
-    // dark core, while terrain beyond the black hole must not clip the ring.
-    float effectEntry = max(0.0, length(BlackHoleOffset) - max(BlackHoleRadius, 0.001));
+    // Ring, disk, and lens-only pixels sit at different depths. A single centre
+    // depth made the ring appear in front of or behind trees as the player moved.
+    float shadowRadius = max(BlackHoleRadius, 0.001) * B_CRITICAL;
+    float shadowEntry = raySphereEntry(cameraRelative, direction, shadowRadius * 1.35);
+    float diskEntry = -1.0;
+    float planeDenominator = dot(direction, DiskNormal);
+    if (abs(planeDenominator) > 0.0001) {
+        float planeDistance = dot(-cameraRelative, DiskNormal) / planeDenominator;
+        if (planeDistance > 0.0) {
+            vec3 hit = cameraRelative + direction * planeDistance;
+            float radial = length(hit - DiskNormal * dot(hit, DiskNormal));
+            if (radial >= DiskInnerRadius && radial <= DiskOuterRadius) {
+                diskEntry = planeDistance;
+            }
+        }
+    }
+    float impact = length(cross(cameraRelative, direction));
+    float effectEntry;
+    if (impact <= shadowRadius * 1.35 && shadowEntry >= 0.0) {
+        effectEntry = shadowEntry;
+    } else if (diskEntry > 0.0) {
+        effectEntry = diskEntry;
+    } else {
+        effectEntry = tEntry;
+    }
     bool footprint = insideLens || tEntry >= 0.0;
     bool visible = footprint && sceneDistance >= effectEntry - depthBias;
     float alpha = effectColor.a * (visible ? 1.0 : 0.0);
 
     vec3 color = effectColor.rgb;
-    float fogDistance = effectEntry;
+    float fogDistance = max(effectEntry, 0.0);
     if (SurfaceActive > 0.5 && abs(direction.y) > 0.001) {
         float surfaceDistance = SurfaceY / direction.y;
         if (surfaceDistance > 0.0 && surfaceDistance < effectEntry) {
