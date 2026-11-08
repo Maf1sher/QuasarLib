@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.joml.Matrix4f;
-import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import org.junit.jupiter.api.Test;
 
@@ -51,24 +50,6 @@ class ContentBlackHoleGeometryTest {
         ContentBlackHoleGeometry.Basis pitched = ContentBlackHoleGeometry.basis(0.0F, 8.0F, 0.0F);
         assertVector(0.0F, (float)Math.cos(Math.toRadians(8.0)),
             (float)Math.sin(Math.toRadians(8.0)), pitched.normal());
-    }
-
-    @Test
-    void maskFacingKeepsTheQuadAlignedWithTheCameraAxes() {
-        Quaternionf camera = new Quaternionf().rotationYXZ(
-            (float)(Math.PI - Math.toRadians(120.0)),
-            (float)(-Math.toRadians(20.0)),
-            (float)(-Math.toRadians(5.0))
-        );
-        float yaw = 40.0F;
-        float pitch = 8.0F;
-        float roll = -12.0F;
-
-        Matrix4f composed = new Matrix4f(ContentBlackHoleGeometry.rotation(yaw, pitch, roll))
-            .mul(ContentBlackHoleGeometry.maskFacing(yaw, pitch, roll, camera));
-
-        // A screen-aligned mask means the effect rotation and the facing cancel out to exactly the camera basis.
-        assertMatrix(new Matrix4f().rotation(camera), composed, 1.0E-5F);
     }
 
     @Test

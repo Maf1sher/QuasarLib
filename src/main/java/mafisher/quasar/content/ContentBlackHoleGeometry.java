@@ -1,8 +1,6 @@
 package mafisher.quasar.content;
 
-import java.util.Objects;
 import org.joml.Matrix4f;
-import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
 /** Pure orientation, timeline, and quality math for the content black hole. */
@@ -66,20 +64,6 @@ final class ContentBlackHoleGeometry {
             .rotateY((float)Math.toRadians(yaw))
             .rotateX((float)Math.toRadians(pitch))
             .rotateZ((float)Math.toRadians(roll));
-    }
-
-    /**
-     * Returns the effect-local facing that projects a mask quad as a screen-aligned rectangle.
-     *
-     * <p>The mask pose stack already contains {@link #rotation(float, float, float)}, so composing that rotation
-     * with this facing yields the camera-to-world rotation: the quad's local X/Y map to the camera's right/up axes
-     * and its normal points at the camera. A look-vector {@code rotationTo} only pins the normal and leaves an
-     * arbitrary pitch-dependent roll, which lets a hard coverage edge cut through the screen-space effect.</p>
-     */
-    static Matrix4f maskFacing(float yaw, float pitch, float roll, Quaternionf cameraRotation) {
-        Objects.requireNonNull(cameraRotation, "cameraRotation");
-        Matrix4f cameraToWorld = new Matrix4f().rotation(cameraRotation);
-        return rotation(yaw, pitch, roll).invert().mul(cameraToWorld);
     }
 
     /**

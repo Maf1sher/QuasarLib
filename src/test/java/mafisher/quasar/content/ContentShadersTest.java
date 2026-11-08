@@ -89,6 +89,22 @@ class ContentShadersTest {
     }
 
     @Test
+    void blackHoleMaskIsScreenSpaceCoverage() throws IOException {
+        String shader = readAsset("assets/quasar_content/shaders/core/black_hole_mask.vsh");
+        assertTrue(shader.contains("gl_Position = vec4(UV0.xy * 2.0 - 1.0, 0.0, 1.0);"),
+            "a world-space mask can clip the screen-space effect");
+    }
+
+    @Test
+    void blackHoleOcclusionUsesOneCentreDepthInsteadOfPerPixelSamples() throws IOException {
+        String shader = readAsset("assets/quasar_content/shaders/core/black_hole.fsh");
+        assertTrue(shader.contains("centerSceneDistance"),
+            "foreground occlusion must be a single effect-level test");
+        assertTrue(!shader.contains("sampleDistance < sceneDistance"),
+            "per-sample unlensed depth clips the bent light path at the horizon");
+    }
+
+    @Test
     void worldShaderDeclaresInstanceArrays() throws IOException {
         String source = readAsset("assets/quasar_content/shaders/core/rune_circle.vsh");
         assertTrue(source.contains("Instances[128]"), source);

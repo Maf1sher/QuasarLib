@@ -4,14 +4,13 @@ in vec3 Position;
 in vec4 Color;
 in vec2 UV0;
 
-uniform mat4 ModelViewMat;
-uniform mat4 ProjMat;
-
 out vec4 vertexColor;
 out vec2 texCoord0;
 
 void main() {
-    gl_Position = ProjMat * ModelViewMat * vec4(Position, 1.0);
+    // Screen-space coverage: the black hole is a post-process, so the mask spans the whole
+    // viewport. Ignoring the world pose keeps a hard coverage edge from cutting the effect.
+    gl_Position = vec4(UV0.xy * 2.0 - 1.0, 0.0, 1.0);
     vertexColor = Color;
     texCoord0 = UV0;
 }

@@ -239,7 +239,6 @@ vec4 renderBlackHole(vec2 uv) {
         return vec4(sceneColor.rgb, 0.0);
     }
 
-    float sceneDistance = viewDistance(texture(DepthSampler, uv).r, uv);
     vec3 direction = rayDirection(uv);
     vec3 cameraRelative = -BlackHoleOffset;
 
@@ -257,15 +256,20 @@ vec4 renderBlackHole(vec2 uv) {
         return vec4(sceneColor.rgb, 0.0);
     }
 
-    // The flat mask no longer resolves foreground occlusion; compare scene depth per pixel.
-    float shadowEntry = raySphereEntry(cameraRelative, direction, shadowImpact);
-    bool shadowOccluded = shadowEntry >= 0.0 && sceneDistance < shadowEntry - 0.05;
-    float lensEntry = raySphereEntry(cameraRelative, direction, radius * 8.0);
-    bool lensOccluded = lensEntry >= 0.0 && sceneDistance < lensEntry - 0.05;
+    // The scene depth is sampled along the straight, unlensed ray. Comparing it per sample with the
+    // bent light path makes water or terrain beyond the horizon occlude the lower ring even though
+    // the light never passes through it. Hide the whole effect only when geometry clearly in front
+    // of its bounding sphere covers the effect centre; the mask owns the remaining coverage.
+    vec2 centerUv = clamp(holeUv, vec2(0.0), vec2(1.0));
+    bool centerOnScreen = all(greaterThanEqual(holeUv, vec2(0.0)))
+        && all(lessThanEqual(holeUv, vec2(1.0)));
+    float centerSceneDistance = viewDistance(texture(DepthSampler, centerUv).r, centerUv);
+    if (centerOnScreen && centerSceneDistance < holeDistance - entryRadius - 0.5) {
+        return vec4(sceneColor.rgb, 0.0);
+    }
 
     vec3 position = cameraRelative + direction * entryDistance;
     vec3 velocity = direction;
-    float travelled = entryDistance;
     float alpha = 0.0;
     vec3 emission = vec3(0.0);
     bool captured = false;
@@ -294,10 +298,8 @@ vec4 renderBlackHole(vec2 uv) {
         float squaredDistance = max(dot(position, position), radius * radius * 0.2);
         vec3 acceleration = -normalize(position) * (radius * LensGravity) / squaredDistance;
         velocity = normalize(velocity + acceleration * stepLength * LensStrength);
-        travelled += stepLength;
 
-        float sampleDistance = travelled - stepLength * 0.5;
-        if (alpha < 0.985 && sampleDistance < sceneDistance + 0.5) {
+        if (alpha < 0.985) {
             vec4 disk = sampleDisk(mix(previous, position, 0.5), cameraRelative);
             float opacity = 1.0 - exp(-max(disk.a, 0.0) * stepLength * DISK_OPACITY);
             emission += disk.rgb * opacity * (1.0 - alpha);
@@ -307,7 +309,7 @@ vec4 renderBlackHole(vec2 uv) {
 
     vec3 lensedScene = rawSceneColor.rgb;
     float lensAmount = 0.0;
-    if (!captured && !lensOccluded) {
+    if (!captured) {
         vec2 lensUv = uv;
         vec4 clip = WorldProjMat * (ViewMat * vec4(velocity, 0.0));
         if (clip.w > 0.0001) {
@@ -335,7 +337,7 @@ vec4 renderBlackHole(vec2 uv) {
     }
 
     bool analyticShadow = forward && impact < shadowImpact && holeDistance > shadowImpact * 1.05;
-    bool insideShadow = !shadowOccluded && (captured || analyticShadow);
+    bool insideShadow = captured || analyticShadow;
     vec3 background = insideShadow
         ? vec3(0.0)
         : mix(sceneColor.rgb, lensedScene, lensAmount);
@@ -343,7 +345,6 @@ vec4 renderBlackHole(vec2 uv) {
 
     float stabilization = smoothstep(0.0, 0.10, Progress)
         * (1.0 - smoothstep(0.86, 1.0, Progress));
-    float ringVisibility = shadowOccluded ? 0.0 : 1.0;
     float pixelWorld = max(0.0001,
         2.0 * abs(holeView.z) / max(abs(WorldProjMat[1][1]) * ViewportHeight, 1.0));
     float ringWidth = max(0.045 * radius, pixelWorld * 1.5);
@@ -356,13 +357,13 @@ vec4 renderBlackHole(vec2 uv) {
     vec3 ringColor = mix(vec3(1.0, 0.93, 0.78), vec3(0.72, 0.92, 1.0), Charge);
     float pulse = 0.85 + 0.15 * sin(AgeTicks * 0.08 + Seed * 6.2831853);
     vec3 ringLight = ringColor * (primaryRing + secondaryRing + tertiaryRing)
-        * RingStrength * pulse * (1.0 - alpha * 0.75) * stabilization * ringVisibility;
+        * RingStrength * pulse * (1.0 - alpha * 0.75) * stabilization;
     color += ringLight / (vec3(1.0) + ringLight);
 
     float haloOffset = (impact - shadowImpact) / (3.5 * radius);
     float halo = exp(-haloOffset * haloOffset) * 0.08;
     vec3 haloColor = mix(vec3(1.0, 0.45, 0.15), vec3(0.5, 0.2, 1.0), Charge);
-    vec3 haloLight = haloColor * halo * RingStrength * 0.25 * stabilization * ringVisibility;
+    vec3 haloLight = haloColor * halo * RingStrength * 0.25 * stabilization;
     color += haloLight / (vec3(1.0) + haloLight);
 
     float diskPresence = clamp(alpha * 6.0, 0.0, 1.0);
@@ -370,8 +371,8 @@ vec4 renderBlackHole(vec2 uv) {
     effectStrength = max(effectStrength, diskPresence);
     effectStrength = max(effectStrength, lensAmount);
     effectStrength = max(effectStrength,
-        clamp((primaryRing + secondaryRing + tertiaryRing) * 0.8, 0.0, 1.0) * ringVisibility);
-    effectStrength = max(effectStrength, halo * 2.0 * ringVisibility);
+        clamp((primaryRing + secondaryRing + tertiaryRing) * 0.8, 0.0, 1.0));
+    effectStrength = max(effectStrength, halo * 2.0);
     float screenRadius = length((uv - holeUv) * viewport);
     float screenFade = 1.0 - smoothstep(
         projectedRadius * 1.10, projectedRadius * 1.45, screenRadius
