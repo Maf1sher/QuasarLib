@@ -15,10 +15,12 @@ public final class ContentClientEffects {
     @SubscribeEvent
     public static void registerOperations(RegisterScreenEffectOperationsEvent event) {
         event.register(ContentScreenOperations.RUNE_GLOW, new ContentRuneGlowOperation());
+        event.register(ContentScreenOperations.BLACK_HOLE, new ContentBlackHoleOperation());
     }
 
     @SubscribeEvent
     public static void registerRenderers(RegisterVisualEffectRenderersEvent event) {
         event.register(ContentEffectIds.RUNE_CIRCLE, new ContentRuneCircleRenderer());
+        event.register(ContentEffectIds.BLACK_HOLE, new ContentBlackHoleRenderer());
     }
 }

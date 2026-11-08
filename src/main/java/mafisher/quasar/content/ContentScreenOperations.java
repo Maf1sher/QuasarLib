@@ -8,6 +8,9 @@ public final class ContentScreenOperations {
     public static final ScreenEffectOperation RUNE_GLOW = ScreenEffectOperation.create(
         ResourceLocation.fromNamespaceAndPath(ContentBootstrap.NAMESPACE, "rune_glow")
     );
+    public static final ScreenEffectOperation BLACK_HOLE = ScreenEffectOperation.create(
+        ResourceLocation.fromNamespaceAndPath(ContentBootstrap.NAMESPACE, "black_hole")
+    );
 
     private ContentScreenOperations() {
     }

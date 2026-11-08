@@ -1,0 +1,44 @@
+{
+  "vertex": "quasar_content:black_hole",
+  "fragment": "quasar_content:black_hole",
+  "samplers": [
+    { "name": "SceneSampler" },
+    { "name": "MaskSampler" },
+    { "name": "DepthSampler" },
+    { "name": "EffectSampler" }
+  ],
+  "attributes": [
+    "Position"
+  ],
+  "uniforms": [
+    { "name": "ViewMat", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
+    { "name": "WorldProjMat", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
+    { "name": "InvProjMat", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
+    { "name": "InvViewMat", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
+    { "name": "ViewportWidth", "type": "float", "count": 1, "values": [ 1920.0 ] },
+    { "name": "ViewportHeight", "type": "float", "count": 1, "values": [ 1080.0 ] },
+    { "name": "MaskStrength", "type": "float", "count": 1, "values": [ 1.0 ] },
+    { "name": "BlackHoleOffset", "type": "float", "count": 3, "values": [ 0.0, 0.0, -160.0 ] },
+    { "name": "BlackHoleRadius", "type": "float", "count": 1, "values": [ 12.0 ] },
+    { "name": "DiskInnerRadius", "type": "float", "count": 1, "values": [ 36.0 ] },
+    { "name": "DiskOuterRadius", "type": "float", "count": 1, "values": [ 132.0 ] },
+    { "name": "DiskThickness", "type": "float", "count": 1, "values": [ 1.2 ] },
+    { "name": "DiskRight", "type": "float", "count": 3, "values": [ 1.0, 0.0, 0.0 ] },
+    { "name": "DiskForward", "type": "float", "count": 3, "values": [ 0.0, 0.0, 1.0 ] },
+    { "name": "DiskNormal", "type": "float", "count": 3, "values": [ 0.0, 1.0, 0.0 ] },
+    { "name": "AgeTicks", "type": "float", "count": 1, "values": [ 0.0 ] },
+    { "name": "Progress", "type": "float", "count": 1, "values": [ 0.0 ] },
+    { "name": "Seed", "type": "float", "count": 1, "values": [ 0.0 ] },
+    { "name": "Charge", "type": "float", "count": 1, "values": [ 0.55 ] },
+    { "name": "Fade", "type": "float", "count": 1, "values": [ 1.0 ] },
+    { "name": "LensStrength", "type": "float", "count": 1, "values": [ 1.8 ] },
+    { "name": "RingStrength", "type": "float", "count": 1, "values": [ 4.0 ] },
+    { "name": "DiskBrightness", "type": "float", "count": 1, "values": [ 1.35 ] },
+    { "name": "Turbulence", "type": "float", "count": 1, "values": [ 1.0 ] },
+    { "name": "StepCount", "type": "float", "count": 1, "values": [ 112.0 ] },
+    { "name": "Pass", "type": "float", "count": 1, "values": [ 0.0 ] },
+    { "name": "BloomStrength", "type": "float", "count": 1, "values": [ 0.65 ] },
+    { "name": "BloomThreshold", "type": "float", "count": 1, "values": [ 0.65 ] },
+    { "name": "BloomRadiusPixels", "type": "float", "count": 1, "values": [ 4.0 ] }
+  ]
+}

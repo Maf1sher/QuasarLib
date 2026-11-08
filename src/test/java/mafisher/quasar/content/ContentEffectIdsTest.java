@@ -13,11 +13,15 @@ class ContentEffectIdsTest {
         assertEquals("quasar_content", ContentBootstrap.NAMESPACE);
         assertEquals("quasar_content", ContentEffectIds.RUNE_CIRCLE.getNamespace());
         assertEquals("rune_circle", ContentEffectIds.RUNE_CIRCLE.getPath());
+        assertEquals("quasar_content", ContentEffectIds.BLACK_HOLE.getNamespace());
+        assertEquals("black_hole", ContentEffectIds.BLACK_HOLE.getPath());
     }
 
     @Test
     void staysSeparateFromEngineDebugFixtures() {
         assertFalse(ContentEffectIds.RUNE_CIRCLE.getPath().startsWith("debug_"));
         assertNotEquals(EffectVisualIds.DEBUG_RUNE_CIRCLE, ContentEffectIds.RUNE_CIRCLE);
+        assertFalse(ContentEffectIds.BLACK_HOLE.getPath().startsWith("debug_"));
+        assertNotEquals(EffectVisualIds.DEBUG_BLACK_HOLE, ContentEffectIds.BLACK_HOLE);
     }
 }

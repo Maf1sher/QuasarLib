@@ -17,5 +17,7 @@ public final class ContentClientShaders {
         ContentShaders.RUNE_CIRCLE.register(event);
         ContentShaders.RUNE_MASK.register(event);
         ContentShaders.RUNE_GLOW.register(event);
+        ContentShaders.BLACK_HOLE.register(event);
+        ContentShaders.BLACK_HOLE_MASK.register(event);
     }
 }

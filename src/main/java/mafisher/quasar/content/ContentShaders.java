@@ -15,6 +15,12 @@ final class ContentShaders {
     static final EffectShader RUNE_GLOW = EffectShader.create(
         id("rune_glow"), DefaultVertexFormat.POSITION
     );
+    static final EffectShader BLACK_HOLE = EffectShader.create(
+        id("black_hole"), DefaultVertexFormat.POSITION
+    );
+    static final EffectShader BLACK_HOLE_MASK = EffectShader.create(
+        id("black_hole_mask"), DefaultVertexFormat.BLOCK
+    );
 
     private ContentShaders() {
     }

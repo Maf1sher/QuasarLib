@@ -10,5 +10,7 @@ class ContentScreenOperationsTest {
     void exposesContentOwnedOperationId() {
         assertEquals(ResourceLocation.fromNamespaceAndPath("quasar_content", "rune_glow"),
             ContentScreenOperations.RUNE_GLOW.id());
+        assertEquals(ResourceLocation.fromNamespaceAndPath("quasar_content", "black_hole"),
+            ContentScreenOperations.BLACK_HOLE.id());
     }
 }

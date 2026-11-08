@@ -3,6 +3,7 @@ package mafisher.quasar.content;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.VisualEffectSpec;
@@ -24,9 +25,14 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
 final class ContentCommands {
     private static final int DEBUG_LIFETIME_TICKS = 30 * 20;
     private static final int SEGMENTED_LIFETIME_TICKS = 60 * 20;
+    private static final int BLACK_HOLE_LIFETIME_TICKS = 60 * 20;
     private static final float DEBUG_SCALE = 5.0F;
     private static final double DEBUG_AUDIENCE_RADIUS = 128.0;
     private static final double SEGMENTED_AUDIENCE_RADIUS = 512.0;
+    private static final double BLACK_HOLE_DEFAULT_DISTANCE = 160.0;
+    private static final float BLACK_HOLE_DEFAULT_SCALE = 6.0F;
+    private static final float BLACK_HOLE_DISK_PITCH = 8.0F;
+    private static final double BLACK_HOLE_MIN_HEIGHT_OFFSET = 24.0;
     private static final int DEFAULT_COLUMNS = 4;
     private static final int DEFAULT_ROWS = 4;
     private static final double DEFAULT_SPACING = DEBUG_SCALE * 2.0;
@@ -64,6 +70,29 @@ final class ContentCommands {
                                 ))))))
                 .then(Commands.literal("segmented-stop-all")
                     .executes(context -> stopSegmented(context.getSource())))
+                .then(Commands.literal("blackhole")
+                    .executes(context -> startBlackHole(
+                        context.getSource(),
+                        BLACK_HOLE_DEFAULT_DISTANCE,
+                        BLACK_HOLE_DEFAULT_SCALE,
+                        ContentBlackHoleGeometry.VARIANT_AMBER
+                    ))
+                    .then(blackHoleVariant("gold", ContentBlackHoleGeometry.VARIANT_GOLD))
+                    .then(blackHoleVariant("neon", ContentBlackHoleGeometry.VARIANT_NEON))
+                    .then(Commands.argument("distance", DoubleArgumentType.doubleArg(48.0, 512.0))
+                        .executes(context -> startBlackHole(
+                            context.getSource(),
+                            DoubleArgumentType.getDouble(context, "distance"),
+                            BLACK_HOLE_DEFAULT_SCALE,
+                            ContentBlackHoleGeometry.VARIANT_AMBER
+                        ))
+                        .then(Commands.argument("scale", DoubleArgumentType.doubleArg(2.0, 64.0))
+                            .executes(context -> startBlackHole(
+                                context.getSource(),
+                                DoubleArgumentType.getDouble(context, "distance"),
+                                (float)DoubleArgumentType.getDouble(context, "scale"),
+                                ContentBlackHoleGeometry.VARIANT_AMBER
+                            )))))
         );
     }
 
@@ -137,6 +166,98 @@ final class ContentCommands {
             source.sendFailure(Component.literal(exception.getMessage()));
             return 0;
         }
+    }
+
+    private static LiteralArgumentBuilder<CommandSourceStack> blackHoleVariant(String name, int variant) {
+        return Commands.literal(name)
+            .executes(context -> startBlackHole(
+                context.getSource(),
+                BLACK_HOLE_DEFAULT_DISTANCE,
+                BLACK_HOLE_DEFAULT_SCALE,
+                variant
+            ))
+            .then(Commands.argument("distance", DoubleArgumentType.doubleArg(48.0, 512.0))
+                .executes(context -> startBlackHole(
+                    context.getSource(),
+                    DoubleArgumentType.getDouble(context, "distance"),
+                    BLACK_HOLE_DEFAULT_SCALE,
+                    variant
+                ))
+                .then(Commands.argument("scale", DoubleArgumentType.doubleArg(2.0, 64.0))
+                    .executes(context -> startBlackHole(
+                        context.getSource(),
+                        DoubleArgumentType.getDouble(context, "distance"),
+                        (float)DoubleArgumentType.getDouble(context, "scale"),
+                        variant
+                    ))));
+    }
+
+    private static int startBlackHole(CommandSourceStack source, double distance, float scale, int variant) {
+        ServerLevel level = source.getLevel();
+        VisualEffectSpec spec = blackHoleSpec(
+            source.getPosition(),
+            source.getRotation().y,
+            source.getRotation().x,
+            distance,
+            scale,
+            variant,
+            level.getRandom().nextLong()
+        );
+        VisualEffectService.start(level, spec);
+        source.sendSuccess(
+            () -> Component.literal(
+                "Started the content black hole (" + blackHoleVariantName(variant) + ") at "
+                    + (int)spec.position().x + ", " + (int)spec.position().y + ", "
+                    + (int)spec.position().z + " (horizon radius " + spec.scale() + ")."
+            ),
+            false
+        );
+        return 1;
+    }
+
+    static VisualEffectSpec blackHoleSpec(
+        Vec3 origin,
+        float viewYaw,
+        float viewPitch,
+        double distance,
+        float scale,
+        int variant,
+        long seed
+    ) {
+        if (!Double.isFinite(distance) || distance < 1.0) {
+            throw new IllegalArgumentException("Black-hole distance must be finite and positive");
+        }
+        if (!Float.isFinite(scale) || scale <= 0.0F) {
+            throw new IllegalArgumentException("Black-hole scale must be finite and positive");
+        }
+        Vec3 look = Vec3.directionFromRotation(viewPitch, viewYaw);
+        Vec3 center = origin.add(look.scale(distance));
+        center = new Vec3(
+            center.x,
+            Math.max(center.y, origin.y + BLACK_HOLE_MIN_HEIGHT_OFFSET),
+            center.z
+        );
+        EffectAudioSpec audio = ContentBlackHoleAudio.plan(center, BLACK_HOLE_LIFETIME_TICKS);
+        return new VisualEffectSpec(
+            ContentEffectIds.BLACK_HOLE,
+            center,
+            viewYaw,
+            BLACK_HOLE_DISK_PITCH,
+            0.0F,
+            scale,
+            BLACK_HOLE_LIFETIME_TICKS,
+            ContentBlackHoleGeometry.withVariant(seed, variant),
+            EffectAudience.dimensionWide(),
+            audio
+        );
+    }
+
+    private static String blackHoleVariantName(int variant) {
+        return switch (variant) {
+            case ContentBlackHoleGeometry.VARIANT_GOLD -> "gold";
+            case ContentBlackHoleGeometry.VARIANT_NEON -> "neon";
+            default -> "amber";
+        };
     }
 
     private static int stopSegmented(CommandSourceStack source) {

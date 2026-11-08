@@ -22,7 +22,13 @@ class ContentShadersTest {
         "shaders/core/rune_mask.fsh",
         "shaders/core/rune_glow.json",
         "shaders/core/rune_glow.vsh",
-        "shaders/core/rune_glow.fsh"
+        "shaders/core/rune_glow.fsh",
+        "shaders/core/black_hole.json",
+        "shaders/core/black_hole.vsh",
+        "shaders/core/black_hole.fsh",
+        "shaders/core/black_hole_mask.json",
+        "shaders/core/black_hole_mask.vsh",
+        "shaders/core/black_hole_mask.fsh"
     );
 
     @Test
@@ -33,9 +39,15 @@ class ContentShadersTest {
             ContentShaders.RUNE_MASK.id());
         assertEquals(ResourceLocation.fromNamespaceAndPath("quasar_content", "rune_glow"),
             ContentShaders.RUNE_GLOW.id());
+        assertEquals(ResourceLocation.fromNamespaceAndPath("quasar_content", "black_hole"),
+            ContentShaders.BLACK_HOLE.id());
+        assertEquals(ResourceLocation.fromNamespaceAndPath("quasar_content", "black_hole_mask"),
+            ContentShaders.BLACK_HOLE_MASK.id());
         assertEquals(DefaultVertexFormat.BLOCK, ContentShaders.RUNE_CIRCLE.format());
         assertEquals(DefaultVertexFormat.BLOCK, ContentShaders.RUNE_MASK.format());
         assertEquals(DefaultVertexFormat.POSITION, ContentShaders.RUNE_GLOW.format());
+        assertEquals(DefaultVertexFormat.POSITION, ContentShaders.BLACK_HOLE.format());
+        assertEquals(DefaultVertexFormat.BLOCK, ContentShaders.BLACK_HOLE_MASK.format());
     }
 
     @Test
@@ -47,14 +59,40 @@ class ContentShadersTest {
     }
 
     @Test
+    void blackHoleShaderDeclaresEveryOperationInput() throws IOException {
+        String json = readAsset("assets/quasar_content/shaders/core/black_hole.json");
+        for (String name : List.of(
+            "SceneSampler", "MaskSampler", "DepthSampler", "EffectSampler",
+            "ViewMat", "WorldProjMat", "InvProjMat", "InvViewMat",
+            "ViewportWidth", "ViewportHeight", "MaskStrength",
+            "BlackHoleOffset", "BlackHoleRadius", "DiskInnerRadius", "DiskOuterRadius",
+            "DiskThickness", "DiskRight", "DiskForward", "DiskNormal",
+            "AgeTicks", "Progress", "Seed", "Charge", "Fade", "LensStrength",
+            "RingStrength", "DiskBrightness", "Turbulence", "StepCount",
+            "Pass", "BloomStrength", "BloomThreshold", "BloomRadiusPixels"
+        )) {
+            assertTrue(json.contains("\"" + name + "\""), name);
+        }
+    }
+
+    @Test
+    void blackHoleShaderDoesNotUseVanillaFog() throws IOException {
+        String shader = readAsset("assets/quasar_content/shaders/core/black_hole.fsh");
+        assertTrue(!shader.contains("linear_fog"), "black-hole emission must punch through vanilla fog");
+    }
+
+    @Test
     void worldShaderDeclaresInstanceArrays() throws IOException {
-        String path = "assets/quasar_content/shaders/core/rune_circle.vsh";
-        try (InputStream stream = getClass().getClassLoader().getResourceAsStream(path)) {
+        String source = readAsset("assets/quasar_content/shaders/core/rune_circle.vsh");
+        assertTrue(source.contains("Instances[128]"), source);
+        assertTrue(source.contains("InstanceColors[128]"), source);
+        assertTrue(source.contains("InstanceData[128]"), source);
+    }
+
+    private static String readAsset(String path) throws IOException {
+        try (InputStream stream = ContentShadersTest.class.getClassLoader().getResourceAsStream(path)) {
             assertNotNull(stream, path);
-            String source = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
-            assertTrue(source.contains("Instances[128]"), source);
-            assertTrue(source.contains("InstanceColors[128]"), source);
-            assertTrue(source.contains("InstanceData[128]"), source);
+            return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
         }
     }
 }
