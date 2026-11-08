@@ -1,6 +1,7 @@
 #version 150
 
 uniform sampler2D SceneSampler;
+uniform sampler2D RawSceneSampler;
 uniform sampler2D MaskSampler;
 uniform sampler2D DepthSampler;
 uniform sampler2D EffectSampler;
@@ -209,6 +210,10 @@ vec4 sampleDisk(vec3 point, vec3 cameraRelative) {
 
 vec4 renderBlackHole(vec2 uv) {
     vec4 sceneColor = texture(SceneSampler, uv);
+    // Background lensing must read the untouched frame. Sampling the current
+    // composition would make stacked black holes see each other's lens output
+    // and produce a recursive picture-in-picture.
+    vec4 rawSceneColor = texture(RawSceneSampler, uv);
     float coverage = clamp(texture(MaskSampler, uv).r * MaskStrength, 0.0, 1.0);
     if (coverage < 0.002 || Fade <= 0.001) {
         return vec4(sceneColor.rgb, 0.0);
@@ -296,7 +301,7 @@ vec4 renderBlackHole(vec2 uv) {
         }
     }
 
-    vec3 lensedScene = sceneColor.rgb;
+    vec3 lensedScene = rawSceneColor.rgb;
     float lensAmount = 0.0;
     if (!captured && !lensOccluded) {
         vec2 lensUv = uv;
@@ -317,7 +322,7 @@ vec4 renderBlackHole(vec2 uv) {
             * smoothstep(0.0, 0.06, 1.0 - lensUv.x)
             * smoothstep(0.0, 0.06, lensUv.y)
             * smoothstep(0.0, 0.06, 1.0 - lensUv.y);
-        lensedScene = texture(SceneSampler, lensUv).rgb;
+        lensedScene = texture(RawSceneSampler, lensUv).rgb;
 
         float deflection = acos(clamp(dot(normalize(velocity), normalize(direction)), -1.0, 1.0));
         float lensFalloff = 1.0 - smoothstep(2.0 * radius, 8.0 * radius, impact);

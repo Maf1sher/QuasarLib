@@ -61,8 +61,12 @@ final class ContentBlackHoleOperation implements ScreenEffectOperationRenderer {
     private static void bindCommonInputs(ScreenEffectOperationContext context, ShaderInstance shader,
         ContentBlackHoleSettings settings) {
         context.setSampler(shader, "SceneSampler", context.sourceColor().getColorTextureId());
+        context.setSampler(shader, "RawSceneSampler", context.rawSceneColor().getColorTextureId());
         context.setSampler(shader, "MaskSampler", context.maskTarget().getColorTextureId());
         context.setSampler(shader, "DepthSampler", context.maskTarget().getDepthTextureId());
+        // Pass 0 never samples the raymarch texture, but the shader still declares it.
+        // Bind a live texture so ShaderInstance.apply() never touches a released scratch ID.
+        context.setSampler(shader, "EffectSampler", context.sourceColor().getColorTextureId());
 
         context.setUniform(shader, "ViewMat", context.camera().modelViewMatrix());
         context.setUniform(shader, "WorldProjMat", context.camera().projectionMatrix());
