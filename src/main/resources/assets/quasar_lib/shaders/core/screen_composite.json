@@ -3,6 +3,7 @@
   "fragment": "quasar_lib:screen_composite",
   "samplers": [
     { "name": "SceneSampler" },
+    { "name": "RawSceneSampler" },
     { "name": "MaskSampler" },
     { "name": "DepthSampler" },
     { "name": "BlurSampler" }

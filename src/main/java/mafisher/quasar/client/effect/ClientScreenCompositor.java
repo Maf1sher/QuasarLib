@@ -23,11 +23,13 @@ final class ClientScreenCompositor {
 
     private final ScreenEffectOperationRegistry operationRegistry;
     private final ScreenEffectScratchTargetPool scratchTargets = new ScreenEffectScratchTargetPool();
+    private TextureTarget rawSceneTarget;
     private TextureTarget sceneColorTarget;
     private TextureTarget compositionTarget;
     private TextureTarget screenMaskTarget;
     private boolean hadScreenEffects;
     private boolean failAfterCompositionOnce;
+    private boolean warnedPresentationViewport;
     private int unavailableWidth = -1;
     private int unavailableHeight = -1;
 
@@ -85,7 +87,7 @@ final class ClientScreenCompositor {
                     throw new IllegalStateException("The main render target has no sampleable depth attachment");
                 }
 
-                this.captureSceneColor(mainTarget, this.sceneColorTarget);
+                this.captureSceneColor(mainTarget, this.rawSceneTarget);
 
                 ScreenEffectCameraState camera = new ScreenEffectCameraState(
                     event.getCamera().getPosition(),
@@ -96,14 +98,20 @@ final class ClientScreenCompositor {
                     event.getPartialTick().getGameTimeDeltaPartialTick(false)
                 );
 
-                RenderTarget currentColor = this.sceneColorTarget;
-                RenderTarget alternateColor = this.compositionTarget;
+                RenderTarget currentColor = this.rawSceneTarget;
+                RenderTarget alternateColor = this.sceneColorTarget;
+                boolean firstBatch = true;
                 for (ScreenEffectBatch batch : batches) {
                     this.renderMask(event, manager, mainTarget, batch);
                     this.renderOperation(currentColor, alternateColor, batch, camera, quality);
-                    RenderTarget previous = currentColor;
                     currentColor = alternateColor;
-                    alternateColor = previous;
+                    if (firstBatch) {
+                        firstBatch = false;
+                        alternateColor = this.compositionTarget;
+                    } else {
+                        alternateColor = alternateColor == this.sceneColorTarget
+                            ? this.compositionTarget : this.sceneColorTarget;
+                    }
                 }
 
                 if (this.failAfterCompositionOnce) {
@@ -111,8 +119,7 @@ final class ClientScreenCompositor {
                     throw new IllegalStateException("Screen compositor failure injection");
                 }
 
-                mainTarget.bindWrite(true);
-                currentColor.blitToScreen(mainTarget.viewWidth, mainTarget.viewHeight);
+                this.presentToMain(mainTarget, currentColor);
                 this.restoreMainTargetState(mainTarget);
             } catch (RuntimeException exception) {
                 this.failAfterCompositionOnce = false;
@@ -161,6 +168,7 @@ final class ClientScreenCompositor {
                 camera,
                 quality,
                 sourceColor,
+                this.rawSceneTarget,
                 destination,
                 this.screenMaskTarget,
                 this.scratchTargets
@@ -174,6 +182,7 @@ final class ClientScreenCompositor {
 
     private void renderMask(RenderLevelStageEvent event, ClientVisualEffectManager manager, RenderTarget mainTarget,
         ScreenEffectBatch batch) {
+        RenderSystem.disableScissor();
         this.screenMaskTarget.setClearColor(0.0F, 0.0F, 0.0F, 0.0F);
         this.screenMaskTarget.clear(false);
         this.screenMaskTarget.copyDepthFrom(mainTarget);
@@ -186,6 +195,7 @@ final class ClientScreenCompositor {
     }
 
     private void ensureTargets(int width, int height) {
+        this.rawSceneTarget = this.ensureTarget(this.rawSceneTarget, width, height, false);
         this.sceneColorTarget = this.ensureTarget(this.sceneColorTarget, width, height, false);
         this.compositionTarget = this.ensureTarget(this.compositionTarget, width, height, false);
         this.screenMaskTarget = this.ensureTarget(this.screenMaskTarget, width, height, true);
@@ -201,7 +211,47 @@ final class ClientScreenCompositor {
         return target;
     }
 
+    /**
+     * Presents the quality-scaled composition once at the physical main-target size.
+     * The composition itself is smaller than the window at LOW/MEDIUM quality, so its
+     * own dimensions must never become the presentation viewport.
+     */
+    private void presentToMain(RenderTarget mainTarget, RenderTarget composition) {
+        int width = mainTarget.width;
+        int height = mainTarget.height;
+        if (width <= 0 || height <= 0) {
+            return;
+        }
+        if (!this.warnedPresentationViewport
+            && (mainTarget.viewWidth != width || mainTarget.viewHeight != height)) {
+            this.warnedPresentationViewport = true;
+            LOGGER.warn("Main target is {}x{} but its viewport is {}x{}; "
+                    + "screen composition will use the physical framebuffer size.",
+                width, height, mainTarget.viewWidth, mainTarget.viewHeight);
+        }
+
+        mainTarget.bindWrite(true);
+        RenderSystem.disableScissor();
+        RenderSystem.colorMask(true, true, true, true);
+        RenderSystem.depthMask(false);
+        RenderSystem.disableDepthTest();
+        RenderSystem.disableBlend();
+        RenderSystem.disableCull();
+        try {
+            // blitToScreen sets the viewport from its arguments. Always pass the
+            // physical framebuffer size, never viewWidth/viewHeight or the scaled
+            // composition size.
+            composition.blitToScreen(width, height);
+        } finally {
+            RenderSystem.enableCull();
+            RenderSystem.depthMask(true);
+            RenderSystem.enableDepthTest();
+            RenderSystem.viewport(0, 0, width, height);
+        }
+    }
+
     private void captureSceneColor(RenderTarget mainTarget, RenderTarget captureTarget) {
+        RenderSystem.disableScissor();
         GlStateManager._glBindFramebuffer(READ_FRAMEBUFFER, mainTarget.frameBufferId);
         GlStateManager._glBindFramebuffer(DRAW_FRAMEBUFFER, captureTarget.frameBufferId);
         GlStateManager._glBlitFrameBuffer(
@@ -214,6 +264,7 @@ final class ClientScreenCompositor {
 
     private void restoreMainTargetState(RenderTarget mainTarget) {
         mainTarget.bindWrite(true);
+        RenderSystem.viewport(0, 0, mainTarget.width, mainTarget.height);
         this.restoreOperationState();
     }
 
@@ -222,16 +273,22 @@ final class ClientScreenCompositor {
         RenderSystem.depthMask(true);
         RenderSystem.enableDepthTest();
         RenderSystem.disableBlend();
+        RenderSystem.disableScissor();
+        RenderSystem.enableCull();
     }
 
     private void releaseTargets() {
+        TextureTarget rawScene = this.rawSceneTarget;
         TextureTarget sceneColor = this.sceneColorTarget;
         TextureTarget composition = this.compositionTarget;
         TextureTarget mask = this.screenMaskTarget;
+        this.rawSceneTarget = null;
         this.sceneColorTarget = null;
         this.compositionTarget = null;
         this.screenMaskTarget = null;
+        this.warnedPresentationViewport = false;
         this.scratchTargets.releaseAll();
+        this.releaseTarget(rawScene);
         this.releaseTarget(sceneColor);
         this.releaseTarget(composition);
         this.releaseTarget(mask);

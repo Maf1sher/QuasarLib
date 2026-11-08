@@ -1,6 +1,7 @@
 #version 150
 
 uniform sampler2D SceneSampler;
+uniform sampler2D RawSceneSampler;
 uniform sampler2D MaskSampler;
 uniform sampler2D DepthSampler;
 uniform sampler2D BlurSampler;
@@ -60,7 +61,7 @@ void main() {
             vec2(0.0), vec2(1.0));
         float displacedDepth = texture(DepthSampler, displacedUv).r;
         coverage *= step(LensDepth + 0.00025, displacedDepth);
-        vec4 lensedColor = texture(SceneSampler, displacedUv);
+        vec4 lensedColor = texture(RawSceneSampler, displacedUv);
         fragColor = vec4(mix(sceneColor.rgb, lensedColor.rgb, clamp(coverage, 0.0, 1.0)), sceneColor.a);
         return;
     }

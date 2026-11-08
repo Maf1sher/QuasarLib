@@ -19,8 +19,9 @@ import org.joml.Matrix4f;
  * Per-frame inputs and draw helpers available to a registered
  * {@link ScreenEffectOperationRenderer}.
  *
- * <p>The operation reads scene color from {@link #sourceColor()}, mask coverage
- * and scene depth from {@link #maskTarget()}, and writes its final result to
+ * <p>The operation reads the current composition from {@link #sourceColor()},
+ * the untouched captured scene from {@link #rawSceneColor()}, mask coverage and
+ * scene depth from {@link #maskTarget()}, and writes its final result to
  * {@link #destination()}. The compositor swaps source and destination after
  * every operation. Contexts are valid only for the current callback.</p>
  */
@@ -36,13 +37,14 @@ public final class ScreenEffectOperationContext {
     private final ScreenEffectCameraState camera;
     private final EffectQualityTier quality;
     private final RenderTarget sourceColor;
+    private final RenderTarget rawSceneColor;
     private final RenderTarget destination;
     private final RenderTarget maskTarget;
     private final ScreenEffectScratchTargetPool scratchTargets;
 
     ScreenEffectOperationContext(ScreenEffectSettings settings, EffectRenderContext effect,
         ScreenEffectMask mask, ScreenEffectCameraState camera, EffectQualityTier quality,
-        RenderTarget sourceColor, RenderTarget destination, RenderTarget maskTarget,
+        RenderTarget sourceColor, RenderTarget rawSceneColor, RenderTarget destination, RenderTarget maskTarget,
         ScreenEffectScratchTargetPool scratchTargets) {
         this.settings = Objects.requireNonNull(settings, "settings");
         this.effect = Objects.requireNonNull(effect, "effect");
@@ -50,6 +52,7 @@ public final class ScreenEffectOperationContext {
         this.camera = Objects.requireNonNull(camera, "camera");
         this.quality = Objects.requireNonNull(quality, "quality");
         this.sourceColor = Objects.requireNonNull(sourceColor, "sourceColor");
+        this.rawSceneColor = Objects.requireNonNull(rawSceneColor, "rawSceneColor");
         this.destination = Objects.requireNonNull(destination, "destination");
         this.maskTarget = Objects.requireNonNull(maskTarget, "maskTarget");
         this.scratchTargets = Objects.requireNonNull(scratchTargets, "scratchTargets");
@@ -93,9 +96,18 @@ public final class ScreenEffectOperationContext {
         return this.quality;
     }
 
-    /** Returns the color captured before this operation. */
+    /** Returns the color captured before this operation; later batches see earlier output. */
     public RenderTarget sourceColor() {
         return this.sourceColor;
+    }
+
+    /**
+     * Returns the untouched scene captured before any operation in this frame.
+     * Lens, refraction, and background-warp passes should sample this target so
+     * stacked effects do not recursively sample each other.
+     */
+    public RenderTarget rawSceneColor() {
+        return this.rawSceneColor;
     }
 
     /** Returns the target the operation must write as its final result. */
@@ -123,10 +135,10 @@ public final class ScreenEffectOperationContext {
     }
 
     /**
-     * Binds the standard composite inputs from the current source color and
-     * mask target: {@code SceneSampler}, {@code MaskSampler},
-     * {@code DepthSampler}, {@code BlurSampler}, {@code MaskColor}, and
-     * {@code MaskStrength}.
+     * Binds the standard composite inputs from the current source color, raw
+     * scene, and mask target: {@code SceneSampler}, {@code RawSceneSampler},
+     * {@code MaskSampler}, {@code DepthSampler}, {@code BlurSampler},
+     * {@code MaskColor}, and {@code MaskStrength}.
      */
     public void bindCompositeInputs(ShaderInstance shader) {
         this.bindCompositeInputs(shader, this.sourceColor);
@@ -141,6 +153,7 @@ public final class ScreenEffectOperationContext {
         Objects.requireNonNull(shader, "shader");
         Objects.requireNonNull(scene, "scene");
         this.setSampler(shader, "SceneSampler", scene.getColorTextureId());
+        this.setSampler(shader, "RawSceneSampler", this.rawSceneColor.getColorTextureId());
         this.setSampler(shader, "MaskSampler", this.maskTarget.getColorTextureId());
         this.setSampler(shader, "DepthSampler", this.maskTarget.getDepthTextureId());
         this.setSampler(shader, "BlurSampler", scene.getColorTextureId());
@@ -156,6 +169,8 @@ public final class ScreenEffectOperationContext {
         Objects.requireNonNull(destination, "destination");
         Objects.requireNonNull(shader, "shader");
         destination.bindWrite(true);
+        RenderSystem.disableScissor();
+        RenderSystem.disableCull();
         RenderSystem.colorMask(true, true, true, true);
         RenderSystem.depthMask(false);
         RenderSystem.disableDepthTest();
@@ -173,6 +188,7 @@ public final class ScreenEffectOperationContext {
             builder.addVertex(0.0F, 1.0F, 0.0F);
             BufferUploader.draw(builder.buildOrThrow());
         } finally {
+            RenderSystem.enableCull();
             if (shaderApplied) {
                 shader.clear();
             }
@@ -237,6 +253,7 @@ public final class ScreenEffectOperationContext {
     public void blitColor(RenderTarget source, RenderTarget destination) {
         Objects.requireNonNull(source, "source");
         Objects.requireNonNull(destination, "destination");
+        RenderSystem.disableScissor();
         GlStateManager._glBindFramebuffer(READ_FRAMEBUFFER, source.frameBufferId);
         GlStateManager._glBindFramebuffer(DRAW_FRAMEBUFFER, destination.frameBufferId);
         GlStateManager._glBlitFrameBuffer(
