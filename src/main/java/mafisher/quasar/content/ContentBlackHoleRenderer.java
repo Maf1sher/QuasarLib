@@ -21,7 +21,7 @@ import net.minecraft.world.phys.AABB;
 /**
  * Screen-space raymarched black hole. The world pass is deliberately empty: the screen operation produces the
  * shadow, photon rings, accretion disk, lensed arcs, and background lensing, and its own coverage mask spans the
- * full viewport. The shader bounds the visible effect with its radial fade and a coarse foreground test.
+ * full viewport. The shader bounds the visible effect with its lens-region fade and a per-pixel scene-depth test.
  */
 final class ContentBlackHoleRenderer implements ScreenEffectRenderer {
     private static final ContentBlackHoleSettings SETTINGS = ContentBlackHoleSettings.DEFAULT;

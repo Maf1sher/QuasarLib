@@ -3,6 +3,7 @@ package mafisher.quasar.content;
 import com.mojang.blaze3d.pipeline.TextureTarget;
 import mafisher.quasar.client.effect.ScreenEffectOperationContext;
 import mafisher.quasar.client.effect.ScreenEffectOperationRenderer;
+import mafisher.quasar.compat.FogPolicy;
 import mafisher.quasar.effect.EffectQualityTier;
 import net.minecraft.client.renderer.ShaderInstance;
 import org.joml.Vector3f;
@@ -24,16 +25,32 @@ final class ContentBlackHoleOperation implements ScreenEffectOperationRenderer {
         int beamHeight = Math.max(1, Math.round(context.destination().height * raymarchScale));
         TextureTarget beam = context.acquireScratchTarget(beamWidth, beamHeight);
         beam.setFilterMode(LINEAR_FILTER);
+        int glowWidth = Math.max(1, beamWidth / 2);
+        int glowHeight = Math.max(1, beamHeight / 2);
+        TextureTarget glow = context.acquireScratchTarget(glowWidth, glowHeight);
+        glow.setFilterMode(LINEAR_FILTER);
         try {
             context.setUniform(shader, "Pass", 0.0F);
+            context.setUniform(shader, "EmissiveOnly", 0.0F);
             context.setUniform(shader, "ViewportWidth", (float)beamWidth);
             context.setUniform(shader, "ViewportHeight", (float)beamHeight);
             context.drawFullscreen(beam, shader);
 
+            // Pass 2 writes only the accretion disk, photon ring, and halo. Blooming
+            // this layer instead of the lensed background removes the bright daytime
+            // halo while keeping the cinematic glow.
+            context.setUniform(shader, "EmissiveOnly", 1.0F);
+            context.setUniform(shader, "ViewportWidth", (float)glowWidth);
+            context.setUniform(shader, "ViewportHeight", (float)glowHeight);
+            context.setSampler(shader, "BloomSampler", context.sourceColor().getColorTextureId());
+            context.drawFullscreen(glow, shader);
+
             context.setUniform(shader, "Pass", 1.0F);
+            context.setUniform(shader, "EmissiveOnly", 0.0F);
             context.setUniform(shader, "ViewportWidth", (float)context.destination().width);
             context.setUniform(shader, "ViewportHeight", (float)context.destination().height);
             context.setSampler(shader, "EffectSampler", beam.getColorTextureId());
+            context.setSampler(shader, "BloomSampler", glow.getColorTextureId());
             context.setUniform(shader, "BloomStrength",
                 context.quality().atLeast(EffectQualityTier.MEDIUM) ? settings.bloomStrength() : 0.0F);
             context.setUniform(shader, "BloomThreshold", BLOOM_THRESHOLD);
@@ -42,6 +59,7 @@ final class ContentBlackHoleOperation implements ScreenEffectOperationRenderer {
             context.drawFullscreen(context.destination(), shader);
         } finally {
             context.releaseScratchTarget(beam);
+            context.releaseScratchTarget(glow);
         }
     }
 
@@ -67,6 +85,7 @@ final class ContentBlackHoleOperation implements ScreenEffectOperationRenderer {
         // Pass 0 never samples the raymarch texture, but the shader still declares it.
         // Bind a live texture so ShaderInstance.apply() never touches a released scratch ID.
         context.setSampler(shader, "EffectSampler", context.sourceColor().getColorTextureId());
+        context.setSampler(shader, "BloomSampler", context.sourceColor().getColorTextureId());
 
         context.setUniform(shader, "ViewMat", context.camera().modelViewMatrix());
         context.setUniform(shader, "WorldProjMat", context.camera().projectionMatrix());
@@ -87,9 +106,11 @@ final class ContentBlackHoleOperation implements ScreenEffectOperationRenderer {
         );
 
         float effectScale = context.effect().scale();
+        float diskOuterRadius = effectScale * settings.diskOuterFactor();
         context.setUniform(shader, "BlackHoleRadius", effectScale);
+        context.setUniform(shader, "LensRadius", Math.max(diskOuterRadius * 1.1F, effectScale * 3.0F));
         context.setUniform(shader, "DiskInnerRadius", effectScale * settings.diskInnerFactor());
-        context.setUniform(shader, "DiskOuterRadius", effectScale * settings.diskOuterFactor());
+        context.setUniform(shader, "DiskOuterRadius", diskOuterRadius);
         context.setUniform(shader, "DiskThickness", effectScale * settings.diskThicknessFactor());
 
         ContentBlackHoleGeometry.Basis basis = ContentBlackHoleGeometry.basis(
@@ -110,13 +131,38 @@ final class ContentBlackHoleOperation implements ScreenEffectOperationRenderer {
         context.setUniform(shader, "Fade",
             ContentBlackHoleGeometry.fadeEnvelope(context.effect().progress()));
         context.setUniform(shader, "LensStrength", settings.lensStrength());
-        context.setUniform(shader, "LensGravity", settings.lensGravity());
+        context.setUniform(shader, "LensWarpRadius", effectScale * settings.lensWarpFactor());
         context.setUniform(shader, "RingStrength", settings.ringBrightness());
         context.setUniform(shader, "DiskBrightness", settings.diskBrightness());
         context.setUniform(shader, "Turbulence", settings.turbulence());
         context.setUniform(shader, "StepCount", (float)ContentBlackHoleGeometry.stepCount(
             context.effect().lod().level(), context.quality().level()
         ));
+
+        var fog = context.fogState();
+        context.setUniform(shader, "MediumFogStart", fog.start());
+        context.setUniform(shader, "MediumFogEnd", fog.end());
+        context.setUniform(shader, "MediumFogColor",
+            (float)fog.color().x, (float)fog.color().y, (float)fog.color().z);
+        boolean fogAllowed = context.environment().fogPolicy() == FogPolicy.RESPECT;
+        context.setUniform(shader, "MediumFogActive", fogAllowed && fog.active() ? 1.0F : 0.0F);
+        var medium = context.medium();
+        context.setUniform(shader, "CameraSubmerged", medium.cameraSubmerged() ? 1.0F : 0.0F);
+        context.setUniform(shader, "EffectSubmerged", medium.effectSubmerged() ? 1.0F : 0.0F);
+        float surfaceY = 0.0F;
+        boolean surfaceActive = false;
+        if (medium.cameraSubmerged() && !medium.effectSubmerged()
+            && !Float.isNaN(medium.cameraSurfaceY())) {
+            surfaceY = medium.cameraSurfaceY();
+            surfaceActive = true;
+        } else if (!medium.cameraSubmerged() && medium.effectSubmerged()
+            && !Float.isNaN(medium.effectSurfaceY())) {
+            surfaceY = medium.effectSurfaceY();
+            surfaceActive = true;
+        }
+        surfaceActive = surfaceActive && fogAllowed;
+        context.setUniform(shader, "SurfaceY", surfaceY);
+        context.setUniform(shader, "SurfaceActive", surfaceActive ? 1.0F : 0.0F);
     }
 
     private static void setVector(ScreenEffectOperationContext context, ShaderInstance shader,

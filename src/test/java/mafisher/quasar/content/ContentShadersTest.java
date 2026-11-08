@@ -62,14 +62,18 @@ class ContentShadersTest {
     void blackHoleShaderDeclaresEveryOperationInput() throws IOException {
         String json = readAsset("assets/quasar_content/shaders/core/black_hole.json");
         for (String name : List.of(
-            "SceneSampler", "MaskSampler", "DepthSampler", "EffectSampler",
+            "SceneSampler", "RawSceneSampler", "MaskSampler", "DepthSampler", "EffectSampler",
+            "BloomSampler",
             "ViewMat", "WorldProjMat", "InvProjMat", "InvViewMat",
             "ViewportWidth", "ViewportHeight", "MaskStrength",
-            "BlackHoleOffset", "BlackHoleRadius", "DiskInnerRadius", "DiskOuterRadius",
+            "BlackHoleOffset", "BlackHoleRadius", "LensRadius", "LensWarpRadius",
+            "DiskInnerRadius", "DiskOuterRadius",
             "DiskThickness", "DiskRight", "DiskForward", "DiskNormal",
             "AgeTicks", "Progress", "Seed", "Charge", "Fade", "LensStrength",
-            "LensGravity", "RingStrength", "DiskBrightness", "Turbulence", "StepCount",
-            "Pass", "BloomStrength", "BloomThreshold", "BloomRadiusPixels"
+            "RingStrength", "DiskBrightness", "Turbulence", "StepCount",
+            "MediumFogStart", "MediumFogEnd", "MediumFogColor", "MediumFogActive", "CameraSubmerged", "EffectSubmerged",
+            "SurfaceY", "SurfaceActive",
+            "Pass", "EmissiveOnly", "BloomStrength", "BloomThreshold", "BloomRadiusPixels"
         )) {
             assertTrue(json.contains("\"" + name + "\""), name);
         }
@@ -96,12 +100,33 @@ class ContentShadersTest {
     }
 
     @Test
-    void blackHoleOcclusionUsesOneCentreDepthInsteadOfPerPixelSamples() throws IOException {
+    void blackHoleVisibilityUsesPerPixelEffectDepth() throws IOException {
         String shader = readAsset("assets/quasar_content/shaders/core/black_hole.fsh");
-        assertTrue(shader.contains("centerSceneDistance"),
-            "foreground occlusion must be a single effect-level test");
+        assertTrue(shader.contains("lensEntry") || shader.contains("tEntry"),
+            "the effect surface must be depth-tested against the scene");
+        assertTrue(shader.contains("sceneDistance"),
+            "the scene depth must participate in visibility");
+        assertTrue(!shader.contains("centerSceneDistance"),
+            "a single centre sample cannot represent partial foreground occlusion");
         assertTrue(!shader.contains("sampleDistance < sceneDistance"),
             "per-sample unlensed depth clips the bent light path at the horizon");
+        assertTrue(!shader.contains("maxLensDelta"),
+            "the lens warp must not be clamped to a tiny screen-space delta");
+    }
+
+    @Test
+    void blackHoleUsesCriticalImpactAndActiveMediumInputs() throws IOException {
+        String shader = readAsset("assets/quasar_content/shaders/core/black_hole.fsh");
+        assertTrue(shader.contains("B_CRITICAL"),
+            "the shadow radius must follow the Schwarzschild critical impact parameter");
+        assertTrue(shader.contains("LensWarpRadius") && shader.contains("warpFalloff"),
+            "the background lens must fade inside a tunable footprint");
+        assertTrue(shader.contains("MediumFogStart") && shader.contains("MediumFogEnd")
+            && shader.contains("MediumFogColor") && shader.contains("MediumFogActive"));
+        assertTrue(shader.contains("CameraSubmerged") && shader.contains("EffectSubmerged"));
+        assertTrue(shader.contains("SurfaceY") && shader.contains("SurfaceActive"));
+        assertTrue(shader.contains("BloomSampler") && shader.contains("EmissiveOnly"),
+            "bloom must sample the emissive layer instead of the lensed background");
     }
 
     @Test

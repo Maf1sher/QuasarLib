@@ -73,12 +73,12 @@ final class ContentBlackHoleGeometry {
      */
     static int stepCount(int lodLevel, int qualityLevel) {
         int base = switch (qualityLevel) {
-            case 0 -> 64;
-            case 1 -> 80;
-            case 2 -> 96;
-            default -> 112;
+            case 0 -> 96;
+            case 1 -> 128;
+            case 2 -> 160;
+            default -> 192;
         };
-        return Math.max(64, base - Math.max(0, lodLevel) * 8);
+        return Math.max(64, base - Math.max(0, lodLevel) * 16);
     }
 
     /** Matches the engine's visual fade envelope: short fade in and slightly longer fade out. */
