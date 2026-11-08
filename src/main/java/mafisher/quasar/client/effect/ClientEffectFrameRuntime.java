@@ -120,7 +120,12 @@ final class ClientEffectFrameRuntime {
     }
 
     static void render(RenderLevelStageEvent event) {
-        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_PARTICLES) {
+        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_BLOCK_ENTITIES) {
+            ClientScreenCompositor compositor = screenCompositor;
+            if (compositor != null) {
+                compositor.captureOpaqueDepth(event);
+            }
+        } else if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_PARTICLES) {
             long start = System.nanoTime();
             RenderEnvironment environment = currentEnvironment();
             manager().render(event, environment);

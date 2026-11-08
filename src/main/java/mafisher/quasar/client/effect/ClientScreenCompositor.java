@@ -35,6 +35,7 @@ final class ClientScreenCompositor {
     private static final int READ_FRAMEBUFFER = 0x8CA8;
     private static final int DRAW_FRAMEBUFFER = 0x8CA9;
     private static final int COLOR_BUFFER_BIT = 0x00004000;
+    private static final int DEPTH_BUFFER_BIT = 0x00000100;
     private static final int NEAREST_FILTER = 0x2600;
 
     private final ScreenEffectOperationRegistry operationRegistry;
@@ -43,6 +44,8 @@ final class ClientScreenCompositor {
     private TextureTarget sceneColorTarget;
     private TextureTarget compositionTarget;
     private TextureTarget screenMaskTarget;
+    private TextureTarget opaqueDepthTarget;
+    private boolean opaqueDepthCaptured;
     private boolean hadScreenEffects;
     private boolean failAfterCompositionOnce;
     private boolean warnedPresentationViewport;
@@ -60,6 +63,8 @@ final class ClientScreenCompositor {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_LEVEL) {
             return;
         }
+        boolean opaqueDepthAvailable = this.opaqueDepthCaptured;
+        this.opaqueDepthCaptured = false;
         Objects.requireNonNull(environment, "environment");
         if (environment.shadowPass()) {
             // Iris owns the shadow pass; QuasarLib must not compose into it.
@@ -135,7 +140,14 @@ final class ClientScreenCompositor {
 
                 this.ensureTargets(targetWidth, targetHeight);
                 RenderTarget depthTarget = CompatRegistry.sceneDepthTarget(mainTarget);
-                if (depthTarget.getDepthTextureId() <= 0 || this.screenMaskTarget.getDepthTextureId() <= 0) {
+                RenderTarget maskDepthTarget = opaqueDepthAvailable
+                    && !environment.hasDepthProvider()
+                    && this.opaqueDepthTarget != null
+                    && this.opaqueDepthTarget.width == mainTarget.width
+                    && this.opaqueDepthTarget.height == mainTarget.height
+                    ? this.opaqueDepthTarget : depthTarget;
+                if (maskDepthTarget.getDepthTextureId() <= 0
+                    || this.screenMaskTarget.getDepthTextureId() <= 0) {
                     throw new IllegalStateException(
                         "The " + environment.depthSource() + " depth source has no sampleable depth attachment");
                 }
@@ -147,7 +159,7 @@ final class ClientScreenCompositor {
                 RenderTarget alternateColor = this.sceneColorTarget;
                 boolean firstBatch = true;
                 for (ScreenEffectBatch batch : batches) {
-                    this.renderMask(event, manager, depthTarget, batch);
+                    this.renderMask(event, manager, maskDepthTarget, batch);
                     this.renderOperation(currentColor, alternateColor, batch, camera, quality, environment,
                         fogState);
                     currentColor = alternateColor;
@@ -329,6 +341,38 @@ final class ClientScreenCompositor {
         return level.getFluidState(position).is(FluidTags.WATER);
     }
 
+    /**
+     * Copies the scene depth before translucent geometry. Glass, water, and ice
+     * should not hide a screen effect; the active fog/medium owns their visual
+     * contribution instead.
+     */
+    void captureOpaqueDepth(RenderLevelStageEvent event) {
+        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_BLOCK_ENTITIES || !this.hadScreenEffects) {
+            return;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        RenderTarget mainTarget = minecraft.getMainRenderTarget();
+        int width = mainTarget.width;
+        int height = mainTarget.height;
+        if (width <= 0 || height <= 0 || mainTarget.getDepthTextureId() <= 0) {
+            return;
+        }
+        this.opaqueDepthTarget = this.ensureTarget(this.opaqueDepthTarget, width, height, true);
+        if (this.opaqueDepthTarget.getDepthTextureId() <= 0) {
+            return;
+        }
+        RenderSystem.disableScissor();
+        GlStateManager._glBindFramebuffer(READ_FRAMEBUFFER, mainTarget.frameBufferId);
+        GlStateManager._glBindFramebuffer(DRAW_FRAMEBUFFER, this.opaqueDepthTarget.frameBufferId);
+        GlStateManager._glBlitFrameBuffer(
+            0, 0, width, height,
+            0, 0, width, height,
+            DEPTH_BUFFER_BIT, NEAREST_FILTER
+        );
+        mainTarget.bindWrite(false);
+        this.opaqueDepthCaptured = true;
+    }
+
     private void renderMask(RenderLevelStageEvent event, ClientVisualEffectManager manager, RenderTarget depthTarget,
         ScreenEffectBatch batch) {
         RenderSystem.disableScissor();
@@ -491,16 +535,20 @@ final class ClientScreenCompositor {
         TextureTarget sceneColor = this.sceneColorTarget;
         TextureTarget composition = this.compositionTarget;
         TextureTarget mask = this.screenMaskTarget;
+        TextureTarget opaqueDepth = this.opaqueDepthTarget;
         this.rawSceneTarget = null;
         this.sceneColorTarget = null;
         this.compositionTarget = null;
         this.screenMaskTarget = null;
+        this.opaqueDepthTarget = null;
+        this.opaqueDepthCaptured = false;
         this.warnedPresentationViewport = false;
         this.scratchTargets.releaseAll();
         this.releaseTarget(rawScene);
         this.releaseTarget(sceneColor);
         this.releaseTarget(composition);
         this.releaseTarget(mask);
+        this.releaseTarget(opaqueDepth);
     }
 
     private void releaseTarget(TextureTarget target) {
