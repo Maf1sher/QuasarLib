@@ -89,7 +89,11 @@ float fbm3(vec3 point) {
 
 vec3 rayDirection(vec2 uv) {
     vec2 ndc = uv * 2.0 - 1.0;
-    vec4 clip = vec4(ndc, -1.0, 1.0);
+    // Sample the far plane, not the near plane. The projection can carry a view-space
+    // bob/hurt translation; inverting it on the 0.05-block near plane amplifies that
+    // translation into a large angular error. A far-plane point keeps the true direction
+    // (the translation becomes negligible) and still matches the un-bobbed projection.
+    vec4 clip = vec4(ndc, 1.0, 1.0);
     vec4 view = InvProjMat * clip;
     view.xyz /= view.w;
     return normalize((InvViewMat * vec4(view.xyz, 0.0)).xyz);

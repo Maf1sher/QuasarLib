@@ -82,6 +82,13 @@ class ContentShadersTest {
     }
 
     @Test
+    void blackHoleRayReconstructionSamplesTheFarPlane() throws IOException {
+        String shader = readAsset("assets/quasar_content/shaders/core/black_hole.fsh");
+        assertTrue(shader.contains("vec4 clip = vec4(ndc, 1.0, 1.0);"),
+            "near-plane rays amplify the view-bob translation baked into the projection");
+    }
+
+    @Test
     void worldShaderDeclaresInstanceArrays() throws IOException {
         String source = readAsset("assets/quasar_content/shaders/core/rune_circle.vsh");
         assertTrue(source.contains("Instances[128]"), source);
