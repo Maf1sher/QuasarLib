@@ -117,6 +117,59 @@ final class ContentBlackHoleGeodesic {
     }
 
     /**
+     * Mirrors the water-plane refraction in {@code black_hole.fsh}: bends the view ray
+     * at the surface before the effect is traced. {@code surfaceY} and the returned
+     * origin/direction stay camera-relative, like the shader uniforms.
+     */
+    static WaterRay refractedAtWater(Vector3d origin, Vector3d direction, double surfaceY,
+        boolean surfaceActive, boolean cameraSubmerged, double ageTicks, Vector3d holeOffset) {
+        Objects.requireNonNull(origin, "origin");
+        Objects.requireNonNull(direction, "direction");
+        Objects.requireNonNull(holeOffset, "holeOffset");
+        Vector3d straight = new Vector3d(direction).normalize();
+        if (!surfaceActive || Math.abs(straight.y) < 0.001) {
+            return new WaterRay(origin, straight, -1.0);
+        }
+        double surfaceDistance = surfaceY / straight.y;
+        if (surfaceDistance <= 0.0) {
+            return new WaterRay(origin, straight, -1.0);
+        }
+        Vector3d hit = new Vector3d(straight).mul(surfaceDistance);
+        Vector3d normal = waterSurfaceNormal(hit.x + holeOffset.x, hit.z + holeOffset.z, ageTicks);
+        if (normal.dot(straight) > 0.0) {
+            normal.negate();
+        }
+        double eta = cameraSubmerged ? 1.333 : 1.0 / 1.333;
+        Vector3d bent = refract(straight, normal, eta);
+        if (bent.lengthSquared() < 1.0E-6) {
+            // Total internal reflection from below the surface: keep the straight ray.
+            return new WaterRay(origin, straight, -1.0);
+        }
+        return new WaterRay(hit, bent.normalize(), surfaceDistance);
+    }
+
+    /** Mirrors {@code waterSurfaceNormal} in {@code black_hole.fsh}. */
+    static Vector3d waterSurfaceNormal(double x, double z, double ageTicks) {
+        double time = ageTicks * 0.05;
+        double slopeX = Math.sin(x * 0.62 + time * 1.7)
+            + 0.6 * Math.sin(x * 1.37 - z * 0.41 - time * 1.1)
+            + 0.35 * Math.sin(z * 2.10 + time * 2.3);
+        double slopeZ = Math.cos(z * 0.58 - time * 1.5)
+            + 0.6 * Math.cos(z * 1.29 + x * 0.37 + time * 0.9)
+            + 0.35 * Math.cos(x * 1.90 - time * 2.1);
+        return new Vector3d(slopeX * 0.06, 1.0, slopeZ * 0.06).normalize();
+    }
+
+    private static Vector3d refract(Vector3d incident, Vector3d normal, double eta) {
+        double dot = incident.dot(normal);
+        double k = 1.0 - eta * eta * (1.0 - dot * dot);
+        if (k < 0.0) {
+            return new Vector3d();
+        }
+        return new Vector3d(incident).mul(eta).fma(-(eta * dot + Math.sqrt(k)), normal);
+    }
+
+    /**
      * Per-pixel visibility rule mirrored by the shader: the scene must be at least
      * as far as the effect surface at that pixel (ring, disk, or lens shell).
      */
@@ -157,6 +210,26 @@ final class ContentBlackHoleGeodesic {
     record DiskTrace(Trace trace, int crossings, double firstDiskRadius, double lastDiskRadius) {
         DiskTrace {
             Objects.requireNonNull(trace, "trace");
+        }
+    }
+
+    /** Camera-relative refracted ray and the surface distance, or -1 when unrefracted. */
+    record WaterRay(Vector3d origin, Vector3d direction, double surfaceDistance) {
+        WaterRay {
+            Objects.requireNonNull(origin, "origin");
+            Objects.requireNonNull(direction, "direction");
+            origin = new Vector3d(origin);
+            direction = new Vector3d(direction);
+        }
+
+        @Override
+        public Vector3d origin() {
+            return new Vector3d(this.origin);
+        }
+
+        @Override
+        public Vector3d direction() {
+            return new Vector3d(this.direction);
         }
     }
 

@@ -166,6 +166,63 @@ vec2 projectPoint(vec3 point) {
     return clip.xy / clip.w * 0.5 + 0.5;
 }
 
+struct SceneRay {
+    vec3 origin;
+    vec3 direction;
+    float surfaceDistance;
+};
+
+/**
+ * World-stable water ripples. The point must be relative to the black hole so the
+ * wave phase does not slide when the camera moves.
+ */
+vec3 waterSurfaceNormal(vec3 holeRelative) {
+    float time = AgeTicks * 0.05;
+    vec2 p = holeRelative.xz;
+    float slopeX = sin(p.x * 0.62 + time * 1.7)
+        + 0.6 * sin(p.x * 1.37 - p.y * 0.41 - time * 1.1)
+        + 0.35 * sin(p.y * 2.10 + time * 2.3);
+    float slopeZ = cos(p.y * 0.58 - time * 1.5)
+        + 0.6 * cos(p.y * 1.29 + p.x * 0.37 + time * 0.9)
+        + 0.35 * cos(p.x * 1.90 - time * 2.1);
+    return normalize(vec3(slopeX * 0.06, 1.0, slopeZ * 0.06));
+}
+
+/**
+ * Bends the view ray at the active water plane. Only the submerged part of the
+ * effect is traced along the refracted direction; the screen-space mask, vortex,
+ * and lensed background keep the straight camera ray so they do not double-bend
+ * the already refracted scene texture.
+ */
+SceneRay refractAtWater(vec3 origin, vec3 direction) {
+    SceneRay ray;
+    ray.origin = origin;
+    ray.direction = direction;
+    ray.surfaceDistance = -1.0;
+    if (SurfaceActive < 0.5 || abs(direction.y) < 0.001) {
+        return ray;
+    }
+    float surfaceDistance = SurfaceY / direction.y;
+    if (surfaceDistance <= 0.0) {
+        return ray;
+    }
+    vec3 hit = direction * surfaceDistance;
+    vec3 normal = waterSurfaceNormal(hit + BlackHoleOffset);
+    if (dot(normal, direction) > 0.0) {
+        normal = -normal;
+    }
+    float eta = CameraSubmerged > 0.5 ? 1.333 : 1.0 / 1.333;
+    vec3 bent = refract(direction, normal, eta);
+    if (dot(bent, bent) < 0.000001) {
+        // Total internal reflection from below the surface: keep the straight ray.
+        return ray;
+    }
+    ray.origin = hit;
+    ray.direction = normalize(bent);
+    ray.surfaceDistance = surfaceDistance;
+    return ray;
+}
+
 vec3 paletteColor(vec3 gold, vec3 amber, vec3 neon, float charge) {
     vec3 warm = mix(gold, amber, clamp(charge * 2.0, 0.0, 1.0));
     return mix(warm, neon, clamp((charge - 0.5) * 2.0, 0.0, 1.0));
@@ -324,16 +381,20 @@ vec4 renderBlackHole(vec2 uv) {
 
     vec3 direction = rayDirection(uv);
     vec3 cameraRelative = -BlackHoleOffset;
+    SceneRay ray = refractAtWater(cameraRelative, direction);
+    vec3 traceOrigin = ray.origin;
+    vec3 traceDirection = ray.direction;
     float holeDistance = length(BlackHoleOffset);
     float radius = max(BlackHoleRadius, 0.001);
     float lensRadius = max(LensRadius, radius * 3.0);
-    float tEntry = raySphereEntry(cameraRelative, direction, lensRadius);
-    bool insideLens = length(cameraRelative) <= lensRadius;
+    float tEntry = raySphereEntry(traceOrigin, traceDirection, lensRadius);
+    bool insideLens = length(traceOrigin) <= lensRadius
+        || length(cameraRelative) <= lensRadius;
     if (tEntry < 0.0 && !insideLens) {
         return EmissiveOnly > 0.5 ? vec4(0.0) : vec4(sceneColor.rgb, 0.0);
     }
 
-    float impact = length(cross(cameraRelative, direction));
+    float impact = length(cross(traceOrigin, traceDirection));
     float shadowImpact = radius * B_CRITICAL;
     // The background lens fades out well before the disk shell. This keeps the
     // cinematic shadow and disk but stops the huge circular space-warp footprint.
@@ -355,11 +416,11 @@ vec4 renderBlackHole(vec2 uv) {
         return vec4(vec3(0.02, 0.01, 0.03), coverage);
     }
 
-    vec3 position = cameraRelative + direction * max(tEntry, 0.0);
-    vec3 velocity = direction;
-    float h2 = dot(cross(cameraRelative, direction), cross(cameraRelative, direction));
+    vec3 position = traceOrigin + traceDirection * max(tEntry, 0.0);
+    vec3 velocity = traceDirection;
+    float h2 = dot(cross(traceOrigin, traceDirection), cross(traceOrigin, traceDirection));
     float escapeRadius = max(max(DiskOuterRadius * 1.5, radius * 48.0),
-        length(cameraRelative) * 1.25);
+        length(traceOrigin) * 1.25);
     float transmittance = 1.0;
     vec3 emission = vec3(0.0);
     bool captured = false;
@@ -389,7 +450,7 @@ vec4 renderBlackHole(vec2 uv) {
         vec3 nextPosition = position + stepLength * midVelocity;
         vec3 nextVelocity = velocity + stepLength * a2;
 
-        accumulateDisk(position, nextPosition, cameraRelative, midVelocity,
+        accumulateDisk(position, nextPosition, traceOrigin, midVelocity,
             emission, transmittance);
         position = nextPosition;
         velocity = nextVelocity;
@@ -434,7 +495,8 @@ vec4 renderBlackHole(vec2 uv) {
                 }
             }
             float sourceDistance = viewDistance(texture(DepthSampler, sourceUv).r, sourceUv);
-            if (insideLens || tEntry <= 0.0 || sourceDistance >= tEntry - 0.5) {
+            if (insideLens || tEntry <= 0.0
+                || sourceDistance >= tEntry + max(ray.surfaceDistance, 0.0) - 0.5) {
                 float edgeFade = smoothstep(0.0, 0.03, lensUv.x)
                     * smoothstep(0.0, 0.03, 1.0 - lensUv.x)
                     * smoothstep(0.0, 0.03, lensUv.y)
@@ -556,28 +618,32 @@ void main() {
     vec4 sceneColor = texture(SceneSampler, sceneUv);
     vec4 effectColor = texture(EffectSampler, texCoord);
     vec3 direction = rayDirection(texCoord);
+    SceneRay ray = refractAtWater(cameraRelative, direction);
+    vec3 traceOrigin = ray.origin;
+    vec3 traceDirection = ray.direction;
     float lensRadius = max(LensRadius, BlackHoleRadius * 3.0);
-    float tEntry = raySphereEntry(cameraRelative, direction, lensRadius);
-    bool insideLens = length(cameraRelative) <= lensRadius;
+    float tEntry = raySphereEntry(traceOrigin, traceDirection, lensRadius);
+    bool insideLens = length(traceOrigin) <= lensRadius
+        || length(cameraRelative) <= lensRadius;
     float sceneDistance = viewDistance(texture(DepthSampler, texCoord).r, texCoord);
     float depthBias = max(0.05, sceneDistance * 0.001);
     // Ring, disk, and lens-only pixels sit at different depths. A single centre
     // depth made the ring appear in front of or behind trees as the player moved.
     float shadowRadius = max(BlackHoleRadius, 0.001) * B_CRITICAL;
-    float shadowEntry = raySphereEntry(cameraRelative, direction, shadowRadius * 1.35);
+    float shadowEntry = raySphereEntry(traceOrigin, traceDirection, shadowRadius * 1.35);
     float diskEntry = -1.0;
-    float planeDenominator = dot(direction, DiskNormal);
+    float planeDenominator = dot(traceDirection, DiskNormal);
     if (abs(planeDenominator) > 0.0001) {
-        float planeDistance = dot(-cameraRelative, DiskNormal) / planeDenominator;
+        float planeDistance = dot(-traceOrigin, DiskNormal) / planeDenominator;
         if (planeDistance > 0.0) {
-            vec3 hit = cameraRelative + direction * planeDistance;
+            vec3 hit = traceOrigin + traceDirection * planeDistance;
             float radial = length(hit - DiskNormal * dot(hit, DiskNormal));
             if (radial >= DiskInnerRadius && radial <= DiskOuterRadius) {
                 diskEntry = planeDistance;
             }
         }
     }
-    float impact = length(cross(cameraRelative, direction));
+    float impact = length(cross(traceOrigin, traceDirection));
     float effectEntry;
     if (impact <= shadowRadius * 1.35 && shadowEntry >= 0.0) {
         effectEntry = shadowEntry;
@@ -587,23 +653,24 @@ void main() {
         effectEntry = tEntry;
     }
     bool footprint = insideLens || tEntry >= 0.0;
-    bool visible = footprint && sceneDistance >= effectEntry - depthBias;
+    // effectEntry is measured from the refracted origin, so add the surface leg
+    // before comparing it with the camera-space scene depth.
+    float entryDistance = effectEntry + max(ray.surfaceDistance, 0.0);
+    bool visible = footprint && sceneDistance >= entryDistance - depthBias;
     float alpha = effectColor.a * (visible ? 1.0 : 0.0);
 
     vec3 color = effectColor.rgb;
-    float fogDistance = max(effectEntry, 0.0);
-    if (SurfaceActive > 0.5 && abs(direction.y) > 0.001) {
-        float surfaceDistance = SurfaceY / direction.y;
-        if (surfaceDistance > 0.0 && surfaceDistance < effectEntry) {
-            // Only the submerged part of the path receives the active water fog.
-            fogDistance = CameraSubmerged > 0.5
-                ? surfaceDistance
-                : max(effectEntry - surfaceDistance, 0.0);
-            // A simple surface tint; full wave refraction is a separate polish pass.
-            float fresnel = pow(1.0 - min(abs(direction.y), 1.0), 3.0);
-            vec3 surfaceColor = mix(MediumFogColor, vec3(0.72, 0.88, 1.0), 0.35);
-            color = mix(color, surfaceColor, clamp(0.12 + 0.28 * fresnel, 0.0, 0.45));
-        }
+    float fogDistance = max(entryDistance, 0.0);
+    if (ray.surfaceDistance > 0.0) {
+        // Only the submerged leg of the path receives the active water fog: the
+        // camera-to-surface leg when the camera is submerged, otherwise the
+        // surface-to-effect leg along the refracted ray.
+        fogDistance = CameraSubmerged > 0.5
+            ? ray.surfaceDistance
+            : max(effectEntry, 0.0);
+        float fresnel = pow(1.0 - min(abs(direction.y), 1.0), 3.0);
+        vec3 surfaceColor = mix(MediumFogColor, vec3(0.72, 0.88, 1.0), 0.35);
+        color = mix(color, surfaceColor, clamp(0.12 + 0.28 * fresnel, 0.0, 0.45));
     }
     if (MediumFogActive > 0.5 && (CameraSubmerged > 0.5 || EffectSubmerged > 0.5)) {
         float fog = clamp((fogDistance - MediumFogStart) / max(MediumFogEnd - MediumFogStart, 1.0), 0.0, 1.0);
