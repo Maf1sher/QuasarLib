@@ -72,6 +72,7 @@ final class ContentBlackHoleRenderer implements ScreenEffectRenderer {
 
     @Override
     public ScreenEffectSettings screenEffectSettings(EffectRenderContext context) {
+        ContentBlackHoleImpulses.tick(context);
         return ScreenEffectSettings.custom(ContentScreenOperations.BLACK_HOLE, SETTINGS);
     }
 

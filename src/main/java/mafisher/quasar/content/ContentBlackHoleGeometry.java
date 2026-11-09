@@ -10,8 +10,6 @@ final class ContentBlackHoleGeometry {
     static final int VARIANT_NEON = 2;
     private static final int VARIANT_SHIFT = 60;
     private static final long SEED_PAYLOAD_MASK = 0x0FFF_FFFF_FFFF_FFFFL;
-    private static final float FADE_IN_FRACTION = 0.08F;
-    private static final float FADE_OUT_FRACTION = 0.12F;
 
     private ContentBlackHoleGeometry() {
     }
@@ -79,14 +77,6 @@ final class ContentBlackHoleGeometry {
             default -> 192;
         };
         return Math.max(64, base - Math.max(0, lodLevel) * 16);
-    }
-
-    /** Matches the engine's visual fade envelope: short fade in and slightly longer fade out. */
-    static float fadeEnvelope(float progress) {
-        float clamped = Math.max(0.0F, Math.min(1.0F, progress));
-        float fadeIn = Math.min(1.0F, clamped / FADE_IN_FRACTION);
-        float fadeOut = Math.min(1.0F, (1.0F - clamped) / FADE_OUT_FRACTION);
-        return Math.min(fadeIn, fadeOut);
     }
 
     /** Immutable orthonormal disk frame. */

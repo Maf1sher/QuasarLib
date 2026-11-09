@@ -70,6 +70,7 @@ class ContentShadersTest {
             "DiskInnerRadius", "DiskOuterRadius",
             "DiskThickness", "DiskRight", "DiskForward", "DiskNormal",
             "AgeTicks", "Progress", "Seed", "Charge", "Fade", "LensStrength",
+            "ShockRadius", "ShockStrength", "CoreFlash", "FlashRadius", "OutroJet",
             "RingStrength", "DiskBrightness", "Turbulence", "StepCount",
             "MediumFogStart", "MediumFogEnd", "MediumFogColor", "MediumFogActive", "CameraSubmerged", "EffectSubmerged",
             "SurfaceY", "SurfaceActive",
@@ -83,6 +84,20 @@ class ContentShadersTest {
     void blackHoleShaderDoesNotUseVanillaFog() throws IOException {
         String shader = readAsset("assets/quasar_content/shaders/core/black_hole.fsh");
         assertTrue(!shader.contains("linear_fog"), "black-hole emission must punch through vanilla fog");
+    }
+
+    @Test
+    void blackHoleShaderDeclaresCinematicInputs() throws IOException {
+        String shader = readAsset("assets/quasar_content/shaders/core/black_hole.fsh");
+
+        assertTrue(shader.contains("CoreFlash"),
+            "ignition and implosion need an emissive core flash");
+        assertTrue(shader.contains("FlashRadius"),
+            "the flash size must not collapse with the horizon");
+        assertTrue(shader.contains("ShockRadius") && shader.contains("ShockStrength"),
+            "the intro and outro need an impact-space shockwave ring");
+        assertTrue(shader.contains("OutroJet"),
+            "the collapse needs polar jets");
     }
 
     @Test

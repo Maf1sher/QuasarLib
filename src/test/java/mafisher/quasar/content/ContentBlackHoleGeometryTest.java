@@ -82,15 +82,6 @@ class ContentBlackHoleGeometryTest {
             () -> ContentBlackHoleGeometry.withVariant(payload, 3));
     }
 
-    @Test
-    void fadeEnvelopeStartsAndEndsAtZero() {
-        assertEquals(0.0F, ContentBlackHoleGeometry.fadeEnvelope(0.0F), 1.0E-6F);
-        assertEquals(1.0F, ContentBlackHoleGeometry.fadeEnvelope(0.08F), 1.0E-6F);
-        assertEquals(1.0F, ContentBlackHoleGeometry.fadeEnvelope(0.5F), 1.0E-6F);
-        assertEquals(0.5F, ContentBlackHoleGeometry.fadeEnvelope(0.94F), 1.0E-6F);
-        assertEquals(0.0F, ContentBlackHoleGeometry.fadeEnvelope(1.0F), 1.0E-6F);
-    }
-
     private static void assertUnit(Vector3f value) {
         assertEquals(1.0F, value.length(), 1.0E-5F);
     }

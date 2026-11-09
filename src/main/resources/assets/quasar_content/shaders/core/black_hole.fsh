@@ -32,6 +32,11 @@ uniform float Progress;
 uniform float Seed;
 uniform float Charge;
 uniform float Fade;
+uniform float ShockRadius;
+uniform float ShockStrength;
+uniform float CoreFlash;
+uniform float FlashRadius;
+uniform float OutroJet;
 uniform float LensStrength;
 uniform float RingStrength;
 uniform float DiskBrightness;
@@ -433,6 +438,38 @@ vec4 renderBlackHole(vec2 uv) {
     vec3 haloColor = mix(vec3(1.0, 0.45, 0.15), vec3(0.5, 0.2, 1.0), Charge);
     vec3 haloLight = haloColor * halo * RingStrength * 0.04 * stabilization;
     color += haloLight / (vec3(1.0) + haloLight);
+
+    // Cinematic ignition and implosion flash. It is emissive-only so the bloom
+    // layer catches it without washing out the lensed background.
+    if (CoreFlash > 0.001) {
+        float flashRadius = max(FlashRadius, pixelWorld * 2.0);
+        float flashFalloff = exp(-pow(impact / flashRadius, 2.0) * 2.5);
+        vec3 flashColor = mix(vec3(1.0, 0.94, 0.82), ringColor, 0.45);
+        color += flashColor * flashFalloff * CoreFlash * 3.0;
+    }
+
+    // Expanding (intro) or contracting (outro) shockwave ring plus its wake.
+    // The ring lives in impact space, so foreground terrain still occludes it.
+    if (ShockStrength > 0.001 && ShockRadius > 0.001) {
+        float shockWidth = max(ShockRadius * 0.035, pixelWorld * 1.4);
+        float shockOffset = (impact - ShockRadius) / shockWidth;
+        float shock = exp(-shockOffset * shockOffset);
+        float wakeOffset = (impact - ShockRadius * 0.94) / (shockWidth * 2.5);
+        float wake = exp(-wakeOffset * wakeOffset) * 0.35;
+        vec3 shockColor = mix(vec3(1.0, 0.90, 0.72), ringColor, 0.35);
+        color += shockColor * (shock + wake) * ShockStrength;
+    }
+
+    // Polar jets at the moment the horizon disappears. The exponent keeps them
+    // as two narrow beams instead of a full-screen wash.
+    if (OutroJet > 0.001) {
+        float axis = abs(dot(direction, DiskNormal));
+        float jet = pow(axis, 32.0)
+            * (0.35 + 0.65 * exp(-pow(impact / max(radius * 2.5, 0.001), 2.0)));
+        float knot = exp(-pow((impact - radius * 0.35) / max(radius * 0.6, 0.001), 2.0));
+        vec3 jetColor = mix(vec3(0.75, 0.90, 1.0), vec3(1.0, 0.85, 0.55), Charge);
+        color += jetColor * (jet * 1.6 + knot * 0.6) * OutroJet;
+    }
 
     return vec4(color, coverage);
 }

@@ -26,6 +26,9 @@ class ContentBoundaryTest {
         "mafisher\\.quasar\\.[A-Za-z0-9_$.]+"
     );
     private static final Set<String> PUBLIC_ENGINE_API = Set.of(
+        "mafisher.quasar.QuasarClientConfig",
+        "mafisher.quasar.client.effect.CameraShakeImpulse",
+        "mafisher.quasar.client.effect.ClientEffectImpulses",
         "mafisher.quasar.client.effect.EffectLod",
         "mafisher.quasar.client.effect.EffectLodProfile",
         "mafisher.quasar.client.effect.EffectInstancedPass",
@@ -48,6 +51,7 @@ class ContentBoundaryTest {
         "mafisher.quasar.client.effect.ScreenEffectOperationRenderer",
         "mafisher.quasar.client.effect.ScreenEffectRenderer",
         "mafisher.quasar.client.effect.ScreenEffectSettings",
+        "mafisher.quasar.client.effect.ScreenFlashImpulse",
         "mafisher.quasar.compat.FogPolicy",
         "mafisher.quasar.effect.EffectAudience",
         "mafisher.quasar.effect.EffectQualityTier",

@@ -30,6 +30,13 @@ public final class QuasarClientConfig {
         )
         .defineInRange("effect_budget_ms", 2.5, 0.25, 50.0);
 
+    static final ModConfigSpec.BooleanValue CINEMATIC_IMPULSES = BUILDER
+        .comment(
+            "Allow cinematic effects to add camera shake and additive screen flashes.",
+            "Disable this for a steadier screen or light-sensitivity comfort."
+        )
+        .define("cinematic_impulses", true);
+
     public static final ModConfigSpec SPEC = BUILDER.build();
 
     private QuasarClientConfig() {
@@ -56,6 +63,15 @@ public final class QuasarClientConfig {
             return EFFECT_BUDGET_MS.get();
         } catch (IllegalStateException notLoaded) {
             return EFFECT_BUDGET_MS.getDefault();
+        }
+    }
+
+    /** Whether cinematic camera shake and screen flashes are allowed. */
+    public static boolean cinematicImpulses() {
+        try {
+            return CINEMATIC_IMPULSES.get();
+        } catch (IllegalStateException notLoaded) {
+            return CINEMATIC_IMPULSES.getDefault();
         }
     }
 

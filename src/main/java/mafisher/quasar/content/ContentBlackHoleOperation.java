@@ -105,13 +105,22 @@ final class ContentBlackHoleOperation implements ScreenEffectOperationRenderer {
             (float)(effect.z() - camera.z)
         );
 
-        float effectScale = context.effect().scale();
-        float diskOuterRadius = effectScale * settings.diskOuterFactor();
-        context.setUniform(shader, "BlackHoleRadius", effectScale);
-        context.setUniform(shader, "LensRadius", Math.max(diskOuterRadius * 1.1F, effectScale * 3.0F));
-        context.setUniform(shader, "DiskInnerRadius", effectScale * settings.diskInnerFactor());
+        float baseScale = context.effect().scale();
+        ContentBlackHoleCinematics.Frame cinematics =
+            ContentBlackHoleCinematics.frame(context.effect().progress());
+        float horizonRadius = baseScale * cinematics.horizonScale();
+        float diskOuterRadius = baseScale * settings.diskOuterFactor() * cinematics.diskScale();
+        float lensRadius = Math.max(
+            baseScale * settings.diskOuterFactor() * 1.1F,
+            baseScale * 3.0F
+        );
+        context.setUniform(shader, "BlackHoleRadius", horizonRadius);
+        context.setUniform(shader, "LensRadius", lensRadius);
+        context.setUniform(shader, "DiskInnerRadius",
+            baseScale * settings.diskInnerFactor() * cinematics.diskScale());
         context.setUniform(shader, "DiskOuterRadius", diskOuterRadius);
-        context.setUniform(shader, "DiskThickness", effectScale * settings.diskThicknessFactor());
+        context.setUniform(shader, "DiskThickness",
+            baseScale * settings.diskThicknessFactor() * cinematics.diskScale());
 
         ContentBlackHoleGeometry.Basis basis = ContentBlackHoleGeometry.basis(
             context.effect().transform().yaw(),
@@ -122,19 +131,29 @@ final class ContentBlackHoleOperation implements ScreenEffectOperationRenderer {
         setVector(context, shader, "DiskForward", basis.forward());
         setVector(context, shader, "DiskNormal", basis.normal());
 
-        context.setUniform(shader, "AgeTicks", context.effect().ageTicks());
+        context.setUniform(shader, "AgeTicks",
+            ContentBlackHoleCinematics.cinematicAge(
+                context.effect().ageTicks(), context.effect().progress()));
         context.setUniform(shader, "Progress", context.effect().progress());
         context.setUniform(shader, "Seed",
             (float)((context.effect().seed() & 0xFFFFL) / 65535.0));
         context.setUniform(shader, "Charge",
             ContentBlackHoleGeometry.chargeForSeed(context.effect().seed(), settings.charge()));
-        context.setUniform(shader, "Fade",
-            ContentBlackHoleGeometry.fadeEnvelope(context.effect().progress()));
+        context.setUniform(shader, "Fade", cinematics.fade());
+        context.setUniform(shader, "ShockRadius", baseScale * cinematics.shockRadius());
+        context.setUniform(shader, "ShockStrength", cinematics.shockStrength());
+        context.setUniform(shader, "CoreFlash", cinematics.coreFlash());
+        context.setUniform(shader, "FlashRadius", baseScale * 1.5F);
+        context.setUniform(shader, "OutroJet", cinematics.outroJet());
         context.setUniform(shader, "LensStrength", settings.lensStrength());
-        context.setUniform(shader, "LensWarpRadius", effectScale * settings.lensWarpFactor());
-        context.setUniform(shader, "RingStrength", settings.ringBrightness());
-        context.setUniform(shader, "DiskBrightness", settings.diskBrightness());
-        context.setUniform(shader, "Turbulence", settings.turbulence());
+        context.setUniform(shader, "LensWarpRadius",
+            baseScale * settings.lensWarpFactor() * cinematics.lensWarpScale());
+        context.setUniform(shader, "RingStrength",
+            settings.ringBrightness() * cinematics.ringStrengthScale());
+        context.setUniform(shader, "DiskBrightness",
+            settings.diskBrightness() * cinematics.diskBrightnessScale());
+        context.setUniform(shader, "Turbulence",
+            settings.turbulence() * cinematics.turbulenceScale());
         context.setUniform(shader, "StepCount", (float)ContentBlackHoleGeometry.stepCount(
             context.effect().lod().level(), context.quality().level()
         ));
