@@ -42,14 +42,51 @@ class ScreenEffectMediumPathTest {
             new ScreenEffectMediumSpan(ScreenEffectMedium.NONE, 12.0, 20.0)
         ), List.of(
             new ScreenEffectMediumCrossing(4.0, ScreenEffectMedium.NONE,
-                ScreenEffectMedium.LAVA, Float.NaN),
+                ScreenEffectMedium.LAVA, Float.NaN, false),
             new ScreenEffectMediumCrossing(8.0, ScreenEffectMedium.LAVA,
-                ScreenEffectMedium.WATER, 6.0F),
+                ScreenEffectMedium.WATER, 6.0F, true),
             new ScreenEffectMediumCrossing(12.0, ScreenEffectMedium.WATER,
-                ScreenEffectMedium.NONE, 6.0F)
+                ScreenEffectMedium.NONE, 6.0F, true)
         ));
 
         assertEquals(8.0, path.firstWaterCrossing().orElseThrow().distance(), 1.0E-9);
+        assertTrue(path.firstOpenWaterCrossing().isEmpty(),
+            "a bounded water body has no single refraction plane");
+    }
+
+    @Test
+    void openWaterCrossingRequiresTheWaterSpanToReachAnEndpoint() {
+        var effectSubmerged = new ScreenEffectMediumPath(List.of(
+            new ScreenEffectMediumSpan(ScreenEffectMedium.NONE, 0.0, 10.0),
+            new ScreenEffectMediumSpan(ScreenEffectMedium.WATER, 10.0, 40.0)
+        ), List.of(
+            new ScreenEffectMediumCrossing(10.0, ScreenEffectMedium.NONE,
+                ScreenEffectMedium.WATER, 6.0F, true)
+        ));
+        var cameraSubmerged = new ScreenEffectMediumPath(List.of(
+            new ScreenEffectMediumSpan(ScreenEffectMedium.WATER, 0.0, 10.0),
+            new ScreenEffectMediumSpan(ScreenEffectMedium.NONE, 10.0, 40.0)
+        ), List.of(
+            new ScreenEffectMediumCrossing(10.0, ScreenEffectMedium.WATER,
+                ScreenEffectMedium.NONE, 6.0F, true)
+        ));
+
+        assertTrue(effectSubmerged.firstOpenWaterCrossing().isPresent());
+        assertTrue(cameraSubmerged.firstOpenWaterCrossing().isPresent());
+    }
+
+    @Test
+    void sideEntryWaterIsNotAPlane() {
+        var path = new ScreenEffectMediumPath(List.of(
+            new ScreenEffectMediumSpan(ScreenEffectMedium.NONE, 0.0, 10.0),
+            new ScreenEffectMediumSpan(ScreenEffectMedium.WATER, 10.0, 40.0)
+        ), List.of(
+            new ScreenEffectMediumCrossing(10.0, ScreenEffectMedium.NONE,
+                ScreenEffectMedium.WATER, 6.0F, false)
+        ));
+
+        assertTrue(path.firstWaterCrossing().isPresent());
+        assertTrue(path.firstOpenWaterCrossing().isEmpty());
     }
 
     @Test
@@ -68,12 +105,12 @@ class ScreenEffectMediumPathTest {
         assertThrows(IllegalArgumentException.class, () -> new ScreenEffectMediumPath(List.of(
             new ScreenEffectMediumSpan(ScreenEffectMedium.WATER, 0.0, 5.0)
         ), List.of(new ScreenEffectMediumCrossing(6.0, ScreenEffectMedium.WATER,
-            ScreenEffectMedium.NONE, 6.0F))));
+            ScreenEffectMedium.NONE, 6.0F, true))));
     }
 
     @Test
     void rejectsACrossingThatDoesNotChangeMedium() {
         assertThrows(IllegalArgumentException.class, () -> new ScreenEffectMediumCrossing(
-            1.0, ScreenEffectMedium.WATER, ScreenEffectMedium.WATER, 6.0F));
+            1.0, ScreenEffectMedium.WATER, ScreenEffectMedium.WATER, 6.0F, true));
     }
 }

@@ -112,6 +112,42 @@ public final class ScreenEffectMediumPath {
         return Optional.empty();
     }
 
+    /**
+     * Returns the nearest water crossing that can drive a single screen-space
+     * refraction plane.
+     *
+     * <p>The crossing must be a horizontal top-surface crossing, and its water span
+     * must reach the camera or the effect. A bounded water body between two dry
+     * endpoints has an entry and an exit; one plane cannot model both, so it only
+     * contributes fog and foreground tint.</p>
+     */
+    public Optional<ScreenEffectMediumCrossing> firstOpenWaterCrossing() {
+        for (ScreenEffectMediumCrossing crossing : this.crossings) {
+            if (crossing.topSurface() && waterSpanTouchesAnEndpoint(crossing)) {
+                return Optional.of(crossing);
+            }
+        }
+        return Optional.empty();
+    }
+
+    private boolean waterSpanTouchesAnEndpoint(ScreenEffectMediumCrossing crossing) {
+        double epsilon = 1.0E-9;
+        for (ScreenEffectMediumSpan span : this.spans) {
+            if (span.medium() != ScreenEffectMedium.WATER) {
+                continue;
+            }
+            if (crossing.to() == ScreenEffectMedium.WATER
+                && Math.abs(span.startDistance() - crossing.distance()) <= epsilon) {
+                return Math.abs(span.endDistance() - this.length) <= epsilon;
+            }
+            if (crossing.from() == ScreenEffectMedium.WATER
+                && Math.abs(span.endDistance() - crossing.distance()) <= epsilon) {
+                return Math.abs(span.startDistance()) <= epsilon;
+            }
+        }
+        return false;
+    }
+
     /** Returns whether the path enters or leaves water. */
     public boolean hasWaterCrossing() {
         return firstWaterCrossing().isPresent();

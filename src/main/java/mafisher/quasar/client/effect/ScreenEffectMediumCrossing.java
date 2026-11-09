@@ -9,13 +9,16 @@ import java.util.Objects;
  * @param from the medium before the crossing
  * @param to the medium after the crossing
  * @param surfaceY absolute world Y of the fluid top at the crossing, or
- *     {@link Float#NaN} when the crossed medium is not a fluid surface
+ *     {@link Float#NaN} when the crossed medium is not a water surface
+ * @param topSurface whether the ray crossed the horizontal top of the fluid
+ *     column instead of a side or bottom face
  */
 public record ScreenEffectMediumCrossing(
     double distance,
     ScreenEffectMedium from,
     ScreenEffectMedium to,
-    float surfaceY
+    float surfaceY,
+    boolean topSurface
 ) {
     public ScreenEffectMediumCrossing {
         Objects.requireNonNull(from, "from");

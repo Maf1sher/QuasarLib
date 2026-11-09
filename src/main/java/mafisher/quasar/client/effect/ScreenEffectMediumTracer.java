@@ -20,6 +20,7 @@ public final class ScreenEffectMediumTracer {
     /** Minimum segment length in blocks for close effects. */
     public static final double MIN_STEP = 0.25;
     static final int BISECTION_STEPS = 6;
+    private static final double TOP_SURFACE_EPSILON = 0.05;
 
     private ScreenEffectMediumTracer() {
     }
@@ -64,8 +65,9 @@ public final class ScreenEffectMediumTracer {
                 float surfaceY = medium != ScreenEffectMedium.NONE
                     ? surfaceY(sampler, x, y, z)
                     : surfaceY(sampler, previousX, previousY, previousZ);
+                boolean topSurface = isTopSurface(from.y + uy * crossing, surfaceY);
                 crossings.add(new ScreenEffectMediumCrossing(
-                    crossing, previousMedium, medium, surfaceY));
+                    crossing, previousMedium, medium, surfaceY, topSurface));
                 if (crossing > spanStart) {
                     spans.add(new ScreenEffectMediumSpan(previousMedium, spanStart, crossing));
                 }
@@ -86,8 +88,9 @@ public final class ScreenEffectMediumTracer {
             float surfaceY = endMedium != ScreenEffectMedium.NONE
                 ? surfaceY(sampler, to.x, to.y, to.z)
                 : surfaceY(sampler, previousX, previousY, previousZ);
+            boolean topSurface = isTopSurface(from.y + uy * crossing, surfaceY);
             crossings.add(new ScreenEffectMediumCrossing(
-                crossing, previousMedium, endMedium, surfaceY));
+                crossing, previousMedium, endMedium, surfaceY, topSurface));
             if (crossing > spanStart) {
                 spans.add(new ScreenEffectMediumSpan(previousMedium, spanStart, crossing));
             }
@@ -128,5 +131,15 @@ public final class ScreenEffectMediumTracer {
         double x, double y, double z) {
         float surface = sampler.surfaceY(x, y, z);
         return Float.isFinite(surface) ? surface : Float.NaN;
+    }
+
+    /**
+     * A horizontal refraction plane only exists when the ray crosses the fluid top.
+     * An aquarium entered through its glass side is a side crossing: the top column
+     * height would place the plane somewhere the ray never crosses.
+     */
+    private static boolean isTopSurface(double crossingY, float surfaceY) {
+        return Float.isFinite(surfaceY)
+            && Math.abs(crossingY - surfaceY) <= TOP_SURFACE_EPSILON;
     }
 }

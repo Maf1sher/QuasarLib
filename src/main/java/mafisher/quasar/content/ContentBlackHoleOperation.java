@@ -201,7 +201,7 @@ final class ContentBlackHoleOperation implements ScreenEffectOperationRenderer {
         if (suppressed || path == null) {
             return MediumSurface.NONE;
         }
-        var crossing = path.firstWaterCrossing().orElse(null);
+        var crossing = path.firstOpenWaterCrossing().orElse(null);
         if (crossing == null || !Float.isFinite(crossing.surfaceY())) {
             return MediumSurface.NONE;
         }

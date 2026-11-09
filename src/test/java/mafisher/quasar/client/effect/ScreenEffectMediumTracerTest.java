@@ -42,6 +42,8 @@ class ScreenEffectMediumTracerTest {
         assertEquals(ScreenEffectMedium.NONE, entry.from());
         assertEquals(ScreenEffectMedium.WATER, entry.to());
         assertEquals(WATER_TOP, entry.surfaceY(), 1.0E-6);
+        assertFalse(entry.topSurface(),
+            "an elevated lake is entered through its side, not through the top");
         assertEquals(ScreenEffectMedium.NONE, path.mediumAt(10.0));
         assertEquals(ScreenEffectMedium.WATER, path.mediumAt(20.0));
         assertEquals(ScreenEffectMedium.NONE, path.mediumAt(30.0));
@@ -60,6 +62,7 @@ class ScreenEffectMediumTracerTest {
         assertEquals(ScreenEffectMedium.WATER, crossing.from());
         assertEquals(ScreenEffectMedium.NONE, crossing.to());
         assertEquals(WATER_TOP, crossing.surfaceY(), 1.0E-6);
+        assertTrue(crossing.topSurface(), "the submerged camera exits through the top");
     }
 
     @Test
@@ -74,6 +77,33 @@ class ScreenEffectMediumTracerTest {
         assertEquals(ScreenEffectMedium.NONE, crossing.from());
         assertEquals(ScreenEffectMedium.WATER, crossing.to());
         assertEquals(WATER_TOP, crossing.surfaceY(), 1.0E-6);
+        assertTrue(crossing.topSurface(), "the effect is entered through the top");
+    }
+
+    @Test
+    void tankSideEntryIsNotATopSurface() {
+        ScreenEffectMediumSampler tank = new ScreenEffectMediumSampler() {
+            @Override
+            public ScreenEffectMedium mediumAt(double x, double y, double z) {
+                return x > 5.0 && x < 15.0 && y < WATER_TOP
+                    ? ScreenEffectMedium.WATER : ScreenEffectMedium.NONE;
+            }
+
+            @Override
+            public float surfaceY(double x, double y, double z) {
+                return x > 5.0 && x < 15.0 && y < WATER_TOP
+                    ? (float)WATER_TOP : Float.NaN;
+            }
+        };
+
+        var path = ScreenEffectMediumTracer.trace(
+            new Vector3d(0.0, 3.0, 0.0), new Vector3d(20.0, 3.0, 0.0), tank);
+
+        var crossing = path.firstWaterCrossing().orElseThrow();
+        assertFalse(crossing.topSurface(),
+            "entering through the glass side must not use the water-top plane");
+        assertTrue(path.firstOpenWaterCrossing().isEmpty());
+        assertEquals(10.0, path.submergedLength(), TOLERANCE);
     }
 
     @Test
