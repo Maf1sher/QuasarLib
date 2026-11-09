@@ -74,7 +74,7 @@ class ContentShadersTest {
             "OutroJet", "VortexStrength", "VortexRadius", "Darkness",
             "RingStrength", "DiskBrightness", "Turbulence", "StepCount",
             "MediumFogStart", "MediumFogEnd", "MediumFogColor", "MediumFogActive", "CameraSubmerged", "EffectSubmerged",
-            "SurfaceY", "SurfaceActive", "SuppressAboveWater",
+            "MediumPathLength", "SurfaceY", "SurfaceActive", "SuppressAboveWater",
             "Pass", "EmissiveOnly", "BloomStrength", "BloomThreshold", "BloomRadiusPixels"
         )) {
             assertTrue(json.contains("\"" + name + "\""), name);
@@ -173,6 +173,8 @@ class ContentShadersTest {
         assertTrue(shader.contains("CameraSubmerged > 0.5")
                 && shader.contains("CameraSubmerged < 0.5"),
             "the screen-space lens and vortex must also be skipped from inside water");
+        assertTrue(shader.contains("MediumPathLength"),
+            "fog must follow the whole medium path, not only the endpoint blocks");
     }
 
     @Test

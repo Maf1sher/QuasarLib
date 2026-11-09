@@ -26,6 +26,7 @@ import net.minecraft.world.level.material.FogType;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import org.joml.Matrix4f;
+import org.joml.Vector3d;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL30;
 import org.slf4j.Logger;
@@ -247,7 +248,7 @@ final class ClientScreenCompositor {
                 + batch.settings().operation().id()));
         try {
             var effectPosition = batch.operationContext().transform().position();
-            ScreenEffectMediumState medium = captureMedium(
+            MediumCapture medium = captureMedium(
                 new Vec3(effectPosition.x(), effectPosition.y(), effectPosition.z()),
                 camera.position());
             ScreenEffectOperationContext context = new ScreenEffectOperationContext(
@@ -258,7 +259,8 @@ final class ClientScreenCompositor {
                 quality,
                 environment,
                 fogState,
-                medium,
+                medium.state(),
+                medium.path(),
                 sourceColor,
                 this.rawSceneTarget,
                 destination,
@@ -284,7 +286,7 @@ final class ClientScreenCompositor {
         return new ScreenEffectFogState(start, end, new Vec3(color[0], color[1], color[2]));
     }
 
-    private static ScreenEffectMediumState captureMedium(Vec3 effectPosition, Vec3 cameraPosition) {
+    private static MediumCapture captureMedium(Vec3 effectPosition, Vec3 cameraPosition) {
         Minecraft minecraft = Minecraft.getInstance();
         Camera camera = minecraft.gameRenderer == null ? null : minecraft.gameRenderer.getMainCamera();
         FogType fluid = camera == null ? null : camera.getFluidInCamera();
@@ -294,14 +296,44 @@ final class ClientScreenCompositor {
         ScreenEffectMedium effectMedium = level == null
             ? ScreenEffectMedium.NONE : mediumOf(level.getFluidState(
                 BlockPos.containing(effectPosition.x, effectPosition.y, effectPosition.z)));
-        float cameraSurface = waterSurfaceY(level, cameraPosition);
-        float effectSurface = waterSurfaceY(level, effectPosition);
-        return new ScreenEffectMediumState(
+        BlockPos cameraBlock = BlockPos.containing(
+            cameraPosition.x, cameraPosition.y, cameraPosition.z);
+        BlockPos effectBlock = BlockPos.containing(
+            effectPosition.x, effectPosition.y, effectPosition.z);
+        float cameraSurface = waterSurfaceY(level, cameraBlock);
+        float effectSurface = waterSurfaceY(level, effectBlock);
+        ScreenEffectMediumState state = new ScreenEffectMediumState(
             cameraMedium,
             effectMedium,
             Float.isNaN(cameraSurface) ? Float.NaN : cameraSurface - (float)cameraPosition.y,
             Float.isNaN(effectSurface) ? Float.NaN : effectSurface - (float)cameraPosition.y
         );
+        return new MediumCapture(state, captureMediumPath(level, cameraPosition, effectPosition));
+    }
+
+    private static ScreenEffectMediumPath captureMediumPath(ClientLevel level,
+        Vec3 cameraPosition, Vec3 effectPosition) {
+        if (level == null) {
+            return ScreenEffectMediumPath.EMPTY;
+        }
+        ScreenEffectMediumSampler sampler = new ScreenEffectMediumSampler() {
+            @Override
+            public ScreenEffectMedium mediumAt(double x, double y, double z) {
+                return mediumOf(level.getFluidState(BlockPos.containing(x, y, z)));
+            }
+
+            @Override
+            public float surfaceY(double x, double y, double z) {
+                return waterSurfaceY(level, BlockPos.containing(x, y, z));
+            }
+        };
+        return ScreenEffectMediumTracer.trace(
+            new Vector3d(cameraPosition.x, cameraPosition.y, cameraPosition.z),
+            new Vector3d(effectPosition.x, effectPosition.y, effectPosition.z),
+            sampler);
+    }
+
+    private record MediumCapture(ScreenEffectMediumState state, ScreenEffectMediumPath path) {
     }
 
     private static ScreenEffectMedium mediumOf(FogType type) {
@@ -324,12 +356,11 @@ final class ClientScreenCompositor {
     }
 
     /** Returns the top water surface above {@code position}, or {@link Float#NaN} when unknown. */
-    private static float waterSurfaceY(ClientLevel level, Vec3 position) {
+    private static float waterSurfaceY(ClientLevel level, BlockPos position) {
         if (level == null) {
             return Float.NaN;
         }
-        BlockPos.MutableBlockPos cursor = BlockPos.containing(
-            position.x, position.y, position.z).mutable();
+        BlockPos.MutableBlockPos cursor = position.mutable();
         if (!isWater(level, cursor)) {
             return Float.NaN;
         }

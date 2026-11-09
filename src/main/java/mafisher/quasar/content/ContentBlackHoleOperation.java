@@ -2,6 +2,7 @@ package mafisher.quasar.content;
 
 import com.mojang.blaze3d.pipeline.TextureTarget;
 import mafisher.quasar.client.effect.ScreenEffectMedium;
+import mafisher.quasar.client.effect.ScreenEffectMediumPath;
 import mafisher.quasar.client.effect.ScreenEffectMediumState;
 import mafisher.quasar.client.effect.ScreenEffectOperationContext;
 import mafisher.quasar.client.effect.ScreenEffectOperationRenderer;
@@ -175,24 +176,45 @@ final class ContentBlackHoleOperation implements ScreenEffectOperationRenderer {
         boolean fogAllowed = context.environment().fogPolicy() == FogPolicy.RESPECT;
         context.setUniform(shader, "MediumFogActive", fogAllowed && fog.active() ? 1.0F : 0.0F);
         var medium = context.medium();
+        var path = context.mediumPath();
         boolean suppressEffect = suppressAboveWater(medium);
         context.setUniform(shader, "CameraSubmerged", medium.cameraSubmerged() ? 1.0F : 0.0F);
         context.setUniform(shader, "EffectSubmerged", medium.effectSubmerged() ? 1.0F : 0.0F);
         context.setUniform(shader, "SuppressAboveWater", suppressEffect ? 1.0F : 0.0F);
-        float surfaceY = 0.0F;
-        boolean surfaceActive = false;
-        if (medium.cameraSubmerged() && !medium.effectSubmerged()
-            && !Float.isNaN(medium.cameraSurfaceY())) {
-            surfaceY = medium.cameraSurfaceY();
-            surfaceActive = true;
-        } else if (!medium.cameraSubmerged() && medium.effectSubmerged()
-            && !Float.isNaN(medium.effectSurfaceY())) {
-            surfaceY = medium.effectSurfaceY();
-            surfaceActive = true;
+        // The fog follows every submerged span, so a lake between two air endpoints
+        // still tints the effect. The shader falls back to the traced entry when the
+        // path is empty and an endpoint is submerged (powder snow, missing level).
+        context.setUniform(shader, "MediumPathLength", (float)path.submergedLength());
+        MediumSurface surface = mediumSurface(
+            path, context.camera().position().y, suppressEffect);
+        context.setUniform(shader, "SurfaceY", surface.surfaceY());
+        context.setUniform(shader, "SurfaceActive", surface.active() ? 1.0F : 0.0F);
+    }
+
+    /**
+     * Selects the refraction plane from the nearest water crossing instead of the
+     * endpoint blocks. A lake between two air endpoints still changes the image, and
+     * an exiting camera uses the plane it actually crosses.
+     */
+    static MediumSurface mediumSurface(ScreenEffectMediumPath path, double cameraY,
+        boolean suppressed) {
+        if (suppressed || path == null) {
+            return MediumSurface.NONE;
         }
-        surfaceActive = surfaceActive && fogAllowed && !suppressEffect;
-        context.setUniform(shader, "SurfaceY", surfaceY);
-        context.setUniform(shader, "SurfaceActive", surfaceActive ? 1.0F : 0.0F);
+        var crossing = path.firstWaterCrossing().orElse(null);
+        if (crossing == null || !Float.isFinite(crossing.surfaceY())) {
+            return MediumSurface.NONE;
+        }
+        float relative = crossing.surfaceY() - (float)cameraY;
+        if (!Float.isFinite(relative)) {
+            return MediumSurface.NONE;
+        }
+        return new MediumSurface(true, relative);
+    }
+
+    /** The active water plane, relative to the camera. */
+    record MediumSurface(boolean active, float surfaceY) {
+        static final MediumSurface NONE = new MediumSurface(false, 0.0F);
     }
 
     /**

@@ -4,6 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
+import mafisher.quasar.client.effect.ScreenEffectMedium;
+import mafisher.quasar.client.effect.ScreenEffectMediumPath;
+import mafisher.quasar.client.effect.ScreenEffectMediumSpan;
 import org.joml.Vector3d;
 import org.junit.jupiter.api.Test;
 
@@ -159,18 +163,31 @@ class ContentBlackHoleWaterRefractionTest {
     }
 
     @Test
-    void fogUsesOnlyTheSubmergedLeg() {
-        Vector3d direction = new Vector3d(0.0, -1.0, 0.0);
-        var ray = ContentBlackHoleGeodesic.refractedAtWater(
-            new Vector3d(0.0, 30.0, 0.0), direction, -5.0, true, false, 0.0);
-
+    void fogUsesEverySubmergedLegOfThePath() {
         // Camera above water looking at a submerged effect: fog only surface -> effect.
-        assertEquals(90.0, ContentBlackHoleGeodesic.fogDistance(ray, 100.0, 90.0, false), 1.0E-6);
+        var effectSide = new ScreenEffectMediumPath(List.of(
+            new ScreenEffectMediumSpan(ScreenEffectMedium.NONE, 0.0, 10.0),
+            new ScreenEffectMediumSpan(ScreenEffectMedium.WATER, 10.0, 100.0)
+        ), List.of());
+        assertEquals(90.0, ContentBlackHoleGeodesic.fogDistance(effectSide, 100.0), 1.0E-6);
+
         // Camera submerged looking at an above-water effect: fog only camera -> surface.
-        assertEquals(5.0, ContentBlackHoleGeodesic.fogDistance(ray, 100.0, 90.0, true), 1.0E-6);
+        var cameraSide = new ScreenEffectMediumPath(List.of(
+            new ScreenEffectMediumSpan(ScreenEffectMedium.WATER, 0.0, 5.0),
+            new ScreenEffectMediumSpan(ScreenEffectMedium.NONE, 5.0, 100.0)
+        ), List.of());
+        assertEquals(5.0, ContentBlackHoleGeodesic.fogDistance(cameraSide, 100.0), 1.0E-6);
+
+        // A lake between two air endpoints still contributes its whole submerged leg.
+        var lake = new ScreenEffectMediumPath(List.of(
+            new ScreenEffectMediumSpan(ScreenEffectMedium.NONE, 0.0, 20.0),
+            new ScreenEffectMediumSpan(ScreenEffectMedium.WATER, 20.0, 30.0),
+            new ScreenEffectMediumSpan(ScreenEffectMedium.NONE, 30.0, 100.0)
+        ), List.of());
+        assertEquals(10.0, ContentBlackHoleGeodesic.fogDistance(lake, 100.0), 1.0E-6);
+
+        // A dry path falls back to the traced entry distance.
         assertEquals(100.0, ContentBlackHoleGeodesic.fogDistance(
-            ContentBlackHoleGeodesic.refractedAtWater(
-                new Vector3d(0.0, 30.0, 0.0), direction, -5.0, false, false, 0.0),
-            100.0, 90.0, false), 1.0E-6);
+            ScreenEffectMediumPath.EMPTY, 100.0), 1.0E-6);
     }
 }

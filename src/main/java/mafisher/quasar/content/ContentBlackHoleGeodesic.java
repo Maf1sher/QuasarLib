@@ -1,6 +1,7 @@
 package mafisher.quasar.content;
 
 import java.util.Objects;
+import mafisher.quasar.client.effect.ScreenEffectMediumPath;
 import org.joml.Vector3d;
 
 /**
@@ -211,16 +212,14 @@ final class ContentBlackHoleGeodesic {
     }
 
     /**
-     * Mirrors the composite's fog distance: only the submerged leg receives the
-     * active water fog.
+     * Mirrors the composite's fog distance: the whole submerged portion of the
+     * camera-to-effect path receives the active medium fog, not only an endpoint
+     * leg.
      */
-    static double fogDistance(WaterRay ray, double entryDistance, double effectEntry,
-        boolean cameraSubmerged) {
-        Objects.requireNonNull(ray, "ray");
-        if (ray.surfaceDistance() > 0.0) {
-            return cameraSubmerged ? ray.surfaceDistance() : Math.max(effectEntry, 0.0);
-        }
-        return Math.max(entryDistance, 0.0);
+    static double fogDistance(ScreenEffectMediumPath path, double entryDistance) {
+        Objects.requireNonNull(path, "path");
+        double submerged = path.submergedLength();
+        return submerged > 0.0 ? submerged : Math.max(entryDistance, 0.0);
     }
 
     private static Vector3d refract(Vector3d incident, Vector3d normal, double eta) {

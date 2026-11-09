@@ -55,6 +55,7 @@
     { "name": "MediumFogActive", "type": "float", "count": 1, "values": [ 0.0 ] },
     { "name": "CameraSubmerged", "type": "float", "count": 1, "values": [ 0.0 ] },
     { "name": "EffectSubmerged", "type": "float", "count": 1, "values": [ 0.0 ] },
+    { "name": "MediumPathLength", "type": "float", "count": 1, "values": [ 0.0 ] },
     { "name": "SurfaceY", "type": "float", "count": 1, "values": [ 0.0 ] },
     { "name": "SurfaceActive", "type": "float", "count": 1, "values": [ 0.0 ] },
     { "name": "SuppressAboveWater", "type": "float", "count": 1, "values": [ 0.0 ] },

@@ -53,6 +53,7 @@ uniform vec3 MediumFogColor;
 uniform float MediumFogActive;
 uniform float CameraSubmerged;
 uniform float EffectSubmerged;
+uniform float MediumPathLength;
 uniform float SurfaceY;
 uniform float SurfaceActive;
 uniform float SuppressAboveWater;
@@ -760,16 +761,14 @@ void main() {
 
     vec3 color = effectColor.rgb;
     float fogDistance = max(entryDistance, 0.0);
-    if (ray.surfaceDistance > 0.0) {
-        // Only the submerged leg of the path receives the active water fog: the
-        // camera-to-surface leg when the camera is submerged, otherwise the
-        // surface-to-effect leg along the refracted ray.
-        fogDistance = CameraSubmerged > 0.5
-            ? ray.surfaceDistance
-            : max(effectEntry, 0.0);
+    if (MediumPathLength > 0.0) {
+        // The path covers every submerged span along the camera-to-effect line,
+        // including a lake between two air endpoints.
+        fogDistance = MediumPathLength;
     }
     float mediumFog = 0.0;
-    if (MediumFogActive > 0.5 && (CameraSubmerged > 0.5 || EffectSubmerged > 0.5)) {
+    if (MediumFogActive > 0.5
+        && (MediumPathLength > 0.0 || CameraSubmerged > 0.5 || EffectSubmerged > 0.5)) {
         mediumFog = clamp((fogDistance - MediumFogStart) / max(MediumFogEnd - MediumFogStart, 1.0), 0.0, 1.0);
         mediumFog = mediumFog * mediumFog * (3.0 - 2.0 * mediumFog);
         color = mix(color, MediumFogColor, mediumFog);
