@@ -129,34 +129,42 @@ final class ContentBlackHoleGeodesic {
 
     /**
      * Mirrors the water-plane refraction in {@code black_hole.fsh}: bends the view ray
-     * at the surface before the effect is traced. {@code surfaceY} and the returned
-     * origin/direction stay camera-relative, like the shader uniforms.
+     * at the surface before the effect is traced.
+     *
+     * <p>{@code origin} is the camera position relative to the black hole and
+     * {@code surfaceY} is the water surface relative to the camera. The returned
+     * origin is relative to the hole, so it can be fed straight into the geodesic
+     * integration. Keeping those frames distinct avoids shifting the trace origin
+     * by the camera-to-hole distance.</p>
      */
     static WaterRay refractedAtWater(Vector3d origin, Vector3d direction, double surfaceY,
-        boolean surfaceActive, boolean cameraSubmerged, double ageTicks, Vector3d holeOffset) {
+        boolean surfaceActive, boolean cameraSubmerged, double ageTicks) {
         Objects.requireNonNull(origin, "origin");
         Objects.requireNonNull(direction, "direction");
-        Objects.requireNonNull(holeOffset, "holeOffset");
         Vector3d straight = new Vector3d(direction).normalize();
         if (!surfaceActive || Math.abs(straight.y) < 0.001) {
-            return new WaterRay(origin, straight, -1.0);
+            return WaterRay.straight(origin, straight);
         }
         double surfaceDistance = surfaceY / straight.y;
         if (surfaceDistance <= 0.0) {
-            return new WaterRay(origin, straight, -1.0);
+            return WaterRay.straight(origin, straight);
         }
-        Vector3d hit = new Vector3d(straight).mul(surfaceDistance);
-        Vector3d normal = waterSurfaceNormal(hit.x + holeOffset.x, hit.z + holeOffset.z, ageTicks);
+        Vector3d hit = new Vector3d(origin).fma(surfaceDistance, straight);
+        // The hit is already relative to the hole; adding the hole offset again
+        // would make the ripple phase slide with the camera.
+        Vector3d normal = waterSurfaceNormal(hit.x, hit.z, ageTicks);
         if (normal.dot(straight) > 0.0) {
             normal.negate();
         }
+        double incidence = clamp(Math.abs(straight.dot(normal)), 0.0, 1.0);
         double eta = cameraSubmerged ? 1.333 : 1.0 / 1.333;
         Vector3d bent = refract(straight, normal, eta);
         if (bent.lengthSquared() < 1.0E-6) {
-            // Total internal reflection from below the surface: keep the straight ray.
-            return new WaterRay(origin, straight, -1.0);
+            // Total internal reflection from below the surface: the above-water
+            // effect is not visible in this direction. The caller hides it.
+            return new WaterRay(origin, straight, surfaceDistance, normal, incidence, true);
         }
-        return new WaterRay(hit, bent.normalize(), surfaceDistance);
+        return new WaterRay(hit, bent.normalize(), surfaceDistance, normal, incidence, false);
     }
 
     /** Mirrors {@code waterSurfaceNormal} in {@code black_hole.fsh}. */
@@ -168,7 +176,51 @@ final class ContentBlackHoleGeodesic {
         double slopeZ = Math.cos(z * 0.58 - time * 1.5)
             + 0.6 * Math.cos(z * 1.29 + x * 0.37 + time * 0.9)
             + 0.35 * Math.cos(x * 1.90 - time * 2.1);
-        return new Vector3d(slopeX * 0.06, 1.0, slopeZ * 0.06).normalize();
+        // Keep the synthetic ripples subtle; the shader uses the same 0.02 slope.
+        return new Vector3d(slopeX * 0.02, 1.0, slopeZ * 0.02).normalize();
+    }
+
+    /** Mirrors {@code fresnelWater} in {@code black_hole.fsh}. */
+    static double fresnelReflectance(double cosIncidence, double incidentIor, double transmittedIor) {
+        double cosI = clamp(Math.abs(cosIncidence), 0.0, 1.0);
+        double sinT2 = (incidentIor * incidentIor) / (transmittedIor * transmittedIor)
+            * (1.0 - cosI * cosI);
+        if (sinT2 >= 1.0) {
+            return 1.0;
+        }
+        double cosT = Math.sqrt(1.0 - sinT2);
+        double rs = (incidentIor * cosI - transmittedIor * cosT)
+            / Math.max(incidentIor * cosI + transmittedIor * cosT, 1.0E-9);
+        double rp = (incidentIor * cosT - transmittedIor * cosI)
+            / Math.max(incidentIor * cosT + transmittedIor * cosI, 1.0E-9);
+        return clamp(0.5 * (rs * rs + rp * rp), 0.0, 1.0);
+    }
+
+    /** Mirrors the composite's surface transmission: TIR is opaque, otherwise Fresnel. */
+    static double surfaceTransmittance(WaterRay ray, boolean cameraSubmerged) {
+        Objects.requireNonNull(ray, "ray");
+        if (ray.surfaceDistance() <= 0.0) {
+            return 1.0;
+        }
+        if (ray.totalInternalReflection()) {
+            return 0.0;
+        }
+        double incidentIor = cameraSubmerged ? 1.333 : 1.0;
+        double transmittedIor = cameraSubmerged ? 1.0 : 1.333;
+        return 1.0 - fresnelReflectance(ray.incidenceCosine(), incidentIor, transmittedIor);
+    }
+
+    /**
+     * Mirrors the composite's fog distance: only the submerged leg receives the
+     * active water fog.
+     */
+    static double fogDistance(WaterRay ray, double entryDistance, double effectEntry,
+        boolean cameraSubmerged) {
+        Objects.requireNonNull(ray, "ray");
+        if (ray.surfaceDistance() > 0.0) {
+            return cameraSubmerged ? ray.surfaceDistance() : Math.max(effectEntry, 0.0);
+        }
+        return Math.max(entryDistance, 0.0);
     }
 
     private static Vector3d refract(Vector3d incident, Vector3d normal, double eta) {
@@ -235,13 +287,24 @@ final class ContentBlackHoleGeodesic {
         }
     }
 
-    /** Camera-relative refracted ray and the surface distance, or -1 when unrefracted. */
-    record WaterRay(Vector3d origin, Vector3d direction, double surfaceDistance) {
+    /**
+     * Hole-relative refracted ray, the camera-to-surface distance, and the surface
+     * normal. A negative surface distance means the ray did not cross the plane.
+     */
+    record WaterRay(Vector3d origin, Vector3d direction, double surfaceDistance,
+        Vector3d normal, double incidenceCosine, boolean totalInternalReflection) {
         WaterRay {
             Objects.requireNonNull(origin, "origin");
             Objects.requireNonNull(direction, "direction");
+            Objects.requireNonNull(normal, "normal");
             origin = new Vector3d(origin);
             direction = new Vector3d(direction);
+            normal = new Vector3d(normal);
+        }
+
+        static WaterRay straight(Vector3d origin, Vector3d direction) {
+            return new WaterRay(origin, direction, -1.0,
+                new Vector3d(0.0, 1.0, 0.0), 1.0, false);
         }
 
         @Override
@@ -252,6 +315,11 @@ final class ContentBlackHoleGeodesic {
         @Override
         public Vector3d direction() {
             return new Vector3d(this.direction);
+        }
+
+        @Override
+        public Vector3d normal() {
+            return new Vector3d(this.normal);
         }
     }
 

@@ -151,6 +151,26 @@ class ContentShadersTest {
     }
 
     @Test
+    void blackHoleWaterOpticsUseOneFrameAndHideTotalInternalReflection() throws IOException {
+        String shader = readAsset("assets/quasar_content/shaders/core/black_hole.fsh");
+
+        assertTrue(shader.contains("vec3 hit = origin + direction * surfaceDistance;"),
+            "the surface hit must combine the hole-relative camera origin with the ray");
+        assertTrue(shader.contains("waterSurfaceNormal(hit)"),
+            "the ripple phase must use the hole-relative hit, not a camera-relative one");
+        assertTrue(shader.contains("totalInternalReflection"),
+            "TIR must hide the above-water effect instead of tracing the straight ray");
+        assertTrue(shader.contains("fresnelWater"),
+            "the surface must transmit physically instead of applying a fixed blue tint");
+        assertTrue(!shader.contains("vec3 surfaceColor"),
+            "the old fixed surface tint produced the floating reflection-like patch");
+        assertTrue(shader.contains("bloomFade") && shader.contains("surfaceTransmittance"),
+            "the emissive bloom must fade with the surface and the medium fog");
+        assertTrue(shader.contains("ray.surfaceDistance <= 0.0"),
+            "the screen-space lens and vortex must be skipped across a water surface");
+    }
+
+    @Test
     void blackHoleLensSamplesTheAccumulatedComposition() throws IOException {
         String shader = readAsset("assets/quasar_content/shaders/core/black_hole.fsh");
         assertTrue(shader.contains("texture(SceneSampler, sourceUv)"),

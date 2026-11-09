@@ -189,7 +189,10 @@ vec2 projectPoint(vec3 point) {
 struct SceneRay {
     vec3 origin;
     vec3 direction;
+    vec3 normal;
     float surfaceDistance;
+    float incidenceCosine;
+    bool totalInternalReflection;
 };
 
 /**
@@ -205,20 +208,42 @@ vec3 waterSurfaceNormal(vec3 holeRelative) {
     float slopeZ = cos(p.y * 0.58 - time * 1.5)
         + 0.6 * cos(p.y * 1.29 + p.x * 0.37 + time * 0.9)
         + 0.35 * cos(p.x * 1.90 - time * 2.1);
-    return normalize(vec3(slopeX * 0.06, 1.0, slopeZ * 0.06));
+    // Keep the synthetic ripples subtle: they cannot match the vanilla water
+    // animation, so a large tilt reads as a wobbling reflection.
+    return normalize(vec3(slopeX * 0.02, 1.0, slopeZ * 0.02));
+}
+
+/** Unpolarised Fresnel reflectance; approaches one at the critical angle. */
+float fresnelWater(float cosIncidence, float incidentIor, float transmittedIor) {
+    float cosI = clamp(abs(cosIncidence), 0.0, 1.0);
+    float sinT2 = (incidentIor * incidentIor) / (transmittedIor * transmittedIor)
+        * max(0.0, 1.0 - cosI * cosI);
+    if (sinT2 >= 1.0) {
+        return 1.0;
+    }
+    float cosT = sqrt(1.0 - sinT2);
+    float rs = (incidentIor * cosI - transmittedIor * cosT)
+        / max(incidentIor * cosI + transmittedIor * cosT, 0.0001);
+    float rp = (incidentIor * cosT - transmittedIor * cosI)
+        / max(incidentIor * cosT + transmittedIor * cosI, 0.0001);
+    return clamp(0.5 * (rs * rs + rp * rp), 0.0, 1.0);
 }
 
 /**
- * Bends the view ray at the active water plane. Only the submerged part of the
- * effect is traced along the refracted direction; the screen-space mask, vortex,
- * and lensed background keep the straight camera ray so they do not double-bend
- * the already refracted scene texture.
+ * Bends the view ray at the active water plane. {@code origin} is the camera
+ * relative to the black hole while {@code SurfaceY} is relative to the camera;
+ * the returned origin is relative to the hole so the geodesic integration stays
+ * in one frame. The screen-space lens and vortex are skipped across the surface,
+ * because the scene texture was rendered along straight camera rays.
  */
 SceneRay refractAtWater(vec3 origin, vec3 direction) {
     SceneRay ray;
     ray.origin = origin;
     ray.direction = direction;
+    ray.normal = vec3(0.0, 1.0, 0.0);
     ray.surfaceDistance = -1.0;
+    ray.incidenceCosine = 1.0;
+    ray.totalInternalReflection = false;
     if (SurfaceActive < 0.5 || abs(direction.y) < 0.001) {
         return ray;
     }
@@ -226,20 +251,24 @@ SceneRay refractAtWater(vec3 origin, vec3 direction) {
     if (surfaceDistance <= 0.0) {
         return ray;
     }
-    vec3 hit = direction * surfaceDistance;
-    vec3 normal = waterSurfaceNormal(hit + BlackHoleOffset);
+    vec3 hit = origin + direction * surfaceDistance;
+    vec3 normal = waterSurfaceNormal(hit);
     if (dot(normal, direction) > 0.0) {
         normal = -normal;
     }
+    ray.normal = normal;
+    ray.incidenceCosine = clamp(abs(dot(direction, normal)), 0.0, 1.0);
     float eta = CameraSubmerged > 0.5 ? 1.333 : 1.0 / 1.333;
     vec3 bent = refract(direction, normal, eta);
+    ray.surfaceDistance = surfaceDistance;
     if (dot(bent, bent) < 0.000001) {
-        // Total internal reflection from below the surface: keep the straight ray.
+        // Total internal reflection from below the surface: the above-water
+        // effect is not visible in this direction, so the caller hides it.
+        ray.totalInternalReflection = true;
         return ray;
     }
     ray.origin = hit;
     ray.direction = normalize(bent);
-    ray.surfaceDistance = surfaceDistance;
     return ray;
 }
 
@@ -410,6 +439,11 @@ vec4 renderBlackHole(vec2 uv) {
     vec3 direction = rayDirection(uv);
     vec3 cameraRelative = -BlackHoleOffset;
     SceneRay ray = refractAtWater(cameraRelative, direction);
+    if (ray.totalInternalReflection) {
+        // The water surface mirrors the underwater scene; an above-water hole
+        // cannot contribute here. This removes the floating reflection-like patch.
+        return EmissiveOnly > 0.5 ? vec4(0.0) : vec4(sceneColor.rgb, 0.0);
+    }
     vec3 traceOrigin = ray.origin;
     vec3 traceDirection = ray.direction;
     float holeDistance = length(BlackHoleOffset);
@@ -510,8 +544,11 @@ vec4 renderBlackHole(vec2 uv) {
         float outgoingSpeed = length(velocity);
         vec3 outDirection = outgoingSpeed > 0.000001 ? velocity / outgoingSpeed : direction;
         // The physical geodesic is the default; LensStrength only blends it toward the
-        // straight ray for an optional stylized look.
-        float lensBlend = clamp(LensStrength, 0.0, 1.0) * warpFalloff * skyWarp;
+        // straight ray for an optional stylized look. Across a water surface the scene
+        // texture was rendered along straight rays, so warping it would double-bend
+        // the image and read as a floating reflection.
+        float lensBlend = ray.surfaceDistance > 0.0
+            ? 0.0 : clamp(LensStrength, 0.0, 1.0) * warpFalloff * skyWarp;
         vec3 lensDirection = normalize(mix(direction, outDirection, lensBlend));
         // Lens from the accumulated composition, not the pristine frame: batches
         // are ordered farthest-first, so this bends the image of the black holes
@@ -520,7 +557,7 @@ vec4 renderBlackHole(vec2 uv) {
         vec2 lensUv;
         if (projectDirection(lensDirection, lensUv)) {
             vec2 sourceUv = clamp(lensUv, vec2(0.0), vec2(1.0));
-            if (abs(VortexStrength) > 0.001) {
+            if (ray.surfaceDistance <= 0.0 && abs(VortexStrength) > 0.001) {
                 vec2 holeUv = projectPoint(cameraRelative);
                 if (holeUv.x >= 0.0) {
                     float uvRadius = clamp(
@@ -643,8 +680,11 @@ void main() {
     }
 
     vec3 cameraRelative = -BlackHoleOffset;
+    vec3 direction = rayDirection(texCoord);
+    SceneRay ray = refractAtWater(cameraRelative, direction);
     vec2 sceneUv = texCoord;
-    if (abs(VortexStrength) > 0.001) {
+    if (!ray.totalInternalReflection && ray.surfaceDistance <= 0.0
+        && abs(VortexStrength) > 0.001) {
         vec2 holeUv = projectPoint(cameraRelative);
         if (holeUv.x >= 0.0) {
             float uvRadius = clamp(
@@ -664,9 +704,14 @@ void main() {
         }
     }
     vec4 sceneColor = texture(SceneSampler, sceneUv);
+    if (ray.totalInternalReflection) {
+        // Mirror region: the above-water effect is not visible. Keep the cinematic
+        // dim but skip the vortex, lens, and bloom.
+        vec3 hidden = sceneColor.rgb * (1.0 - clamp(Darkness, 0.0, 0.75));
+        fragColor = vec4(hidden, 1.0);
+        return;
+    }
     vec4 effectColor = texture(EffectSampler, texCoord);
-    vec3 direction = rayDirection(texCoord);
-    SceneRay ray = refractAtWater(cameraRelative, direction);
     vec3 traceOrigin = ray.origin;
     vec3 traceDirection = ray.direction;
     float lensRadius = max(LensRadius, BlackHoleRadius * 3.0);
@@ -691,6 +736,15 @@ void main() {
     bool visible = footprint && sceneDistance >= entryDistance - depthBias;
     float alpha = coverage * (visible ? 1.0 : 0.0);
 
+    // Physically motivated surface transmission instead of a fixed blue wash.
+    float surfaceTransmittance = 1.0;
+    if (ray.surfaceDistance > 0.0) {
+        float incidentIor = CameraSubmerged > 0.5 ? 1.333 : 1.0;
+        float transmittedIor = CameraSubmerged > 0.5 ? 1.0 : 1.333;
+        surfaceTransmittance = 1.0 - fresnelWater(
+            ray.incidenceCosine, incidentIor, transmittedIor);
+    }
+
     vec3 color = effectColor.rgb;
     float fogDistance = max(entryDistance, 0.0);
     if (ray.surfaceDistance > 0.0) {
@@ -700,15 +754,16 @@ void main() {
         fogDistance = CameraSubmerged > 0.5
             ? ray.surfaceDistance
             : max(effectEntry, 0.0);
-        float fresnel = pow(1.0 - min(abs(direction.y), 1.0), 3.0);
-        vec3 surfaceColor = mix(MediumFogColor, vec3(0.72, 0.88, 1.0), 0.35);
-        color = mix(color, surfaceColor, clamp(0.12 + 0.28 * fresnel, 0.0, 0.45));
     }
+    float mediumFog = 0.0;
     if (MediumFogActive > 0.5 && (CameraSubmerged > 0.5 || EffectSubmerged > 0.5)) {
-        float fog = clamp((fogDistance - MediumFogStart) / max(MediumFogEnd - MediumFogStart, 1.0), 0.0, 1.0);
-        fog = fog * fog * (3.0 - 2.0 * fog);
-        color = mix(color, MediumFogColor, fog);
+        mediumFog = clamp((fogDistance - MediumFogStart) / max(MediumFogEnd - MediumFogStart, 1.0), 0.0, 1.0);
+        mediumFog = mediumFog * mediumFog * (3.0 - 2.0 * mediumFog);
+        color = mix(color, MediumFogColor, mediumFog);
     }
+    // At grazing angles the surface reflects the scene already in sceneColor.
+    // Blend toward that reflection instead of painting a black disc.
+    color = mix(sceneColor.rgb, color, surfaceTransmittance);
 
     vec3 center = mix(sceneColor.rgb, color, alpha);
     center *= 1.0 - clamp(Darkness, 0.0, 0.75);
@@ -733,5 +788,8 @@ void main() {
         }
     }
     bloom /= 9.0;
-    fragColor = vec4(center + bloom * BloomStrength * alpha, 1.0);
+    // The glow is emissive too; it must fade with the water surface and the
+    // active medium fog or the disk punches through the water.
+    float bloomFade = surfaceTransmittance * (1.0 - mediumFog);
+    fragColor = vec4(center + bloom * BloomStrength * alpha * bloomFade, 1.0);
 }
