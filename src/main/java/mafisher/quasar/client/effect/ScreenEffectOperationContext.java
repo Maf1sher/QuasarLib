@@ -43,6 +43,8 @@ public final class ScreenEffectOperationContext {
     private final ScreenEffectFogState fogState;
     private final ScreenEffectMediumState mediumState;
     private final ScreenEffectMediumPath mediumPath;
+    private final RenderTarget opaqueColor;
+    private final RenderTarget foregroundDepth;
     private final RenderTarget sourceColor;
     private final RenderTarget rawSceneColor;
     private final RenderTarget destination;
@@ -52,7 +54,8 @@ public final class ScreenEffectOperationContext {
     ScreenEffectOperationContext(ScreenEffectSettings settings, EffectRenderContext effect,
         ScreenEffectMask mask, ScreenEffectCameraState camera, EffectQualityTier quality,
         RenderEnvironment environment, ScreenEffectFogState fogState, ScreenEffectMediumState mediumState,
-        ScreenEffectMediumPath mediumPath, RenderTarget sourceColor, RenderTarget rawSceneColor,
+        ScreenEffectMediumPath mediumPath, RenderTarget opaqueColor, RenderTarget foregroundDepth,
+        RenderTarget sourceColor, RenderTarget rawSceneColor,
         RenderTarget destination, RenderTarget maskTarget, ScreenEffectScratchTargetPool scratchTargets) {
         this.settings = Objects.requireNonNull(settings, "settings");
         this.effect = Objects.requireNonNull(effect, "effect");
@@ -63,6 +66,8 @@ public final class ScreenEffectOperationContext {
         this.fogState = Objects.requireNonNull(fogState, "fogState");
         this.mediumState = Objects.requireNonNull(mediumState, "mediumState");
         this.mediumPath = Objects.requireNonNull(mediumPath, "mediumPath");
+        this.opaqueColor = opaqueColor;
+        this.foregroundDepth = foregroundDepth;
         this.sourceColor = Objects.requireNonNull(sourceColor, "sourceColor");
         this.rawSceneColor = Objects.requireNonNull(rawSceneColor, "rawSceneColor");
         this.destination = Objects.requireNonNull(destination, "destination");
@@ -133,6 +138,26 @@ public final class ScreenEffectOperationContext {
         return this.mediumPath;
     }
 
+    /** Returns the pre-translucent scene color, or {@code null} when unavailable. */
+    public RenderTarget opaqueColor() {
+        return this.opaqueColor;
+    }
+
+    /** Returns the scene depth including translucent terrain, or {@code null} when unavailable. */
+    public RenderTarget foregroundDepth() {
+        return this.foregroundDepth;
+    }
+
+    /** Returns whether a pre-translucent color copy is available this frame. */
+    public boolean hasOpaqueColor() {
+        return this.opaqueColor != null && this.opaqueColor.getColorTextureId() > 0;
+    }
+
+    /** Returns whether a depth copy that includes translucent terrain is available this frame. */
+    public boolean hasForegroundDepth() {
+        return this.foregroundDepth != null && this.foregroundDepth.getDepthTextureId() > 0;
+    }
+
     /** Returns the color captured before this operation; later batches see earlier output. */
     public RenderTarget sourceColor() {
         return this.sourceColor;
@@ -199,6 +224,20 @@ public final class ScreenEffectOperationContext {
         this.setSampler(shader, "BlurSampler", scene.getColorTextureId());
         this.setUniform(shader, "MaskColor", this.mask.red(), this.mask.green(), this.mask.blue());
         this.setUniform(shader, "MaskStrength", this.mask.strength());
+    }
+
+    /**
+     * Binds the pre-translucent scene color and the depth copy that includes
+     * translucent terrain as {@code OpaqueColorSampler} and
+     * {@code ForegroundDepthSampler}. Falls back to the raw scene and the opaque
+     * mask depth so a shader never samples a released texture.
+     */
+    public void bindForegroundInputs(ShaderInstance shader) {
+        Objects.requireNonNull(shader, "shader");
+        this.setSampler(shader, "OpaqueColorSampler", this.hasOpaqueColor()
+            ? this.opaqueColor.getColorTextureId() : this.rawSceneColor.getColorTextureId());
+        this.setSampler(shader, "ForegroundDepthSampler", this.hasForegroundDepth()
+            ? this.foregroundDepth.getDepthTextureId() : this.maskTarget.getDepthTextureId());
     }
 
     /**

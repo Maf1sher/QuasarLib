@@ -1,6 +1,9 @@
 #version 150
 
 uniform sampler2D SceneSampler;
+uniform sampler2D RawSceneSampler;
+uniform sampler2D OpaqueColorSampler;
+uniform sampler2D ForegroundDepthSampler;
 uniform sampler2D MaskSampler;
 uniform sampler2D DepthSampler;
 uniform sampler2D EffectSampler;
@@ -54,6 +57,8 @@ uniform float MediumFogActive;
 uniform float CameraSubmerged;
 uniform float EffectSubmerged;
 uniform float MediumPathLength;
+uniform float ForegroundDepthValid;
+uniform float OpaqueColorValid;
 uniform float SurfaceY;
 uniform float SurfaceActive;
 uniform float SuppressAboveWater;
@@ -131,6 +136,23 @@ float viewDistance(float depth, vec2 uv) {
     }
     view.xyz /= view.w;
     return clamp(length(view.xyz), 0.01, 1000000.0);
+}
+
+/**
+ * Detects a translucent layer at a pixel. Post-translucent depth is preferred,
+ * but a color delta between the scene before and after translucency catches
+ * glass/water whose depth write was skipped by the pipeline or a shaderpack.
+ */
+bool foregroundLayer(vec2 uv, float entryDistance, float tolerance) {
+    if (ForegroundDepthValid > 0.5) {
+        float foreground = viewDistance(texture(ForegroundDepthSampler, uv).r, uv);
+        if (foreground < entryDistance - tolerance) {
+            return true;
+        }
+    }
+    vec3 opaque = texture(OpaqueColorSampler, uv).rgb;
+    vec3 seen = texture(RawSceneSampler, uv).rgb;
+    return distance(seen, opaque) > 0.02;
 }
 
 /** Upper bound for the per-pixel effect entry stored in the raymarch alpha channel. */
@@ -554,7 +576,13 @@ vec4 renderBlackHole(vec2 uv) {
         // straight ray for an optional stylized look. Across a water surface, or from
         // inside water, the scene texture was rendered along straight rays, so a
         // screen-space warp would read as a floating reflection.
-        float lensBlend = (ray.surfaceDistance > 0.0 || CameraSubmerged > 0.5)
+        float lensEntry = nearestEntry + max(ray.surfaceDistance, 0.0);
+        // Looking through a translucent layer must not replace that layer with a
+        // bent background. Check the current pixel and the source sample; the color
+        // delta catches glass/water even when the depth copy misses it.
+        bool currentForeground = foregroundLayer(uv, lensEntry, 0.5);
+        float lensBlend = (ray.surfaceDistance > 0.0 || CameraSubmerged > 0.5
+            || currentForeground || MediumPathLength > 0.0)
             ? 0.0 : clamp(LensStrength, 0.0, 1.0) * warpFalloff * skyWarp;
         vec3 lensDirection = normalize(mix(direction, outDirection, lensBlend));
         // Lens from the accumulated composition, not the pristine frame: batches
@@ -565,6 +593,7 @@ vec4 renderBlackHole(vec2 uv) {
         if (projectDirection(lensDirection, lensUv)) {
             vec2 sourceUv = clamp(lensUv, vec2(0.0), vec2(1.0));
             if (ray.surfaceDistance <= 0.0 && CameraSubmerged < 0.5
+                && !currentForeground && MediumPathLength <= 0.0
                 && abs(VortexStrength) > 0.001) {
                 vec2 holeUv = projectPoint(cameraRelative);
                 if (holeUv.x >= 0.0) {
@@ -586,10 +615,13 @@ vec4 renderBlackHole(vec2 uv) {
                 }
             }
             float sourceDistance = viewDistance(texture(DepthSampler, sourceUv).r, sourceUv);
+            bool sourceForeground = foregroundLayer(sourceUv, lensEntry, 0.5);
             // Only bend light that is actually behind the traced surface. The old
             // lens-shell entry accepted samples in front of the hole and dragged
             // foreground entities into the lens.
-            if (sourceDistance >= nearestEntry + max(ray.surfaceDistance, 0.0) - 0.5) {
+            if (sourceDistance >= lensEntry - 0.5
+                && !sourceForeground && !currentForeground
+                && MediumPathLength <= 0.0) {
                 float edgeFade = smoothstep(0.0, 0.03, lensUv.x)
                     * smoothstep(0.0, 0.03, 1.0 - lensUv.x)
                     * smoothstep(0.0, 0.03, lensUv.y)
@@ -694,16 +726,35 @@ void main() {
     }
 
     vec3 cameraRelative = -BlackHoleOffset;
+    float holeDistance = length(BlackHoleOffset);
     vec3 direction = rayDirection(texCoord);
     SceneRay ray = refractAtWater(cameraRelative, direction);
+    vec4 effectColor = texture(EffectSampler, texCoord);
+    float lensRadius = max(LensRadius, BlackHoleRadius * 3.0);
+    float depthScale = effectDepthScale(holeDistance, lensRadius);
+    float effectEntry = decodeEffectDepth(effectColor.a, depthScale);
+    float sceneDistance = viewDistance(texture(DepthSampler, texCoord).r, texCoord);
+    // One quantisation step keeps interpolated alpha from flickering at silhouettes.
+    float depthBias = max(0.05, sceneDistance * 0.001)
+        + (1.0 + effectEntry) * log(1.0 + depthScale) / 255.0;
+    // effectEntry is measured from the refracted origin, so add the surface leg
+    // before comparing it with the camera-space scene depth.
+    float entryDistance = effectEntry + max(ray.surfaceDistance, 0.0);
+    float foregroundDistance = viewDistance(
+        texture(ForegroundDepthSampler, texCoord).r, texCoord);
+    bool foregroundInFront = foregroundDistance < entryDistance - depthBias;
+    if (!foregroundInFront) {
+        foregroundInFront = foregroundLayer(texCoord, entryDistance, depthBias);
+    }
     vec2 sceneUv = texCoord;
     if (CameraSubmerged < 0.5 && !ray.totalInternalReflection
-        && ray.surfaceDistance <= 0.0 && abs(VortexStrength) > 0.001) {
+        && ray.surfaceDistance <= 0.0 && abs(VortexStrength) > 0.001
+        && MediumPathLength <= 0.0 && !foregroundInFront) {
         vec2 holeUv = projectPoint(cameraRelative);
         if (holeUv.x >= 0.0) {
             float uvRadius = clamp(
                 VortexRadius * abs(WorldProjMat[1][1])
-                    / max(2.0 * length(BlackHoleOffset), 0.001),
+                    / max(2.0 * holeDistance, 0.001),
                 0.05,
                 2.5
             );
@@ -712,9 +763,15 @@ void main() {
             float angle = VortexStrength * 2.4 * falloff;
             float cs = cos(angle);
             float sn = sin(angle);
-            sceneUv = holeUv + mat2(cs, -sn, sn, cs) * delta
+            vec2 swirled = holeUv + mat2(cs, -sn, sn, cs) * delta
                 * (1.0 - clamp(0.20 * VortexStrength * falloff, 0.0, 0.65));
-            sceneUv = clamp(sceneUv, vec2(0.0), vec2(1.0));
+            // Do not pull a foreground glass/water surface into the swirl.
+            vec2 candidate = clamp(swirled, vec2(0.0), vec2(1.0));
+            float swirlForeground = viewDistance(
+                texture(ForegroundDepthSampler, candidate).r, candidate);
+            if (swirlForeground >= entryDistance - depthBias) {
+                sceneUv = candidate;
+            }
         }
     }
     vec4 sceneColor = texture(SceneSampler, sceneUv);
@@ -725,10 +782,8 @@ void main() {
         fragColor = vec4(hidden, 1.0);
         return;
     }
-    vec4 effectColor = texture(EffectSampler, texCoord);
     vec3 traceOrigin = ray.origin;
     vec3 traceDirection = ray.direction;
-    float lensRadius = max(LensRadius, BlackHoleRadius * 3.0);
     float tEntry = raySphereEntry(traceOrigin, traceDirection, lensRadius);
     bool insideLens = length(traceOrigin) <= lensRadius
         || length(cameraRelative) <= lensRadius;
@@ -737,18 +792,28 @@ void main() {
     // in alpha instead, so recompute coverage here at full composite resolution.
     float coverage = clamp(texture(MaskSampler, texCoord).r * MaskStrength, 0.0, 1.0) * Fade;
     coverage *= 1.0 - smoothstep(lensRadius * 0.88, lensRadius * 1.04, impact);
-    float sceneDistance = viewDistance(texture(DepthSampler, texCoord).r, texCoord);
-    float depthScale = effectDepthScale(length(BlackHoleOffset), lensRadius);
-    float effectEntry = decodeEffectDepth(effectColor.a, depthScale);
-    // One quantisation step keeps interpolated alpha from flickering at silhouettes.
-    float depthBias = max(0.05, sceneDistance * 0.001)
-        + (1.0 + effectEntry) * log(1.0 + depthScale) / 255.0;
     bool footprint = insideLens || tEntry >= 0.0;
-    // effectEntry is measured from the refracted origin, so add the surface leg
-    // before comparing it with the camera-space scene depth.
-    float entryDistance = effectEntry + max(ray.surfaceDistance, 0.0);
     bool visible = footprint && sceneDistance >= entryDistance - depthBias;
     float alpha = coverage * (visible ? 1.0 : 0.0);
+    // Recover the transmittance of a translucent layer in front of the effect from
+    // the scene color before and after that layer. Opaque depth alone cannot see
+    // glass, so tint the effect instead of hard-occluding it.
+    vec3 foregroundTint = vec3(1.0);
+    if (foregroundInFront) {
+        vec3 opaque = texture(OpaqueColorSampler, texCoord).rgb;
+        vec3 seen = texture(RawSceneSampler, texCoord).rgb;
+        vec3 ratio = clamp(seen / max(opaque, vec3(0.02)), vec3(0.0), vec3(1.0));
+        if (OpaqueColorValid < 0.5) {
+            ratio = vec3(1.0);
+        }
+        // A detected translucent layer always attenuates a little; bright stained
+        // glass can return 1.0 per channel and would otherwise never darken.
+        foregroundTint = ratio * 0.80;
+    } else if (MediumPathLength > 0.0) {
+        // Water on the camera-to-effect line is already a foreground layer even if
+        // the depth/color copies missed it.
+        foregroundTint = vec3(0.85);
+    }
 
     // Physically motivated surface transmission instead of a fixed blue wash.
     float surfaceTransmittance = 1.0;
@@ -759,7 +824,7 @@ void main() {
             ray.incidenceCosine, incidentIor, transmittedIor);
     }
 
-    vec3 color = effectColor.rgb;
+    vec3 color = effectColor.rgb * foregroundTint;
     float fogDistance = max(entryDistance, 0.0);
     if (MediumPathLength > 0.0) {
         // The path covers every submerged span along the camera-to-effect line,
@@ -803,5 +868,5 @@ void main() {
     // The glow is emissive too; it must fade with the water surface and the
     // active medium fog or the disk punches through the water.
     float bloomFade = surfaceTransmittance * (1.0 - mediumFog);
-    fragColor = vec4(center + bloom * BloomStrength * alpha * bloomFade, 1.0);
+    fragColor = vec4(center + bloom * BloomStrength * alpha * bloomFade * foregroundTint, 1.0);
 }

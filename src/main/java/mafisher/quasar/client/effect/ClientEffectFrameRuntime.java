@@ -125,6 +125,11 @@ final class ClientEffectFrameRuntime {
             if (compositor != null) {
                 compositor.captureOpaqueDepth(event);
             }
+        } else if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) {
+            ClientScreenCompositor compositor = screenCompositor;
+            if (compositor != null) {
+                compositor.captureForegroundDepth(event);
+            }
         } else if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_PARTICLES) {
             long start = System.nanoTime();
             RenderEnvironment environment = currentEnvironment();

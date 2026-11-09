@@ -62,7 +62,8 @@ class ContentShadersTest {
     void blackHoleShaderDeclaresEveryOperationInput() throws IOException {
         String json = readAsset("assets/quasar_content/shaders/core/black_hole.json");
         for (String name : List.of(
-            "SceneSampler", "MaskSampler", "DepthSampler", "EffectSampler",
+            "SceneSampler", "RawSceneSampler", "OpaqueColorSampler", "ForegroundDepthSampler",
+            "MaskSampler", "DepthSampler", "EffectSampler",
             "BloomSampler",
             "ViewMat", "WorldProjMat", "InvProjMat", "InvViewMat",
             "ViewportWidth", "ViewportHeight", "MaskStrength",
@@ -74,7 +75,7 @@ class ContentShadersTest {
             "OutroJet", "VortexStrength", "VortexRadius", "Darkness",
             "RingStrength", "DiskBrightness", "Turbulence", "StepCount",
             "MediumFogStart", "MediumFogEnd", "MediumFogColor", "MediumFogActive", "CameraSubmerged", "EffectSubmerged",
-            "MediumPathLength", "SurfaceY", "SurfaceActive", "SuppressAboveWater",
+            "MediumPathLength", "ForegroundDepthValid", "OpaqueColorValid", "SurfaceY", "SurfaceActive", "SuppressAboveWater",
             "Pass", "EmissiveOnly", "BloomStrength", "BloomThreshold", "BloomRadiusPixels"
         )) {
             assertTrue(json.contains("\"" + name + "\""), name);
@@ -178,11 +179,36 @@ class ContentShadersTest {
     }
 
     @Test
+    void blackHoleGatesWarpAndTintsThroughForegroundTranslucency() throws IOException {
+        String shader = readAsset("assets/quasar_content/shaders/core/black_hole.fsh");
+
+        assertTrue(shader.contains("ForegroundDepthSampler"),
+            "the lens must see glass and water that the opaque depth copy misses");
+        assertTrue(shader.contains("sourceForeground") && shader.contains("swirlForeground"),
+            "both the lens source and the vortex source must be gated");
+        assertTrue(shader.contains("OpaqueColorSampler") && shader.contains("foregroundTint"),
+            "colored glass must tint the effect instead of hard-occluding it");
+        assertTrue(shader.contains("OpaqueColorValid") && shader.contains("ForegroundDepthValid"),
+            "the tint must fall back when the foreground copies are unavailable");
+        assertTrue(shader.contains("foregroundTint = ratio * 0.80"),
+            "a detected translucent layer must always attenuate bright glass");
+        assertTrue(shader.contains("foregroundTint = vec3(0.85)"),
+            "water on the camera-to-effect line must attenuate even without a foreground copy");
+        assertTrue(shader.contains("foregroundInFront"),
+            "the tint must only apply when the translucent layer is in front");
+        assertTrue(shader.contains("currentForeground") && shader.contains("foregroundLayer"),
+            "the destination pixel and the color delta must also reject lens warps");
+        assertTrue(shader.contains("MediumPathLength > 0.0")
+                && shader.contains("MediumPathLength <= 0.0"),
+            "water on the camera-to-effect line must disable the lens and vortex");
+    }
+
+    @Test
     void blackHoleLensSamplesTheAccumulatedComposition() throws IOException {
         String shader = readAsset("assets/quasar_content/shaders/core/black_hole.fsh");
         assertTrue(shader.contains("texture(SceneSampler, sourceUv)"),
             "the lens must bend the accumulated image so stacked effects stay visible");
-        assertTrue(!shader.contains("RawSceneSampler"),
+        assertTrue(!shader.contains("texture(RawSceneSampler, sourceUv)"),
             "sampling the pristine frame erases other screen effects inside the lens footprint");
     }
 

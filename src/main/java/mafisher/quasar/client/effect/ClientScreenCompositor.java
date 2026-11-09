@@ -47,8 +47,11 @@ final class ClientScreenCompositor {
     private TextureTarget compositionTarget;
     private TextureTarget screenMaskTarget;
     private TextureTarget opaqueDepthTarget;
+    private TextureTarget opaqueColorTarget;
+    private TextureTarget foregroundDepthTarget;
     private ScreenEffectFogState fogState = ScreenEffectFogState.NONE;
     private boolean opaqueDepthCaptured;
+    private boolean foregroundDepthCaptured;
     private boolean hadScreenEffects;
     private boolean failAfterCompositionOnce;
     private boolean warnedPresentationViewport;
@@ -214,6 +217,7 @@ final class ClientScreenCompositor {
         this.diagnosticsRequested = false;
         this.warnedDegenerateCamera = false;
         this.fogState = ScreenEffectFogState.NONE;
+        this.foregroundDepthCaptured = false;
         this.unavailableWidth = -1;
         this.unavailableHeight = -1;
         this.releaseTargets();
@@ -224,6 +228,7 @@ final class ClientScreenCompositor {
         this.diagnosticsRequested = false;
         this.warnedDegenerateCamera = false;
         this.fogState = ScreenEffectFogState.NONE;
+        this.foregroundDepthCaptured = false;
         this.unavailableWidth = -1;
         this.unavailableHeight = -1;
         this.releaseTargets();
@@ -261,6 +266,8 @@ final class ClientScreenCompositor {
                 fogState,
                 medium.state(),
                 medium.path(),
+                this.opaqueColorTarget,
+                this.foregroundDepthCaptured ? this.foregroundDepthTarget : null,
                 sourceColor,
                 this.rawSceneTarget,
                 destination,
@@ -423,7 +430,17 @@ final class ClientScreenCompositor {
         if (this.opaqueDepthTarget.getDepthTextureId() <= 0) {
             return;
         }
+        this.opaqueColorTarget = this.ensureTarget(this.opaqueColorTarget, width, height, false);
         RenderSystem.disableScissor();
+        if (this.opaqueColorTarget.getColorTextureId() > 0) {
+            GlStateManager._glBindFramebuffer(READ_FRAMEBUFFER, mainTarget.frameBufferId);
+            GlStateManager._glBindFramebuffer(DRAW_FRAMEBUFFER, this.opaqueColorTarget.frameBufferId);
+            GlStateManager._glBlitFrameBuffer(
+                0, 0, width, height,
+                0, 0, width, height,
+                COLOR_BUFFER_BIT, NEAREST_FILTER
+            );
+        }
         GlStateManager._glBindFramebuffer(READ_FRAMEBUFFER, mainTarget.frameBufferId);
         GlStateManager._glBindFramebuffer(DRAW_FRAMEBUFFER, this.opaqueDepthTarget.frameBufferId);
         GlStateManager._glBlitFrameBuffer(
@@ -433,6 +450,50 @@ final class ClientScreenCompositor {
         );
         mainTarget.bindWrite(false);
         this.opaqueDepthCaptured = true;
+    }
+
+    /**
+     * Copies the scene depth that includes translucent terrain, so effects can
+     * distinguish glass and water in front of them from opaque geometry. Glass must
+     * still not hard-occlude the effect; the copy is only used to gate lens warps
+     * and to tint the effect behind a translucent layer.
+     */
+    void captureForegroundDepth(RenderLevelStageEvent event) {
+        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) {
+            return;
+        }
+        this.foregroundDepthCaptured = false;
+        if (!this.hadScreenEffects) {
+            return;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        RenderTarget source = minecraft.getMainRenderTarget();
+        if (Minecraft.useShaderTransparency() && minecraft.levelRenderer != null) {
+            RenderTarget translucent = minecraft.levelRenderer.getTranslucentTarget();
+            if (translucent != null && translucent.getDepthTextureId() > 0) {
+                source = translucent;
+            }
+        }
+        int width = source.width;
+        int height = source.height;
+        if (width <= 0 || height <= 0 || source.getDepthTextureId() <= 0) {
+            return;
+        }
+        this.foregroundDepthTarget = this.ensureTarget(this.foregroundDepthTarget, width, height, true);
+        if (this.foregroundDepthTarget.getDepthTextureId() <= 0) {
+            return;
+        }
+        RenderSystem.disableScissor();
+        GlStateManager._glBindFramebuffer(READ_FRAMEBUFFER, source.frameBufferId);
+        GlStateManager._glBindFramebuffer(DRAW_FRAMEBUFFER, this.foregroundDepthTarget.frameBufferId);
+        GlStateManager._glBlitFrameBuffer(
+            0, 0, width, height,
+            0, 0, width, height,
+            DEPTH_BUFFER_BIT, NEAREST_FILTER
+        );
+        // The translucent layer pass continues on this target in Fabulous mode.
+        source.bindWrite(false);
+        this.foregroundDepthCaptured = true;
     }
 
     private void renderMask(RenderLevelStageEvent event, ClientVisualEffectManager manager, RenderTarget depthTarget,
@@ -598,12 +659,17 @@ final class ClientScreenCompositor {
         TextureTarget composition = this.compositionTarget;
         TextureTarget mask = this.screenMaskTarget;
         TextureTarget opaqueDepth = this.opaqueDepthTarget;
+        TextureTarget opaqueColor = this.opaqueColorTarget;
+        TextureTarget foregroundDepth = this.foregroundDepthTarget;
         this.rawSceneTarget = null;
         this.sceneColorTarget = null;
         this.compositionTarget = null;
         this.screenMaskTarget = null;
         this.opaqueDepthTarget = null;
+        this.opaqueColorTarget = null;
+        this.foregroundDepthTarget = null;
         this.opaqueDepthCaptured = false;
+        this.foregroundDepthCaptured = false;
         this.warnedPresentationViewport = false;
         this.scratchTargets.releaseAll();
         this.releaseTarget(rawScene);
@@ -611,6 +677,8 @@ final class ClientScreenCompositor {
         this.releaseTarget(composition);
         this.releaseTarget(mask);
         this.releaseTarget(opaqueDepth);
+        this.releaseTarget(opaqueColor);
+        this.releaseTarget(foregroundDepth);
     }
 
     private void releaseTarget(TextureTarget target) {

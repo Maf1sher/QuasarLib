@@ -3,6 +3,9 @@
   "fragment": "quasar_content:black_hole",
   "samplers": [
     { "name": "SceneSampler" },
+    { "name": "RawSceneSampler" },
+    { "name": "OpaqueColorSampler" },
+    { "name": "ForegroundDepthSampler" },
     { "name": "MaskSampler" },
     { "name": "DepthSampler" },
     { "name": "EffectSampler" },
@@ -56,6 +59,8 @@
     { "name": "CameraSubmerged", "type": "float", "count": 1, "values": [ 0.0 ] },
     { "name": "EffectSubmerged", "type": "float", "count": 1, "values": [ 0.0 ] },
     { "name": "MediumPathLength", "type": "float", "count": 1, "values": [ 0.0 ] },
+    { "name": "ForegroundDepthValid", "type": "float", "count": 1, "values": [ 0.0 ] },
+    { "name": "OpaqueColorValid", "type": "float", "count": 1, "values": [ 0.0 ] },
     { "name": "SurfaceY", "type": "float", "count": 1, "values": [ 0.0 ] },
     { "name": "SurfaceActive", "type": "float", "count": 1, "values": [ 0.0 ] },
     { "name": "SuppressAboveWater", "type": "float", "count": 1, "values": [ 0.0 ] },

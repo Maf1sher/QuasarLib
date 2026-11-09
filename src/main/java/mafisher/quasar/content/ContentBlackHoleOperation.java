@@ -84,12 +84,14 @@ final class ContentBlackHoleOperation implements ScreenEffectOperationRenderer {
         // The lens bends the accumulated composition, so later black holes see
         // the image of the ones behind them. The pristine scene is not sampled.
         context.setSampler(shader, "SceneSampler", context.sourceColor().getColorTextureId());
+        context.setSampler(shader, "RawSceneSampler", context.rawSceneColor().getColorTextureId());
         context.setSampler(shader, "MaskSampler", context.maskTarget().getColorTextureId());
         context.setSampler(shader, "DepthSampler", context.maskTarget().getDepthTextureId());
         // Pass 0 never samples the raymarch texture, but the shader still declares it.
         // Bind a live texture so ShaderInstance.apply() never touches a released scratch ID.
         context.setSampler(shader, "EffectSampler", context.sourceColor().getColorTextureId());
         context.setSampler(shader, "BloomSampler", context.sourceColor().getColorTextureId());
+        context.bindForegroundInputs(shader);
 
         context.setUniform(shader, "ViewMat", context.camera().modelViewMatrix());
         context.setUniform(shader, "WorldProjMat", context.camera().projectionMatrix());
@@ -185,6 +187,8 @@ final class ContentBlackHoleOperation implements ScreenEffectOperationRenderer {
         // still tints the effect. The shader falls back to the traced entry when the
         // path is empty and an endpoint is submerged (powder snow, missing level).
         context.setUniform(shader, "MediumPathLength", (float)path.submergedLength());
+        context.setUniform(shader, "ForegroundDepthValid", context.hasForegroundDepth() ? 1.0F : 0.0F);
+        context.setUniform(shader, "OpaqueColorValid", context.hasOpaqueColor() ? 1.0F : 0.0F);
         MediumSurface surface = mediumSurface(
             path, context.camera().position().y, suppressEffect);
         context.setUniform(shader, "SurfaceY", surface.surfaceY());
