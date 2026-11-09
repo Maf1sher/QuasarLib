@@ -1,0 +1,47 @@
+{
+  "black_hole_dread": {
+    "sounds": [
+      { "name": "quasar_content:black_hole/dread" }
+    ]
+  },
+  "black_hole_drone": {
+    "sounds": [
+      { "name": "quasar_content:black_hole/drone", "stream": true }
+    ]
+  },
+  "black_hole_ignition": {
+    "sounds": [
+      { "name": "quasar_content:black_hole/ignition" }
+    ]
+  },
+  "black_hole_shockwave": {
+    "sounds": [
+      { "name": "quasar_content:black_hole/shockwave" }
+    ]
+  },
+  "black_hole_accretion": {
+    "sounds": [
+      { "name": "quasar_content:black_hole/accretion", "stream": true }
+    ]
+  },
+  "black_hole_pulse": {
+    "sounds": [
+      { "name": "quasar_content:black_hole/pulse" }
+    ]
+  },
+  "black_hole_collapse": {
+    "sounds": [
+      { "name": "quasar_content:black_hole/collapse" }
+    ]
+  },
+  "black_hole_implosion": {
+    "sounds": [
+      { "name": "quasar_content:black_hole/implosion" }
+    ]
+  },
+  "black_hole_echo": {
+    "sounds": [
+      { "name": "quasar_content:black_hole/echo" }
+    ]
+  }
+}

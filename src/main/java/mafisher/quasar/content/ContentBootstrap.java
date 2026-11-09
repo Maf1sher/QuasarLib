@@ -19,6 +19,7 @@ public final class ContentBootstrap {
 
     public static void init(IEventBus modEventBus) {
         Objects.requireNonNull(modEventBus, "modEventBus");
+        ContentSounds.register(modEventBus);
         NeoForge.EVENT_BUS.addListener(ContentCommands::register);
         // Future content-owned DeferredRegister instances are registered on modEventBus here.
     }
