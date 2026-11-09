@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.mojang.blaze3d.vertex.PoseStack;
 import java.util.List;
 import java.util.UUID;
+import mafisher.quasar.effect.EffectQualityTier;
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
 import mafisher.quasar.effect.scale.SegmentGridLayout;
 import mafisher.quasar.effect.scale.SegmentLink;
@@ -106,6 +107,53 @@ class ScreenEffectBatchTest {
         assertTrue(ScreenEffectBatch.group(List.of()).isEmpty());
     }
 
+    @Test
+    void ordersBatchesFarthestFirst() {
+        ScreenEffectRenderer renderer = new StubRenderer();
+        UUID nearId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID farId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        List<ScreenEffectBatch> batches = ScreenEffectBatch.group(List.of(
+            standaloneFrameAt(renderer, nearId, 32.0),
+            standaloneFrameAt(renderer, farId, 128.0)));
+
+        List<ScreenEffectBatch> ordered = ScreenEffectBatch.depthOrdered(batches);
+
+        assertEquals(2, ordered.size());
+        assertEquals(farId, ordered.get(0).frames().getFirst().ownerId());
+        assertEquals(nearId, ordered.get(1).frames().getFirst().ownerId());
+    }
+
+    @Test
+    void keepsEqualDistancesDeterministicByOwner() {
+        ScreenEffectRenderer renderer = new StubRenderer();
+        UUID first = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID second = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        List<ScreenEffectBatch> batches = ScreenEffectBatch.group(List.of(
+            standaloneFrameAt(renderer, second, 64.0),
+            standaloneFrameAt(renderer, first, 64.0)));
+
+        List<ScreenEffectBatch> ordered = ScreenEffectBatch.depthOrdered(batches);
+
+        assertEquals(first, ordered.get(0).frames().getFirst().ownerId());
+        assertEquals(second, ordered.get(1).frames().getFirst().ownerId());
+    }
+
+    @Test
+    void segmentedBatchIsOrderedByItsNearestCell() {
+        ScreenEffectRenderer renderer = new StubRenderer();
+        UUID nearCoordinator = UUID.fromString("00000000-0000-0000-0000-000000000010");
+        UUID farCoordinator = UUID.fromString("00000000-0000-0000-0000-000000000011");
+        List<ScreenEffectBatch> batches = ScreenEffectBatch.group(List.of(
+            segmentedFrameAt(renderer, nearCoordinator, 0, 200.0),
+            segmentedFrameAt(renderer, nearCoordinator, 1, 20.0),
+            segmentedFrameAt(renderer, farCoordinator, 0, 100.0)));
+
+        List<ScreenEffectBatch> ordered = ScreenEffectBatch.depthOrdered(batches);
+
+        assertEquals(farCoordinator, ordered.get(0).frames().getFirst().ownerId());
+        assertEquals(nearCoordinator, ordered.get(1).frames().getFirst().ownerId());
+    }
+
     private static ScreenEffectFrame segmentedFrame(ScreenEffectRenderer renderer, UUID coordinatorId,
         int segmentIndex, ScreenEffectSettings settings, ScreenEffectMask mask, RenderType maskRenderType) {
         StartVisualEffectPayload payload = new StartVisualEffectPayload(
@@ -120,8 +168,32 @@ class ScreenEffectBatchTest {
         return new ScreenEffectFrame(instanceId, context(payload), renderer, SETTINGS, MASK, MASK_TYPE);
     }
 
+    private static ScreenEffectFrame standaloneFrameAt(ScreenEffectRenderer renderer, UUID instanceId,
+        double cameraDistance) {
+        StartVisualEffectPayload payload = new StartVisualEffectPayload(
+            EFFECT_ID, instanceId, DIMENSION, 0.0, 64.0, 0.0, 0.0F, 0.0F, 0.0F, 1.0F, 100, 0L, 1L);
+        return new ScreenEffectFrame(instanceId, context(payload, cameraDistance), renderer, SETTINGS, MASK,
+            MASK_TYPE);
+    }
+
+    private static ScreenEffectFrame segmentedFrameAt(ScreenEffectRenderer renderer, UUID coordinatorId,
+        int segmentIndex, double cameraDistance) {
+        StartVisualEffectPayload payload = new StartVisualEffectPayload(
+            EFFECT_ID, UUID.randomUUID(), DIMENSION, segmentIndex, 64.0, 0.0, 0.0F, 0.0F, 0.0F, 1.0F, 100, 0L, 1L,
+            new SegmentLink(coordinatorId, segmentIndex, LAYOUT));
+        return new ScreenEffectFrame(coordinatorId, context(payload, cameraDistance), renderer, SETTINGS, MASK,
+            MASK_TYPE);
+    }
+
     private static EffectRenderContext context(StartVisualEffectPayload payload) {
         return new EffectRenderContext(new VisualEffectInstance(payload), payload.transform(), 10.0F, 0.5F, 0.0F);
+    }
+
+    private static EffectRenderContext context(StartVisualEffectPayload payload, double cameraDistance) {
+        return new EffectRenderContext(
+            new VisualEffectInstance(payload), payload.transform(), 10.0F, 0.5F, 0.0F,
+            new EffectLod(0, cameraDistance, 0.0), EffectQualityTier.HIGH
+        );
     }
 
     private static final class StubRenderer implements ScreenEffectRenderer {

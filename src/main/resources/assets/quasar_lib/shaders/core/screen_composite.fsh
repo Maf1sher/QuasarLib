@@ -61,7 +61,9 @@ void main() {
             vec2(0.0), vec2(1.0));
         float displacedDepth = texture(DepthSampler, displacedUv).r;
         coverage *= step(LensDepth + 0.00025, displacedDepth);
-        vec4 lensedColor = texture(RawSceneSampler, displacedUv);
+        // Lens the accumulated composition so a nearer black hole bends the
+        // image of the effects behind it instead of wiping them out.
+        vec4 lensedColor = texture(SceneSampler, displacedUv);
         fragColor = vec4(mix(sceneColor.rgb, lensedColor.rgb, clamp(coverage, 0.0, 1.0)), sceneColor.a);
         return;
     }

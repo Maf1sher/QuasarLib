@@ -1,7 +1,6 @@
 #version 150
 
 uniform sampler2D SceneSampler;
-uniform sampler2D RawSceneSampler;
 uniform sampler2D MaskSampler;
 uniform sampler2D DepthSampler;
 uniform sampler2D EffectSampler;
@@ -318,7 +317,6 @@ void accumulateDisk(vec3 before, vec3 after, vec3 cameraRelative, vec3 rayVeloci
 
 vec4 renderBlackHole(vec2 uv) {
     vec4 sceneColor = texture(SceneSampler, uv);
-    vec4 rawSceneColor = texture(RawSceneSampler, uv);
     float coverage = clamp(texture(MaskSampler, uv).r * MaskStrength, 0.0, 1.0) * Fade;
     if (coverage < 0.002) {
         return EmissiveOnly > 0.5 ? vec4(0.0) : vec4(sceneColor.rgb, 0.0);
@@ -408,7 +406,10 @@ vec4 renderBlackHole(vec2 uv) {
         // straight ray for an optional stylized look.
         float lensBlend = clamp(LensStrength, 0.0, 1.0) * warpFalloff * skyWarp;
         vec3 lensDirection = normalize(mix(direction, outDirection, lensBlend));
-        vec3 background = rawSceneColor.rgb;
+        // Lens from the accumulated composition, not the pristine frame: batches
+        // are ordered farthest-first, so this bends the image of the black holes
+        // behind this one instead of replacing them with the raw scene.
+        vec3 background = sceneColor.rgb;
         vec2 lensUv;
         if (projectDirection(lensDirection, lensUv)) {
             vec2 sourceUv = clamp(lensUv, vec2(0.0), vec2(1.0));
@@ -438,8 +439,8 @@ vec4 renderBlackHole(vec2 uv) {
                     * smoothstep(0.0, 0.03, 1.0 - lensUv.x)
                     * smoothstep(0.0, 0.03, lensUv.y)
                     * smoothstep(0.0, 0.03, 1.0 - lensUv.y);
-                background = mix(rawSceneColor.rgb,
-                    texture(RawSceneSampler, sourceUv).rgb,
+                background = mix(sceneColor.rgb,
+                    texture(SceneSampler, sourceUv).rgb,
                     edgeFade);
             }
         }

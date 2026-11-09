@@ -23,8 +23,10 @@ import org.joml.Matrix4f;
  * <p>The operation reads the current composition from {@link #sourceColor()},
  * the untouched captured scene from {@link #rawSceneColor()}, mask coverage and
  * scene depth from {@link #maskTarget()}, and writes its final result to
- * {@link #destination()}. The compositor swaps source and destination after
- * every operation. Contexts are valid only for the current callback.</p>
+ * {@link #destination()}. Batches run farthest-first, so the source already
+ * contains every effect behind this one. The compositor swaps source and
+ * destination after every operation. Contexts are valid only for the current
+ * callback.</p>
  */
 public final class ScreenEffectOperationContext {
     private static final int READ_FRAMEBUFFER = 0x8CA8;
@@ -126,8 +128,11 @@ public final class ScreenEffectOperationContext {
 
     /**
      * Returns the untouched scene captured before any operation in this frame.
-     * Lens, refraction, and background-warp passes should sample this target so
-     * stacked effects do not recursively sample each other.
+     * Use it only when an effect must deliberately ignore earlier screen effects.
+     * Lens, refraction, and background-warp passes should sample
+     * {@link #sourceColor()} instead: batches compose farthest-first, so the
+     * accumulated source contains the effects behind this one and cannot feed
+     * back into itself because source and destination are distinct targets.
      */
     public RenderTarget rawSceneColor() {
         return this.rawSceneColor;

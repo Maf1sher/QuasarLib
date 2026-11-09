@@ -78,8 +78,9 @@ final class ContentBlackHoleOperation implements ScreenEffectOperationRenderer {
 
     private static void bindCommonInputs(ScreenEffectOperationContext context, ShaderInstance shader,
         ContentBlackHoleSettings settings) {
+        // The lens bends the accumulated composition, so later black holes see
+        // the image of the ones behind them. The pristine scene is not sampled.
         context.setSampler(shader, "SceneSampler", context.sourceColor().getColorTextureId());
-        context.setSampler(shader, "RawSceneSampler", context.rawSceneColor().getColorTextureId());
         context.setSampler(shader, "MaskSampler", context.maskTarget().getColorTextureId());
         context.setSampler(shader, "DepthSampler", context.maskTarget().getDepthTextureId());
         // Pass 0 never samples the raymarch texture, but the shader still declares it.

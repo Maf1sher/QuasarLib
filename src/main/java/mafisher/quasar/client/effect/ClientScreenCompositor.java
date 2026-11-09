@@ -155,10 +155,11 @@ final class ClientScreenCompositor {
                 this.captureSceneColor(mainTarget, this.rawSceneTarget);
                 ScreenEffectFogState fogState = captureFogState();
 
+                List<ScreenEffectBatch> orderedBatches = ScreenEffectBatch.depthOrdered(batches);
                 RenderTarget currentColor = this.rawSceneTarget;
                 RenderTarget alternateColor = this.sceneColorTarget;
                 boolean firstBatch = true;
-                for (ScreenEffectBatch batch : batches) {
+                for (ScreenEffectBatch batch : orderedBatches) {
                     this.renderMask(event, manager, maskDepthTarget, batch);
                     this.renderOperation(currentColor, alternateColor, batch, camera, quality, environment,
                         fogState);

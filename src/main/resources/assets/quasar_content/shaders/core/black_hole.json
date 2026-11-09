@@ -3,7 +3,6 @@
   "fragment": "quasar_content:black_hole",
   "samplers": [
     { "name": "SceneSampler" },
-    { "name": "RawSceneSampler" },
     { "name": "MaskSampler" },
     { "name": "DepthSampler" },
     { "name": "EffectSampler" },

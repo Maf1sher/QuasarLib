@@ -62,7 +62,7 @@ class ContentShadersTest {
     void blackHoleShaderDeclaresEveryOperationInput() throws IOException {
         String json = readAsset("assets/quasar_content/shaders/core/black_hole.json");
         for (String name : List.of(
-            "SceneSampler", "RawSceneSampler", "MaskSampler", "DepthSampler", "EffectSampler",
+            "SceneSampler", "MaskSampler", "DepthSampler", "EffectSampler",
             "BloomSampler",
             "ViewMat", "WorldProjMat", "InvProjMat", "InvViewMat",
             "ViewportWidth", "ViewportHeight", "MaskStrength",
@@ -142,6 +142,15 @@ class ContentShadersTest {
             "per-sample unlensed depth clips the bent light path at the horizon");
         assertTrue(!shader.contains("maxLensDelta"),
             "the lens warp must not be clamped to a tiny screen-space delta");
+    }
+
+    @Test
+    void blackHoleLensSamplesTheAccumulatedComposition() throws IOException {
+        String shader = readAsset("assets/quasar_content/shaders/core/black_hole.fsh");
+        assertTrue(shader.contains("texture(SceneSampler, sourceUv)"),
+            "the lens must bend the accumulated image so stacked effects stay visible");
+        assertTrue(!shader.contains("RawSceneSampler"),
+            "sampling the pristine frame erases other screen effects inside the lens footprint");
     }
 
     @Test
