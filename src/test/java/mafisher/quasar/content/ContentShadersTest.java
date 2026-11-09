@@ -102,15 +102,18 @@ class ContentShadersTest {
         assertTrue(shader.contains("ShockAbsorb"),
             "the shockwave must be able to absorb light instead of only adding it");
         assertTrue(shader.contains("VortexStrength") && shader.contains("VortexRadius")
-            && shader.contains("projectPoint"),
-            "the pre-ignition space vortex must warp the lensed background");
+            && shader.contains("projectPoint(BlackHoleOffset)"),
+            "the space drill must project the camera-to-effect vector, not its inverse");
+        assertTrue(!shader.contains("projectPoint(cameraRelative)"),
+            "projecting the effect-relative camera origin mirrors the drill behind the player");
+        assertTrue(shader.contains("frontFacing"),
+            "the shadow, lens, and drill must be hidden for rays pointing away from the hole");
         assertTrue(shader.contains("Darkness"),
             "the ignition and implosion must be able to dim the screen");
         assertTrue(shader.contains("RingFormation") && shader.contains("density *= wrap"),
             "the accretion ring must form after the horizon instead of appearing with it");
-        assertTrue(shader.contains("vec2 sceneUv")
-            && shader.contains("texture(SceneSampler, sceneUv)"),
-            "the screen-wide vortex must warp the scene outside the lens footprint");
+        assertTrue(shader.contains("drillFalloff") && shader.contains("drillUv"),
+            "the drill must stay core-sized and return the input UV outside its radius");
         assertTrue(shader.contains("OutroJet"),
             "the collapse needs polar jets");
     }

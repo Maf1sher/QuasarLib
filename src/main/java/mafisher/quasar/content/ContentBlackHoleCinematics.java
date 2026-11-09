@@ -3,9 +3,9 @@ package mafisher.quasar.content;
 /**
  * Pure cinematic timeline for the content black hole.
  *
- * <p>The show has three acts: a large space vortex that snaps into a dark
+ * <p>The show has three acts: a core-sized space drill that snaps into a dark
  * horizon, an accretion ring that only forms after the horizon exists, and a
- * reverse vortex that drains the ring before the horizon collapses. Every value
+ * reverse drill that drains the ring before the horizon collapses. Every value
  * is a multiplier or an absolute factor derived only from the effect progress,
  * so the timeline is deterministic, duration independent, and headless-testable.</p>
  */
@@ -35,8 +35,12 @@ final class ContentBlackHoleCinematics {
     /** Progress at which the echo wave starts. */
     static final float ECHO = 0.968F;
 
-    /** The vortex is intentionally much wider than the horizon, disk, and lens. */
-    private static final float DEFAULT_VORTEX_RADIUS = 32.0F;
+    /**
+     * Drill radius as a multiple of the effect scale. The visible shadow is
+     * {@code B_CRITICAL} (~2.6x) the horizon, so 4.0 keeps the drill about 1.5x
+     * the black core instead of hiding it inside the shadow.
+     */
+    private static final float DEFAULT_VORTEX_RADIUS = 4.0F;
 
     private ContentBlackHoleCinematics() {
     }

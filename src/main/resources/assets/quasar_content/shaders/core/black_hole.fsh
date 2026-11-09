@@ -221,13 +221,56 @@ bool projectDirection(vec3 direction, out vec2 uv) {
     return all(greaterThanEqual(uv, vec2(-0.25))) && all(lessThanEqual(uv, vec2(1.25)));
 }
 
-/** Projects a camera-relative point; returns a negative UV when it is behind the camera. */
+/**
+ * Projects a point given as a camera-relative offset (camera to point); returns a
+ * negative UV when it is behind the camera. Pass the camera-to-effect vector
+ * (BlackHoleOffset), never the effect-relative camera origin used for tracing.
+ */
 vec2 projectPoint(vec3 point) {
     vec4 clip = WorldProjMat * vec4(mat3(ViewMat) * point, 1.0);
     if (clip.w <= 0.0001) {
         return vec2(-1.0);
     }
     return clip.xy / clip.w * 0.5 + 0.5;
+}
+
+/** Screen-space falloff of the drill around the effect centre; 1 at the core. */
+float drillFalloff(vec2 uv, float radius, float holeDistance) {
+    vec2 holeUv = projectPoint(BlackHoleOffset);
+    if (holeUv.x < 0.0) {
+        return 0.0;
+    }
+    float uvRadius = clamp(
+        radius * abs(WorldProjMat[1][1]) / max(2.0 * holeDistance, 0.001),
+        0.03,
+        1.0
+    );
+    return clamp(1.0 - length(uv - holeUv) / uvRadius, 0.0, 1.0);
+}
+
+/**
+ * Compact space drill: an inward spiral centred on the effect. Outside the
+ * drill radius the input UV is returned unchanged, so the warp stays core-sized.
+ */
+vec2 drillUv(vec2 uv, float strength, float radius, float holeDistance) {
+    float falloff = drillFalloff(uv, radius, holeDistance);
+    if (falloff <= 0.0) {
+        return uv;
+    }
+    vec2 holeUv = projectPoint(BlackHoleOffset);
+    vec2 delta = uv - holeUv;
+    float spiral = falloff * falloff * (3.0 - 2.0 * falloff);
+    float angle = strength * 3.0 * spiral;
+    float pull = clamp(0.5 * abs(strength) * spiral, 0.0, 0.75);
+    float cs = cos(angle);
+    float sn = sin(angle);
+    return holeUv + mat2(cs, -sn, sn, cs) * delta * (1.0 - pull);
+}
+
+/** Fades the effect out for rays pointing away from the hole. */
+float frontFacing(vec3 direction) {
+    vec3 toHole = BlackHoleOffset / max(length(BlackHoleOffset), 0.001);
+    return smoothstep(-0.02, 0.05, dot(toHole, direction));
 }
 
 struct SceneRay {
@@ -486,6 +529,7 @@ vec4 renderBlackHole(vec2 uv) {
     }
 
     vec3 direction = rayDirection(uv);
+    float facing = frontFacing(direction);
     vec3 cameraRelative = -BlackHoleOffset;
     SceneRay ray = refractAtWater(cameraRelative, direction);
     if (ray.totalInternalReflection) {
@@ -518,7 +562,7 @@ vec4 renderBlackHole(vec2 uv) {
     float skyFactor = smoothstep(0.9995, 1.0, straightDepth);
     float skyWarp = mix(1.0, 0.35, skyFactor);
     float edge = 1.0 - smoothstep(lensRadius * 0.88, lensRadius * 1.04, impact);
-    coverage *= edge;
+    coverage *= edge * facing;
     if (coverage < 0.002) {
         return EmissiveOnly > 0.5 ? vec4(0.0) : vec4(sceneColor.rgb, 0.0);
     }
@@ -620,24 +664,9 @@ vec4 renderBlackHole(vec2 uv) {
             if (ray.surfaceDistance <= 0.0 && CameraSubmerged < 0.5
                 && !currentForeground && MediumPathLength <= 0.0
                 && abs(VortexStrength) > 0.001) {
-                vec2 holeUv = projectPoint(cameraRelative);
-                if (holeUv.x >= 0.0) {
-                    float uvRadius = clamp(
-                        VortexRadius * abs(WorldProjMat[1][1])
-                            / max(2.0 * holeDistance, 0.001),
-                        0.03,
-                        2.0
-                    );
-                    vec2 delta = sourceUv - holeUv;
-                    float distanceToHole = length(delta);
-                    float falloff = 1.0 - smoothstep(0.0, uvRadius, distanceToHole);
-                    float angle = VortexStrength * 2.4 * falloff;
-                    float cs = cos(angle);
-                    float sn = sin(angle);
-                    vec2 swirled = holeUv + mat2(cs, -sn, sn, cs) * delta
-                        * (1.0 - 0.35 * VortexStrength * falloff);
-                    sourceUv = clamp(swirled, vec2(0.0), vec2(1.0));
-                }
+                sourceUv = clamp(
+                    drillUv(sourceUv, VortexStrength, VortexRadius, holeDistance),
+                    vec2(0.0), vec2(1.0));
             }
             float sourceDistance = viewDistance(texture(DepthSampler, sourceUv).r, sourceUv);
             bool sourceForeground = foregroundLayer(sourceUv, lensEntry, 0.5);
@@ -771,6 +800,7 @@ void main() {
     vec3 cameraRelative = -BlackHoleOffset;
     float holeDistance = length(BlackHoleOffset);
     vec3 direction = rayDirection(texCoord);
+    float facing = frontFacing(direction);
     SceneRay ray = refractAtWater(cameraRelative, direction);
     vec4 effectColor = texture(EffectSampler, texCoord);
     float lensRadius = max(LensRadius, BlackHoleRadius * 3.0);
@@ -790,31 +820,18 @@ void main() {
         foregroundInFront = foregroundLayer(texCoord, entryDistance, depthBias);
     }
     vec2 sceneUv = texCoord;
-    if (CameraSubmerged < 0.5 && !ray.totalInternalReflection
+    bool drillActive = CameraSubmerged < 0.5 && !ray.totalInternalReflection
         && ray.surfaceDistance <= 0.0 && abs(VortexStrength) > 0.001
-        && MediumPathLength <= 0.0 && !foregroundInFront) {
-        vec2 holeUv = projectPoint(cameraRelative);
-        if (holeUv.x >= 0.0) {
-            float uvRadius = clamp(
-                VortexRadius * abs(WorldProjMat[1][1])
-                    / max(2.0 * holeDistance, 0.001),
-                0.05,
-                2.5
-            );
-            vec2 delta = sceneUv - holeUv;
-            float falloff = 1.0 - smoothstep(0.0, uvRadius, length(delta));
-            float angle = VortexStrength * 2.4 * falloff;
-            float cs = cos(angle);
-            float sn = sin(angle);
-            vec2 swirled = holeUv + mat2(cs, -sn, sn, cs) * delta
-                * (1.0 - clamp(0.20 * VortexStrength * falloff, 0.0, 0.65));
-            // Do not pull a foreground glass/water surface into the swirl.
-            vec2 candidate = clamp(swirled, vec2(0.0), vec2(1.0));
-            float swirlForeground = viewDistance(
-                texture(ForegroundDepthSampler, candidate).r, candidate);
-            if (swirlForeground >= entryDistance - depthBias) {
-                sceneUv = candidate;
-            }
+        && MediumPathLength <= 0.0 && !foregroundInFront;
+    if (drillActive) {
+        // Do not pull a foreground glass/water surface into the swirl.
+        vec2 candidate = clamp(
+            drillUv(sceneUv, VortexStrength, VortexRadius, holeDistance),
+            vec2(0.0), vec2(1.0));
+        float swirlForeground = viewDistance(
+            texture(ForegroundDepthSampler, candidate).r, candidate);
+        if (swirlForeground >= entryDistance - depthBias) {
+            sceneUv = candidate;
         }
     }
     vec4 sceneColor = texture(SceneSampler, sceneUv);
@@ -835,6 +852,7 @@ void main() {
     // in alpha instead, so recompute coverage here at full composite resolution.
     float coverage = clamp(texture(MaskSampler, texCoord).r * MaskStrength, 0.0, 1.0) * Fade;
     coverage *= 1.0 - smoothstep(lensRadius * 0.88, lensRadius * 1.04, impact);
+    coverage *= facing;
     bool footprint = insideLens || tEntry >= 0.0;
     bool visible = footprint && sceneDistance >= entryDistance - depthBias;
     float alpha = coverage * (visible ? 1.0 : 0.0);
@@ -855,6 +873,12 @@ void main() {
 
     vec3 center = mix(sceneColor.rgb, color, alpha);
     center *= 1.0 - clamp(Darkness, 0.0, 0.75);
+    // A subtle funnel shade keeps the drill readable against a uniform sky.
+    if (drillActive) {
+        float drill = drillFalloff(texCoord, VortexRadius, holeDistance);
+        float funnel = drill * drill * (3.0 - 2.0 * drill);
+        center *= 1.0 - 0.15 * clamp(abs(VortexStrength), 0.0, 1.5) * funnel;
+    }
     if (BloomStrength <= 0.0) {
         fragColor = vec4(center, 1.0);
         return;

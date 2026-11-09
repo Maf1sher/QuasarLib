@@ -45,7 +45,7 @@
     { "name": "FlashRadius", "type": "float", "count": 1, "values": [ 12.0 ] },
     { "name": "OutroJet", "type": "float", "count": 1, "values": [ 0.0 ] },
     { "name": "VortexStrength", "type": "float", "count": 1, "values": [ 0.0 ] },
-    { "name": "VortexRadius", "type": "float", "count": 1, "values": [ 42.0 ] },
+    { "name": "VortexRadius", "type": "float", "count": 1, "values": [ 24.0 ] },
     { "name": "Darkness", "type": "float", "count": 1, "values": [ 0.0 ] },
     { "name": "LensStrength", "type": "float", "count": 1, "values": [ 1.0 ] },
     { "name": "RingStrength", "type": "float", "count": 1, "values": [ 4.0 ] },

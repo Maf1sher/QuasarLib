@@ -30,6 +30,13 @@ class ContentBlackHoleCinematicsTest {
     }
 
     @Test
+    void drillStaysCoreSized() {
+        assertEquals(4.0F, ContentBlackHoleCinematics.frame(0.045F).vortexRadiusScale(), EPSILON);
+        assertEquals(4.0F, ContentBlackHoleCinematics.frame(0.5F).vortexRadiusScale(), EPSILON);
+        assertEquals(4.0F, ContentBlackHoleCinematics.frame(0.950F).vortexRadiusScale(), EPSILON);
+    }
+
+    @Test
     void vortexSnapsBackAsTheDarkHorizonAppears() {
         ContentBlackHoleCinematics.Frame rebound =
             ContentBlackHoleCinematics.frame(ContentBlackHoleCinematics.IGNITION);
