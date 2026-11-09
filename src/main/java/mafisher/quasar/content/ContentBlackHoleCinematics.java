@@ -26,10 +26,8 @@ final class ContentBlackHoleCinematics {
     static final float RING_START = 0.090F;
     /** Progress at which the accretion ring is complete. */
     static final float RING_END = 0.160F;
-    /** Progress at which the destabilisation and ring drain start. */
+    /** Progress at which the destabilisation starts. */
     static final float DESTABILISE = 0.860F;
-    /** Progress at which the ring is gone and the final collapse starts. */
-    static final float RING_DRAIN_END = 0.905F;
     /** Progress at which the final collapse starts. */
     static final float COLLAPSE = 0.905F;
     /** Progress at which the implosion starts. */
@@ -106,12 +104,11 @@ final class ContentBlackHoleCinematics {
     }
 
     private static Frame outro(float p) {
-        float destabilise = smooth(DESTABILISE, RING_DRAIN_END, p);
+        float destabilise = smooth(DESTABILISE, COLLAPSE, p);
         float collapse = easeInCubic(smooth(COLLAPSE, IMPLOSION, p));
         float implosion = smooth(IMPLOSION, 0.965F, p);
         float wave = smooth(IMPLOSION, 1.0F, p);
         float fade = 1.0F - smooth(0.990F, 1.0F, p);
-        float ringFormation = 1.0F - smooth(DESTABILISE, RING_DRAIN_END, p);
 
         float vortex;
         if (p < IMPLOSION) {
@@ -124,6 +121,7 @@ final class ContentBlackHoleCinematics {
 
         float horizon = lerp(1.0F, 0.20F, collapse) * (1.0F - easeInCubic(implosion));
         float disk = lerp(1.0F, 0.22F, collapse) * (1.0F - easeInCubic(implosion));
+        float ringFormation = horizon;
         float warp = 1.0F - smooth(0.945F, 0.995F, p);
         float turbulence = 1.0F + 1.0F * destabilise + 1.0F * collapse;
         float age = 1.0F + 1.4F * destabilise + 1.2F * collapse + 2.0F * implosion;

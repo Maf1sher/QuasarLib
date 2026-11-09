@@ -63,12 +63,10 @@ class ContentBlackHoleCinematicsTest {
     }
 
     @Test
-    void ringsFormAfterTheHorizonAndDrainBeforeItCollapses() {
+    void ringsFormAfterTheHorizon() {
         ContentBlackHoleCinematics.Frame beforeRing = ContentBlackHoleCinematics.frame(0.080F);
         ContentBlackHoleCinematics.Frame forming = ContentBlackHoleCinematics.frame(0.125F);
         ContentBlackHoleCinematics.Frame steady = ContentBlackHoleCinematics.frame(0.175F);
-        ContentBlackHoleCinematics.Frame draining = ContentBlackHoleCinematics.frame(0.880F);
-        ContentBlackHoleCinematics.Frame drained = ContentBlackHoleCinematics.frame(0.905F);
 
         assertEquals(0.0F, beforeRing.ringFormation(), 1.0E-6F);
         assertEquals(0.0F, beforeRing.diskBrightnessScale(), 1.0E-6F);
@@ -76,11 +74,23 @@ class ContentBlackHoleCinematicsTest {
         assertTrue(forming.ringFormation() > 0.0F);
         assertTrue(forming.ringFormation() < 1.0F);
         assertEquals(1.0F, steady.ringFormation(), 1.0E-4F);
-        assertTrue(draining.ringFormation() > 0.0F);
-        assertTrue(draining.ringFormation() < 1.0F);
-        assertEquals(1.0F, draining.horizonScale(), 1.0E-4F);
-        assertEquals(0.0F, drained.ringFormation(), 1.0E-6F);
-        assertEquals(1.0F, drained.horizonScale(), 1.0E-4F);
+    }
+
+    @Test
+    void ringsDisappearWithTheHorizon() {
+        ContentBlackHoleCinematics.Frame start = ContentBlackHoleCinematics.frame(0.905F);
+        ContentBlackHoleCinematics.Frame middle = ContentBlackHoleCinematics.frame(0.935F);
+        ContentBlackHoleCinematics.Frame late = ContentBlackHoleCinematics.frame(0.955F);
+        ContentBlackHoleCinematics.Frame gone = ContentBlackHoleCinematics.frame(0.965F);
+
+        assertEquals(1.0F, start.horizonScale(), 1.0E-4F);
+        assertEquals(start.horizonScale(), start.ringFormation(), 1.0E-4F);
+        assertTrue(middle.horizonScale() > 0.0F);
+        assertTrue(middle.horizonScale() < 1.0F);
+        assertEquals(middle.horizonScale(), middle.ringFormation(), 1.0E-4F);
+        assertEquals(late.horizonScale(), late.ringFormation(), 1.0E-4F);
+        assertEquals(0.0F, gone.horizonScale(), 1.0E-4F);
+        assertEquals(0.0F, gone.ringFormation(), 1.0E-4F);
     }
 
     @Test
@@ -94,7 +104,7 @@ class ContentBlackHoleCinematicsTest {
         assertTrue(collapse.shockAbsorb() > 0.0F);
         assertTrue(flash.coreFlash() > 0.1F);
         assertTrue(flash.coreFlash() < 0.3F);
-        assertEquals(0.0F, flash.ringFormation(), 1.0E-6F);
+        assertEquals(flash.horizonScale(), flash.ringFormation(), 1.0E-4F);
         assertTrue(flash.darkness() > 0.4F);
         assertTrue(flash.horizonScale() < 0.2F);
         assertEquals(0.0F, gone.horizonScale(), 1.0E-4F);
