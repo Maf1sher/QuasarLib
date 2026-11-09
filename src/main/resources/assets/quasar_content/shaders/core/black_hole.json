@@ -35,6 +35,7 @@
     { "name": "Seed", "type": "float", "count": 1, "values": [ 0.0 ] },
     { "name": "Charge", "type": "float", "count": 1, "values": [ 0.55 ] },
     { "name": "Fade", "type": "float", "count": 1, "values": [ 1.0 ] },
+    { "name": "RingFormation", "type": "float", "count": 1, "values": [ 1.0 ] },
     { "name": "ShockRadius", "type": "float", "count": 1, "values": [ 0.0 ] },
     { "name": "ShockStrength", "type": "float", "count": 1, "values": [ 0.0 ] },
     { "name": "ShockAbsorb", "type": "float", "count": 1, "values": [ 0.0 ] },

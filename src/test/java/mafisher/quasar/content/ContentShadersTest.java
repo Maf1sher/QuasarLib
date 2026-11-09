@@ -69,7 +69,7 @@ class ContentShadersTest {
             "BlackHoleOffset", "BlackHoleRadius", "LensRadius", "LensWarpRadius",
             "DiskInnerRadius", "DiskOuterRadius",
             "DiskThickness", "DiskRight", "DiskForward", "DiskNormal",
-            "AgeTicks", "Progress", "Seed", "Charge", "Fade", "LensStrength",
+            "AgeTicks", "Progress", "Seed", "Charge", "Fade", "RingFormation", "LensStrength",
             "ShockRadius", "ShockStrength", "ShockAbsorb", "CoreFlash", "FlashRadius",
             "OutroJet", "VortexStrength", "VortexRadius", "Darkness",
             "RingStrength", "DiskBrightness", "Turbulence", "StepCount",
@@ -104,6 +104,11 @@ class ContentShadersTest {
             "the pre-ignition space vortex must warp the lensed background");
         assertTrue(shader.contains("Darkness"),
             "the ignition and implosion must be able to dim the screen");
+        assertTrue(shader.contains("RingFormation") && shader.contains("density *= wrap"),
+            "the accretion ring must form after the horizon instead of appearing with it");
+        assertTrue(shader.contains("vec2 sceneUv")
+            && shader.contains("texture(SceneSampler, sceneUv)"),
+            "the screen-wide vortex must warp the scene outside the lens footprint");
         assertTrue(shader.contains("OutroJet"),
             "the collapse needs polar jets");
     }

@@ -3,31 +3,42 @@ package mafisher.quasar.content;
 /**
  * Pure cinematic timeline for the content black hole.
  *
- * <p>The show has three acts: a space vortex that snaps into a light-absorbing
- * birth, a steady accretion phase, and a reverse vortex that ends in a dark
- * implosion and a space rebound. Every value is a multiplier or an absolute
- * factor derived only from the effect progress, so the timeline is
- * deterministic, duration independent, and headless-testable.</p>
+ * <p>The show has three acts: a large space vortex that snaps into a dark
+ * horizon, an accretion ring that only forms after the horizon exists, and a
+ * reverse vortex that drains the ring before the horizon collapses. Every value
+ * is a multiplier or an absolute factor derived only from the effect progress,
+ * so the timeline is deterministic, duration independent, and headless-testable.</p>
  */
 final class ContentBlackHoleCinematics {
     /** Progress at which the intro vortex ends and the steady phase begins. */
-    static final float INTRO_END = 0.120F;
-    /** Progress at which the vortex has fully formed and starts to rebound. */
-    static final float VORTEX_END = 0.018F;
-    /** Progress at which the rebound ends and the horizon has snapped in. */
-    static final float SNAP_END = 0.032F;
-    /** Progress at which the horizon snaps to full size; the audio ignition beat. */
-    static final float IGNITION = 0.030F;
-    /** Progress at which the destabilisation starts. */
+    static final float INTRO_END = 0.175F;
+    /** Progress at which the vortex reaches full strength. */
+    static final float VORTEX_END = 0.055F;
+    /** Progress at which the vortex stops holding and starts to rebound. */
+    static final float VORTEX_HOLD_END = 0.060F;
+    /** Progress at which the rebound ends. */
+    static final float SNAP_END = 0.072F;
+    /** Progress at which the horizon snaps in; the audio ignition beat. */
+    static final float IGNITION = 0.070F;
+    /** Progress at which the horizon has settled. */
+    static final float HORIZON_END = 0.085F;
+    /** Progress at which the accretion ring starts forming. */
+    static final float RING_START = 0.090F;
+    /** Progress at which the accretion ring is complete. */
+    static final float RING_END = 0.160F;
+    /** Progress at which the destabilisation and ring drain start. */
     static final float DESTABILISE = 0.860F;
+    /** Progress at which the ring is gone and the final collapse starts. */
+    static final float RING_DRAIN_END = 0.905F;
     /** Progress at which the final collapse starts. */
-    static final float COLLAPSE = 0.910F;
+    static final float COLLAPSE = 0.905F;
     /** Progress at which the implosion starts. */
     static final float IMPLOSION = 0.945F;
     /** Progress at which the echo wave starts. */
     static final float ECHO = 0.968F;
 
-    private static final float DEFAULT_VORTEX_RADIUS = 7.0F;
+    /** The vortex is intentionally much wider than the horizon, disk, and lens. */
+    private static final float DEFAULT_VORTEX_RADIUS = 32.0F;
 
     private ContentBlackHoleCinematics() {
     }
@@ -50,29 +61,31 @@ final class ContentBlackHoleCinematics {
 
     private static Frame intro(float p) {
         float fade = smooth(0.0F, 0.004F, p);
-        float vortexRise = smooth(0.0F, VORTEX_END, p);
-        float rebound = easeOutCubic(smooth(VORTEX_END, SNAP_END, p));
-        float vortex = (1.6F * vortexRise - 1.95F * rebound)
-            * (1.0F - smooth(SNAP_END, 0.045F, p));
-        float ignite = easeOutCubic(smooth(VORTEX_END, SNAP_END, p));
-        float settle = smooth(SNAP_END, 0.080F, p);
-        float horizon = lerp(lerp(0.10F, 1.06F, ignite), 1.0F, settle);
-        float disk = lerp(0.25F, 1.0F, easeOutCubic(smooth(VORTEX_END, 0.055F, p)));
-        float diskBrightness = smooth(0.022F, 0.042F, p);
-        float ring = smooth(0.020F, 0.038F, p);
-        float turbulence = 1.0F + 0.4F * (1.0F - smooth(0.020F, 0.080F, p));
-        float age = lerp(0.25F, 1.0F, easeOutCubic(smooth(0.010F, 0.055F, p)));
-        float expand = smooth(0.024F, 0.075F, p);
-        float shockRadius = 6.0F * easeOutCubic(expand);
-        float shockAbsorb = (1.0F - expand) * smooth(0.022F, 0.028F, p);
-        float coreFlash = 0.18F * bump(p, 0.030F, 0.010F);
-        float darkness = 0.30F * bump(p, 0.031F, 0.012F);
+        float rise = smooth(0.0F, VORTEX_END, p);
+        float snap = easeOutCubic(smooth(VORTEX_HOLD_END, SNAP_END, p));
+        float decay = smooth(SNAP_END, HORIZON_END, p);
+        float vortex = rise * 2.2F * (1.0F - snap) - 0.5F * snap * (1.0F - decay);
+
+        float ignite = easeOutCubic(smooth(VORTEX_HOLD_END, 0.075F, p));
+        float settle = smooth(0.075F, HORIZON_END, p);
+        float horizon = lerp(lerp(0.05F, 1.06F, ignite), 1.0F, settle);
+        float ringFormation = smooth(RING_START, RING_END, p);
+        float disk = lerp(0.50F, 1.0F, easeOutCubic(ringFormation));
+        float turbulence = 1.0F + 0.5F * (1.0F - smooth(0.020F, 0.100F, p));
+        float age = lerp(0.20F, 1.0F, easeOutCubic(smooth(0.010F, 0.080F, p)));
+
+        float expand = smooth(0.070F, 0.130F, p);
+        float shockRadius = 8.0F * easeOutCubic(expand);
+        float shockAbsorb = (1.0F - expand) * smooth(0.066F, 0.074F, p);
+        float coreFlash = 0.16F * bump(p, 0.070F, 0.010F);
+        float darkness = 0.30F * bump(p, 0.072F, 0.012F);
         return new Frame(
             horizon,
             disk,
-            lerp(0.70F, 1.0F, smooth(0.0F, 0.025F, p)),
-            diskBrightness,
-            ring,
+            lerp(0.70F, 1.0F, smooth(0.0F, 0.035F, p)),
+            ringFormation,
+            ringFormation,
+            ringFormation,
             turbulence,
             age,
             vortex,
@@ -88,16 +101,17 @@ final class ContentBlackHoleCinematics {
     }
 
     private static Frame steady() {
-        return new Frame(1.0F, 1.0F, 1.0F, 1.0F, 1.0F, 1.0F, 1.0F,
+        return new Frame(1.0F, 1.0F, 1.0F, 1.0F, 1.0F, 1.0F, 1.0F, 1.0F,
             0.0F, DEFAULT_VORTEX_RADIUS, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F);
     }
 
     private static Frame outro(float p) {
-        float destabilise = smooth(DESTABILISE, COLLAPSE, p);
+        float destabilise = smooth(DESTABILISE, RING_DRAIN_END, p);
         float collapse = easeInCubic(smooth(COLLAPSE, IMPLOSION, p));
         float implosion = smooth(IMPLOSION, 0.965F, p);
         float wave = smooth(IMPLOSION, 1.0F, p);
         float fade = 1.0F - smooth(0.990F, 1.0F, p);
+        float ringFormation = 1.0F - smooth(DESTABILISE, RING_DRAIN_END, p);
 
         float vortex;
         if (p < IMPLOSION) {
@@ -111,8 +125,6 @@ final class ContentBlackHoleCinematics {
         float horizon = lerp(1.0F, 0.20F, collapse) * (1.0F - easeInCubic(implosion));
         float disk = lerp(1.0F, 0.22F, collapse) * (1.0F - easeInCubic(implosion));
         float warp = 1.0F - smooth(0.945F, 0.995F, p);
-        float diskBrightness = 1.0F + 0.15F * destabilise + 0.25F * collapse;
-        float ring = 1.0F + 0.30F * destabilise + 0.50F * collapse;
         float turbulence = 1.0F + 1.0F * destabilise + 1.0F * collapse;
         float age = 1.0F + 1.4F * destabilise + 1.2F * collapse + 2.0F * implosion;
 
@@ -120,30 +132,31 @@ final class ContentBlackHoleCinematics {
         float shockStrength;
         float shockAbsorb;
         if (p < IMPLOSION) {
-            shockRadius = 6.0F * (1.0F - collapse);
-            shockAbsorb = smooth(0.915F, 0.940F, p)
+            shockRadius = 8.0F * (1.0F - collapse);
+            shockAbsorb = smooth(0.905F, 0.920F, p)
                 * (1.0F - smooth(0.940F, IMPLOSION, p));
             shockStrength = 0.06F * shockAbsorb;
         } else {
             shockRadius = 8.0F * easeOutCubic(wave);
-            float waveRamp = smooth(IMPLOSION, IMPLOSION + 0.002F, p);
-            shockAbsorb = 0.90F * (1.0F - wave) * waveRamp;
-            shockStrength = 0.06F * (1.0F - wave) * waveRamp;
+            float ramp = smooth(IMPLOSION, IMPLOSION + 0.002F, p);
+            shockAbsorb = 0.90F * (1.0F - wave) * ramp;
+            shockStrength = 0.06F * (1.0F - wave) * ramp;
         }
         if (shockAbsorb <= 0.001F) {
             shockRadius = 0.0F;
             shockStrength = 0.0F;
         }
 
-        float coreFlash = 0.22F * bump(p, 0.952F, 0.008F);
+        float coreFlash = 0.20F * bump(p, 0.952F, 0.008F);
         float darkness = 0.55F * bump(p, 0.950F, 0.012F);
-        float jet = 0.60F * easeOutCubic(smooth(COLLAPSE, IMPLOSION, p)) * (1.0F - implosion);
+        float jet = 0.50F * easeOutCubic(smooth(COLLAPSE, IMPLOSION, p)) * (1.0F - implosion);
         return new Frame(
             horizon,
             disk,
             warp,
-            diskBrightness,
-            ring,
+            ringFormation,
+            ringFormation,
+            ringFormation,
             turbulence,
             age,
             vortex,
@@ -191,13 +204,14 @@ final class ContentBlackHoleCinematics {
 
     /**
      * One evaluated frame. All scale fields are multipliers around the authored
-     * settings; {@code shockRadius} is in multiples of the effect scale and
-     * {@code vortexRadiusScale} is in multiples of the effect scale.
+     * settings; {@code shockRadius} and {@code vortexRadiusScale} are in
+     * multiples of the effect scale.
      */
     record Frame(
         float horizonScale,
         float diskScale,
         float lensWarpScale,
+        float ringFormation,
         float diskBrightnessScale,
         float ringStrengthScale,
         float turbulenceScale,

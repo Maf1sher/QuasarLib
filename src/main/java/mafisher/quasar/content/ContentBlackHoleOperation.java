@@ -140,6 +140,7 @@ final class ContentBlackHoleOperation implements ScreenEffectOperationRenderer {
         context.setUniform(shader, "Charge",
             ContentBlackHoleGeometry.chargeForSeed(context.effect().seed(), settings.charge()));
         context.setUniform(shader, "Fade", cinematics.fade());
+        context.setUniform(shader, "RingFormation", cinematics.ringFormation());
         context.setUniform(shader, "ShockRadius", baseScale * cinematics.shockRadius());
         context.setUniform(shader, "ShockStrength", cinematics.shockStrength());
         context.setUniform(shader, "ShockAbsorb", cinematics.shockAbsorb());

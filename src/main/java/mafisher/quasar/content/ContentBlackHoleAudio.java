@@ -15,8 +15,8 @@ import net.minecraft.world.phys.Vec3;
 final class ContentBlackHoleAudio {
     private static final float AUDIBLE_RADIUS = 1024.0F;
     private static final float IGNITION = ContentBlackHoleCinematics.IGNITION;
-    private static final float SHOCKWAVE = 0.045F;
-    private static final float ACCRETION = 0.075F;
+    private static final float SHOCKWAVE = 0.085F;
+    private static final float ACCRETION = 0.100F;
     private static final float COLLAPSE = ContentBlackHoleCinematics.DESTABILISE + 0.005F;
     private static final float IMPLOSION = ContentBlackHoleCinematics.IMPLOSION;
     private static final float ECHO = ContentBlackHoleCinematics.ECHO;
@@ -30,23 +30,25 @@ final class ContentBlackHoleAudio {
         if (durationTicks < 40) {
             throw new IllegalArgumentException("Black-hole audio needs at least 40 ticks");
         }
-        int fadeOut = Math.min(120, Math.max(1, durationTicks / 10));
+        int stopTick = Math.min(durationTicks,
+            Math.max(tick(durationTicks, ACCRETION) + 1, durationTicks - 40));
+        int fadeOut = Math.min(100, Math.max(1, stopTick / 4));
         List<EffectAudioCue> cues = new ArrayList<>(14);
         cues.add(loop(0, position, ContentSounds.BLACK_HOLE_DRONE.get(), 0.55F, 1.0F,
-            40, fadeOut));
+            40, fadeOut, stopTick));
         cues.add(oneShot(0, position, ContentSounds.BLACK_HOLE_DREAD.get(), 0.55F, 1.0F));
         cues.add(oneShot(tick(durationTicks, IGNITION), position,
             ContentSounds.BLACK_HOLE_IGNITION.get(), 1.0F, 1.0F));
         cues.add(oneShot(tick(durationTicks, SHOCKWAVE), position,
             ContentSounds.BLACK_HOLE_SHOCKWAVE.get(), 0.80F, 1.0F));
         cues.add(loop(tick(durationTicks, ACCRETION), position,
-            ContentSounds.BLACK_HOLE_ACCRETION.get(), 0.45F, 1.0F, 40, fadeOut));
+            ContentSounds.BLACK_HOLE_ACCRETION.get(), 0.40F, 1.0F, 40, fadeOut, stopTick));
         for (int index = 0; index < PULSES.length; index++) {
             cues.add(oneShot(tick(durationTicks, PULSES[index]), position,
-                ContentSounds.BLACK_HOLE_PULSE.get(), 0.45F, PULSE_PITCH[index]));
+                ContentSounds.BLACK_HOLE_PULSE.get(), 0.40F, PULSE_PITCH[index]));
         }
         cues.add(oneShot(tick(durationTicks, COLLAPSE), position,
-            ContentSounds.BLACK_HOLE_COLLAPSE.get(), 0.90F, 1.0F));
+            ContentSounds.BLACK_HOLE_COLLAPSE.get(), 0.85F, 1.0F));
         cues.add(oneShot(tick(durationTicks, IMPLOSION), position,
             ContentSounds.BLACK_HOLE_IMPLOSION.get(), 1.0F, 1.0F));
         cues.add(oneShot(tick(durationTicks, ECHO), position,
@@ -59,7 +61,7 @@ final class ContentBlackHoleAudio {
     }
 
     private static EffectAudioCue loop(int tick, Vec3 position, SoundEvent sound, float volume,
-        float pitch, int fadeInTicks, int fadeOutTicks) {
+        float pitch, int fadeInTicks, int fadeOutTicks, int stopTick) {
         return new EffectAudioCue(
             tick,
             position,
@@ -68,7 +70,7 @@ final class ContentBlackHoleAudio {
             volume,
             pitch,
             EffectAudioAttenuation.distance(AUDIBLE_RADIUS),
-            EffectAudioEnvelope.loop(fadeInTicks, fadeOutTicks),
+            EffectAudioEnvelope.loopUntil(stopTick, fadeInTicks, fadeOutTicks),
             EffectAudioMotion.ANCHORED
         );
     }

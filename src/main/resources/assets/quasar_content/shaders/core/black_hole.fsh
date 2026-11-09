@@ -32,6 +32,7 @@ uniform float Progress;
 uniform float Seed;
 uniform float Charge;
 uniform float Fade;
+uniform float RingFormation;
 uniform float ShockRadius;
 uniform float ShockStrength;
 uniform float ShockAbsorb;
@@ -203,6 +204,12 @@ vec4 sampleDisk(vec3 point, vec3 cameraRelative) {
         * pow(max(DiskInnerRadius, 0.001) / max(radial, 0.001), 1.5);
     phi -= spin;
 
+    // The ring is accelerated matter: it appears as a wrapping segment after the
+    // horizon exists, and retreats into the drain before the horizon collapses.
+    float phiNorm = fract((phi + PI) / (2.0 * PI));
+    float wrap = smoothstep(0.0, 1.0,
+        clamp((RingFormation * 1.35 - phiNorm) / 0.25, 0.0, 1.0));
+
     float turbulenceScale = mix(0.7, 1.5, Turbulence);
     vec2 ringPosition = vec2(cos(phi), sin(phi))
         * (radial / max(DiskOuterRadius, 0.001)) * 7.0;
@@ -217,6 +224,7 @@ vec4 sampleDisk(vec3 point, vec3 cameraRelative) {
     float knots = pow(max(fine - 0.58, 0.0) * 2.4, 3.0);
     float stream = pow(max(cos(phi * 3.0 - radial * 0.08 + AgeTicks * 0.02), 0.0), 12.0);
     density *= (0.85 + 0.4 * stream) * vertical;
+    density *= wrap;
     knots += stream * 0.4;
 
     vec3 tangent = normalize(cross(DiskNormal, radialDir));
@@ -523,10 +531,30 @@ void main() {
         return;
     }
 
-    vec4 sceneColor = texture(SceneSampler, texCoord);
+    vec3 cameraRelative = -BlackHoleOffset;
+    vec2 sceneUv = texCoord;
+    if (abs(VortexStrength) > 0.001) {
+        vec2 holeUv = projectPoint(cameraRelative);
+        if (holeUv.x >= 0.0) {
+            float uvRadius = clamp(
+                VortexRadius * abs(WorldProjMat[1][1])
+                    / max(2.0 * length(BlackHoleOffset), 0.001),
+                0.05,
+                2.5
+            );
+            vec2 delta = sceneUv - holeUv;
+            float falloff = 1.0 - smoothstep(0.0, uvRadius, length(delta));
+            float angle = VortexStrength * 2.4 * falloff;
+            float cs = cos(angle);
+            float sn = sin(angle);
+            sceneUv = holeUv + mat2(cs, -sn, sn, cs) * delta
+                * (1.0 - clamp(0.20 * VortexStrength * falloff, 0.0, 0.65));
+            sceneUv = clamp(sceneUv, vec2(0.0), vec2(1.0));
+        }
+    }
+    vec4 sceneColor = texture(SceneSampler, sceneUv);
     vec4 effectColor = texture(EffectSampler, texCoord);
     vec3 direction = rayDirection(texCoord);
-    vec3 cameraRelative = -BlackHoleOffset;
     float lensRadius = max(LensRadius, BlackHoleRadius * 3.0);
     float tEntry = raySphereEntry(cameraRelative, direction, lensRadius);
     bool insideLens = length(cameraRelative) <= lensRadius;

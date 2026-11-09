@@ -104,28 +104,25 @@ def add_at(target: np.ndarray, source: np.ndarray, start_seconds: float) -> None
         target[start:end] += source[: end - start]
 
 
-def grind(seconds: float, rng: np.random.Generator, low: float, high: float,
-          amount: float = 0.5) -> np.ndarray:
+def growl(seconds: float, rng: np.random.Generator, low: float, high: float,
+          rate: float, amount: float = 0.4, rough_hz: float = 8.0) -> np.ndarray:
+    """Low, swelling, rough growl with no stable musical pitch."""
     t = t_axis(seconds)
     texture = fft_filter(rng.standard_normal(len(t)), low=high, high=low)
     texture /= max(np.max(np.abs(texture)), 1e-9)
-    modulation = 0.55 + 0.45 * np.sin(
-        TWO_PI * 0.31 * t + 0.7 * np.sin(TWO_PI * 0.13 * t)
+    swell = 0.55 + 0.45 * np.sin(
+        TWO_PI * rate * t + 0.6 * np.sin(TWO_PI * rate * 0.37 * t)
     )
-    texture *= modulation
-    for index, frequency in enumerate((78.0, 117.0, 156.0, 234.0, 351.0)):
-        texture += 0.05 * np.sin(
-            TWO_PI * frequency * t + index * 1.7 + 0.3 * np.sin(TWO_PI * 0.05 * t)
-        )
-    return texture * amount
+    rough = 0.72 + 0.28 * np.sin(
+        TWO_PI * rough_hz * t + 0.5 * np.sin(TWO_PI * 0.7 * t)
+    )
+    return texture * swell * rough * amount
 
 
 def hum(seconds: float, base: float = 50.0) -> np.ndarray:
     t = t_axis(seconds)
-    signal = (np.sin(TWO_PI * base * t)
-              + 0.35 * np.sin(TWO_PI * base * 2.0 * t)
-              + 0.15 * np.sin(TWO_PI * base * 3.0 * t))
-    return signal * (0.8 + 0.2 * np.sin(TWO_PI * 0.1 * t))
+    signal = np.sin(TWO_PI * base * t) + 0.25 * np.sin(TWO_PI * base * 2.0 * t)
+    return signal * (0.75 + 0.25 * np.sin(TWO_PI * 0.1 * t))
 
 
 def reverb(signal: np.ndarray, mix: float, decay: float, seed: int,
@@ -241,15 +238,12 @@ def dread() -> np.ndarray:
     seconds = 6.0
     rng = np.random.default_rng(SEED + 1)
     t = t_axis(seconds)
-    sub = sub_sweep(seconds, 20.0, 45.0, 0.8, 3.5, 1.4) * 0.62
-    groan = (np.sin(TWO_PI * 35.0 * t + 0.4 * np.sin(TWO_PI * 0.11 * t))
-             + 0.5 * np.sin(TWO_PI * 70.0 * t + 0.2 * np.sin(TWO_PI * 0.07 * t)))
-    groan *= smoothstep(0.0, 3.5, t) * 0.18
-    breath = fft_filter(rng.standard_normal(len(t)), low=900.0, high=90.0)
-    breath *= smoothstep(0.0, 2.8, t) * (1.0 - smoothstep(5.0, 6.0, t)) * 0.28
-    texture = grind(seconds, rng, 110.0, 650.0, 0.22) * smoothstep(0.8, 5.0, t)
-    mix = sub + groan + breath + texture
-    mix = fft_filter(mix, low=1600.0)
+    sub = sub_sweep(seconds, 20.0, 45.0, 0.8, 3.5, 1.4) * 0.58
+    groan = np.sin(TWO_PI * 35.0 * t + 0.4 * np.sin(TWO_PI * 0.11 * t))
+    groan *= smoothstep(0.0, 3.5, t) * 0.12
+    breath = growl(seconds, rng, 90.0, 600.0, 0.5, 0.30)
+    breath *= smoothstep(0.0, 2.8, t) * (1.0 - smoothstep(5.0, 6.0, t))
+    mix = fft_filter(sub + groan + breath, low=1200.0)
     return master(reverb(mix, mix=0.30, decay=2.8, seed=SEED + 2), -20.0)
 
 
@@ -259,26 +253,14 @@ def drone() -> np.ndarray:
     t = t_axis(seconds)
 
     sub = np.zeros_like(t)
-    for base, gain in ((27.5, 0.46), (41.2, 0.28), (55.0, 0.18)):
+    for base, gain in ((30.0, 0.42), (42.0, 0.24), (55.0, 0.15)):
         for detune in (-0.08, 0.08):
             sub += np.sin(TWO_PI * (base + detune) * t + rng.uniform(0.0, TWO_PI)) * gain
-    sub *= 0.62 * (0.86 + 0.14 * np.sin(TWO_PI * (2.0 / seconds) * t))
+    sub *= 0.90 + 0.10 * np.sin(TWO_PI * (1.0 / seconds) * t)
 
-    electrical = hum(seconds, 50.0) * 0.16
-    texture = grind(seconds, rng, 140.0, 1800.0, 0.55) * (0.85 + 0.15 * np.sin(
-        TWO_PI * (3.0 / seconds) * t
-    ))
-
-    pulses = np.zeros_like(t)
-    for index in range(8):
-        start = index * seconds / 8.0
-        add_at(pulses, sub_sweep(0.8, 48.0, 30.0, 0.02, 0.5) * 0.24, start)
-        tick = fft_filter(rng.standard_normal(int(0.25 * RATE)), low=1200.0, high=200.0)
-        tick *= exp_env(0.25, 0.002, 0.08) * 0.12
-        add_at(pulses, tick, start)
-
-    mix = sub + electrical + texture + pulses
-    mix = fft_filter(mix, low=1800.0)
+    electrical = hum(seconds, 50.0) * 0.07
+    texture = growl(seconds, rng, 100.0, 700.0, 1.0 / seconds, 0.55)
+    mix = fft_filter(sub + electrical + texture, low=1200.0)
     mix = reverb(mix, mix=0.30, decay=3.2, seed=SEED + 4)
     mix = loop_crossfade(mix, 0.8)
     return master(mix, -20.0, -3.0)
@@ -287,18 +269,15 @@ def drone() -> np.ndarray:
 def ignition() -> np.ndarray:
     seconds = 5.0
     rng = np.random.default_rng(SEED + 5)
+    t = t_axis(seconds)
     sub = sub_sweep(seconds, 78.0, 18.0, 0.045, 1.4) * 0.95
     body = sub_sweep(seconds, 96.0, 54.0, 0.04, 1.2) * 0.45
-    pressure = fft_filter(rng.standard_normal(len(sub)), low=420.0, high=35.0)
+    pressure = fft_filter(rng.standard_normal(len(t)), low=420.0, high=35.0)
     pressure *= exp_env(seconds, 0.03, 1.8) * 0.65
-    metal = (np.sin(TWO_PI * 72.0 * t_axis(seconds))
-             + 0.7 * np.sin(TWO_PI * 108.0 * t_axis(seconds))
-             + 0.4 * np.sin(TWO_PI * 144.0 * t_axis(seconds)))
-    metal *= exp_env(seconds, 0.05, 2.4) * 0.12
-    thump = (np.sin(TWO_PI * 110.0 * t_axis(seconds))
-             + 0.5 * np.sin(TWO_PI * 165.0 * t_axis(seconds)))
-    thump *= exp_env(seconds, 0.03, 0.55) * 0.22
-    mix = fft_filter(sub + body + pressure + metal + thump, low=1600.0)
+    structural = fft_filter(rng.standard_normal(len(t)), low=520.0, high=80.0)
+    structural *= exp_env(seconds, 0.04, 1.5) * 0.22
+    thump = np.sin(TWO_PI * 110.0 * t) * exp_env(seconds, 0.03, 0.55) * 0.18
+    mix = fft_filter(sub + body + pressure + structural + thump, low=1400.0)
     return master(widen(reverb(mix, mix=0.25, decay=2.4, seed=SEED + 6), 10.0, 0.7), -12.0)
 
 
@@ -308,7 +287,7 @@ def shockwave() -> np.ndarray:
     pressure = fft_filter(rng.standard_normal(len(t_axis(seconds))), low=380.0, high=25.0)
     pressure *= exp_env(seconds, 0.02, 1.4) * 0.8
     sub = sub_sweep(seconds, 52.0, 28.0, 0.02, 0.9) * 0.5
-    mix = fft_filter(pressure + sub, low=900.0)
+    mix = fft_filter(pressure + sub, low=800.0)
     return master(widen(reverb(mix, mix=0.20, decay=1.8, seed=SEED + 8), 16.0, 1.0), -13.0)
 
 
@@ -316,11 +295,9 @@ def accretion() -> np.ndarray:
     seconds = 24.0
     rng = np.random.default_rng(SEED + 9)
     t = t_axis(seconds)
-    texture = grind(seconds, rng, 100.0, 1500.0, 0.65)
-    texture *= 0.55 + 0.45 * np.sin(TWO_PI * (3.0 / seconds) * t)
-    sub = np.sin(TWO_PI * 35.0 * t) * 0.10
-    metal = np.sin(TWO_PI * 85.0 * t + 0.2 * np.sin(TWO_PI * 0.11 * t)) * 0.07
-    mix = fft_filter(texture + sub + metal, low=1800.0)
+    texture = growl(seconds, rng, 80.0, 500.0, 3.0 / seconds, 0.28)
+    sub = np.sin(TWO_PI * 35.0 * t) * 0.22
+    mix = fft_filter(texture + sub, low=900.0)
     mix = reverb(mix, mix=0.22, decay=2.2, seed=SEED + 10)
     mix = loop_crossfade(mix, 0.6)
     return master(mix, -26.0, -5.0)
@@ -330,15 +307,12 @@ def pulse() -> np.ndarray:
     seconds = 2.5
     rng = np.random.default_rng(SEED + 11)
     t = t_axis(seconds)
-    sub = sub_sweep(seconds, 55.0, 28.0, 0.010, 0.55) * 0.8
-    metal = (np.sin(TWO_PI * 90.0 * t)
-             + 0.6 * np.sin(TWO_PI * 180.0 * t)
-             + 0.35 * np.sin(TWO_PI * 270.0 * t))
-    metal *= exp_env(seconds, 0.010, 1.1) * 0.22
-    thump = fft_filter(rng.standard_normal(len(t)), low=200.0)
-    thump *= exp_env(seconds, 0.005, 0.30) * 0.4
-    mix = fft_filter(sub + metal + thump, low=1400.0)
-    return master(reverb(mix, mix=0.26, decay=1.4, seed=SEED + 12), -17.0)
+    sub = sub_sweep(seconds, 55.0, 28.0, 0.010, 0.55) * 0.85
+    body = fft_filter(rng.standard_normal(len(t)), low=260.0)
+    body *= exp_env(seconds, 0.005, 0.35) * 0.45
+    edge = np.sin(TWO_PI * 97.0 * t) * exp_env(seconds, 0.008, 0.25) * 0.12
+    mix = fft_filter(sub + body + edge, low=1200.0)
+    return master(reverb(mix, mix=0.24, decay=1.4, seed=SEED + 12), -18.0)
 
 
 def collapse() -> np.ndarray:
@@ -346,15 +320,13 @@ def collapse() -> np.ndarray:
     rng = np.random.default_rng(SEED + 13)
     t = t_axis(seconds)
     sub = sub_sweep(seconds, 42.0, 18.0, 0.5, 4.0, 1.2) * 0.50
-    texture = grind(seconds, rng, 80.0, 1400.0, 0.50)
+    texture = growl(seconds, rng, 70.0, 1000.0, 0.8, 0.55)
     texture *= smoothstep(0.0, 4.0, t) * (0.30 + 0.70 * t / seconds)
-    metal = (np.sin(TWO_PI * 60.0 * t + 0.3 * np.sin(TWO_PI * 0.5 * t))
-             + 0.6 * np.sin(TWO_PI * 90.0 * t)
-             + 0.35 * np.sin(TWO_PI * 120.0 * t))
-    metal *= exp_env(seconds, 0.5, 2.6) * 0.10
+    strain = np.sin(TWO_PI * 63.0 * t + 0.3 * np.sin(TWO_PI * 0.5 * t))
+    strain *= exp_env(seconds, 0.5, 2.6) * 0.10
     suction = fft_filter(rng.standard_normal(len(t)), low=900.0, high=100.0)
     suction *= smoothstep(0.0, 3.0, t) * 0.22
-    mix = fft_filter(sub + texture + metal + suction, low=1500.0)
+    mix = fft_filter(sub + texture + strain + suction, low=1400.0)
     mix *= 1.0 - smoothstep(4.6, 5.0, t)
     return master(widen(reverb(mix, mix=0.28, decay=2.2, seed=SEED + 14), 9.0, 0.6), -14.0)
 
@@ -365,13 +337,10 @@ def implosion() -> np.ndarray:
     t = t_axis(seconds)
     sub = sub_sweep(seconds, 34.0, 17.0, 0.040, 0.8) * 0.9
     pressure = fft_filter(rng.standard_normal(len(t)), low=300.0, high=30.0)
-    pressure *= exp_env(seconds, 0.03, 0.9) * 0.5
-    metal = (np.sin(TWO_PI * 55.0 * t)
-             + 0.6 * np.sin(TWO_PI * 82.0 * t)
-             + 0.3 * np.sin(TWO_PI * 110.0 * t))
-    metal *= exp_env(seconds, 0.02, 1.3) * 0.18
+    pressure *= exp_env(seconds, 0.03, 0.9) * 0.55
+    groan = np.sin(TWO_PI * 57.0 * t) * exp_env(seconds, 0.02, 1.2) * 0.10
     gap = 1.0 - 0.8 * np.exp(-((t - 0.5) / 0.12) ** 2)
-    mix = fft_filter(sub + pressure + metal, low=1400.0) * gap
+    mix = fft_filter(sub + pressure + groan, low=1200.0) * gap
     return master(widen(reverb(mix, mix=0.30, decay=2.0, seed=SEED + 16), 7.0, 0.8), -10.0)
 
 
@@ -379,14 +348,11 @@ def echo() -> np.ndarray:
     seconds = 1.6
     rng = np.random.default_rng(SEED + 17)
     t = t_axis(seconds)
-    groan = (np.sin(TWO_PI * 55.0 * t + 0.3 * np.sin(TWO_PI * 0.4 * t))
-             + 0.5 * np.sin(TWO_PI * 82.5 * t)
-             + 0.3 * np.sin(TWO_PI * 110.0 * t))
-    groan = fft_filter(groan, low=1000.0, high=45.0)
-    groan *= smoothstep(0.0, 0.45, t) * np.exp(-t / 0.85) * 0.5
-    rumble = fft_filter(rng.standard_normal(len(t)), low=120.0, high=28.0)
-    rumble *= np.exp(-t / 0.7) * 0.25
-    mix = reverb(groan + rumble, mix=0.40, decay=1.5, seed=SEED + 18)
+    texture = growl(seconds, rng, 80.0, 500.0, 0.6, 0.22)
+    texture *= smoothstep(0.0, 0.4, t) * np.exp(-t / 0.8)
+    sub = np.sin(TWO_PI * 32.0 * t) * np.exp(-t / 0.7) * 0.55
+    mix = fft_filter(texture + sub, low=900.0)
+    mix = reverb(mix, mix=0.40, decay=1.5, seed=SEED + 18)
     return master(widen(mix, 19.0, 1.0), -18.0)
 
 
