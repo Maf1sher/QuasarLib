@@ -32,7 +32,7 @@ public final class QuasarClientConfig {
 
     static final ModConfigSpec.BooleanValue CINEMATIC_IMPULSES = BUILDER
         .comment(
-            "Allow cinematic effects to add camera shake and additive screen flashes.",
+            "Allow cinematic effects to add camera shake and screen pulses.",
             "Disable this for a steadier screen or light-sensitivity comfort."
         )
         .define("cinematic_impulses", true);

@@ -70,7 +70,8 @@ class ContentShadersTest {
             "DiskInnerRadius", "DiskOuterRadius",
             "DiskThickness", "DiskRight", "DiskForward", "DiskNormal",
             "AgeTicks", "Progress", "Seed", "Charge", "Fade", "LensStrength",
-            "ShockRadius", "ShockStrength", "CoreFlash", "FlashRadius", "OutroJet",
+            "ShockRadius", "ShockStrength", "ShockAbsorb", "CoreFlash", "FlashRadius",
+            "OutroJet", "VortexStrength", "VortexRadius", "Darkness",
             "RingStrength", "DiskBrightness", "Turbulence", "StepCount",
             "MediumFogStart", "MediumFogEnd", "MediumFogColor", "MediumFogActive", "CameraSubmerged", "EffectSubmerged",
             "SurfaceY", "SurfaceActive",
@@ -96,6 +97,13 @@ class ContentShadersTest {
             "the flash size must not collapse with the horizon");
         assertTrue(shader.contains("ShockRadius") && shader.contains("ShockStrength"),
             "the intro and outro need an impact-space shockwave ring");
+        assertTrue(shader.contains("ShockAbsorb"),
+            "the shockwave must be able to absorb light instead of only adding it");
+        assertTrue(shader.contains("VortexStrength") && shader.contains("VortexRadius")
+            && shader.contains("projectPoint"),
+            "the pre-ignition space vortex must warp the lensed background");
+        assertTrue(shader.contains("Darkness"),
+            "the ignition and implosion must be able to dim the screen");
         assertTrue(shader.contains("OutroJet"),
             "the collapse needs polar jets");
     }

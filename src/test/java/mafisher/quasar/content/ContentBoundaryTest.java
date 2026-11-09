@@ -51,7 +51,6 @@ class ContentBoundaryTest {
         "mafisher.quasar.client.effect.ScreenEffectOperationRenderer",
         "mafisher.quasar.client.effect.ScreenEffectRenderer",
         "mafisher.quasar.client.effect.ScreenEffectSettings",
-        "mafisher.quasar.client.effect.ScreenFlashImpulse",
         "mafisher.quasar.compat.FogPolicy",
         "mafisher.quasar.effect.EffectAudience",
         "mafisher.quasar.effect.EffectQualityTier",

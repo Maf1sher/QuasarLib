@@ -19,54 +19,66 @@ class ContentBlackHoleCinematicsTest {
     void introBendsSpaceBeforeTheHorizonIgnites() {
         ContentBlackHoleCinematics.Frame start = ContentBlackHoleCinematics.frame(0.005F);
 
-        assertTrue(start.lensWarpScale() > 0.0F);
+        assertTrue(start.vortexStrength() > 0.0F);
         assertEquals(0.0F, start.diskBrightnessScale(), 1.0E-6F);
         assertEquals(0.0F, start.ringStrengthScale(), 1.0E-6F);
-        assertTrue(start.horizonScale() < 0.6F);
+        assertTrue(start.horizonScale() < 0.2F);
+        assertEquals(1.0F, start.fade(), 1.0E-4F);
         assertEquals(0.0F, ContentBlackHoleCinematics.frame(0.0F).fade(), 1.0E-6F);
+        assertTrue(ContentBlackHoleCinematics.frame(0.016F).vortexStrength() > 1.5F);
     }
 
     @Test
-    void horizonSnapsAndOvershootsAtIgnition() {
-        ContentBlackHoleCinematics.Frame ignition = ContentBlackHoleCinematics.frame(0.05F);
+    void vortexSnapsBackAsTheDarkHorizonAppears() {
+        ContentBlackHoleCinematics.Frame rebound =
+            ContentBlackHoleCinematics.frame(ContentBlackHoleCinematics.IGNITION);
         ContentBlackHoleCinematics.Frame settled = ContentBlackHoleCinematics.frame(0.13F);
 
-        assertTrue(ignition.horizonScale() > 1.05F);
-        assertTrue(ignition.coreFlash() > 0.9F);
-        assertTrue(ignition.diskBrightnessScale() > 1.5F);
+        assertTrue(rebound.vortexStrength() < 0.0F);
+        assertTrue(rebound.horizonScale() > 1.0F);
+        assertTrue(rebound.darkness() > 0.1F);
+        assertTrue(rebound.coreFlash() < 0.3F);
+        assertTrue(rebound.diskBrightnessScale() <= 1.0F);
+        assertTrue(rebound.ringStrengthScale() <= 1.0F);
         assertEquals(1.0F, settled.horizonScale(), 1.0E-4F);
         assertEquals(1.0F, settled.diskBrightnessScale(), 1.0E-4F);
+        assertEquals(0.0F, settled.vortexStrength(), 1.0E-4F);
         assertEquals(1.0F, settled.fade(), 1.0E-4F);
     }
 
     @Test
-    void shockwaveExpandsThenDisappears() {
+    void darkShockwaveExpandsThenDisappears() {
         ContentBlackHoleCinematics.Frame early = ContentBlackHoleCinematics.frame(0.050F);
         ContentBlackHoleCinematics.Frame late = ContentBlackHoleCinematics.frame(0.060F);
         ContentBlackHoleCinematics.Frame settled = ContentBlackHoleCinematics.frame(0.130F);
 
-        assertTrue(early.shockStrength() > 0.0F);
+        assertTrue(early.shockAbsorb() > 0.0F);
         assertTrue(early.shockRadius() > 0.0F);
         assertTrue(late.shockRadius() > early.shockRadius());
-        assertEquals(0.0F, settled.shockStrength(), 1.0E-6F);
+        assertEquals(0.0F, settled.shockAbsorb(), 1.0E-6F);
         assertEquals(0.0F, settled.shockRadius(), 1.0E-6F);
     }
 
     @Test
-    void outroCollapsesIntoAnImplosionAndEcho() {
-        ContentBlackHoleCinematics.Frame collapse = ContentBlackHoleCinematics.frame(0.952F);
-        ContentBlackHoleCinematics.Frame flash = ContentBlackHoleCinematics.frame(0.969F);
-        ContentBlackHoleCinematics.Frame gone = ContentBlackHoleCinematics.frame(0.978F);
+    void outroCollapsesIntoADarkImplosionAndRebound() {
+        ContentBlackHoleCinematics.Frame collapse = ContentBlackHoleCinematics.frame(0.930F);
+        ContentBlackHoleCinematics.Frame flash = ContentBlackHoleCinematics.frame(0.955F);
+        ContentBlackHoleCinematics.Frame gone = ContentBlackHoleCinematics.frame(0.965F);
         ContentBlackHoleCinematics.Frame echo = ContentBlackHoleCinematics.frame(0.990F);
 
-        assertTrue(collapse.horizonScale() < 0.8F);
-        assertTrue(collapse.outroJet() > 0.0F);
-        assertTrue(collapse.shockStrength() > 0.0F);
-        assertTrue(flash.coreFlash() > 0.9F);
+        assertTrue(collapse.vortexStrength() > 1.0F);
+        assertTrue(collapse.shockAbsorb() > 0.0F);
+        assertTrue(flash.coreFlash() > 0.1F);
+        assertTrue(flash.coreFlash() < 0.3F);
+        assertTrue(flash.diskBrightnessScale() < 1.5F);
+        assertTrue(flash.ringStrengthScale() < 2.0F);
+        assertTrue(flash.darkness() > 0.4F);
+        assertTrue(flash.horizonScale() < 0.2F);
         assertEquals(0.0F, gone.horizonScale(), 1.0E-4F);
         assertEquals(0.0F, gone.diskScale(), 1.0E-4F);
+        assertTrue(gone.vortexStrength() < 0.0F);
         assertTrue(echo.shockRadius() > 0.0F);
-        assertTrue(echo.shockStrength() > 0.0F);
+        assertTrue(echo.shockAbsorb() > 0.0F);
         assertTrue(echo.fade() > 0.0F);
         assertEquals(0.0F, ContentBlackHoleCinematics.frame(1.0F).fade(), 1.0E-6F);
     }
@@ -94,6 +106,9 @@ class ContentBlackHoleCinematicsTest {
         assertEquals(before.ringStrengthScale(), after.ringStrengthScale(), 1.0E-3F);
         assertEquals(before.turbulenceScale(), after.turbulenceScale(), 1.0E-3F);
         assertEquals(before.ageScale(), after.ageScale(), 1.0E-3F);
+        assertEquals(before.vortexStrength(), after.vortexStrength(), 1.0E-3F);
+        assertEquals(before.shockAbsorb(), after.shockAbsorb(), 1.0E-3F);
+        assertEquals(before.darkness(), after.darkness(), 1.0E-3F);
         assertEquals(before.fade(), after.fade(), 1.0E-3F);
     }
 }

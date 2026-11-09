@@ -39,10 +39,10 @@ class ContentBlackHoleAudioTest {
     void cuesLandOnTheCinematicBeats() {
         EffectAudioSpec audio = ContentBlackHoleAudio.plan(Vec3.ZERO, 1200);
 
-        assertEquals(48, audio.cues().get(2).tick());
-        assertEquals(70, audio.cues().get(3).tick());
-        assertEquals(1062, audio.cues().get(9).tick());
-        assertEquals(1152, audio.cues().get(10).tick());
-        assertEquals(1166, audio.cues().get(11).tick());
+        assertEquals(36, audio.cues().get(2).tick());
+        assertEquals(54, audio.cues().get(3).tick());
+        assertEquals(1038, audio.cues().get(9).tick());
+        assertEquals(1134, audio.cues().get(10).tick());
+        assertEquals(1162, audio.cues().get(11).tick());
     }
 }

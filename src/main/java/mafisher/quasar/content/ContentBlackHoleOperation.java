@@ -142,9 +142,14 @@ final class ContentBlackHoleOperation implements ScreenEffectOperationRenderer {
         context.setUniform(shader, "Fade", cinematics.fade());
         context.setUniform(shader, "ShockRadius", baseScale * cinematics.shockRadius());
         context.setUniform(shader, "ShockStrength", cinematics.shockStrength());
+        context.setUniform(shader, "ShockAbsorb", cinematics.shockAbsorb());
+        context.setUniform(shader, "VortexStrength", cinematics.vortexStrength());
+        context.setUniform(shader, "VortexRadius",
+            baseScale * cinematics.vortexRadiusScale());
         context.setUniform(shader, "CoreFlash", cinematics.coreFlash());
         context.setUniform(shader, "FlashRadius", baseScale * 1.5F);
         context.setUniform(shader, "OutroJet", cinematics.outroJet());
+        context.setUniform(shader, "Darkness", cinematics.darkness());
         context.setUniform(shader, "LensStrength", settings.lensStrength());
         context.setUniform(shader, "LensWarpRadius",
             baseScale * settings.lensWarpFactor() * cinematics.lensWarpScale());

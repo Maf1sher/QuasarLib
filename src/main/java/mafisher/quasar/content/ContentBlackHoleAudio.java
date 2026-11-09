@@ -15,8 +15,8 @@ import net.minecraft.world.phys.Vec3;
 final class ContentBlackHoleAudio {
     private static final float AUDIBLE_RADIUS = 1024.0F;
     private static final float IGNITION = ContentBlackHoleCinematics.IGNITION;
-    private static final float SHOCKWAVE = 0.058F;
-    private static final float ACCRETION = 0.080F;
+    private static final float SHOCKWAVE = 0.045F;
+    private static final float ACCRETION = 0.075F;
     private static final float COLLAPSE = ContentBlackHoleCinematics.DESTABILISE + 0.005F;
     private static final float IMPLOSION = ContentBlackHoleCinematics.IMPLOSION;
     private static final float ECHO = ContentBlackHoleCinematics.ECHO;
@@ -50,7 +50,7 @@ final class ContentBlackHoleAudio {
         cues.add(oneShot(tick(durationTicks, IMPLOSION), position,
             ContentSounds.BLACK_HOLE_IMPLOSION.get(), 1.0F, 1.0F));
         cues.add(oneShot(tick(durationTicks, ECHO), position,
-            ContentSounds.BLACK_HOLE_ECHO.get(), 0.70F, 1.0F));
+            ContentSounds.BLACK_HOLE_ECHO.get(), 0.50F, 1.0F));
         return EffectAudioSpec.of(cues);
     }
 

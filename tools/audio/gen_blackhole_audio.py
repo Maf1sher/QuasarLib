@@ -2,13 +2,17 @@
 """Synthesise the QuasarLib black-hole sound set.
 
 Original assets only: every sound is generated from oscillators, noise, and a
-synthetic convolution reverb. Run from the repository root:
+synthetic convolution reverb. The palette is deliberately dark and mechanical:
+industrial pulse drone, electrical hum, low sub-bass, and metal grinding. There
+are no samples from the reference tracks; only their character is reproduced.
+
+Run from the repository root:
 
     python3 tools/audio/gen_blackhole_audio.py
 
 The script writes OGG Vorbis files under
-``src/main/resources/assets/quasar_content/sounds/black_hole/`` and prints
-objective checks (peak, RMS, loop seam) for each file.
+``src/main/resources/assets/quasar_content/sounds/black_hole/``, prints spectral
+checks, and exits non-zero when a stem becomes too bright or too sharp.
 """
 
 from __future__ import annotations
@@ -27,6 +31,20 @@ OUTPUT = ROOT / "src/main/resources/assets/quasar_content/sounds/black_hole"
 SEED = 0x0B1AC
 
 TWO_PI = 2.0 * math.pi
+
+# Maximum spectral centroid, maximum energy above 4 kHz, minimum energy below
+# 100 Hz. The black hole must feel heavy, never sharp.
+TARGETS = {
+    "dread": (650.0, 0.020, 0.30),
+    "drone": (500.0, 0.005, 0.45),
+    "ignition": (600.0, 0.010, 0.35),
+    "shockwave": (450.0, 0.005, 0.45),
+    "accretion": (700.0, 0.010, 0.15),
+    "pulse": (400.0, 0.005, 0.45),
+    "collapse": (650.0, 0.010, 0.22),
+    "implosion": (600.0, 0.010, 0.30),
+    "echo": (600.0, 0.010, 0.20),
+}
 
 
 def t_axis(seconds: float) -> np.ndarray:
@@ -70,14 +88,54 @@ def fft_filter(signal: np.ndarray, low: float | None = None, high: float | None 
     return np.fft.irfft(spectrum * gain, n=len(signal))
 
 
+def sub_sweep(seconds: float, start_hz: float, end_hz: float, attack: float,
+              decay: float, curve: float = 1.0) -> np.ndarray:
+    t = t_axis(seconds)
+    progress = np.clip(t / seconds, 0.0, 1.0) ** curve
+    frequency = start_hz * (end_hz / start_hz) ** progress
+    phase = np.cumsum(TWO_PI * frequency / RATE)
+    return np.sin(phase) * exp_env(seconds, attack, decay)
+
+
+def add_at(target: np.ndarray, source: np.ndarray, start_seconds: float) -> None:
+    start = int(round(start_seconds * RATE))
+    end = min(len(target), start + len(source))
+    if start < len(target):
+        target[start:end] += source[: end - start]
+
+
+def grind(seconds: float, rng: np.random.Generator, low: float, high: float,
+          amount: float = 0.5) -> np.ndarray:
+    t = t_axis(seconds)
+    texture = fft_filter(rng.standard_normal(len(t)), low=high, high=low)
+    texture /= max(np.max(np.abs(texture)), 1e-9)
+    modulation = 0.55 + 0.45 * np.sin(
+        TWO_PI * 0.31 * t + 0.7 * np.sin(TWO_PI * 0.13 * t)
+    )
+    texture *= modulation
+    for index, frequency in enumerate((78.0, 117.0, 156.0, 234.0, 351.0)):
+        texture += 0.05 * np.sin(
+            TWO_PI * frequency * t + index * 1.7 + 0.3 * np.sin(TWO_PI * 0.05 * t)
+        )
+    return texture * amount
+
+
+def hum(seconds: float, base: float = 50.0) -> np.ndarray:
+    t = t_axis(seconds)
+    signal = (np.sin(TWO_PI * base * t)
+              + 0.35 * np.sin(TWO_PI * base * 2.0 * t)
+              + 0.15 * np.sin(TWO_PI * base * 3.0 * t))
+    return signal * (0.8 + 0.2 * np.sin(TWO_PI * 0.1 * t))
+
+
 def reverb(signal: np.ndarray, mix: float, decay: float, seed: int,
-           low: float = 6000.0, high: float = 120.0) -> np.ndarray:
+           low: float = 4200.0, high: float = 90.0) -> np.ndarray:
     rng = np.random.default_rng(seed)
     length = int(round(decay * RATE))
     impulse = rng.standard_normal(length)
     impulse *= np.exp(-np.arange(length) / (decay * RATE / 3.5))
     impulse = fft_filter(impulse, low=low, high=high)
-    impulse[: int(0.018 * RATE)] = 0.0
+    impulse[: int(0.020 * RATE)] = 0.0
     impulse /= max(np.max(np.abs(impulse)), 1e-9)
 
     size = 1 << (len(signal) + length - 1).bit_length()
@@ -87,16 +145,12 @@ def reverb(signal: np.ndarray, mix: float, decay: float, seed: int,
     return (1.0 - mix) * signal + mix * wet
 
 
-def stereo(left: np.ndarray, right: np.ndarray, width: float = 1.0) -> np.ndarray:
-    mid = 0.5 * (left + right)
-    side = 0.5 * (left - right) * width
-    return np.stack([mid + side, mid - side], axis=1)
-
-
 def widen(signal: np.ndarray, delay_ms: float = 14.0, width: float = 1.0) -> np.ndarray:
     delay = int(round(delay_ms * RATE / 1000.0))
     delayed = np.concatenate([np.zeros(delay), signal[:-delay]]) if delay else signal
-    return stereo(signal, delayed, width)
+    mid = 0.5 * (signal + delayed)
+    side = 0.5 * (signal - delayed) * width
+    return np.stack([mid + side, mid - side], axis=1)
 
 
 def loop_crossfade(signal: np.ndarray, seconds: float) -> np.ndarray:
@@ -130,21 +184,39 @@ def master(signal: np.ndarray, rms_db: float, peak_db: float = -1.5) -> np.ndarr
     return normalise(signal, peak_db)
 
 
-def report(name: str, signal: np.ndarray) -> None:
+def spectral_stats(signal: np.ndarray) -> tuple[float, float, float]:
     mono = signal.mean(axis=1) if signal.ndim == 2 else signal
-    peak = 20.0 * math.log10(max(np.max(np.abs(mono)), 1e-9))
-    rms = 20.0 * math.log10(max(np.sqrt(np.mean(mono ** 2)), 1e-9))
-    seam = abs(mono[0] - mono[-1])
+    spectrum = np.abs(np.fft.rfft(mono))
+    frequencies = np.fft.rfftfreq(len(mono), 1.0 / RATE)
+    power = spectrum ** 2
+    total = max(float(power.sum()), 1e-12)
+    centroid = float((power * frequencies).sum() / total)
+    low = float(power[frequencies < 100.0].sum() / total)
+    high = float(power[frequencies > 4000.0].sum() / total)
+    return centroid, low, high
+
+
+def report(name: str, signal: np.ndarray) -> bool:
+    mono = signal.mean(axis=1) if signal.ndim == 2 else signal
+    peak = 20.0 * math.log10(max(float(np.max(np.abs(mono))), 1e-9))
+    rms = 20.0 * math.log10(max(float(np.sqrt(np.mean(mono ** 2))), 1e-9))
+    seam = abs(float(mono[0] - mono[-1]))
     window = max(1, int(0.02 * RATE))
     seam_rms = abs(
         float(np.sqrt(np.mean(mono[:window] ** 2)))
         - float(np.sqrt(np.mean(mono[-window:] ** 2)))
     )
-    print(f"{name:10s} {len(mono) / RATE:6.2f}s  peak {peak:6.2f} dBFS  "
-          f"rms {rms:6.2f} dBFS  seam {seam:.4f}/{seam_rms:.4f}")
+    centroid, low, high = spectral_stats(signal)
+    max_centroid, max_high, min_low = TARGETS[name]
+    passed = centroid <= max_centroid and high <= max_high and low >= min_low
+    status = "ok" if passed else "BRIGHT"
+    print(f"{name:10s} {len(mono) / RATE:6.2f}s  peak {peak:6.2f}  rms {rms:6.2f}  "
+          f"centroid {centroid:6.0f}Hz  low<100 {low * 100:5.1f}%  "
+          f"high>4k {high * 100:4.1f}%  seam {seam:.4f}/{seam_rms:.4f}  {status}")
+    return passed
 
 
-def write_ogg(name: str, signal: np.ndarray) -> None:
+def write_ogg(name: str, signal: np.ndarray) -> bool:
     signal = np.clip(signal, -1.0, 1.0)
     pcm = (signal * 32767.0).astype(np.int16)
     channels = 2 if signal.ndim == 2 else 1
@@ -162,126 +234,94 @@ def write_ogg(name: str, signal: np.ndarray) -> None:
              "-c:a", "libvorbis", "-q:a", "5", "-ar", str(RATE), str(ogg_path)],
             check=True,
         )
-    report(name, signal)
+    return report(name, signal)
 
 
 def dread() -> np.ndarray:
     seconds = 6.0
     rng = np.random.default_rng(SEED + 1)
     t = t_axis(seconds)
-    frequency = 24.0 * np.exp(t / seconds * math.log(55.0 / 24.0))
-    sub = sine(frequency, seconds) * smoothstep(0.0, 4.5, t) * (0.55 + 0.45 * t / seconds)
-
-    breath = fft_filter(rng.standard_normal(len(t)), low=2600.0, high=180.0)
-    breath *= smoothstep(0.0, 1.2, t) * np.clip((seconds - t) / 1.5, 0.0, 1.0) * 0.32
-
-    shimmer = np.zeros_like(t)
-    for index, freq in enumerate((1180.0, 1770.0, 2630.0)):
-        vibrato = 1.0 + 0.006 * np.sin(TWO_PI * (0.11 + index * 0.03) * t)
-        shimmer += np.sin(TWO_PI * freq * vibrato * t + index) * (0.10 / (index + 1))
-    shimmer *= smoothstep(0.4, 5.0, t) * 0.5
-
-    mix = sub + breath + shimmer
-    return master(reverb(mix, mix=0.34, decay=3.0, seed=SEED + 2, low=4500.0, high=90.0), -20.0)
+    sub = sub_sweep(seconds, 20.0, 45.0, 0.8, 3.5, 1.4) * 0.62
+    groan = (np.sin(TWO_PI * 35.0 * t + 0.4 * np.sin(TWO_PI * 0.11 * t))
+             + 0.5 * np.sin(TWO_PI * 70.0 * t + 0.2 * np.sin(TWO_PI * 0.07 * t)))
+    groan *= smoothstep(0.0, 3.5, t) * 0.18
+    breath = fft_filter(rng.standard_normal(len(t)), low=900.0, high=90.0)
+    breath *= smoothstep(0.0, 2.8, t) * (1.0 - smoothstep(5.0, 6.0, t)) * 0.28
+    texture = grind(seconds, rng, 110.0, 650.0, 0.22) * smoothstep(0.8, 5.0, t)
+    mix = sub + groan + breath + texture
+    mix = fft_filter(mix, low=1600.0)
+    return master(reverb(mix, mix=0.30, decay=2.8, seed=SEED + 2), -20.0)
 
 
 def drone() -> np.ndarray:
     seconds = 30.0
     rng = np.random.default_rng(SEED + 3)
     t = t_axis(seconds)
-    beat = np.zeros_like(t)
-    for base, gain in ((32.7, 0.55), (49.0, 0.34), (65.4, 0.24)):
-        for detune in (-0.11, 0.11):
-            beat += np.sin(TWO_PI * (base + detune) * t + rng.uniform(0.0, TWO_PI)) * gain
-    beat *= 0.6 * (0.82 + 0.18 * np.sin(TWO_PI * (2.0 / seconds) * t))
 
-    saw = np.zeros_like(t)
-    for harmonic in range(1, 9):
-        saw += np.sin(TWO_PI * 32.7 * harmonic * t) / harmonic
-    saw = fft_filter(saw, low=420.0, order=2) * 0.22
+    sub = np.zeros_like(t)
+    for base, gain in ((27.5, 0.46), (41.2, 0.28), (55.0, 0.18)):
+        for detune in (-0.08, 0.08):
+            sub += np.sin(TWO_PI * (base + detune) * t + rng.uniform(0.0, TWO_PI)) * gain
+    sub *= 0.62 * (0.86 + 0.14 * np.sin(TWO_PI * (2.0 / seconds) * t))
 
-    choir = np.zeros_like(t)
-    chord = (130.8, 196.0, 261.6, 311.1)
-    for index, freq in enumerate(chord):
-        choir += np.sin(TWO_PI * freq * (1.0 + 0.004 * np.sin(TWO_PI * 0.05 * t + index)) * t
-                        + index * 1.7)
-    choir = fft_filter(choir, low=2600.0, high=260.0) * 0.14
-    choir *= 0.8 + 0.2 * np.sin(TWO_PI * (3.0 / seconds) * t + 1.1)
+    electrical = hum(seconds, 50.0) * 0.16
+    texture = grind(seconds, rng, 140.0, 1800.0, 0.55) * (0.85 + 0.15 * np.sin(
+        TWO_PI * (3.0 / seconds) * t
+    ))
 
-    crackle = np.zeros_like(t)
-    for _ in range(170):
-        start = rng.integers(0, len(t) - 400)
-        length = rng.integers(120, 500)
-        burst = rng.standard_normal(length) * np.exp(-np.arange(length) / 90.0)
-        crackle[start:start + length] += fft_filter(burst, high=1800.0) * rng.uniform(0.01, 0.05)
+    pulses = np.zeros_like(t)
+    for index in range(8):
+        start = index * seconds / 8.0
+        add_at(pulses, sub_sweep(0.8, 48.0, 30.0, 0.02, 0.5) * 0.24, start)
+        tick = fft_filter(rng.standard_normal(int(0.25 * RATE)), low=1200.0, high=200.0)
+        tick *= exp_env(0.25, 0.002, 0.08) * 0.12
+        add_at(pulses, tick, start)
 
-    core = beat + saw + choir + crackle
-    core = reverb(core, mix=0.28, decay=3.5, seed=SEED + 4, low=3800.0, high=70.0)
-    core = loop_crossfade(core, 0.8)
-    return master(core, -20.0, -3.0)
+    mix = sub + electrical + texture + pulses
+    mix = fft_filter(mix, low=1800.0)
+    mix = reverb(mix, mix=0.30, decay=3.2, seed=SEED + 4)
+    mix = loop_crossfade(mix, 0.8)
+    return master(mix, -20.0, -3.0)
 
 
 def ignition() -> np.ndarray:
     seconds = 5.0
     rng = np.random.default_rng(SEED + 5)
-    t = t_axis(seconds)
-    riser = fft_filter(rng.standard_normal(len(t)), low=3200.0, high=220.0)
-    riser *= smoothstep(0.0, 0.46, t) * np.clip((0.56 - t) / 0.12, 0.0, 1.0) * 0.5
-
-    impact_time = 0.48
-    shifted = np.clip(t - impact_time, 0.0, None)
-    sub_frequency = 90.0 * np.exp(-shifted / 0.55) + 22.0
-    sub = sine(sub_frequency, seconds) * exp_env(seconds, impact_time + 0.005, 0.9)
-    sub *= (t >= impact_time)
-
-    crack = fft_filter(rng.standard_normal(len(t)), low=14000.0, high=90.0)
-    crack *= exp_env(seconds, impact_time + 0.001, 0.35) * 0.8
-
-    metal = np.zeros_like(t)
-    for index, ratio in enumerate((1.0, 2.76, 5.4, 8.9)):
-        metal += np.sin(TWO_PI * 54.0 * ratio * (t - impact_time) + index) / (index + 1.5)
-    metal *= exp_env(seconds, impact_time + 0.005, 1.4) * 0.35
-
-    mix = riser + sub + crack + metal
-    mix = reverb(mix, mix=0.24, decay=2.6, seed=SEED + 6, low=5200.0, high=80.0)
-    return master(widen(mix, 11.0, 0.7), -12.0)
+    sub = sub_sweep(seconds, 78.0, 18.0, 0.045, 1.4) * 0.95
+    body = sub_sweep(seconds, 96.0, 54.0, 0.04, 1.2) * 0.45
+    pressure = fft_filter(rng.standard_normal(len(sub)), low=420.0, high=35.0)
+    pressure *= exp_env(seconds, 0.03, 1.8) * 0.65
+    metal = (np.sin(TWO_PI * 72.0 * t_axis(seconds))
+             + 0.7 * np.sin(TWO_PI * 108.0 * t_axis(seconds))
+             + 0.4 * np.sin(TWO_PI * 144.0 * t_axis(seconds)))
+    metal *= exp_env(seconds, 0.05, 2.4) * 0.12
+    thump = (np.sin(TWO_PI * 110.0 * t_axis(seconds))
+             + 0.5 * np.sin(TWO_PI * 165.0 * t_axis(seconds)))
+    thump *= exp_env(seconds, 0.03, 0.55) * 0.22
+    mix = fft_filter(sub + body + pressure + metal + thump, low=1600.0)
+    return master(widen(reverb(mix, mix=0.25, decay=2.4, seed=SEED + 6), 10.0, 0.7), -12.0)
 
 
 def shockwave() -> np.ndarray:
     seconds = 4.0
     rng = np.random.default_rng(SEED + 7)
-    t = t_axis(seconds)
-    source = rng.standard_normal(len(t))
-    sweep = np.zeros_like(t)
-    for low, gain in ((180.0, 0.55), (900.0, 0.35), (4000.0, 0.25)):
-        band = fft_filter(source, low=low, high=low * 0.25)
-        weight = np.exp(-((t - (0.15 + low / 9000.0)) / 0.55) ** 2)
-        sweep += band * weight * gain
-    sweep *= exp_env(seconds, 0.008, 1.1) * 0.75
-
-    boom = sine(45.0 * np.exp(-t / 1.4) + 30.0, seconds) * exp_env(seconds, 0.01, 0.7) * 0.5
-    mix = sweep + boom
-    mix = reverb(mix, mix=0.20, decay=1.8, seed=SEED + 8, low=7000.0, high=90.0)
-    return master(widen(mix, 18.0, 1.0), -13.0)
+    pressure = fft_filter(rng.standard_normal(len(t_axis(seconds))), low=380.0, high=25.0)
+    pressure *= exp_env(seconds, 0.02, 1.4) * 0.8
+    sub = sub_sweep(seconds, 52.0, 28.0, 0.02, 0.9) * 0.5
+    mix = fft_filter(pressure + sub, low=900.0)
+    return master(widen(reverb(mix, mix=0.20, decay=1.8, seed=SEED + 8), 16.0, 1.0), -13.0)
 
 
 def accretion() -> np.ndarray:
     seconds = 24.0
     rng = np.random.default_rng(SEED + 9)
     t = t_axis(seconds)
-    hiss = fft_filter(rng.standard_normal(len(t)), low=900.0, high=90.0)
-    hiss *= 0.35 + 0.65 * (0.5 + 0.5 * np.sin(TWO_PI * (3.0 / seconds) * t))
-    hiss *= 0.45
-
-    sparks = np.zeros_like(t)
-    for _ in range(420):
-        start = rng.integers(0, len(t) - 600)
-        length = rng.integers(80, 600)
-        burst = rng.standard_normal(length) * np.exp(-np.arange(length) / 120.0)
-        sparks[start:start + length] += fft_filter(burst, high=2400.0) * rng.uniform(0.01, 0.045)
-
-    mix = hiss + sparks
-    mix = reverb(mix, mix=0.20, decay=2.4, seed=SEED + 10, low=6000.0, high=100.0)
+    texture = grind(seconds, rng, 100.0, 1500.0, 0.65)
+    texture *= 0.55 + 0.45 * np.sin(TWO_PI * (3.0 / seconds) * t)
+    sub = np.sin(TWO_PI * 35.0 * t) * 0.10
+    metal = np.sin(TWO_PI * 85.0 * t + 0.2 * np.sin(TWO_PI * 0.11 * t)) * 0.07
+    mix = fft_filter(texture + sub + metal, low=1800.0)
+    mix = reverb(mix, mix=0.22, decay=2.2, seed=SEED + 10)
     mix = loop_crossfade(mix, 0.6)
     return master(mix, -26.0, -5.0)
 
@@ -290,88 +330,64 @@ def pulse() -> np.ndarray:
     seconds = 2.5
     rng = np.random.default_rng(SEED + 11)
     t = t_axis(seconds)
-    sub = sine(60.0 * np.exp(-t / 0.35) + 34.0, seconds) * exp_env(seconds, 0.008, 0.55) * 0.7
-    thump = fft_filter(rng.standard_normal(len(t)), low=180.0) * exp_env(seconds, 0.005, 0.30) * 0.5
-    tail = np.zeros_like(t)
-    for index, freq in enumerate((180.0, 460.0, 900.0)):
-        tail += np.sin(TWO_PI * freq * t + index) * np.exp(-t / 0.7) / (index + 1.5)
-    tail *= 0.22
-    mix = reverb(sub + thump + tail, mix=0.26, decay=1.5, seed=SEED + 12)
-    return master(mix, -17.0)
+    sub = sub_sweep(seconds, 55.0, 28.0, 0.010, 0.55) * 0.8
+    metal = (np.sin(TWO_PI * 90.0 * t)
+             + 0.6 * np.sin(TWO_PI * 180.0 * t)
+             + 0.35 * np.sin(TWO_PI * 270.0 * t))
+    metal *= exp_env(seconds, 0.010, 1.1) * 0.22
+    thump = fft_filter(rng.standard_normal(len(t)), low=200.0)
+    thump *= exp_env(seconds, 0.005, 0.30) * 0.4
+    mix = fft_filter(sub + metal + thump, low=1400.0)
+    return master(reverb(mix, mix=0.26, decay=1.4, seed=SEED + 12), -17.0)
 
 
 def collapse() -> np.ndarray:
     seconds = 5.0
     rng = np.random.default_rng(SEED + 13)
     t = t_axis(seconds)
-    progress = np.clip(t / seconds, 0.0, 1.0)
-
-    # Shepard-style endless rise: each octave glides through a log-frequency
-    # bell, so the wrapping component is inaudible when it returns to the bottom.
-    shepard = np.zeros_like(t)
-    for octave in range(8):
-        position = (progress * 3.0 + octave) % 8.0
-        amplitude = np.exp(-((position - 4.0) ** 2) / 1.5)
-        frequency = 32.0 * (2.0 ** position)
-        phase = np.cumsum(TWO_PI * frequency / RATE)
-        shepard += np.sin(phase) * amplitude
-    shepard *= smoothstep(0.0, 3.5, t) * 0.22
-
-    cluster = (np.sin(TWO_PI * 55.0 * t) + np.sin(TWO_PI * 58.3 * t)
-               + np.sin(TWO_PI * 82.4 * t)) * 0.20 * smoothstep(0.5, 4.2, t)
-
-    suction = fft_filter(rng.standard_normal(len(t)), low=2200.0, high=120.0)
-    suction *= smoothstep(0.0, 1.0, t) * (0.35 + 0.65 * progress) * 0.35
-
-    mix = (shepard + cluster + suction) * (1.0 - smoothstep(4.6, 5.0, t))
-    mix = reverb(mix, mix=0.28, decay=2.4, seed=SEED + 14, low=5000.0, high=90.0)
-    return master(widen(mix, 9.0, 0.6), -14.0)
+    sub = sub_sweep(seconds, 42.0, 18.0, 0.5, 4.0, 1.2) * 0.50
+    texture = grind(seconds, rng, 80.0, 1400.0, 0.50)
+    texture *= smoothstep(0.0, 4.0, t) * (0.30 + 0.70 * t / seconds)
+    metal = (np.sin(TWO_PI * 60.0 * t + 0.3 * np.sin(TWO_PI * 0.5 * t))
+             + 0.6 * np.sin(TWO_PI * 90.0 * t)
+             + 0.35 * np.sin(TWO_PI * 120.0 * t))
+    metal *= exp_env(seconds, 0.5, 2.6) * 0.10
+    suction = fft_filter(rng.standard_normal(len(t)), low=900.0, high=100.0)
+    suction *= smoothstep(0.0, 3.0, t) * 0.22
+    mix = fft_filter(sub + texture + metal + suction, low=1500.0)
+    mix *= 1.0 - smoothstep(4.6, 5.0, t)
+    return master(widen(reverb(mix, mix=0.28, decay=2.2, seed=SEED + 14), 9.0, 0.6), -14.0)
 
 
 def implosion() -> np.ndarray:
     seconds = 2.4
     rng = np.random.default_rng(SEED + 15)
     t = t_axis(seconds)
-    impact_time = 0.30
-
-    riser = fft_filter(rng.standard_normal(len(t)), low=9000.0, high=400.0)
-    riser *= smoothstep(0.0, impact_time, t) * np.clip((impact_time + 0.01 - t) / 0.02, 0.0, 1.0)
-    riser *= 0.35
-
-    shifted = np.clip(t - impact_time, 0.0, None)
-    sub = sine(30.0 * np.exp(-shifted / 0.9) + 17.0, seconds) * exp_env(seconds, impact_time + 0.004, 0.85)
-    sub *= (t >= impact_time) * 0.85
-
-    crack = fft_filter(rng.standard_normal(len(t)), low=16000.0, high=60.0)
-    crack *= exp_env(seconds, impact_time + 0.001, 0.22) * 0.60
-
-    shriek = np.sin(TWO_PI * 320.0 * (t - impact_time)
-                    + 2.2 * np.exp(-shifted / 0.3) * np.sin(TWO_PI * 720.0 * (t - impact_time)))
-    shriek *= exp_env(seconds, impact_time + 0.003, 0.55) * 0.20 * (t >= impact_time)
-
-    gap = 1.0 - 0.85 * np.exp(-((t - (impact_time + 0.42)) / 0.10) ** 2)
-    mix = fft_filter(riser + sub + crack + shriek, low=12000.0)
-    mix *= gap
-    mix = reverb(mix, mix=0.30, decay=2.0, seed=SEED + 16, low=6000.0, high=60.0)
-    return master(widen(mix, 7.0, 0.8), -10.0)
+    sub = sub_sweep(seconds, 34.0, 17.0, 0.040, 0.8) * 0.9
+    pressure = fft_filter(rng.standard_normal(len(t)), low=300.0, high=30.0)
+    pressure *= exp_env(seconds, 0.03, 0.9) * 0.5
+    metal = (np.sin(TWO_PI * 55.0 * t)
+             + 0.6 * np.sin(TWO_PI * 82.0 * t)
+             + 0.3 * np.sin(TWO_PI * 110.0 * t))
+    metal *= exp_env(seconds, 0.02, 1.3) * 0.18
+    gap = 1.0 - 0.8 * np.exp(-((t - 0.5) / 0.12) ** 2)
+    mix = fft_filter(sub + pressure + metal, low=1400.0) * gap
+    return master(widen(reverb(mix, mix=0.30, decay=2.0, seed=SEED + 16), 7.0, 0.8), -10.0)
 
 
 def echo() -> np.ndarray:
     seconds = 1.6
     rng = np.random.default_rng(SEED + 17)
     t = t_axis(seconds)
-    choir = np.zeros_like(t)
-    for index, freq in enumerate((130.8, 196.0, 261.6, 311.1)):
-        choir += np.sin(TWO_PI * freq * (1.0 + 0.003 * np.sin(TWO_PI * 0.4 * t + index)) * t
-                        + index * 2.1)
-    choir = fft_filter(choir, low=2400.0, high=220.0)
-    choir *= smoothstep(0.0, 0.5, t) * np.exp(-t / 0.85) * 0.5
-
-    rumble = fft_filter(rng.standard_normal(len(t)), low=120.0, high=30.0)
+    groan = (np.sin(TWO_PI * 55.0 * t + 0.3 * np.sin(TWO_PI * 0.4 * t))
+             + 0.5 * np.sin(TWO_PI * 82.5 * t)
+             + 0.3 * np.sin(TWO_PI * 110.0 * t))
+    groan = fft_filter(groan, low=1000.0, high=45.0)
+    groan *= smoothstep(0.0, 0.45, t) * np.exp(-t / 0.85) * 0.5
+    rumble = fft_filter(rng.standard_normal(len(t)), low=120.0, high=28.0)
     rumble *= np.exp(-t / 0.7) * 0.25
-
-    mix = reverb(choir + rumble, mix=0.40, decay=1.6, seed=SEED + 18, low=4000.0, high=80.0)
-    return master(widen(mix, 21.0, 1.0), -18.0)
+    mix = reverb(groan + rumble, mix=0.40, decay=1.5, seed=SEED + 18)
+    return master(widen(mix, 19.0, 1.0), -18.0)
 
 
 def main() -> None:
@@ -386,8 +402,9 @@ def main() -> None:
         "implosion": implosion(),
         "echo": echo(),
     }
-    for name, signal in sounds.items():
-        write_ogg(name, signal)
+    failed = [name for name, signal in sounds.items() if not write_ogg(name, signal)]
+    if failed:
+        raise SystemExit("Bright or sharp stems: " + ", ".join(failed))
 
 
 if __name__ == "__main__":

@@ -8,7 +8,6 @@ import mafisher.quasar.QuasarClientConfig;
 import mafisher.quasar.client.effect.CameraShakeImpulse;
 import mafisher.quasar.client.effect.ClientEffectImpulses;
 import mafisher.quasar.client.effect.EffectRenderContext;
-import mafisher.quasar.client.effect.ScreenFlashImpulse;
 import net.minecraft.world.phys.Vec3;
 
 /**
@@ -17,13 +16,12 @@ import net.minecraft.world.phys.Vec3;
  */
 final class ContentBlackHoleImpulses {
     private static final double SHAKE_RADIUS = 512.0;
-    private static final double FLASH_RADIUS = 512.0;
     private static final int MAX_TRACKED = 64;
     private static final Milestone[] MILESTONES = {
-        new Milestone(0.040F, Beat.IGNITION),
-        new Milestone(0.055F, Beat.SHOCKWAVE),
-        new Milestone(0.885F, Beat.COLLAPSE),
-        new Milestone(0.960F, Beat.IMPLOSION)
+        new Milestone(ContentBlackHoleCinematics.IGNITION, Beat.IGNITION),
+        new Milestone(ContentBlackHoleCinematics.IGNITION + 0.010F, Beat.SHOCKWAVE),
+        new Milestone(ContentBlackHoleCinematics.DESTABILISE + 0.010F, Beat.COLLAPSE),
+        new Milestone(ContentBlackHoleCinematics.IMPLOSION, Beat.IMPLOSION)
     };
     private static final Map<UUID, Tracker> TRACKERS = new LinkedHashMap<>();
 
@@ -69,19 +67,10 @@ final class ContentBlackHoleImpulses {
 
     private static void fire(Vec3 position, Beat beat) {
         switch (beat) {
-            case IGNITION -> {
-                shake(position, 0.30F, 22, 0.85F, 1.1F);
-                flash(position, 0.20F, 8, 1.0F, 0.86F, 0.64F);
-            }
-            case SHOCKWAVE -> {
-                shake(position, 0.16F, 28, 1.35F, 0.75F);
-                flash(position, 0.09F, 6, 1.0F, 0.92F, 0.78F);
-            }
-            case COLLAPSE -> shake(position, 0.20F, 40, 0.55F, 0.65F);
-            case IMPLOSION -> {
-                shake(position, 0.62F, 16, 2.4F, 2.0F);
-                flash(position, 0.50F, 12, 0.86F, 0.93F, 1.0F);
-            }
+            case IGNITION -> shake(position, 0.28F, 20, 0.60F, 1.0F);
+            case SHOCKWAVE -> shake(position, 0.14F, 30, 0.90F, 0.6F);
+            case COLLAPSE -> shake(position, 0.22F, 45, 0.45F, 0.7F);
+            case IMPLOSION -> shake(position, 0.55F, 18, 1.80F, 1.8F);
             default -> throw new IllegalStateException("Unknown black-hole beat: " + beat);
         }
     }
@@ -90,13 +79,6 @@ final class ContentBlackHoleImpulses {
         float frequencyHz, float maxAngleDegrees) {
         ClientEffectImpulses.cameraShake(new CameraShakeImpulse(
             position, SHAKE_RADIUS, intensity, durationTicks, frequencyHz, maxAngleDegrees
-        ));
-    }
-
-    private static void flash(Vec3 position, float intensity, int durationTicks,
-        float red, float green, float blue) {
-        ClientEffectImpulses.screenFlash(new ScreenFlashImpulse(
-            position, FLASH_RADIUS, intensity, durationTicks, red, green, blue
         ));
     }
 

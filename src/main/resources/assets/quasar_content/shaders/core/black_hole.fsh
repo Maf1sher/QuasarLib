@@ -34,9 +34,13 @@ uniform float Charge;
 uniform float Fade;
 uniform float ShockRadius;
 uniform float ShockStrength;
+uniform float ShockAbsorb;
 uniform float CoreFlash;
 uniform float FlashRadius;
 uniform float OutroJet;
+uniform float VortexStrength;
+uniform float VortexRadius;
+uniform float Darkness;
 uniform float LensStrength;
 uniform float RingStrength;
 uniform float DiskBrightness;
@@ -151,6 +155,15 @@ bool projectDirection(vec3 direction, out vec2 uv) {
     }
     uv = clip.xy / clip.w * 0.5 + 0.5;
     return all(greaterThanEqual(uv, vec2(-0.25))) && all(lessThanEqual(uv, vec2(1.25)));
+}
+
+/** Projects a camera-relative point; returns a negative UV when it is behind the camera. */
+vec2 projectPoint(vec3 point) {
+    vec4 clip = WorldProjMat * vec4(mat3(ViewMat) * point, 1.0);
+    if (clip.w <= 0.0001) {
+        return vec2(-1.0);
+    }
+    return clip.xy / clip.w * 0.5 + 0.5;
 }
 
 vec3 paletteColor(vec3 gold, vec3 amber, vec3 neon, float charge) {
@@ -391,6 +404,26 @@ vec4 renderBlackHole(vec2 uv) {
         vec2 lensUv;
         if (projectDirection(lensDirection, lensUv)) {
             vec2 sourceUv = clamp(lensUv, vec2(0.0), vec2(1.0));
+            if (abs(VortexStrength) > 0.001) {
+                vec2 holeUv = projectPoint(cameraRelative);
+                if (holeUv.x >= 0.0) {
+                    float uvRadius = clamp(
+                        VortexRadius * abs(WorldProjMat[1][1])
+                            / max(2.0 * holeDistance, 0.001),
+                        0.03,
+                        2.0
+                    );
+                    vec2 delta = sourceUv - holeUv;
+                    float distanceToHole = length(delta);
+                    float falloff = 1.0 - smoothstep(0.0, uvRadius, distanceToHole);
+                    float angle = VortexStrength * 2.4 * falloff;
+                    float cs = cos(angle);
+                    float sn = sin(angle);
+                    vec2 swirled = holeUv + mat2(cs, -sn, sn, cs) * delta
+                        * (1.0 - 0.35 * VortexStrength * falloff);
+                    sourceUv = clamp(swirled, vec2(0.0), vec2(1.0));
+                }
+            }
             float sourceDistance = viewDistance(texture(DepthSampler, sourceUv).r, sourceUv);
             if (insideLens || tEntry <= 0.0 || sourceDistance >= tEntry - 0.5) {
                 float edgeFade = smoothstep(0.0, 0.03, lensUv.x)
@@ -414,6 +447,16 @@ vec4 renderBlackHole(vec2 uv) {
         * (1.0 - smoothstep(0.86, 1.0, Progress));
     float pixelWorld = max(0.0001,
         2.0 * max(holeDistance, radius) / max(abs(WorldProjMat[1][1]) * ViewportHeight, 1.0));
+
+    // A dark shockwave absorbs the lensed background inside its annulus. The thin
+    // bright rim is added later, so the wave reads as light being eaten, not emitted.
+    if (ShockAbsorb > 0.001 && ShockRadius > 0.001) {
+        float absorbWidth = max(ShockRadius * 0.08, pixelWorld * 2.0);
+        float absorbOffset = (impact - ShockRadius) / absorbWidth;
+        float absorb = exp(-absorbOffset * absorbOffset) * ShockAbsorb;
+        color *= 1.0 - clamp(absorb, 0.0, 0.85);
+    }
+
     float ringWidth = max(0.055 * radius, pixelWorld * 1.5);
     float primaryOffset = (impact - shadowImpact) / ringWidth;
     float secondaryOffset = (impact - shadowImpact - 0.35 * radius) / (ringWidth * 1.6);
@@ -444,8 +487,8 @@ vec4 renderBlackHole(vec2 uv) {
     if (CoreFlash > 0.001) {
         float flashRadius = max(FlashRadius, pixelWorld * 2.0);
         float flashFalloff = exp(-pow(impact / flashRadius, 2.0) * 2.5);
-        vec3 flashColor = mix(vec3(1.0, 0.94, 0.82), ringColor, 0.45);
-        color += flashColor * flashFalloff * CoreFlash * 3.0;
+        vec3 flashColor = mix(vec3(0.55, 0.66, 0.92), ringColor, 0.30);
+        color += flashColor * flashFalloff * CoreFlash * 0.25;
     }
 
     // Expanding (intro) or contracting (outro) shockwave ring plus its wake.
@@ -468,7 +511,7 @@ vec4 renderBlackHole(vec2 uv) {
             * (0.35 + 0.65 * exp(-pow(impact / max(radius * 2.5, 0.001), 2.0)));
         float knot = exp(-pow((impact - radius * 0.35) / max(radius * 0.6, 0.001), 2.0));
         vec3 jetColor = mix(vec3(0.75, 0.90, 1.0), vec3(1.0, 0.85, 0.55), Charge);
-        color += jetColor * (jet * 1.6 + knot * 0.6) * OutroJet;
+        color += jetColor * (jet * 0.7 + knot * 0.3) * OutroJet;
     }
 
     return vec4(color, coverage);
@@ -540,6 +583,7 @@ void main() {
     }
 
     vec3 center = mix(sceneColor.rgb, color, alpha);
+    center *= 1.0 - clamp(Darkness, 0.0, 0.75);
     if (BloomStrength <= 0.0) {
         fragColor = vec4(center, 1.0);
         return;
