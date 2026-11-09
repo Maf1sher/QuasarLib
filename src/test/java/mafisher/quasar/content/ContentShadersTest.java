@@ -114,6 +114,21 @@ class ContentShadersTest {
             "the accretion ring must form after the horizon instead of appearing with it");
         assertTrue(shader.contains("drillFalloff") && shader.contains("drillUv"),
             "the drill must stay core-sized and return the input UV outside its radius");
+        assertTrue(!shader.contains("coverage *= facing")
+                && !shader.contains("coverage *= edge * facing"),
+            "the facing gate must not cut the disk, rings, or core when the camera is close");
+        assertTrue(shader.contains("warpFalloff * skyWarp * facing"),
+            "only the screen-space background lens may fade for rays pointing away");
+        assertTrue(shader.contains("float innerOcclusion = facing *"),
+            "only the screen-space shadow may fade for rays pointing away");
+        int horizon = shader.indexOf("length(cameraRelative) <= radius * 1.02");
+        int footprint = shader.indexOf("float tEntry = raySphereEntry");
+        assertTrue(horizon >= 0 && horizon < footprint,
+            "the inside-horizon darkness must be returned before any footprint gate");
+        assertTrue(shader.contains("bool drillActive = !insideHorizon"),
+            "the drill must not warp the frame from inside the horizon");
+        assertTrue(shader.contains("emissionTint * facing"),
+            "cinematic glow layers must not appear in front when the hole is behind");
         assertTrue(shader.contains("OutroJet"),
             "the collapse needs polar jets");
     }

@@ -541,6 +541,11 @@ vec4 renderBlackHole(vec2 uv) {
     vec3 traceDirection = ray.direction;
     float holeDistance = length(BlackHoleOffset);
     float radius = max(BlackHoleRadius, 0.001);
+    // Check the horizon before any footprint or facing gate: inside the core the
+    // whole frame must be dark regardless of the view direction.
+    if (length(cameraRelative) <= radius * 1.02) {
+        return EmissiveOnly > 0.5 ? vec4(0.0) : vec4(vec3(0.02, 0.01, 0.03), 0.0);
+    }
     float lensRadius = max(LensRadius, radius * 3.0);
     float depthScale = effectDepthScale(holeDistance, lensRadius);
     float tEntry = raySphereEntry(traceOrigin, traceDirection, lensRadius);
@@ -562,15 +567,9 @@ vec4 renderBlackHole(vec2 uv) {
     float skyFactor = smoothstep(0.9995, 1.0, straightDepth);
     float skyWarp = mix(1.0, 0.35, skyFactor);
     float edge = 1.0 - smoothstep(lensRadius * 0.88, lensRadius * 1.04, impact);
-    coverage *= edge * facing;
+    coverage *= edge;
     if (coverage < 0.002) {
         return EmissiveOnly > 0.5 ? vec4(0.0) : vec4(sceneColor.rgb, 0.0);
-    }
-
-    if (length(cameraRelative) <= radius * 1.02) {
-        // The camera is inside the horizon: keep the frame stable and dark. An entry
-        // of zero keeps the effect visible for any scene depth.
-        return vec4(vec3(0.02, 0.01, 0.03), 0.0);
     }
 
     vec3 position = traceOrigin + traceDirection * max(tEntry, 0.0);
@@ -652,7 +651,7 @@ vec4 renderBlackHole(vec2 uv) {
         bool currentForeground = foregroundLayer(uv, lensEntry, 0.5);
         float lensBlend = (ray.surfaceDistance > 0.0 || CameraSubmerged > 0.5
             || currentForeground || MediumPathLength > 0.0)
-            ? 0.0 : clamp(LensStrength, 0.0, 1.0) * warpFalloff * skyWarp;
+            ? 0.0 : clamp(LensStrength, 0.0, 1.0) * warpFalloff * skyWarp * facing;
         vec3 lensDirection = normalize(mix(direction, outDirection, lensBlend));
         // Lens from the accumulated composition, not the pristine frame: batches
         // are ordered farthest-first, so this bends the image of the black holes
@@ -685,9 +684,9 @@ vec4 renderBlackHole(vec2 uv) {
                     edgeFade);
             }
         }
-        float innerOcclusion = 1.0 - smoothstep(
+        float innerOcclusion = facing * (1.0 - smoothstep(
             shadowImpact * 1.05, shadowImpact * 1.35, impact
-        );
+        ));
         backgroundLight = background * transmittance * (1.0 - innerOcclusion);
     }
 
@@ -704,7 +703,7 @@ vec4 renderBlackHole(vec2 uv) {
         float absorbWidth = max(ShockRadius * 0.08, pixelWorld * 2.0);
         float absorbOffset = (impact - ShockRadius) / absorbWidth;
         float absorb = exp(-absorbOffset * absorbOffset) * ShockAbsorb;
-        float absorbFactor = 1.0 - clamp(absorb, 0.0, 0.85);
+        float absorbFactor = mix(1.0, 1.0 - clamp(absorb, 0.0, 0.85), facing);
         color *= absorbFactor;
         backgroundLight *= absorbFactor;
     }
@@ -718,7 +717,7 @@ vec4 renderBlackHole(vec2 uv) {
     float pulse = 0.85 + 0.15 * sin(AgeTicks * 0.08 + Seed * 6.2831853);
     vec3 ringLight = ringColor * (primaryRing + secondaryRing) * RingStrength * 0.18
         * pulse * stabilization * (0.35 + 0.65 * transmittance);
-    color += (ringLight / (vec3(1.0) + ringLight)) * emissionTint;
+    color += (ringLight / (vec3(1.0) + ringLight)) * emissionTint * facing;
 
     // A hot inner rim bridges the shadow and the disk inner edge. It also hides
     // the thin background sliver that would otherwise show through the gap.
@@ -726,13 +725,13 @@ vec4 renderBlackHole(vec2 uv) {
     float innerRim = exp(-innerRimOffset * innerRimOffset);
     vec3 innerRimColor = mix(vec3(1.0, 0.86, 0.62), vec3(0.75, 0.90, 1.0), Charge);
     vec3 innerRimLight = innerRimColor * innerRim * RingStrength * 0.12 * stabilization;
-    color += (innerRimLight / (vec3(1.0) + innerRimLight)) * emissionTint;
+    color += (innerRimLight / (vec3(1.0) + innerRimLight)) * emissionTint * facing;
 
     float haloOffset = (impact - shadowImpact) / (3.5 * radius);
     float halo = exp(-haloOffset * haloOffset) * 0.08;
     vec3 haloColor = mix(vec3(1.0, 0.45, 0.15), vec3(0.5, 0.2, 1.0), Charge);
     vec3 haloLight = haloColor * halo * RingStrength * 0.04 * stabilization;
-    color += (haloLight / (vec3(1.0) + haloLight)) * emissionTint;
+    color += (haloLight / (vec3(1.0) + haloLight)) * emissionTint * facing;
 
     // Cinematic ignition and implosion flash. It is emissive-only so the bloom
     // layer catches it without washing out the lensed background.
@@ -740,7 +739,7 @@ vec4 renderBlackHole(vec2 uv) {
         float flashRadius = max(FlashRadius, pixelWorld * 2.0);
         float flashFalloff = exp(-pow(impact / flashRadius, 2.0) * 2.5);
         vec3 flashColor = mix(vec3(0.55, 0.66, 0.92), ringColor, 0.30);
-        color += flashColor * flashFalloff * CoreFlash * 0.25 * emissionTint;
+        color += flashColor * flashFalloff * CoreFlash * 0.25 * emissionTint * facing;
     }
 
     // Expanding (intro) or contracting (outro) shockwave ring plus its wake.
@@ -752,7 +751,7 @@ vec4 renderBlackHole(vec2 uv) {
         float wakeOffset = (impact - ShockRadius * 0.94) / (shockWidth * 2.5);
         float wake = exp(-wakeOffset * wakeOffset) * 0.35;
         vec3 shockColor = mix(vec3(1.0, 0.90, 0.72), ringColor, 0.35);
-        color += shockColor * (shock + wake) * ShockStrength * emissionTint;
+        color += shockColor * (shock + wake) * ShockStrength * emissionTint * facing;
     }
 
     // Polar jets at the moment the horizon disappears. The exponent keeps them
@@ -763,7 +762,7 @@ vec4 renderBlackHole(vec2 uv) {
             * (0.35 + 0.65 * exp(-pow(impact / max(radius * 2.5, 0.001), 2.0)));
         float knot = exp(-pow((impact - radius * 0.35) / max(radius * 0.6, 0.001), 2.0));
         vec3 jetColor = mix(vec3(0.75, 0.90, 1.0), vec3(1.0, 0.85, 0.55), Charge);
-        color += jetColor * (jet * 0.7 + knot * 0.3) * OutroJet * emissionTint;
+        color += jetColor * (jet * 0.7 + knot * 0.3) * OutroJet * emissionTint * facing;
     }
 
     // Medium fog belongs to the effect's emission only. The lensed background is
@@ -799,8 +798,8 @@ void main() {
 
     vec3 cameraRelative = -BlackHoleOffset;
     float holeDistance = length(BlackHoleOffset);
+    bool insideHorizon = holeDistance <= max(BlackHoleRadius, 0.001) * 1.02;
     vec3 direction = rayDirection(texCoord);
-    float facing = frontFacing(direction);
     SceneRay ray = refractAtWater(cameraRelative, direction);
     vec4 effectColor = texture(EffectSampler, texCoord);
     float lensRadius = max(LensRadius, BlackHoleRadius * 3.0);
@@ -820,7 +819,8 @@ void main() {
         foregroundInFront = foregroundLayer(texCoord, entryDistance, depthBias);
     }
     vec2 sceneUv = texCoord;
-    bool drillActive = CameraSubmerged < 0.5 && !ray.totalInternalReflection
+    bool drillActive = !insideHorizon
+        && CameraSubmerged < 0.5 && !ray.totalInternalReflection
         && ray.surfaceDistance <= 0.0 && abs(VortexStrength) > 0.001
         && MediumPathLength <= 0.0 && !foregroundInFront;
     if (drillActive) {
@@ -852,7 +852,6 @@ void main() {
     // in alpha instead, so recompute coverage here at full composite resolution.
     float coverage = clamp(texture(MaskSampler, texCoord).r * MaskStrength, 0.0, 1.0) * Fade;
     coverage *= 1.0 - smoothstep(lensRadius * 0.88, lensRadius * 1.04, impact);
-    coverage *= facing;
     bool footprint = insideLens || tEntry >= 0.0;
     bool visible = footprint && sceneDistance >= entryDistance - depthBias;
     float alpha = coverage * (visible ? 1.0 : 0.0);
