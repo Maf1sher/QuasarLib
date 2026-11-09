@@ -116,8 +116,16 @@ final class ClientScreenCompositor {
         try {
             try {
                 EffectQualityTier quality = ClientQualityController.tier();
-                int targetWidth = Math.max(1, Math.round(width * quality.screenScale()));
-                int targetHeight = Math.max(1, Math.round(height * quality.screenScale()));
+                float compositionScale = quality.screenScale();
+                for (ScreenEffectBatch batch : batches) {
+                    compositionScale = Math.max(compositionScale,
+                        this.operationRegistry.find(batch.settings().operation())
+                            .map(ScreenEffectOperationRenderer::compositionScaleFloor)
+                            .orElse(0.0F));
+                }
+                compositionScale = Math.min(1.0F, compositionScale);
+                int targetWidth = Math.max(1, Math.round(width * compositionScale));
+                int targetHeight = Math.max(1, Math.round(height * compositionScale));
 
                 Matrix4f modelViewMatrix = new Matrix4f(event.getModelViewMatrix());
                 Matrix4f projectionMatrix = new Matrix4f(event.getProjectionMatrix());

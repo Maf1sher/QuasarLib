@@ -66,6 +66,11 @@ class ContentBlackHoleRendererTest {
         assertEquals(8.0, context.lod().gapInRadii(), 0.0001);
     }
 
+    @Test
+    void requestsFullResolutionComposition() {
+        assertEquals(1.0F, new ContentBlackHoleOperation().compositionScaleFloor(), 0.0001F);
+    }
+
     private static EffectRenderContext context() {
         StartVisualEffectPayload payload = new StartVisualEffectPayload(
             ContentEffectIds.BLACK_HOLE,

@@ -10,4 +10,14 @@ package mafisher.quasar.client.effect;
 @FunctionalInterface
 public interface ScreenEffectOperationRenderer {
     void render(ScreenEffectOperationContext context);
+
+    /**
+     * Minimum scene-composition scale this operation needs, in {@code (0, 1]}.
+     * The compositor uses the largest request in the frame so a screen-space
+     * effect is not fed a heavily downscaled scene. Returning 0 keeps the
+     * quality-tier scale.
+     */
+    default float compositionScaleFloor() {
+        return 0.0F;
+    }
 }
