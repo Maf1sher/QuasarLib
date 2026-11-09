@@ -57,6 +57,7 @@
     { "name": "EffectSubmerged", "type": "float", "count": 1, "values": [ 0.0 ] },
     { "name": "SurfaceY", "type": "float", "count": 1, "values": [ 0.0 ] },
     { "name": "SurfaceActive", "type": "float", "count": 1, "values": [ 0.0 ] },
+    { "name": "SuppressAboveWater", "type": "float", "count": 1, "values": [ 0.0 ] },
     { "name": "Pass", "type": "float", "count": 1, "values": [ 0.0 ] },
     { "name": "EmissiveOnly", "type": "float", "count": 1, "values": [ 0.0 ] },
     { "name": "BloomStrength", "type": "float", "count": 1, "values": [ 0.65 ] },

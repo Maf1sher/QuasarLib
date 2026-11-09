@@ -74,7 +74,7 @@ class ContentShadersTest {
             "OutroJet", "VortexStrength", "VortexRadius", "Darkness",
             "RingStrength", "DiskBrightness", "Turbulence", "StepCount",
             "MediumFogStart", "MediumFogEnd", "MediumFogColor", "MediumFogActive", "CameraSubmerged", "EffectSubmerged",
-            "SurfaceY", "SurfaceActive",
+            "SurfaceY", "SurfaceActive", "SuppressAboveWater",
             "Pass", "EmissiveOnly", "BloomStrength", "BloomThreshold", "BloomRadiusPixels"
         )) {
             assertTrue(json.contains("\"" + name + "\""), name);
@@ -168,6 +168,11 @@ class ContentShadersTest {
             "the emissive bloom must fade with the surface and the medium fog");
         assertTrue(shader.contains("ray.surfaceDistance <= 0.0"),
             "the screen-space lens and vortex must be skipped across a water surface");
+        assertTrue(shader.contains("SuppressAboveWater"),
+            "an above-water effect must be suppressed when the camera is submerged");
+        assertTrue(shader.contains("CameraSubmerged > 0.5")
+                && shader.contains("CameraSubmerged < 0.5"),
+            "the screen-space lens and vortex must also be skipped from inside water");
     }
 
     @Test

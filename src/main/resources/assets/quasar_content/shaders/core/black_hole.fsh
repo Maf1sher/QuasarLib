@@ -55,6 +55,7 @@ uniform float CameraSubmerged;
 uniform float EffectSubmerged;
 uniform float SurfaceY;
 uniform float SurfaceActive;
+uniform float SuppressAboveWater;
 
 uniform float Pass;
 uniform float EmissiveOnly;
@@ -431,6 +432,11 @@ void accumulateDisk(vec3 before, vec3 after, vec3 cameraRelative, vec3 rayVeloci
 
 vec4 renderBlackHole(vec2 uv) {
     vec4 sceneColor = texture(SceneSampler, uv);
+    if (SuppressAboveWater > 0.5) {
+        // An above-water hole seen from below cannot be represented by a
+        // screen-space refraction without reading as a floating reflection.
+        return EmissiveOnly > 0.5 ? vec4(0.0) : vec4(sceneColor.rgb, 0.0);
+    }
     float coverage = clamp(texture(MaskSampler, uv).r * MaskStrength, 0.0, 1.0) * Fade;
     if (coverage < 0.002) {
         return EmissiveOnly > 0.5 ? vec4(0.0) : vec4(sceneColor.rgb, 0.0);
@@ -544,10 +550,10 @@ vec4 renderBlackHole(vec2 uv) {
         float outgoingSpeed = length(velocity);
         vec3 outDirection = outgoingSpeed > 0.000001 ? velocity / outgoingSpeed : direction;
         // The physical geodesic is the default; LensStrength only blends it toward the
-        // straight ray for an optional stylized look. Across a water surface the scene
-        // texture was rendered along straight rays, so warping it would double-bend
-        // the image and read as a floating reflection.
-        float lensBlend = ray.surfaceDistance > 0.0
+        // straight ray for an optional stylized look. Across a water surface, or from
+        // inside water, the scene texture was rendered along straight rays, so a
+        // screen-space warp would read as a floating reflection.
+        float lensBlend = (ray.surfaceDistance > 0.0 || CameraSubmerged > 0.5)
             ? 0.0 : clamp(LensStrength, 0.0, 1.0) * warpFalloff * skyWarp;
         vec3 lensDirection = normalize(mix(direction, outDirection, lensBlend));
         // Lens from the accumulated composition, not the pristine frame: batches
@@ -557,7 +563,8 @@ vec4 renderBlackHole(vec2 uv) {
         vec2 lensUv;
         if (projectDirection(lensDirection, lensUv)) {
             vec2 sourceUv = clamp(lensUv, vec2(0.0), vec2(1.0));
-            if (ray.surfaceDistance <= 0.0 && abs(VortexStrength) > 0.001) {
+            if (ray.surfaceDistance <= 0.0 && CameraSubmerged < 0.5
+                && abs(VortexStrength) > 0.001) {
                 vec2 holeUv = projectPoint(cameraRelative);
                 if (holeUv.x >= 0.0) {
                     float uvRadius = clamp(
@@ -678,13 +685,19 @@ void main() {
         fragColor = renderBlackHole(texCoord);
         return;
     }
+    if (SuppressAboveWater > 0.5) {
+        vec3 scene = texture(SceneSampler, texCoord).rgb;
+        scene *= 1.0 - clamp(Darkness, 0.0, 0.75);
+        fragColor = vec4(scene, 1.0);
+        return;
+    }
 
     vec3 cameraRelative = -BlackHoleOffset;
     vec3 direction = rayDirection(texCoord);
     SceneRay ray = refractAtWater(cameraRelative, direction);
     vec2 sceneUv = texCoord;
-    if (!ray.totalInternalReflection && ray.surfaceDistance <= 0.0
-        && abs(VortexStrength) > 0.001) {
+    if (CameraSubmerged < 0.5 && !ray.totalInternalReflection
+        && ray.surfaceDistance <= 0.0 && abs(VortexStrength) > 0.001) {
         vec2 holeUv = projectPoint(cameraRelative);
         if (holeUv.x >= 0.0) {
             float uvRadius = clamp(

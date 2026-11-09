@@ -1,6 +1,8 @@
 package mafisher.quasar.content;
 
 import com.mojang.blaze3d.pipeline.TextureTarget;
+import mafisher.quasar.client.effect.ScreenEffectMedium;
+import mafisher.quasar.client.effect.ScreenEffectMediumState;
 import mafisher.quasar.client.effect.ScreenEffectOperationContext;
 import mafisher.quasar.client.effect.ScreenEffectOperationRenderer;
 import mafisher.quasar.compat.FogPolicy;
@@ -173,8 +175,10 @@ final class ContentBlackHoleOperation implements ScreenEffectOperationRenderer {
         boolean fogAllowed = context.environment().fogPolicy() == FogPolicy.RESPECT;
         context.setUniform(shader, "MediumFogActive", fogAllowed && fog.active() ? 1.0F : 0.0F);
         var medium = context.medium();
+        boolean suppressEffect = suppressAboveWater(medium);
         context.setUniform(shader, "CameraSubmerged", medium.cameraSubmerged() ? 1.0F : 0.0F);
         context.setUniform(shader, "EffectSubmerged", medium.effectSubmerged() ? 1.0F : 0.0F);
+        context.setUniform(shader, "SuppressAboveWater", suppressEffect ? 1.0F : 0.0F);
         float surfaceY = 0.0F;
         boolean surfaceActive = false;
         if (medium.cameraSubmerged() && !medium.effectSubmerged()
@@ -186,9 +190,19 @@ final class ContentBlackHoleOperation implements ScreenEffectOperationRenderer {
             surfaceY = medium.effectSurfaceY();
             surfaceActive = true;
         }
-        surfaceActive = surfaceActive && fogAllowed;
+        surfaceActive = surfaceActive && fogAllowed && !suppressEffect;
         context.setUniform(shader, "SurfaceY", surfaceY);
         context.setUniform(shader, "SurfaceActive", surfaceActive ? 1.0F : 0.0F);
+    }
+
+    /**
+     * A screen-space refraction of an above-water effect is not a stable reflection:
+     * it is misplaced by the screen projection and slides with the camera. Hide the
+     * effect instead when the camera is underwater and the effect is in air.
+     */
+    static boolean suppressAboveWater(ScreenEffectMediumState medium) {
+        return medium.cameraMedium() == ScreenEffectMedium.WATER
+            && medium.effectMedium() != ScreenEffectMedium.WATER;
     }
 
     private static void setVector(ScreenEffectOperationContext context, ShaderInstance shader,
