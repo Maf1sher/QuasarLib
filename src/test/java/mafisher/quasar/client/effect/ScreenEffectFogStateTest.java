@@ -28,6 +28,17 @@ class ScreenEffectFogStateTest {
     }
 
     @Test
+    void waterFogHidesDistantEffects() {
+        // Vanilla water fog: start -8, end 96 * waterVision.
+        ScreenEffectFogState fog = new ScreenEffectFogState(-8.0F, 96.0F, new Vec3(0.1, 0.3, 0.5));
+
+        assertTrue(fog.active());
+        assertTrue(fog.factor(2.0) < 0.05F);
+        assertTrue(fog.factor(48.0) > 0.2F && fog.factor(48.0) < 0.6F);
+        assertEquals(1.0F, fog.factor(160.0), 0.0001F);
+    }
+
+    @Test
     void rejectsNonFiniteValues() {
         assertThrows(IllegalArgumentException.class,
             () -> new ScreenEffectFogState(Float.NaN, 10.0F, Vec3.ZERO));

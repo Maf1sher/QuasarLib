@@ -46,6 +46,7 @@ final class ClientScreenCompositor {
     private TextureTarget compositionTarget;
     private TextureTarget screenMaskTarget;
     private TextureTarget opaqueDepthTarget;
+    private ScreenEffectFogState fogState = ScreenEffectFogState.NONE;
     private boolean opaqueDepthCaptured;
     private boolean hadScreenEffects;
     private boolean failAfterCompositionOnce;
@@ -155,7 +156,7 @@ final class ClientScreenCompositor {
                 }
 
                 this.captureSceneColor(mainTarget, this.rawSceneTarget);
-                ScreenEffectFogState fogState = captureFogState();
+                ScreenEffectFogState fogState = this.fogState;
 
                 List<ScreenEffectBatch> orderedBatches = ScreenEffectBatch.depthOrdered(batches);
                 RenderTarget currentColor = this.rawSceneTarget;
@@ -211,6 +212,7 @@ final class ClientScreenCompositor {
         this.failAfterCompositionOnce = false;
         this.diagnosticsRequested = false;
         this.warnedDegenerateCamera = false;
+        this.fogState = ScreenEffectFogState.NONE;
         this.unavailableWidth = -1;
         this.unavailableHeight = -1;
         this.releaseTargets();
@@ -220,6 +222,7 @@ final class ClientScreenCompositor {
         this.failAfterCompositionOnce = false;
         this.diagnosticsRequested = false;
         this.warnedDegenerateCamera = false;
+        this.fogState = ScreenEffectFogState.NONE;
         this.unavailableWidth = -1;
         this.unavailableHeight = -1;
         this.releaseTargets();
@@ -333,11 +336,16 @@ final class ClientScreenCompositor {
         for (int step = 0; step < 128; step++) {
             BlockPos above = cursor.above();
             if (!isWater(level, above)) {
-                return cursor.getY() + 1.0F;
+                return fluidSurfaceY(level, cursor);
             }
             cursor.set(above);
         }
-        return cursor.getY() + 1.0F;
+        return fluidSurfaceY(level, cursor);
+    }
+
+    private static float fluidSurfaceY(ClientLevel level, BlockPos position) {
+        FluidState state = level.getFluidState(position);
+        return position.getY() + state.getHeight(level, position);
     }
 
     private static boolean isWater(ClientLevel level, BlockPos position) {
@@ -350,7 +358,14 @@ final class ClientScreenCompositor {
      * contribution instead.
      */
     void captureOpaqueDepth(RenderLevelStageEvent event) {
-        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_BLOCK_ENTITIES || !this.hadScreenEffects) {
+        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_BLOCK_ENTITIES) {
+            return;
+        }
+        // Capture the active fog while the terrain pass still owns it. LevelRenderer
+        // calls FogRenderer.setupNoFog() before AFTER_LEVEL, which would make the
+        // captured range inactive and silently disable every medium tint.
+        this.fogState = captureFogState();
+        if (!this.hadScreenEffects) {
             return;
         }
         Minecraft minecraft = Minecraft.getInstance();
