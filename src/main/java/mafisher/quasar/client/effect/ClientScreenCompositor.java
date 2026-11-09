@@ -17,6 +17,7 @@ import mafisher.quasar.effect.EffectQualityTier;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.core.BlockPos;
 import net.minecraft.tags.FluidTags;
@@ -50,6 +51,7 @@ final class ClientScreenCompositor {
     private boolean failAfterCompositionOnce;
     private boolean warnedPresentationViewport;
     private boolean warnedDegenerateCamera;
+    private boolean loggedDeferredBufferFlush;
     private boolean diagnosticsRequested;
     private int unavailableWidth = -1;
     private int unavailableHeight = -1;
@@ -352,6 +354,19 @@ final class ClientScreenCompositor {
             return;
         }
         Minecraft minecraft = Minecraft.getInstance();
+        // Iris batches entity and block-entity geometry and flushes it only when the
+        // translucent stage starts, which is after this copy. Flush the deferred source
+        // once here so the opaque depth copy contains entities without submitting the
+        // chunk translucent layers: glass and water must still not hide screen effects.
+        MultiBufferSource.BufferSource bufferSource = minecraft.renderBuffers().bufferSource();
+        if (bufferSource.getClass() != MultiBufferSource.BufferSource.class) {
+            bufferSource.endBatch();
+            if (!this.loggedDeferredBufferFlush) {
+                this.loggedDeferredBufferFlush = true;
+                LOGGER.debug("Flushed deferred {} buffers before the opaque depth copy",
+                    bufferSource.getClass().getSimpleName());
+            }
+        }
         RenderTarget mainTarget = minecraft.getMainRenderTarget();
         int width = mainTarget.width;
         int height = mainTarget.height;

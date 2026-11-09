@@ -29,7 +29,8 @@ final class ContentBlackHoleGeodesic {
         Integration integration = integrate(cameraRelative, direction, horizonRadius, maxSteps,
             new Disk(new Vector3d(diskNormal).normalize(), diskInnerRadius, diskOuterRadius));
         return new DiskTrace(integration.trace(), integration.crossings(),
-            integration.firstDiskRadius(), integration.lastDiskRadius());
+            integration.firstDiskRadius(), integration.lastDiskRadius(),
+            integration.nearestDiskEntry());
     }
 
     private static Integration integrate(Vector3d cameraRelative, Vector3d direction, double horizonRadius,
@@ -50,14 +51,21 @@ final class ContentBlackHoleGeodesic {
         double h2 = impact * impact;
         double escapeRadius = Math.max(48.0 * horizonRadius, position.length() * 1.25);
         double closestApproach = position.length();
+        double closestRadius = position.length();
+        double nearestEntry = 0.0;
         boolean captured = false;
         int steps = 0;
         int crossings = 0;
         double firstDiskRadius = Double.NaN;
         double lastDiskRadius = Double.NaN;
+        double nearestDiskEntry = Double.NaN;
 
         for (int stepIndex = 0; stepIndex < maxSteps; stepIndex++) {
             double radius = position.length();
+            if (radius < closestRadius) {
+                closestRadius = radius;
+                nearestEntry = position.distance(cameraRelative);
+            }
             if (radius <= horizonRadius * HORIZON_EPSILON) {
                 captured = true;
                 break;
@@ -96,6 +104,9 @@ final class ContentBlackHoleGeodesic {
                         if (crossings == 0) {
                             firstDiskRadius = radialLength;
                         }
+                        double entry = hit.distance(cameraRelative);
+                        nearestDiskEntry = Double.isNaN(nearestDiskEntry)
+                            ? entry : Math.min(nearestDiskEntry, entry);
                         lastDiskRadius = radialLength;
                         crossings++;
                     }
@@ -112,8 +123,8 @@ final class ContentBlackHoleGeodesic {
             captured = true;
         }
         Vector3d outgoing = captured ? new Vector3d(velocity) : new Vector3d(velocity).normalize();
-        Trace trace = new Trace(captured, outgoing, impact, closestApproach, steps);
-        return new Integration(trace, crossings, firstDiskRadius, lastDiskRadius);
+        Trace trace = new Trace(captured, outgoing, impact, closestApproach, nearestEntry, steps);
+        return new Integration(trace, crossings, firstDiskRadius, lastDiskRadius, nearestDiskEntry);
     }
 
     /**
@@ -171,10 +182,19 @@ final class ContentBlackHoleGeodesic {
 
     /**
      * Per-pixel visibility rule mirrored by the shader: the scene must be at least
-     * as far as the effect surface at that pixel (ring, disk, or lens shell).
+     * as far as the nearest traced surface at that pixel (closest approach or the
+     * first emitting disk crossing). Bounding-volume entries are deliberately not
+     * used because they sit in front of the real surface.
      */
     static boolean isVisibleAtDepth(double sceneDistance, double effectEntry, double depthBias) {
         return sceneDistance >= Math.max(0.0, effectEntry) - depthBias;
+    }
+
+    /** Combines the traced path entry with the nearest disk crossing, when present. */
+    static double nearestSurfaceEntry(Trace trace, double nearestDiskEntry) {
+        Objects.requireNonNull(trace, "trace");
+        return Double.isNaN(nearestDiskEntry)
+            ? trace.nearestEntry() : Math.min(trace.nearestEntry(), nearestDiskEntry);
     }
 
     private static double stepLength(double radius, double horizonRadius) {
@@ -195,7 +215,8 @@ final class ContentBlackHoleGeodesic {
         return Math.max(minimum, Math.min(maximum, value));
     }
 
-    record Trace(boolean captured, Vector3d outgoingDirection, double impact, double closestApproach, int steps) {
+    record Trace(boolean captured, Vector3d outgoingDirection, double impact, double closestApproach,
+        double nearestEntry, int steps) {
         Trace {
             Objects.requireNonNull(outgoingDirection, "outgoingDirection");
             outgoingDirection = new Vector3d(outgoingDirection);
@@ -207,7 +228,8 @@ final class ContentBlackHoleGeodesic {
         }
     }
 
-    record DiskTrace(Trace trace, int crossings, double firstDiskRadius, double lastDiskRadius) {
+    record DiskTrace(Trace trace, int crossings, double firstDiskRadius, double lastDiskRadius,
+        double nearestDiskEntry) {
         DiskTrace {
             Objects.requireNonNull(trace, "trace");
         }
@@ -233,7 +255,8 @@ final class ContentBlackHoleGeodesic {
         }
     }
 
-    private record Integration(Trace trace, int crossings, double firstDiskRadius, double lastDiskRadius) {
+    private record Integration(Trace trace, int crossings, double firstDiskRadius, double lastDiskRadius,
+        double nearestDiskEntry) {
     }
 
     private record Disk(Vector3d normal, double inner, double outer) {

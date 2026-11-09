@@ -130,12 +130,18 @@ class ContentShadersTest {
     @Test
     void blackHoleVisibilityUsesPerPixelEffectDepth() throws IOException {
         String shader = readAsset("assets/quasar_content/shaders/core/black_hole.fsh");
-        assertTrue(shader.contains("lensEntry") || shader.contains("tEntry"),
-            "the effect surface must be depth-tested against the scene");
-        assertTrue(shader.contains("shadowEntry") && shader.contains("diskEntry"),
-            "the ring and disk need their own effect depths");
+        assertTrue(shader.contains("closestEntry") && shader.contains("nearestEntry"),
+            "the effect surface must be the nearest traced point, not a bounding volume");
+        assertTrue(shader.contains("nearestDiskEntry"),
+            "the disk must contribute its own traced crossing depth");
+        assertTrue(shader.contains("encodeEffectDepth") && shader.contains("decodeEffectDepth"),
+            "the raymarch must carry the effect entry into the composite pass");
         assertTrue(shader.contains("sceneDistance"),
             "the scene depth must participate in visibility");
+        assertTrue(!shader.contains("shadowRadius"),
+            "a shadow bounding sphere sits in front of the horizon and covers entities");
+        assertTrue(!shader.contains("effectEntry = tEntry"),
+            "the lens-shell entry cannot stand in for the hole surface");
         assertTrue(!shader.contains("centerSceneDistance"),
             "a single centre sample cannot represent partial foreground occlusion");
         assertTrue(!shader.contains("sampleDistance < sceneDistance"),

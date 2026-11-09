@@ -131,6 +131,26 @@ float viewDistance(float depth, vec2 uv) {
     return clamp(length(view.xyz), 0.01, 1000000.0);
 }
 
+/** Upper bound for the per-pixel effect entry stored in the raymarch alpha channel. */
+float effectDepthScale(float holeDistance, float lensRadius) {
+    return max(holeDistance + 2.0 * lensRadius, 1.0);
+}
+
+/**
+ * The raymarch pass stores the nearest traced entry distance in alpha. A logarithmic
+ * mapping keeps sub-block precision across both close and horizon-distance effects;
+ * linear 8-bit storage loses too much accuracy for effects hundreds of blocks away.
+ */
+float encodeEffectDepth(float entry, float depthScale) {
+    float scale = max(depthScale, 1.0);
+    return clamp(log2(1.0 + max(entry, 0.0)) / log2(1.0 + scale), 0.0, 1.0);
+}
+
+float decodeEffectDepth(float encoded, float depthScale) {
+    float scale = max(depthScale, 1.0);
+    return max(exp2(clamp(encoded, 0.0, 1.0) * log2(1.0 + scale)) - 1.0, 0.0);
+}
+
 /** Distance from the camera to the entry point of a sphere, or -1 when the ray misses it. */
 float raySphereEntry(vec3 origin, vec3 direction, float sphereRadius) {
     float b = dot(origin, direction);
@@ -334,10 +354,12 @@ float geodesicStep(float radius, float horizonRadius) {
 
 /**
  * Integrates one disk slab crossing. The crossing is found analytically between
- * the two geodesic samples, so a thin disk cannot be stepped over.
+ * the two geodesic samples, so a thin disk cannot be stepped over. The first
+ * emitting crossing also records its camera distance, which lets the composite
+ * depth-test the disk surface instead of a bounding-sphere entry.
  */
 void accumulateDisk(vec3 before, vec3 after, vec3 cameraRelative, vec3 rayVelocity,
-    inout vec3 emission, inout float transmittance) {
+    inout vec3 emission, inout float transmittance, inout float nearestDiskEntry) {
     float beforeHeight = dot(before, DiskNormal);
     float afterHeight = dot(after, DiskNormal);
     float segmentLength = length(after - before);
@@ -347,6 +369,9 @@ void accumulateDisk(vec3 before, vec3 after, vec3 cameraRelative, vec3 rayVeloci
         vec3 midpoint = mix(before, after, 0.5);
         vec4 slabDisk = sampleDisk(midpoint, cameraRelative);
         float slabOpacity = 1.0 - exp(-max(slabDisk.a, 0.0) * segmentLength * DISK_OPACITY);
+        if (slabOpacity > 0.001) {
+            nearestDiskEntry = min(nearestDiskEntry, length(midpoint - cameraRelative));
+        }
         emission += slabDisk.rgb * slabOpacity * transmittance;
         transmittance *= (1.0 - slabOpacity);
         return;
@@ -368,6 +393,9 @@ void accumulateDisk(vec3 before, vec3 after, vec3 cameraRelative, vec3 rayVeloci
     float thickness = max(DiskThickness, 0.001);
     float pathLength = clamp(2.0 * thickness / max(cosTheta, 0.15), 0.02, 8.0 * thickness);
     float opacity = 1.0 - exp(-max(disk.a, 0.0) * pathLength * DISK_OPACITY);
+    if (opacity > 0.001) {
+        nearestDiskEntry = min(nearestDiskEntry, length(hit - cameraRelative));
+    }
     emission += disk.rgb * opacity * transmittance;
     transmittance *= (1.0 - opacity);
 }
@@ -387,6 +415,7 @@ vec4 renderBlackHole(vec2 uv) {
     float holeDistance = length(BlackHoleOffset);
     float radius = max(BlackHoleRadius, 0.001);
     float lensRadius = max(LensRadius, radius * 3.0);
+    float depthScale = effectDepthScale(holeDistance, lensRadius);
     float tEntry = raySphereEntry(traceOrigin, traceDirection, lensRadius);
     bool insideLens = length(traceOrigin) <= lensRadius
         || length(cameraRelative) <= lensRadius;
@@ -412,8 +441,9 @@ vec4 renderBlackHole(vec2 uv) {
     }
 
     if (length(cameraRelative) <= radius * 1.02) {
-        // The camera is inside the horizon: keep the frame stable and dark.
-        return vec4(vec3(0.02, 0.01, 0.03), coverage);
+        // The camera is inside the horizon: keep the frame stable and dark. An entry
+        // of zero keeps the effect visible for any scene depth.
+        return vec4(vec3(0.02, 0.01, 0.03), 0.0);
     }
 
     vec3 position = traceOrigin + traceDirection * max(tEntry, 0.0);
@@ -425,12 +455,23 @@ vec4 renderBlackHole(vec2 uv) {
     vec3 emission = vec3(0.0);
     bool captured = false;
     int steps = int(StepCount + 0.5);
+    // Track the point where the traced path is nearest the hole. Its distance from the
+    // camera is the real occluder for the shadow, ring, and lensed background. Ring and
+    // lens pixels must not use the lens-shell entry: that surface sits far in front of
+    // the hole and would paint the effect over entities standing in front of it.
+    float closestHoleRadius = 1.0e30;
+    float closestEntry = max(tEntry, 0.0);
+    float nearestDiskEntry = depthScale;
 
     for (int stepIndex = 0; stepIndex < MAX_STEPS; stepIndex++) {
         if (stepIndex >= steps) {
             break;
         }
         float distanceToHole = length(position);
+        if (distanceToHole < closestHoleRadius) {
+            closestHoleRadius = distanceToHole;
+            closestEntry = length(position - traceOrigin);
+        }
         if (distanceToHole <= radius * 1.02) {
             captured = true;
             break;
@@ -451,13 +492,18 @@ vec4 renderBlackHole(vec2 uv) {
         vec3 nextVelocity = velocity + stepLength * a2;
 
         accumulateDisk(position, nextPosition, traceOrigin, midVelocity,
-            emission, transmittance);
+            emission, transmittance, nearestDiskEntry);
         position = nextPosition;
         velocity = nextVelocity;
         if (transmittance < 0.001) {
             break;
         }
     }
+
+    // The disk can sit in front of the closest-approach point; use whichever surface
+    // the pixel actually shows. Entries stay relative to traceOrigin so the water
+    // surface leg is added once, by the composite pass.
+    float nearestEntry = min(closestEntry, nearestDiskEntry);
 
     vec3 color = emission;
     if (!captured && EmissiveOnly < 0.5) {
@@ -495,8 +541,10 @@ vec4 renderBlackHole(vec2 uv) {
                 }
             }
             float sourceDistance = viewDistance(texture(DepthSampler, sourceUv).r, sourceUv);
-            if (insideLens || tEntry <= 0.0
-                || sourceDistance >= tEntry + max(ray.surfaceDistance, 0.0) - 0.5) {
+            // Only bend light that is actually behind the traced surface. The old
+            // lens-shell entry accepted samples in front of the hole and dragged
+            // foreground entities into the lens.
+            if (sourceDistance >= nearestEntry + max(ray.surfaceDistance, 0.0) - 0.5) {
                 float edgeFade = smoothstep(0.0, 0.03, lensUv.x)
                     * smoothstep(0.0, 0.03, 1.0 - lensUv.x)
                     * smoothstep(0.0, 0.03, lensUv.y)
@@ -585,7 +633,7 @@ vec4 renderBlackHole(vec2 uv) {
         color += jetColor * (jet * 0.7 + knot * 0.3) * OutroJet;
     }
 
-    return vec4(color, coverage);
+    return vec4(color, encodeEffectDepth(nearestEntry, depthScale));
 }
 
 void main() {
@@ -625,39 +673,23 @@ void main() {
     float tEntry = raySphereEntry(traceOrigin, traceDirection, lensRadius);
     bool insideLens = length(traceOrigin) <= lensRadius
         || length(cameraRelative) <= lensRadius;
-    float sceneDistance = viewDistance(texture(DepthSampler, texCoord).r, texCoord);
-    float depthBias = max(0.05, sceneDistance * 0.001);
-    // Ring, disk, and lens-only pixels sit at different depths. A single centre
-    // depth made the ring appear in front of or behind trees as the player moved.
-    float shadowRadius = max(BlackHoleRadius, 0.001) * B_CRITICAL;
-    float shadowEntry = raySphereEntry(traceOrigin, traceDirection, shadowRadius * 1.35);
-    float diskEntry = -1.0;
-    float planeDenominator = dot(traceDirection, DiskNormal);
-    if (abs(planeDenominator) > 0.0001) {
-        float planeDistance = dot(-traceOrigin, DiskNormal) / planeDenominator;
-        if (planeDistance > 0.0) {
-            vec3 hit = traceOrigin + traceDirection * planeDistance;
-            float radial = length(hit - DiskNormal * dot(hit, DiskNormal));
-            if (radial >= DiskInnerRadius && radial <= DiskOuterRadius) {
-                diskEntry = planeDistance;
-            }
-        }
-    }
     float impact = length(cross(traceOrigin, traceDirection));
-    float effectEntry;
-    if (impact <= shadowRadius * 1.35 && shadowEntry >= 0.0) {
-        effectEntry = shadowEntry;
-    } else if (diskEntry > 0.0) {
-        effectEntry = diskEntry;
-    } else {
-        effectEntry = tEntry;
-    }
+    // Coverage is deterministic; the raymarch pass stores the nearest traced entry
+    // in alpha instead, so recompute coverage here at full composite resolution.
+    float coverage = clamp(texture(MaskSampler, texCoord).r * MaskStrength, 0.0, 1.0) * Fade;
+    coverage *= 1.0 - smoothstep(lensRadius * 0.88, lensRadius * 1.04, impact);
+    float sceneDistance = viewDistance(texture(DepthSampler, texCoord).r, texCoord);
+    float depthScale = effectDepthScale(length(BlackHoleOffset), lensRadius);
+    float effectEntry = decodeEffectDepth(effectColor.a, depthScale);
+    // One quantisation step keeps interpolated alpha from flickering at silhouettes.
+    float depthBias = max(0.05, sceneDistance * 0.001)
+        + (1.0 + effectEntry) * log(1.0 + depthScale) / 255.0;
     bool footprint = insideLens || tEntry >= 0.0;
     // effectEntry is measured from the refracted origin, so add the surface leg
     // before comparing it with the camera-space scene depth.
     float entryDistance = effectEntry + max(ray.surfaceDistance, 0.0);
     bool visible = footprint && sceneDistance >= entryDistance - depthBias;
-    float alpha = effectColor.a * (visible ? 1.0 : 0.0);
+    float alpha = coverage * (visible ? 1.0 : 0.0);
 
     vec3 color = effectColor.rgb;
     float fogDistance = max(entryDistance, 0.0);
