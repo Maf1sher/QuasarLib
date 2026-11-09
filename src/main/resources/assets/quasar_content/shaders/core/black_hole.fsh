@@ -267,10 +267,44 @@ vec2 drillUv(vec2 uv, float strength, float radius, float holeDistance) {
     return holeUv + mat2(cs, -sn, sn, cs) * delta * (1.0 - pull);
 }
 
+/**
+ * Screen-space lensing resamples a 2D scene. Large UV offsets pull distant
+ * pixels across the frame and read as blur or duplicated blocks, so fade those
+ * samples out instead of clamping them to the screen edge.
+ */
+float lensSampleWeight(vec2 sourceUv, vec2 destinationUv) {
+    if (any(lessThan(sourceUv, vec2(0.0))) || any(greaterThan(sourceUv, vec2(1.0)))) {
+        return 0.0;
+    }
+    float displacement = length(sourceUv - destinationUv);
+    return 1.0 - smoothstep(0.20, 0.42, displacement);
+}
+
 /** Fades the effect out for rays pointing away from the hole. */
 float frontFacing(vec3 direction) {
     vec3 toHole = BlackHoleOffset / max(length(BlackHoleOffset), 0.001);
     return smoothstep(-0.02, 0.05, dot(toHole, direction));
+}
+
+/**
+ * 1 when the camera sits inside the disk annulus and close to its plane.
+ * The disk must fade there: a volumetric slab viewed from inside otherwise
+ * fills the frame and hides the rest of the scene.
+ */
+float cameraInsideDisk(vec3 cameraRelative) {
+    if (DiskOuterRadius <= DiskInnerRadius + 0.001 || DiskThickness <= 0.001) {
+        return 0.0;
+    }
+    float height = dot(cameraRelative, DiskNormal);
+    vec3 radialVector = cameraRelative - DiskNormal * height;
+    float radial = length(radialVector);
+    float insideAnnulus = smoothstep(
+            DiskInnerRadius * 0.85, DiskInnerRadius * 1.05, radial)
+        * (1.0 - smoothstep(
+            DiskOuterRadius * 0.95, DiskOuterRadius * 1.15, radial));
+    float nearPlane = 1.0 - smoothstep(
+        DiskThickness * 1.5, DiskThickness * 6.0, abs(height));
+    return insideAnnulus * nearPlane;
 }
 
 struct SceneRay {
@@ -541,6 +575,7 @@ vec4 renderBlackHole(vec2 uv) {
     vec3 traceDirection = ray.direction;
     float holeDistance = length(BlackHoleOffset);
     float radius = max(BlackHoleRadius, 0.001);
+    float insideDisk = cameraInsideDisk(cameraRelative);
     // Check the horizon before any footprint or facing gate: inside the core the
     // whole frame must be dark regardless of the view direction.
     if (length(cameraRelative) <= radius * 1.02) {
@@ -649,9 +684,15 @@ vec4 renderBlackHole(vec2 uv) {
         // bent background. Check the current pixel and the source sample; the color
         // delta catches glass/water even when the depth copy misses it.
         bool currentForeground = foregroundLayer(uv, lensEntry, 0.5);
+        // The background lens is only reliable from outside its own bounding
+        // sphere. Inside it, the bent rays resample a tiny part of the frame and
+        // read as blur or radial streaks.
+        float lensProximity = smoothstep(
+            lensRadius, lensRadius * 1.5, holeDistance);
         float lensBlend = (ray.surfaceDistance > 0.0 || CameraSubmerged > 0.5
             || currentForeground || MediumPathLength > 0.0)
-            ? 0.0 : clamp(LensStrength, 0.0, 1.0) * warpFalloff * skyWarp * facing;
+            ? 0.0 : clamp(LensStrength, 0.0, 1.0) * warpFalloff * skyWarp
+                * facing * lensProximity * (1.0 - insideDisk);
         vec3 lensDirection = normalize(mix(direction, outDirection, lensBlend));
         // Lens from the accumulated composition, not the pristine frame: batches
         // are ordered farthest-first, so this bends the image of the black holes
@@ -659,29 +700,36 @@ vec4 renderBlackHole(vec2 uv) {
         vec3 background = sceneColor.rgb;
         vec2 lensUv;
         if (projectDirection(lensDirection, lensUv)) {
-            vec2 sourceUv = clamp(lensUv, vec2(0.0), vec2(1.0));
+            vec2 sourceUv = lensUv;
             if (ray.surfaceDistance <= 0.0 && CameraSubmerged < 0.5
                 && !currentForeground && MediumPathLength <= 0.0
                 && abs(VortexStrength) > 0.001) {
-                sourceUv = clamp(
-                    drillUv(sourceUv, VortexStrength, VortexRadius, holeDistance),
-                    vec2(0.0), vec2(1.0));
+                vec2 candidate =
+                    drillUv(sourceUv, VortexStrength, VortexRadius, holeDistance);
+                if (all(greaterThanEqual(candidate, vec2(0.0)))
+                    && all(lessThanEqual(candidate, vec2(1.0)))) {
+                    sourceUv = candidate;
+                }
             }
-            float sourceDistance = viewDistance(texture(DepthSampler, sourceUv).r, sourceUv);
-            bool sourceForeground = foregroundLayer(sourceUv, lensEntry, 0.5);
-            // Only bend light that is actually behind the traced surface. The old
-            // lens-shell entry accepted samples in front of the hole and dragged
-            // foreground entities into the lens.
-            if (sourceDistance >= lensEntry - 0.5
-                && !sourceForeground && !currentForeground
-                && MediumPathLength <= 0.0) {
-                float edgeFade = smoothstep(0.0, 0.03, lensUv.x)
-                    * smoothstep(0.0, 0.03, 1.0 - lensUv.x)
-                    * smoothstep(0.0, 0.03, lensUv.y)
-                    * smoothstep(0.0, 0.03, 1.0 - lensUv.y);
-                background = mix(sceneColor.rgb,
-                    texture(SceneSampler, sourceUv).rgb,
-                    edgeFade);
+            float sampleWeight = lensSampleWeight(sourceUv, uv);
+            if (sampleWeight > 0.001) {
+                float sourceDistance = viewDistance(
+                    texture(DepthSampler, sourceUv).r, sourceUv);
+                bool sourceForeground = foregroundLayer(sourceUv, lensEntry, 0.5);
+                // Only bend light that is actually behind the traced surface. The old
+                // lens-shell entry accepted samples in front of the hole and dragged
+                // foreground entities into the lens.
+                if (sourceDistance >= lensEntry - 0.5
+                    && !sourceForeground && !currentForeground
+                    && MediumPathLength <= 0.0) {
+                    float edgeFade = smoothstep(0.0, 0.03, lensUv.x)
+                        * smoothstep(0.0, 0.03, 1.0 - lensUv.x)
+                        * smoothstep(0.0, 0.03, lensUv.y)
+                        * smoothstep(0.0, 0.03, 1.0 - lensUv.y);
+                    background = mix(sceneColor.rgb,
+                        texture(SceneSampler, sourceUv).rgb,
+                        edgeFade * sampleWeight);
+                }
             }
         }
         float innerOcclusion = facing * (1.0 - smoothstep(

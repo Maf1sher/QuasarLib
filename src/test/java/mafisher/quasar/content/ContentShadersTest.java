@@ -117,8 +117,21 @@ class ContentShadersTest {
         assertTrue(!shader.contains("coverage *= facing")
                 && !shader.contains("coverage *= edge * facing"),
             "the facing gate must not cut the disk, rings, or core when the camera is close");
-        assertTrue(shader.contains("warpFalloff * skyWarp * facing"),
+        assertTrue(shader.contains("warpFalloff * skyWarp")
+                && shader.contains("facing * lensProximity"),
             "only the screen-space background lens may fade for rays pointing away");
+        assertTrue(shader.contains("lensProximity"),
+            "the background lens must fade out as the camera approaches the hole");
+        assertTrue(shader.contains("lensSampleWeight"),
+            "out-of-frame or cross-screen lens samples must be rejected");
+        assertFalse(shader.contains("vec2 sourceUv = clamp(lensUv"),
+            "clamping the lens source to the screen edge smears distant terrain");
+        assertTrue(shader.contains("cameraInsideDisk") && shader.contains("insideDisk"),
+            "the camera-inside-disk check must gate the screen-space lens");
+        assertTrue(shader.contains("(1.0 - insideDisk)"),
+            "the background lens must be disabled inside the disk");
+        assertFalse(shader.contains("emission *= 1.0 - 0.90 * diskCameraFade"),
+            "the accretion disk must stay visible when the camera enters its ring");
         assertTrue(shader.contains("float innerOcclusion = facing *"),
             "only the screen-space shadow may fade for rays pointing away");
         int horizon = shader.indexOf("length(cameraRelative) <= radius * 1.02");
