@@ -155,6 +155,26 @@ bool foregroundLayer(vec2 uv, float entryDistance, float tolerance) {
     return distance(seen, opaque) > 0.02;
 }
 
+/**
+ * Returns the attenuation for the effect's own emission behind a foreground
+ * translucent layer. The background is never tinted: it is the scene the player
+ * already sees through the glass, and tinting it produces a dark halo.
+ */
+vec3 foregroundTintAt(vec2 uv, float entryDistance, float tolerance) {
+    if (!foregroundLayer(uv, entryDistance, tolerance)) {
+        return vec3(1.0);
+    }
+    vec3 ratio = vec3(1.0);
+    if (OpaqueColorValid > 0.5) {
+        vec3 opaque = texture(OpaqueColorSampler, uv).rgb;
+        vec3 seen = texture(RawSceneSampler, uv).rgb;
+        ratio = clamp(seen / max(opaque, vec3(0.02)), vec3(0.0), vec3(1.0));
+    }
+    // A detected layer always attenuates a little; bright stained glass can
+    // return 1.0 per channel and would otherwise never darken the effect.
+    return ratio * 0.80;
+}
+
 /** Upper bound for the per-pixel effect entry stored in the raymarch alpha channel. */
 float effectDepthScale(float holeDistance, float lensRadius) {
     return max(holeDistance + 2.0 * lensRadius, 1.0);
@@ -568,7 +588,12 @@ vec4 renderBlackHole(vec2 uv) {
     // surface leg is added once, by the composite pass.
     float nearestEntry = min(closestEntry, nearestDiskEntry);
 
-    vec3 color = emission;
+    vec3 emissionTint = foregroundTintAt(
+        uv, nearestEntry + max(ray.surfaceDistance, 0.0), 0.5);
+    // Tint only the effect's own emission. The lensed background is the scene the
+    // player already sees through the glass; tinting it paints a dark halo.
+    vec3 color = emission * emissionTint;
+    vec3 backgroundLight = vec3(0.0);
     if (!captured && EmissiveOnly < 0.5) {
         float outgoingSpeed = length(velocity);
         vec3 outDirection = outgoingSpeed > 0.000001 ? velocity / outgoingSpeed : direction;
@@ -634,7 +659,7 @@ vec4 renderBlackHole(vec2 uv) {
         float innerOcclusion = 1.0 - smoothstep(
             shadowImpact * 1.05, shadowImpact * 1.35, impact
         );
-        color += background * transmittance * (1.0 - innerOcclusion);
+        backgroundLight = background * transmittance * (1.0 - innerOcclusion);
     }
 
     // Cinematic photon-ring glow. It is symmetric in the impact parameter and is not
@@ -650,7 +675,9 @@ vec4 renderBlackHole(vec2 uv) {
         float absorbWidth = max(ShockRadius * 0.08, pixelWorld * 2.0);
         float absorbOffset = (impact - ShockRadius) / absorbWidth;
         float absorb = exp(-absorbOffset * absorbOffset) * ShockAbsorb;
-        color *= 1.0 - clamp(absorb, 0.0, 0.85);
+        float absorbFactor = 1.0 - clamp(absorb, 0.0, 0.85);
+        color *= absorbFactor;
+        backgroundLight *= absorbFactor;
     }
 
     float ringWidth = max(0.055 * radius, pixelWorld * 1.5);
@@ -662,7 +689,7 @@ vec4 renderBlackHole(vec2 uv) {
     float pulse = 0.85 + 0.15 * sin(AgeTicks * 0.08 + Seed * 6.2831853);
     vec3 ringLight = ringColor * (primaryRing + secondaryRing) * RingStrength * 0.18
         * pulse * stabilization * (0.35 + 0.65 * transmittance);
-    color += ringLight / (vec3(1.0) + ringLight);
+    color += (ringLight / (vec3(1.0) + ringLight)) * emissionTint;
 
     // A hot inner rim bridges the shadow and the disk inner edge. It also hides
     // the thin background sliver that would otherwise show through the gap.
@@ -670,13 +697,13 @@ vec4 renderBlackHole(vec2 uv) {
     float innerRim = exp(-innerRimOffset * innerRimOffset);
     vec3 innerRimColor = mix(vec3(1.0, 0.86, 0.62), vec3(0.75, 0.90, 1.0), Charge);
     vec3 innerRimLight = innerRimColor * innerRim * RingStrength * 0.12 * stabilization;
-    color += innerRimLight / (vec3(1.0) + innerRimLight);
+    color += (innerRimLight / (vec3(1.0) + innerRimLight)) * emissionTint;
 
     float haloOffset = (impact - shadowImpact) / (3.5 * radius);
     float halo = exp(-haloOffset * haloOffset) * 0.08;
     vec3 haloColor = mix(vec3(1.0, 0.45, 0.15), vec3(0.5, 0.2, 1.0), Charge);
     vec3 haloLight = haloColor * halo * RingStrength * 0.04 * stabilization;
-    color += haloLight / (vec3(1.0) + haloLight);
+    color += (haloLight / (vec3(1.0) + haloLight)) * emissionTint;
 
     // Cinematic ignition and implosion flash. It is emissive-only so the bloom
     // layer catches it without washing out the lensed background.
@@ -684,7 +711,7 @@ vec4 renderBlackHole(vec2 uv) {
         float flashRadius = max(FlashRadius, pixelWorld * 2.0);
         float flashFalloff = exp(-pow(impact / flashRadius, 2.0) * 2.5);
         vec3 flashColor = mix(vec3(0.55, 0.66, 0.92), ringColor, 0.30);
-        color += flashColor * flashFalloff * CoreFlash * 0.25;
+        color += flashColor * flashFalloff * CoreFlash * 0.25 * emissionTint;
     }
 
     // Expanding (intro) or contracting (outro) shockwave ring plus its wake.
@@ -696,7 +723,7 @@ vec4 renderBlackHole(vec2 uv) {
         float wakeOffset = (impact - ShockRadius * 0.94) / (shockWidth * 2.5);
         float wake = exp(-wakeOffset * wakeOffset) * 0.35;
         vec3 shockColor = mix(vec3(1.0, 0.90, 0.72), ringColor, 0.35);
-        color += shockColor * (shock + wake) * ShockStrength;
+        color += shockColor * (shock + wake) * ShockStrength * emissionTint;
     }
 
     // Polar jets at the moment the horizon disappears. The exponent keeps them
@@ -707,8 +734,24 @@ vec4 renderBlackHole(vec2 uv) {
             * (0.35 + 0.65 * exp(-pow(impact / max(radius * 2.5, 0.001), 2.0)));
         float knot = exp(-pow((impact - radius * 0.35) / max(radius * 0.6, 0.001), 2.0));
         vec3 jetColor = mix(vec3(0.75, 0.90, 1.0), vec3(1.0, 0.85, 0.55), Charge);
-        color += jetColor * (jet * 0.7 + knot * 0.3) * OutroJet;
+        color += jetColor * (jet * 0.7 + knot * 0.3) * OutroJet * emissionTint;
     }
+
+    // Medium fog belongs to the effect's emission only. The lensed background is
+    // the scene the player already sees, already fogged by the world renderer;
+    // fogging it again paints a large dark circle over the sky.
+    float fogDistance = max(nearestEntry + max(ray.surfaceDistance, 0.0), 0.0);
+    if (MediumPathLength > 0.0) {
+        fogDistance = MediumPathLength;
+    }
+    if (MediumFogActive > 0.5
+        && (MediumPathLength > 0.0 || CameraSubmerged > 0.5 || EffectSubmerged > 0.5)) {
+        float mediumFog = clamp((fogDistance - MediumFogStart)
+            / max(MediumFogEnd - MediumFogStart, 1.0), 0.0, 1.0);
+        mediumFog = mediumFog * mediumFog * (3.0 - 2.0 * mediumFog);
+        color = mix(color, MediumFogColor, mediumFog);
+    }
+    color += backgroundLight;
 
     return vec4(color, encodeEffectDepth(nearestEntry, depthScale));
 }
@@ -795,25 +838,6 @@ void main() {
     bool footprint = insideLens || tEntry >= 0.0;
     bool visible = footprint && sceneDistance >= entryDistance - depthBias;
     float alpha = coverage * (visible ? 1.0 : 0.0);
-    // Recover the transmittance of a translucent layer in front of the effect from
-    // the scene color before and after that layer. Opaque depth alone cannot see
-    // glass, so tint the effect instead of hard-occluding it.
-    vec3 foregroundTint = vec3(1.0);
-    if (foregroundInFront) {
-        vec3 opaque = texture(OpaqueColorSampler, texCoord).rgb;
-        vec3 seen = texture(RawSceneSampler, texCoord).rgb;
-        vec3 ratio = clamp(seen / max(opaque, vec3(0.02)), vec3(0.0), vec3(1.0));
-        if (OpaqueColorValid < 0.5) {
-            ratio = vec3(1.0);
-        }
-        // A detected translucent layer always attenuates a little; bright stained
-        // glass can return 1.0 per channel and would otherwise never darken.
-        foregroundTint = ratio * 0.80;
-    } else if (MediumPathLength > 0.0) {
-        // Water on the camera-to-effect line is already a foreground layer even if
-        // the depth/color copies missed it.
-        foregroundTint = vec3(0.85);
-    }
 
     // Physically motivated surface transmission instead of a fixed blue wash.
     float surfaceTransmittance = 1.0;
@@ -824,20 +848,7 @@ void main() {
             ray.incidenceCosine, incidentIor, transmittedIor);
     }
 
-    vec3 color = effectColor.rgb * foregroundTint;
-    float fogDistance = max(entryDistance, 0.0);
-    if (MediumPathLength > 0.0) {
-        // The path covers every submerged span along the camera-to-effect line,
-        // including a lake between two air endpoints.
-        fogDistance = MediumPathLength;
-    }
-    float mediumFog = 0.0;
-    if (MediumFogActive > 0.5
-        && (MediumPathLength > 0.0 || CameraSubmerged > 0.5 || EffectSubmerged > 0.5)) {
-        mediumFog = clamp((fogDistance - MediumFogStart) / max(MediumFogEnd - MediumFogStart, 1.0), 0.0, 1.0);
-        mediumFog = mediumFog * mediumFog * (3.0 - 2.0 * mediumFog);
-        color = mix(color, MediumFogColor, mediumFog);
-    }
+    vec3 color = effectColor.rgb;
     // At grazing angles the surface reflects the scene already in sceneColor.
     // Blend toward that reflection instead of painting a black disc.
     color = mix(sceneColor.rgb, color, surfaceTransmittance);
@@ -865,8 +876,8 @@ void main() {
         }
     }
     bloom /= 9.0;
-    // The glow is emissive too; it must fade with the water surface and the
-    // active medium fog or the disk punches through the water.
-    float bloomFade = surfaceTransmittance * (1.0 - mediumFog);
-    fragColor = vec4(center + bloom * BloomStrength * alpha * bloomFade * foregroundTint, 1.0);
+    // The glow is emissive too; it must fade with the water surface. Medium fog is
+    // already applied to the emissive pass, so the background stays untouched.
+    float bloomFade = surfaceTransmittance;
+    fragColor = vec4(center + bloom * BloomStrength * alpha * bloomFade, 1.0);
 }

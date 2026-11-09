@@ -1,6 +1,7 @@
 package mafisher.quasar.content;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -186,14 +187,22 @@ class ContentShadersTest {
             "the lens must see glass and water that the opaque depth copy misses");
         assertTrue(shader.contains("sourceForeground") && shader.contains("swirlForeground"),
             "both the lens source and the vortex source must be gated");
-        assertTrue(shader.contains("OpaqueColorSampler") && shader.contains("foregroundTint"),
+        assertTrue(shader.contains("OpaqueColorSampler") && shader.contains("foregroundTintAt"),
             "colored glass must tint the effect instead of hard-occluding it");
         assertTrue(shader.contains("OpaqueColorValid") && shader.contains("ForegroundDepthValid"),
             "the tint must fall back when the foreground copies are unavailable");
-        assertTrue(shader.contains("foregroundTint = ratio * 0.80"),
+        assertTrue(shader.contains("return ratio * 0.80"),
             "a detected translucent layer must always attenuate bright glass");
-        assertTrue(shader.contains("foregroundTint = vec3(0.85)"),
-            "water on the camera-to-effect line must attenuate even without a foreground copy");
+        assertTrue(shader.contains("emissionTint") && shader.contains("color = emission * emissionTint"),
+            "tint only the emission, never the lensed background or the sky");
+        assertTrue(shader.contains("color += backgroundLight"),
+            "the lensed background must be added untinted after the emissive pass");
+        int fog = shader.indexOf("color = mix(color, MediumFogColor, mediumFog);");
+        int background = shader.indexOf("color += backgroundLight;");
+        assertTrue(fog >= 0 && background > fog,
+            "medium fog must apply to emission before the background is added");
+        assertFalse(shader.contains("foregroundTint = vec3(0.85)"),
+            "a global water tint darkens the whole lens footprint");
         assertTrue(shader.contains("foregroundInFront"),
             "the tint must only apply when the translucent layer is in front");
         assertTrue(shader.contains("currentForeground") && shader.contains("foregroundLayer"),
