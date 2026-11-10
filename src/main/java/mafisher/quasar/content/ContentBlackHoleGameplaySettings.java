@@ -8,6 +8,8 @@ record ContentBlackHoleGameplaySettings(
     double tangentialStrength,
     double falloff,
     int maxForceTargets,
+    float tearStartFactor,
+    int tearRaysPerTick,
     int coreBlocksPerTick,
     int maxConsumeTargets,
     int debrisPiecesPerBurst,
@@ -30,6 +32,8 @@ record ContentBlackHoleGameplaySettings(
         0.10,
         1.25,
         128,
+        1.35F,
+        64,
         4_096,
         64,
         64,
@@ -51,6 +55,8 @@ record ContentBlackHoleGameplaySettings(
             || tangentialStrength > 8.0
             || !Double.isFinite(falloff) || falloff < 0.0 || falloff > 16.0
             || maxForceTargets < 1 || maxForceTargets > 4_096
+            || !Float.isFinite(tearStartFactor) || tearStartFactor < 1.0F || tearStartFactor > 8.0F
+            || tearRaysPerTick < 0 || tearRaysPerTick > 512
             || coreBlocksPerTick < 1 || coreBlocksPerTick > 16_384
             || maxConsumeTargets < 1 || maxConsumeTargets > 4_096
             || debrisPiecesPerBurst < 1 || debrisPiecesPerBurst > 64

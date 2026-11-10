@@ -94,6 +94,31 @@ class BlockJournalTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void deduplicatesSectionSnapshotsAcrossScatteredEdits() {
+        LevelChunk chunk = mock(LevelChunk.class);
+        when(chunk.getPos()).thenReturn(new ChunkPos(2, -3));
+        when(chunk.getBlockEntities()).thenReturn(java.util.Map.of());
+        PalettedContainer<BlockState> states = new PalettedContainer<>(
+            Block.BLOCK_STATE_REGISTRY,
+            Blocks.AIR.defaultBlockState(),
+            PalettedContainer.Strategy.SECTION_STATES
+        );
+        LevelChunkSection section = new LevelChunkSection(
+            states, mock(PalettedContainerRO.class)
+        );
+
+        BlockJournal journal = new BlockJournal();
+        assertTrue(journal.recordSection(this.level, chunk, 4, section));
+        assertTrue(journal.recordSection(this.level, chunk, 4, section));
+        assertEquals(1, journal.sectionCount());
+
+        BlockJournal loaded = BlockJournal.load(journal.save());
+        assertTrue(loaded.recordSection(this.level, chunk, 4, section));
+        assertEquals(1, loaded.sectionCount());
+    }
+
+    @Test
     void roundTripsNbtAndRestoresThePreviousState() {
         BlockJournal journal = new BlockJournal();
         BlockPos position = new BlockPos(2, 64, 3);

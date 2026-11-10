@@ -30,6 +30,31 @@ class ContentBlackHoleGameplayTest {
     }
 
     @Test
+    void tearRadiusGrowsFromTheCoreToTheAttractionRadius() {
+        double start = 8.0;
+        double end = 108.0;
+        assertEquals(start, ContentBlackHoleGameplayController.tearRadius(
+            start, end, ContentBlackHoleCinematics.HORIZON_END
+        ), 1.0E-6);
+        assertEquals(end, ContentBlackHoleGameplayController.tearRadius(start, end, 0.6F), 1.0E-6);
+
+        double previous = start;
+        for (float progress = 0.1F; progress <= 0.6F; progress += 0.02F) {
+            double radius = ContentBlackHoleGameplayController.tearRadius(start, end, progress);
+            assertTrue(radius >= previous - 1.0E-6, "progress " + progress);
+            assertTrue(radius <= end + 1.0E-6, "progress " + progress);
+            previous = radius;
+        }
+    }
+
+    @Test
+    void tearSettingsAreValidated() {
+        ContentBlackHoleGameplaySettings settings = ContentBlackHoleGameplaySettings.DEFAULT;
+        assertEquals(1.35F, settings.tearStartFactor(), 1.0E-6F);
+        assertEquals(64, settings.tearRaysPerTick());
+    }
+
+    @Test
     void debrisDiskRadiiStayOrderedAtTheOpeningBeat() {
         ContentBlackHoleGameplaySettings settings = ContentBlackHoleGameplaySettings.DEFAULT;
         for (float scale : new float[]{2.0F, 5.0F, 6.0F, 12.0F, 64.0F}) {

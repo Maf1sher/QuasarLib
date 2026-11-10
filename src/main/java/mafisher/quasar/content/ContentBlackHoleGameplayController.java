@@ -23,9 +23,13 @@ import mafisher.quasar.effect.EffectPriority;
 import mafisher.quasar.effect.VisualEffectSpec;
 import mafisher.quasar.effect.audio.EffectAudioSpec;
 import mafisher.quasar.effect.block.BlockChange;
+import mafisher.quasar.effect.gameplay.BlockJournalMode;
 import mafisher.quasar.effect.gameplay.EffectBlockCursor;
+import mafisher.quasar.effect.gameplay.EffectBlockSample;
 import mafisher.quasar.effect.gameplay.EffectBlockVolume;
 import mafisher.quasar.effect.gameplay.EffectBulkBlockEditor;
+import mafisher.quasar.effect.gameplay.EffectRaycastResult;
+import mafisher.quasar.effect.gameplay.EffectRaycastStatus;
 import mafisher.quasar.effect.gameplay.GameplayEffectContext;
 import mafisher.quasar.effect.gameplay.GameplayEffectController;
 import mafisher.quasar.effect.gameplay.GameplayEffectEndReason;
@@ -35,6 +39,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.Blocks;
@@ -84,6 +89,8 @@ final class ContentBlackHoleGameplayController implements GameplayEffectControll
     private static final String CRATER_Y = "crater_y";
     private static final String CRATER_Z = "crater_z";
     private static final int MAX_DEBRIS_STATES = 12;
+    private static final int TEAR_CLUSTER_RADIUS = 1;
+    private static final int TEAR_CLUSTER_BLOCKS = 27;
 
     private final ContentBlackHoleGameplaySettings settings;
     private Vec3 center = Vec3.ZERO;
@@ -172,6 +179,10 @@ final class ContentBlackHoleGameplayController implements GameplayEffectControll
 
         if (progress >= ContentBlackHoleCinematics.IGNITION && !this.coreDone) {
             this.tickCore(context);
+        }
+        if (progress >= ContentBlackHoleCinematics.HORIZON_END
+            && progress < ContentBlackHoleCinematics.DESTABILISE) {
+            this.tickSurfaceTear(context, progress);
         }
         this.tickCrater(context, progress);
         if (progress >= ContentBlackHoleCinematics.HORIZON_END
@@ -417,6 +428,68 @@ final class ContentBlackHoleGameplayController implements GameplayEffectControll
         context.queueBlockChange(change);
     }
 
+    private void tickSurfaceTear(GameplayEffectContext context, float progress) {
+        int headroom = (int)Math.max(0.0, MAX_PENDING_HEADROOM - context.pendingBlockChanges());
+        int maxRays = headroom / TEAR_CLUSTER_BLOCKS;
+        if (maxRays <= 0) {
+            return;
+        }
+        double tearRadius = this.tearRadius(progress);
+        int rays = Math.min(this.settings.tearRaysPerTick(), maxRays);
+        RandomSource random = context.random();
+        for (int index = 0; index < rays; index++) {
+            Vec3 direction = randomDirection(random);
+            Vec3 from = this.center.add(direction.scale(tearRadius));
+            EffectRaycastResult result = context.world().raycast(
+                from,
+                this.center,
+                state -> !state.isAir() && state.getFluidState().isEmpty()
+            );
+            if (result.status() == EffectRaycastStatus.BUDGET_EXHAUSTED
+                || result.status() == EffectRaycastStatus.UNLOADED) {
+                break;
+            }
+            if (!result.isHit()) {
+                continue;
+            }
+            BlockPos position = result.hit().orElseThrow().position();
+            double dx = position.getX() + 0.5 - this.center.x;
+            double dy = position.getY() + 0.5 - this.center.y;
+            double dz = position.getZ() + 0.5 - this.center.z;
+            if (dx * dx + dy * dy + dz * dz <= this.coreRadius * this.coreRadius) {
+                continue;
+            }
+            this.queueTearCluster(context, position);
+        }
+    }
+
+    private void queueTearCluster(GameplayEffectContext context, BlockPos center) {
+        for (int x = -TEAR_CLUSTER_RADIUS; x <= TEAR_CLUSTER_RADIUS; x++) {
+            for (int y = -TEAR_CLUSTER_RADIUS; y <= TEAR_CLUSTER_RADIUS; y++) {
+                for (int z = -TEAR_CLUSTER_RADIUS; z <= TEAR_CLUSTER_RADIUS; z++) {
+                    BlockPos position = center.offset(x, y, z);
+                    if (!context.level().isInWorldBounds(position)) {
+                        continue;
+                    }
+                    context.queueBlockChange(
+                        new BlockChange(position, Blocks.AIR.defaultBlockState()),
+                        this::recordTearState,
+                        BlockJournalMode.SECTION
+                    );
+                }
+            }
+        }
+    }
+
+    private void recordTearState(EffectBlockSample sample) {
+        BlockState state = sample.state();
+        if (state.isAir() || this.debrisStates.size() >= MAX_DEBRIS_STATES
+            || this.debrisStates.contains(state)) {
+            return;
+        }
+        this.debrisStates.add(state);
+    }
+
     private void emitDebris(GameplayEffectContext context) {
         try {
             this.ensureDebrisPalette();
@@ -562,6 +635,43 @@ final class ContentBlackHoleGameplayController implements GameplayEffectControll
     static double debrisDiskInnerRadius(double coreRadius, double groundRadius) {
         // Keep the hole in the middle of the ground disc without ever exceeding its outer radius.
         return Math.min(groundRadius * 0.15, coreRadius);
+    }
+
+    /** Radius of the shell whose surface blocks are being torn out at {@code progress}. */
+    private double tearRadius(float progress) {
+        double start = Math.max(
+            this.coreRadius * 1.05,
+            this.coreRadius * (double)this.settings.tearStartFactor()
+        );
+        return tearRadius(start, this.attractionRadius, progress);
+    }
+
+    static double tearRadius(double startRadius, double endRadius, float progress) {
+        double window = Math.max(
+            1.0E-6,
+            ContentBlackHoleCinematics.DESTABILISE - ContentBlackHoleCinematics.HORIZON_END
+        );
+        double t = Math.max(0.0, Math.min(
+            1.0,
+            (progress - ContentBlackHoleCinematics.HORIZON_END) / (window * 0.55)
+        ));
+        double eased = 1.0 - Math.pow(1.0 - t, 3.0);
+        return startRadius + (endRadius - startRadius) * eased;
+    }
+
+    private static Vec3 randomDirection(RandomSource random) {
+        double x;
+        double y;
+        double z;
+        double lengthSquared;
+        do {
+            x = random.nextDouble() * 2.0 - 1.0;
+            y = random.nextDouble() * 2.0 - 1.0;
+            z = random.nextDouble() * 2.0 - 1.0;
+            lengthSquared = x * x + y * y + z * z;
+        } while (lengthSquared <= 1.0E-6 || lengthSquared > 1.0);
+        double scale = 1.0 / Math.sqrt(lengthSquared);
+        return new Vec3(x * scale, y * scale, z * scale);
     }
 
     private static Vec3 diskAxis(float yaw, float pitch, float roll) {

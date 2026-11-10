@@ -11,13 +11,22 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import mafisher.quasar.effect.block.BlockChange;
 import mafisher.quasar.effect.persistence.BlockJournal;
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.world.level.chunk.PalettedContainer;
+import net.minecraft.world.level.chunk.PalettedContainerRO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
@@ -252,6 +261,44 @@ class PendingBlockChangesTest {
         pending.clear();
 
         assertEquals(0, pending.size());
+    }
+
+    @Test
+    void sharesOneSectionSnapshotAcrossScatteredChanges() {
+        PendingBlockChanges pending = new PendingBlockChanges(8);
+        BlockJournal journal = new BlockJournal();
+        ServerChunkCache chunkSource = mock(ServerChunkCache.class);
+        LevelChunk chunk = mock(LevelChunk.class);
+        LevelChunkSection section = stoneSection();
+        when(this.level.getChunkSource()).thenReturn(chunkSource);
+        when(chunkSource.getChunkNow(0, 0)).thenReturn(chunk);
+        when(chunk.getPos()).thenReturn(new ChunkPos(0, 0));
+        when(chunk.getBlockEntities()).thenReturn(Map.of());
+        when(this.level.getSectionIndexFromSectionY(4)).thenReturn(4);
+        when(chunk.getSection(4)).thenReturn(section);
+
+        BlockChange first = new BlockChange(new BlockPos(1, 64, 1), Blocks.AIR.defaultBlockState());
+        BlockChange second = new BlockChange(new BlockPos(2, 64, 2), Blocks.AIR.defaultBlockState());
+        pending.enqueue(first, null, BlockJournalMode.SECTION);
+        pending.enqueue(second, null, BlockJournalMode.SECTION);
+
+        PendingBlockChanges.ApplyResult result = pending.apply(
+            this.level, 2, (queued, currentState) -> true, journal
+        );
+
+        assertEquals(2, result.applied());
+        assertEquals(1, journal.sectionCount());
+        assertEquals(0, journal.size() - journal.sectionCount());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static LevelChunkSection stoneSection() {
+        PalettedContainer<BlockState> states = new PalettedContainer<>(
+            Block.BLOCK_STATE_REGISTRY,
+            Blocks.STONE.defaultBlockState(),
+            PalettedContainer.Strategy.SECTION_STATES
+        );
+        return new LevelChunkSection(states, mock(PalettedContainerRO.class));
     }
 
     @Test

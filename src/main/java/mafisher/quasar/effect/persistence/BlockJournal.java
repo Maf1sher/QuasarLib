@@ -3,8 +3,10 @@ package mafisher.quasar.effect.persistence;
 import io.netty.buffer.Unpooled;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import mafisher.quasar.QuasarConfig;
 import mafisher.quasar.effect.block.BlockChange;
 import mafisher.quasar.effect.gameplay.TerrainEditService;
@@ -38,6 +40,7 @@ public final class BlockJournal {
 
     private final List<Entry> entries = new ArrayList<>();
     private final List<SectionEntry> sections = new ArrayList<>();
+    private final Set<Long> recordedSections = new HashSet<>();
     private final int maxEntriesOverride;
     private final int maxSectionsOverride;
     private int cursor;
@@ -113,7 +116,9 @@ public final class BlockJournal {
 
     /**
      * Records a compact snapshot of one chunk section before a bulk edit clears it. The snapshot
-     * includes block states, biomes, and block entities in that section.
+     * includes block states, biomes, and block entities in that section. Re-recording a section
+     * that already has a snapshot is a no-op that reports success, so scattered edits can share one
+     * original-state snapshot per section.
      *
      * @return {@code false} when rollback is already pending or the section cap is exhausted
      */
@@ -128,6 +133,10 @@ public final class BlockJournal {
         Objects.requireNonNull(section, "section");
         if (this.rollbackPending) {
             return false;
+        }
+        long sectionKey = SectionPos.asLong(chunk.getPos().x, sectionY, chunk.getPos().z);
+        if (this.recordedSections.contains(sectionKey)) {
+            return true;
         }
         int maxSections = this.maxSectionsOverride > 0
             ? this.maxSectionsOverride
@@ -153,6 +162,7 @@ public final class BlockJournal {
             blockEntities,
             sectionBlockCount(data)
         ));
+        this.recordedSections.add(sectionKey);
         if (!this.rollbackPending) {
             this.sectionCursor = this.sections.size();
         }
@@ -489,6 +499,11 @@ public final class BlockJournal {
 
         journal.rollbackPending = tag.getBoolean("rollback_pending");
         journal.truncated = tag.getBoolean("truncated");
+        for (SectionEntry entry : journal.sections) {
+            journal.recordedSections.add(
+                SectionPos.asLong(entry.pos().x, entry.sectionY(), entry.pos().z)
+            );
+        }
         journal.cursor = tag.contains("cursor")
             ? Math.min(journal.entries.size(), Math.max(0, tag.getInt("cursor")))
             : journal.entries.size();
@@ -509,6 +524,7 @@ public final class BlockJournal {
         int maxSections = QuasarConfig.blockJournalMaxSections();
         if (journal.sections.size() > maxSections) {
             journal.sections.clear();
+            journal.recordedSections.clear();
             journal.sectionCursor = 0;
             journal.truncated = true;
         }

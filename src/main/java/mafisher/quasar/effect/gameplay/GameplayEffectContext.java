@@ -284,7 +284,7 @@ public final class GameplayEffectContext {
 
     /** Queues one block change; see {@link #queueBlockChange(BlockPos, BlockState)}. */
     public boolean queueBlockChange(BlockChange change) {
-        return this.queueBlockChange(change, null);
+        return this.queueBlockChange(change, null, BlockJournalMode.PER_BLOCK);
     }
 
     /**
@@ -293,8 +293,22 @@ public final class GameplayEffectContext {
      * vetoes, unchanged blocks, or failed writes. Callbacks are transient and not persisted.
      */
     public boolean queueBlockChange(BlockChange change, Consumer<EffectBlockSample> applied) {
+        return this.queueBlockChange(change, applied, BlockJournalMode.PER_BLOCK);
+    }
+
+    /**
+     * Queues one block change and chooses how rollback records it. {@link BlockJournalMode#SECTION}
+     * snapshots the whole 16x16x16 section once, so scattered destructive edits keep a complete
+     * rollback without spending one journal entry per block.
+     */
+    public boolean queueBlockChange(
+        BlockChange change,
+        Consumer<EffectBlockSample> applied,
+        BlockJournalMode journalMode
+    ) {
         this.ensureOpen();
         Objects.requireNonNull(change, "change");
+        Objects.requireNonNull(journalMode, "journalMode");
         if (!this.capabilities.destructive()) {
             throw new IllegalStateException(
                 "Gameplay effect " + this.spec.typeId() + " did not declare the destructive capability"
@@ -308,7 +322,7 @@ public final class GameplayEffectContext {
                 "Block change position is outside the level: " + change.position()
             );
         }
-        if (!this.blockChanges.enqueue(change, applied)) {
+        if (!this.blockChanges.enqueue(change, applied, journalMode)) {
             return false;
         }
         this.budgetState.recordBlockChangeQueued();

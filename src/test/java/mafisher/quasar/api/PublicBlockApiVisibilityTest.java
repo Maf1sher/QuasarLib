@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.mock;
 
 import mafisher.quasar.effect.block.BlockChange;
+import mafisher.quasar.effect.gameplay.BlockJournalMode;
 import mafisher.quasar.effect.gameplay.EffectTickBudget;
 import mafisher.quasar.effect.gameplay.EffectTickCounters;
 import mafisher.quasar.effect.gameplay.GameplayEffectContext;
@@ -39,6 +40,12 @@ class PublicBlockApiVisibilityTest {
             "queueBlockChange", BlockPos.class, BlockState.class
         ));
         assertNotNull(GameplayEffectContext.class.getMethod("queueBlockChange", BlockChange.class));
+        assertNotNull(GameplayEffectContext.class.getMethod(
+            "queueBlockChange",
+            BlockChange.class,
+            java.util.function.Consumer.class,
+            BlockJournalMode.class
+        ));
         assertNotNull(GameplayEffectContext.class.getMethod("capabilities"));
         assertNotNull(GameplayEffectContext.class.getMethod("pendingBlockChanges"));
     }

@@ -7,9 +7,13 @@ import java.util.function.BiPredicate;
 import java.util.function.Consumer;
 import mafisher.quasar.effect.block.BlockChange;
 import mafisher.quasar.effect.persistence.BlockJournal;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.SectionPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.LevelChunkSection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,11 +52,21 @@ final class PendingBlockChanges {
      * without showing work that protection vetoed.
      */
     boolean enqueue(BlockChange change, Consumer<EffectBlockSample> applied) {
+        return this.enqueue(change, applied, BlockJournalMode.PER_BLOCK);
+    }
+
+    /** Queues one change with an explicit rollback journal mode. */
+    boolean enqueue(
+        BlockChange change,
+        Consumer<EffectBlockSample> applied,
+        BlockJournalMode journalMode
+    ) {
         Objects.requireNonNull(change, "change");
+        Objects.requireNonNull(journalMode, "journalMode");
         if (this.changes.size() >= this.maxPending) {
             return false;
         }
-        this.changes.addLast(new QueuedChange(change, applied));
+        this.changes.addLast(new QueuedChange(change, applied, journalMode));
         return true;
     }
 
@@ -135,7 +149,12 @@ final class PendingBlockChanges {
                 continue;
             }
 
-            boolean recorded = journal != null && journal.record(level, change, currentState);
+            boolean recordedPerBlock = journal != null
+                && queued.journalMode() == BlockJournalMode.PER_BLOCK
+                && journal.record(level, change, currentState);
+            if (journal != null && queued.journalMode() == BlockJournalMode.SECTION) {
+                this.recordSection(level, journal, change.position());
+            }
             try {
                 boolean changed = change.updateNeighbors()
                     ? level.setBlockAndUpdate(change.position(), change.state())
@@ -147,17 +166,33 @@ final class PendingBlockChanges {
                 if (changed) {
                     applied++;
                     this.notifyApplied(queued, currentState);
-                } else if (recorded) {
+                } else if (recordedPerBlock) {
                     journal.discardLast();
                 }
             } catch (RuntimeException exception) {
-                if (recorded) {
+                if (recordedPerBlock) {
                     journal.discardLast();
                 }
                 LOGGER.warn("Failed to apply block change at {}", change.position(), exception);
             }
         }
         return new ApplyResult(processed, applied, vetoed);
+    }
+
+    private boolean recordSection(ServerLevel level, BlockJournal journal, BlockPos position) {
+        int sectionX = SectionPos.blockToSectionCoord(position.getX());
+        int sectionY = SectionPos.blockToSectionCoord(position.getY());
+        int sectionZ = SectionPos.blockToSectionCoord(position.getZ());
+        LevelChunk chunk = level.getChunkSource().getChunkNow(sectionX, sectionZ);
+        if (chunk == null) {
+            return false;
+        }
+        int sectionIndex = level.getSectionIndexFromSectionY(sectionY);
+        LevelChunkSection section = chunk.getSection(sectionIndex);
+        if (section == null) {
+            return false;
+        }
+        return journal.recordSection(level, chunk, sectionY, section);
     }
 
     private void notifyApplied(QueuedChange queued, BlockState oldState) {
@@ -172,9 +207,14 @@ final class PendingBlockChanges {
         }
     }
 
-    private record QueuedChange(BlockChange change, Consumer<EffectBlockSample> applied) {
+    private record QueuedChange(
+        BlockChange change,
+        Consumer<EffectBlockSample> applied,
+        BlockJournalMode journalMode
+    ) {
         private QueuedChange {
             Objects.requireNonNull(change, "change");
+            Objects.requireNonNull(journalMode, "journalMode");
         }
     }
 
