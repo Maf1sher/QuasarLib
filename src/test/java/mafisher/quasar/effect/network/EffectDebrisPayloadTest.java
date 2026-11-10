@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.netty.buffer.Unpooled;
+import mafisher.quasar.effect.EffectDebrisSpawn;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
@@ -11,8 +12,7 @@ import org.junit.jupiter.api.Test;
 
 class EffectDebrisPayloadTest {
     @Test
-    void roundTripsOneBurst() {
-        EffectDebrisPayload payload = new EffectDebrisPayload(
+    void roundTripsOneBurst() {        EffectDebrisPayload payload = new EffectDebrisPayload(
             ResourceLocation.withDefaultNamespace("overworld"),
             new Vec3(1.0, 64.0, -2.0),
             42,
@@ -24,6 +24,32 @@ class EffectDebrisPayloadTest {
             40,
             1234L,
             900L
+        );
+        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
+
+        EffectDebrisPayload.STREAM_CODEC.encode(buffer, payload);
+        EffectDebrisPayload decoded = EffectDebrisPayload.STREAM_CODEC.decode(buffer);
+
+        assertEquals(payload, decoded);
+    }
+
+    @Test
+    void roundTripsSurfaceSpawn() {
+        EffectDebrisPayload payload = new EffectDebrisPayload(
+            ResourceLocation.withDefaultNamespace("overworld"),
+            new Vec3(0.0, 64.0, 0.0),
+            42,
+            24,
+            Vec3.ZERO,
+            0.35F,
+            0.65F,
+            0.0F,
+            64,
+            77L,
+            900L,
+            null,
+            new EffectDebrisSpawn.Surface(new Vec3(0.0, 64.0, 0.0), 12.0, 24.0, 0.45),
+            8.0F
         );
         FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
 

@@ -1,7 +1,8 @@
 package mafisher.quasar.client.effect;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.math.Axis;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -11,30 +12,35 @@ import mafisher.quasar.effect.EffectDebrisSpawn;
 import mafisher.quasar.effect.network.EffectDebrisPayload;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.SectionPos;
+import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
-import org.joml.Matrix4f;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.joml.Vector3f;
 
 /**
  * Lightweight client-only block debris. Bursts are simulated from a seed and never collide with
- * terrain; the renderer batches every visible piece into the shared instanced draw path.
+ * terrain; visible pieces are emitted as textured block cubes through the vanilla entity batch,
+ * which keeps the effect compatible with Sodium and Iris.
  */
 final class ClientEffectDebris {
-    static final int MAX_ACTIVE_PIECES = 12_288;
+    static final int MAX_ACTIVE_PIECES = 6_144;
 
-    private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
+    private static final int FULLBRIGHT_LIGHT = 0x00F000F0;
     private static final EffectMesh CUBE = createCube();
+    private static final RenderType DEBRIS_RENDER_TYPE =
+        RenderType.entityCutoutNoCull(TextureAtlas.LOCATION_BLOCKS);
     private static final List<Burst> BURSTS = new ArrayList<>();
-    private static GpuMeshCache meshCache;
-    private static InstancedBatchRenderer renderer;
-    private static boolean renderFailureLogged;
 
     private ClientEffectDebris() {
     }
@@ -62,6 +68,10 @@ final class ClientEffectDebris {
         float red = tint < 0 ? 1.0F : ((tint >> 16) & 0xFF) / 255.0F;
         float green = tint < 0 ? 1.0F : ((tint >> 8) & 0xFF) / 255.0F;
         float blue = tint < 0 ? 1.0F : (tint & 0xFF) / 255.0F;
+        List<Piece> burstPieces = pieces(payload, surfaceResolver(payload, level, minecraft));
+        if (burstPieces.isEmpty()) {
+            return;
+        }
         Burst burst = new Burst(
             payload.serverGameTime(),
             payload.lifetimeTicks(),
@@ -75,7 +85,7 @@ final class ClientEffectDebris {
             blue,
             payload.attractor(),
             payload.scale(),
-            pieces(payload)
+            burstPieces
         );
         BURSTS.add(burst);
         while (totalPieces() > MAX_ACTIVE_PIECES && BURSTS.size() > 1) {
@@ -85,15 +95,6 @@ final class ClientEffectDebris {
 
     static void clear() {
         BURSTS.clear();
-        if (renderer != null) {
-            renderer.close();
-            renderer = null;
-        }
-        if (meshCache != null) {
-            meshCache.close();
-            meshCache = null;
-        }
-        renderFailureLogged = false;
     }
 
     static void onResourceReload() {
@@ -106,8 +107,16 @@ final class ClientEffectDebris {
 
     /** Deterministic piece state for one payload; exposed to headless tests. */
     static List<Piece> pieces(EffectDebrisPayload payload) {
+        return pieces(payload, null);
+    }
+
+    /** Deterministic piece state; a resolver projects surface spawns onto real terrain. */
+    static List<Piece> pieces(EffectDebrisPayload payload, SurfaceResolver resolver) {
+        Objects.requireNonNull(payload, "payload");
         RandomSource random = RandomSource.create(payload.seed());
+        boolean surfaceSpawn = payload.spawn() instanceof EffectDebrisSpawn.Surface;
         List<Piece> pieces = new ArrayList<>(payload.pieces());
+        List<Vec3> unresolvedSurface = new ArrayList<>();
         for (int index = 0; index < payload.pieces(); index++) {
             Vec3 randomDirection = randomDirection(random);
             Vec3 base = payload.direction().lengthSqr() > 1.0E-9
@@ -122,10 +131,24 @@ final class ClientEffectDebris {
             }
             double speed = payload.speed() * (0.45 + random.nextDouble() * 0.55);
             Vec3 origin;
+            Appearance appearance = null;
             if (payload.spawn() instanceof EffectDebrisSpawn.Shell shell) {
                 origin = shellPoint(random, shell);
             } else if (payload.spawn() instanceof EffectDebrisSpawn.Disk disk) {
                 origin = diskPoint(random, disk);
+            } else if (payload.spawn() instanceof EffectDebrisSpawn.Surface surface) {
+                Vec3 candidate = surfacePoint(random, surface);
+                if (resolver == null) {
+                    origin = candidate;
+                } else {
+                    Sample sample = resolver.resolve(candidate, surface.lift());
+                    if (sample == null) {
+                        unresolvedSurface.add(candidate);
+                        continue;
+                    }
+                    origin = sample.position();
+                    appearance = sample.appearance();
+                }
             } else {
                 origin = payload.origin().add(
                     (random.nextDouble() * 2.0 - 1.0) * 0.35,
@@ -136,6 +159,9 @@ final class ClientEffectDebris {
             int lifetime = Math.max(1, (int)Math.round(
                 payload.lifetimeTicks() * (0.7 + random.nextDouble() * 0.3)
             ));
+            float baseScale = surfaceSpawn
+                ? 0.12F + random.nextFloat() * 0.10F
+                : 0.075F + random.nextFloat() * 0.075F;
             pieces.add(new Piece(
                 origin,
                 direction.scale(speed),
@@ -145,21 +171,112 @@ final class ClientEffectDebris {
                 (random.nextFloat() * 2.0F - 1.0F) * 0.25F,
                 (random.nextFloat() * 2.0F - 1.0F) * 0.25F,
                 (random.nextFloat() * 2.0F - 1.0F) * 0.25F,
-                0.075F + random.nextFloat() * 0.075F,
-                lifetime
+                baseScale,
+                lifetime,
+                appearance
             ));
+        }
+        if (surfaceSpawn && resolver != null && pieces.isEmpty() && !unresolvedSurface.isEmpty()) {
+            // Terrain sampling failed for every column (for example an unloaded horizon area).
+            // Fall back to the candidate columns so the effect still reads as blocks leaving the
+            // ground instead of silently dropping the whole burst.
+            for (Vec3 origin : unresolvedSurface) {
+                int lifetime = Math.max(1, (int)Math.round(
+                    payload.lifetimeTicks() * (0.7 + random.nextDouble() * 0.3)
+                ));
+                pieces.add(new Piece(
+                    origin,
+                    Vec3.ZERO,
+                    random.nextFloat() * 360.0F,
+                    random.nextFloat() * 360.0F,
+                    random.nextFloat() * 360.0F,
+                    (random.nextFloat() * 2.0F - 1.0F) * 0.25F,
+                    (random.nextFloat() * 2.0F - 1.0F) * 0.25F,
+                    (random.nextFloat() * 2.0F - 1.0F) * 0.25F,
+                    0.12F + random.nextFloat() * 0.1F,
+                    lifetime,
+                    null
+                ));
+            }
         }
         return List.copyOf(pieces);
     }
 
-    static void render(RenderLevelStageEvent event) {
-        if (BURSTS.isEmpty()) {
-            return;
+    private static SurfaceResolver surfaceResolver(
+        EffectDebrisPayload payload,
+        ClientLevel level,
+        Minecraft minecraft
+    ) {
+        if (!(payload.spawn() instanceof EffectDebrisSpawn.Surface)) {
+            return null;
         }
+        return (candidate, lift) -> sampleSurface(level, minecraft, candidate, lift);
+    }
+
+    /**
+     * Projects a candidate column onto the client terrain, samples the block that is actually there,
+     * and derives its sprite and tint. Returns {@code null} when the column is unloaded or empty so
+     * the piece is skipped instead of floating in mid-air.
+     */
+    private static Sample sampleSurface(
+        ClientLevel level,
+        Minecraft minecraft,
+        Vec3 candidate,
+        double lift
+    ) {
+        int x = Mth.floor(candidate.x);
+        int z = Mth.floor(candidate.z);
+        if (!level.getChunkSource().hasChunk(
+            SectionPos.blockToSectionCoord(x), SectionPos.blockToSectionCoord(z)
+        )) {
+            return null;
+        }
+        BlockPos position = new BlockPos(
+            x, level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1, z
+        );
+        if (!level.isInWorldBounds(position)) {
+            return null;
+        }
+        BlockState state = level.getBlockState(position);
+        for (int step = 0; step < 3 && (state.isAir() || !state.getFluidState().isEmpty()); step++) {
+            position = position.below();
+            if (!level.isInWorldBounds(position)) {
+                return null;
+            }
+            state = level.getBlockState(position);
+        }
+        if (state.isAir() || !state.getFluidState().isEmpty()) {
+            return null;
+        }
+        TextureAtlasSprite sprite = minecraft.getBlockRenderer().getBlockModelShaper()
+            .getParticleIcon(state);
+        if (sprite == null) {
+            return null;
+        }
+        int tint = minecraft.getBlockColors().getColor(state, level, position, 0);
+        float red = tint < 0 ? 1.0F : ((tint >> 16) & 0xFF) / 255.0F;
+        float green = tint < 0 ? 1.0F : ((tint >> 8) & 0xFF) / 255.0F;
+        float blue = tint < 0 ? 1.0F : (tint & 0xFF) / 255.0F;
+        Vec3 start = new Vec3(x + 0.5, position.getY() + 1.0 + lift, z + 0.5);
+        return new Sample(start, new Appearance(
+            sprite.getU0(),
+            sprite.getV0(),
+            sprite.getU1() - sprite.getU0(),
+            sprite.getV1() - sprite.getV0(),
+            red,
+            green,
+            blue
+        ));
+    }
+
+    static void render(RenderLevelStageEvent event) {
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
         if (level == null) {
             clear();
+            return;
+        }
+        if (BURSTS.isEmpty()) {
             return;
         }
         long serverTime = ClientEffectClock.estimate(level.getGameTime());
@@ -175,7 +292,11 @@ final class ClientEffectDebris {
             default -> 1.0F;
         };
         Vec3 camera = event.getCamera().getPosition();
-        List<InstancedBatchBuilder.Instance> instances = new ArrayList<>();
+        Vector3f look = event.getCamera().getLookVector();
+        PoseStack poseStack = new PoseStack();
+        poseStack.translate(-camera.x, -camera.y, -camera.z);
+        MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
+        VertexConsumer consumer = buffers.getBuffer(DEBRIS_RENDER_TYPE);
         for (Burst burst : BURSTS) {
             int visible = Math.max(1, (int)Math.ceil(burst.pieces.size() * qualityScale));
             double age = Math.max(0.0, serverTime - burst.startGameTime + partialTick);
@@ -188,7 +309,6 @@ final class ClientEffectDebris {
                 double x;
                 double y;
                 double z;
-                float alpha;
                 float scale = piece.scale() * burst.scale;
                 if (burst.attractor != null) {
                     Vec3 position = EffectDebrisMath.infallPosition(
@@ -200,76 +320,73 @@ final class ClientEffectDebris {
                     x = position.x;
                     y = position.y;
                     z = position.z;
-                    alpha = (float)(1.0 - smoothstep(0.72, 1.0, progress));
                     scale *= (float)(0.35 + 0.65 * (1.0 - progress));
                 } else {
                     x = piece.position().x + piece.velocity().x * age;
                     y = piece.position().y + piece.velocity().y * age
                         + 0.5 * burst.gravity * age * age;
                     z = piece.position().z + piece.velocity().z * age;
-                    alpha = (float)(1.0 - smoothstep(0.7, 1.0, progress));
                 }
-                Matrix4f model = new Matrix4f()
-                    .translate((float)(x - camera.x), (float)(y - camera.y), (float)(z - camera.z))
-                    .rotateY((float)Math.toRadians(piece.yaw() + piece.yawSpeed() * age))
-                    .rotateX((float)Math.toRadians(piece.pitch() + piece.pitchSpeed() * age))
-                    .rotateZ((float)Math.toRadians(piece.roll() + piece.rollSpeed() * age))
-                    .scale(scale);
-                instances.add(new InstancedBatchBuilder.Instance(
-                    model,
-                    burst.red,
-                    burst.green,
-                    burst.blue,
-                    alpha,
-                    burst.u0,
-                    burst.v0,
-                    burst.uScale,
-                    burst.vScale,
-                    (x - camera.x) * (x - camera.x) + (y - camera.y) * (y - camera.y)
-                        + (z - camera.z) * (z - camera.z)
-                ));
+                double dx = x - camera.x;
+                double dy = y - camera.y;
+                double dz = z - camera.z;
+                if (dx * look.x() + dy * look.y() + dz * look.z() < -8.0
+                    || dx * dx + dy * dy + dz * dz > 512.0 * 512.0) {
+                    continue;
+                }
+                Appearance appearance = piece.appearance();
+                poseStack.pushPose();
+                try {
+                    poseStack.translate(x, y, z);
+                    poseStack.mulPose(Axis.YP.rotationDegrees(
+                        piece.yaw() + piece.yawSpeed() * (float)age
+                    ));
+                    poseStack.mulPose(Axis.XP.rotationDegrees(
+                        piece.pitch() + piece.pitchSpeed() * (float)age
+                    ));
+                    poseStack.mulPose(Axis.ZP.rotationDegrees(
+                        piece.roll() + piece.rollSpeed() * (float)age
+                    ));
+                    poseStack.scale(scale, scale, scale);
+                    emitCube(
+                        consumer,
+                        poseStack.last(),
+                        appearance == null ? burst.u0 : appearance.u0(),
+                        appearance == null ? burst.v0 : appearance.v0(),
+                        appearance == null ? burst.uScale : appearance.uScale(),
+                        appearance == null ? burst.vScale : appearance.vScale(),
+                        appearance == null ? burst.red : appearance.red(),
+                        appearance == null ? burst.green : appearance.green(),
+                        appearance == null ? burst.blue : appearance.blue()
+                    );
+                } finally {
+                    poseStack.popPose();
+                }
             }
         }
-        if (instances.isEmpty()) {
-            return;
-        }
-
-        InstancedBatchRenderer current = renderer();
-        if (current == null) {
-            return;
-        }
-        PoseStack poseStack = event.getPoseStack();
-        poseStack.pushPose();
-        Matrix4f baseView;
-        try {
-            poseStack.translate(-camera.x, -camera.y, -camera.z);
-            baseView = new Matrix4f(RenderSystem.getModelViewMatrix()).mul(poseStack.last().pose());
-        } finally {
-            poseStack.popPose();
-        }
-        try {
-            current.draw(
-                List.of(new InstancedBatchBuilder.InstancedDraw(
-                    new InstancedBatchBuilder.BatchKey("debris", EffectRenderTypes.debris(), CUBE),
-                    instances
-                )),
-                baseView,
-                RenderSystem.getProjectionMatrix()
-            );
-        } catch (RuntimeException exception) {
-            if (!renderFailureLogged) {
-                renderFailureLogged = true;
-                LOGGER.error("Could not render client effect debris", exception);
-            }
-        }
+        buffers.endBatch(DEBRIS_RENDER_TYPE);
     }
 
-    private static InstancedBatchRenderer renderer() {
-        if (renderer == null) {
-            meshCache = new GpuMeshCache();
-            renderer = new InstancedBatchRenderer(meshCache);
+    private static void emitCube(
+        VertexConsumer consumer,
+        PoseStack.Pose pose,
+        float u0,
+        float v0,
+        float uScale,
+        float vScale,
+        float red,
+        float green,
+        float blue
+    ) {
+        for (int index = 0; index < CUBE.vertexCount(); index++) {
+            EffectMesh.Vertex vertex = CUBE.vertex(index);
+            consumer.addVertex(pose, vertex.x(), vertex.y(), vertex.z())
+                .setColor(red, green, blue, 1.0F)
+                .setUv(u0 + vertex.u() * uScale, v0 + vertex.v() * vScale)
+                .setOverlay(OverlayTexture.NO_OVERLAY)
+                .setLight(FULLBRIGHT_LIGHT)
+                .setNormal(pose, vertex.normalX(), vertex.normalY(), vertex.normalZ());
         }
-        return renderer;
     }
 
     private static int totalPieces() {
@@ -300,6 +417,19 @@ final class ClientEffectDebris {
         );
     }
 
+    /** Candidate column inside the annulus; the resolver replaces the vertical component. */
+    private static Vec3 surfacePoint(RandomSource random, EffectDebrisSpawn.Surface surface) {
+        double min = surface.minRadius();
+        double max = surface.maxRadius();
+        double radius = Math.sqrt(min * min + random.nextDouble() * (max * max - min * min));
+        double angle = random.nextDouble() * Math.PI * 2.0;
+        return surface.center().add(
+            Math.cos(angle) * radius,
+            0.0,
+            Math.sin(angle) * radius
+        );
+    }
+
     private static Vec3 randomDirection(RandomSource random) {
         double x;
         double y;
@@ -313,11 +443,6 @@ final class ClientEffectDebris {
         } while (lengthSquared <= 1.0E-6 || lengthSquared > 1.0);
         double scale = 1.0 / Math.sqrt(lengthSquared);
         return new Vec3(x * scale, y * scale, z * scale);
-    }
-
-    private static double smoothstep(double edge0, double edge1, double value) {
-        double t = Math.max(0.0, Math.min(1.0, (value - edge0) / (edge1 - edge0)));
-        return t * t * (3.0 - 2.0 * t);
     }
 
     private static EffectMesh createCube() {
@@ -361,6 +486,32 @@ final class ClientEffectDebris {
         builder.vertex(x3, y3, z3, 0.0F, 0.0F, normalX, normalY, normalZ);
     }
 
+    /** Client-side appearance sampled from the terrain for one surface piece. */
+    record Appearance(
+        float u0,
+        float v0,
+        float uScale,
+        float vScale,
+        float red,
+        float green,
+        float blue
+    ) {
+    }
+
+    /** Resolved surface start point plus its sprite and tint. */
+    record Sample(Vec3 position, Appearance appearance) {
+        Sample {
+            Objects.requireNonNull(position, "position");
+            Objects.requireNonNull(appearance, "appearance");
+        }
+    }
+
+    /** Projects a candidate column onto local terrain; returns {@code null} to skip the piece. */
+    @FunctionalInterface
+    interface SurfaceResolver {
+        Sample resolve(Vec3 candidate, double lift);
+    }
+
     record Piece(
         Vec3 position,
         Vec3 velocity,
@@ -371,7 +522,8 @@ final class ClientEffectDebris {
         float pitchSpeed,
         float rollSpeed,
         float scale,
-        int lifetimeTicks
+        int lifetimeTicks,
+        Appearance appearance
     ) {
         Piece {
             Objects.requireNonNull(position, "position");

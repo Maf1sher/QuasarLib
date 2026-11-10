@@ -11,6 +11,7 @@ import mafisher.quasar.effect.EffectBudgetReport;
 import mafisher.quasar.effect.EffectBudgetService;
 import mafisher.quasar.effect.EffectDamageShape;
 import mafisher.quasar.effect.EffectDebrisSpec;
+import mafisher.quasar.effect.EffectDebrisSpawn;
 import mafisher.quasar.effect.EffectForceField;
 import mafisher.quasar.effect.EffectHitbox;
 import mafisher.quasar.effect.EffectLifetimePolicy;
@@ -119,6 +120,8 @@ public final class EffectDebugCommands {
                         ))
                         .then(Commands.literal("gameplay-pulse")
                             .executes(context -> testGameplayPulse(context.getSource())))
+                        .then(Commands.literal("debris-probe")
+                            .executes(context -> testDebrisProbe(context.getSource())))
                         .then(Commands.literal("gameplay-stop-all")
                             .executes(context -> stopGameplayEffects(context.getSource())))
                         .then(withAngles(
@@ -323,6 +326,56 @@ public final class EffectDebugCommands {
         }
         source.sendSuccess(
             () -> Component.literal("Started the debug gameplay pulse " + handle.sessionId() + "."),
+            false
+        );
+        return 1;
+    }
+
+    private static int testDebrisProbe(CommandSourceStack source) {
+        ServerLevel level = source.getLevel();
+        ServerPlayer player = source.getPlayer();
+        Vec3 origin = player == null
+            ? source.getPosition().add(0.0, 1.6, 0.0)
+            : player.getEyePosition().add(player.getLookAngle().scale(5.0));
+        GameplayEffectSpec spec = new GameplayEffectSpec(
+            ResourceLocation.fromNamespaceAndPath(QuasarLib.MOD_ID, "debug_debris_probe"),
+            player == null ? null : player.getUUID(),
+            origin,
+            EffectPhasePlan.of(new EffectPhase("burst", 40)),
+            level.getRandom().nextLong(),
+            new EffectTickBudget(0, 0, 0, 0, 0, 0, 64),
+            OwnerPolicy.STOP_WHEN_UNAVAILABLE
+        );
+        try {
+            GameplayEffectService.start(level, spec, new GameplayEffectController() {
+                @Override
+                public void onStart(GameplayEffectContext context) {
+                    context.spawnDebris(new EffectDebrisSpec(
+                        origin,
+                        Blocks.STONE.defaultBlockState(),
+                        32,
+                        Vec3.ZERO,
+                        0.0,
+                        1.0,
+                        0.0,
+                        200,
+                        EffectAudience.nearby(128.0),
+                        null,
+                        new EffectDebrisSpawn.Point(),
+                        8.0F
+                    ));
+                }
+
+                @Override
+                public void onTick(GameplayEffectContext context) {
+                }
+            });
+        } catch (IllegalStateException exception) {
+            source.sendFailure(Component.literal(exception.getMessage()));
+            return 0;
+        }
+        source.sendSuccess(
+            () -> Component.literal("Spawned a stationary debris probe in front of the player."),
             false
         );
         return 1;

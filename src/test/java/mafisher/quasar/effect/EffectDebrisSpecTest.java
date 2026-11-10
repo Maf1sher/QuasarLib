@@ -46,6 +46,19 @@ class EffectDebrisSpecTest {
         ));
     }
 
+    @Test
+    void rejectsInvalidSurfaceSpawns() {
+        assertThrows(IllegalArgumentException.class,
+            () -> new EffectDebrisSpawn.Surface(Vec3.ZERO, 4.0, 2.0, 0.5));
+        assertThrows(IllegalArgumentException.class,
+            () -> new EffectDebrisSpawn.Surface(Vec3.ZERO, -1.0, 2.0, 0.5));
+        assertThrows(IllegalArgumentException.class,
+            () -> new EffectDebrisSpawn.Surface(Vec3.ZERO, 0.0, 2_000.0, 0.5));
+        assertThrows(IllegalArgumentException.class,
+            () -> new EffectDebrisSpawn.Surface(Vec3.ZERO, 0.0, 2.0, -0.5));
+        assertEquals(0.5, new EffectDebrisSpawn.Surface(Vec3.ZERO, 1.0, 8.0, 0.5).lift());
+    }
+
     private static BlockState state() {
         BlockState state = mock(BlockState.class);
         when(state.isAir()).thenReturn(false);

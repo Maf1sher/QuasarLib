@@ -13,7 +13,7 @@ record ContentBlackHoleGameplaySettings(
     int coreBlocksPerTick,
     int maxConsumeTargets,
     int debrisPiecesPerBurst,
-    int debrisBurstsPerTick,
+    int surfaceBurstsPerTick,
     int debrisLifetimeTicks,
     boolean affectsCreativePlayers,
     float craterRadiusFactor,
@@ -36,8 +36,8 @@ record ContentBlackHoleGameplaySettings(
         64,
         4_096,
         64,
-        64,
-        3,
+        32,
+        2,
         64,
         true,
         12.0F,
@@ -60,7 +60,7 @@ record ContentBlackHoleGameplaySettings(
             || coreBlocksPerTick < 1 || coreBlocksPerTick > 16_384
             || maxConsumeTargets < 1 || maxConsumeTargets > 4_096
             || debrisPiecesPerBurst < 1 || debrisPiecesPerBurst > 64
-            || debrisBurstsPerTick < 1 || debrisBurstsPerTick > 32
+            || surfaceBurstsPerTick < 1 || surfaceBurstsPerTick > 32
             || debrisLifetimeTicks < 1 || debrisLifetimeTicks > 200
             || !Float.isFinite(craterRadiusFactor) || craterRadiusFactor < 1.0F
             || craterRadiusFactor > 32.0F

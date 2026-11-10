@@ -91,6 +91,10 @@ final class ContentBlackHoleGameplayController implements GameplayEffectControll
     private static final int MAX_DEBRIS_STATES = 12;
     private static final int TEAR_CLUSTER_RADIUS = 1;
     private static final int TEAR_CLUSTER_BLOCKS = 27;
+    private static final int SURFACE_PIECES_PER_BURST = 32;
+    private static final float SURFACE_PIECE_SCALE = 8.0F;
+    private static final double SURFACE_OUTER_BAND = 6.0;
+    private static final double SURFACE_LIFT = 0.45;
 
     private final ContentBlackHoleGameplaySettings settings;
     private Vec3 center = Vec3.ZERO;
@@ -187,7 +191,7 @@ final class ContentBlackHoleGameplayController implements GameplayEffectControll
         this.tickCrater(context, progress);
         if (progress >= ContentBlackHoleCinematics.HORIZON_END
             && progress < ContentBlackHoleCinematics.IMPLOSION) {
-            this.emitDebris(context);
+            this.emitDebris(context, progress);
             this.tickForces(context, frame);
         }
         if (progress >= ContentBlackHoleCinematics.IMPLOSION) {
@@ -490,48 +494,118 @@ final class ContentBlackHoleGameplayController implements GameplayEffectControll
         this.debrisStates.add(state);
     }
 
-    private void emitDebris(GameplayEffectContext context) {
+    private void emitDebris(GameplayEffectContext context, float progress) {
         try {
             this.ensureDebrisPalette();
-            int bursts = this.settings.debrisBurstsPerTick();
-            double inflowRadius = this.inflowRadius(context);
-            EffectDebrisSpawn shell = new EffectDebrisSpawn.Shell(
-                this.center,
-                this.coreRadius * 1.1,
-                Math.max(this.coreRadius * 1.11, inflowRadius)
-            );
-            double craterRadius = this.settings.craterRadius(context.spec().scale());
-            double groundRadius = Math.min(inflowRadius, craterRadius);
-            double diskMin = debrisDiskInnerRadius(this.coreRadius, groundRadius);
-            EffectDebrisSpawn disk = this.hasCrater
-                ? new EffectDebrisSpawn.Disk(
-                    this.craterCenter.add(0.0, 6.0, 0.0), diskMin, groundRadius, 5.0
-                )
-                : shell;
             EffectAudience audience = EffectAudience.nearby(
                 Math.min(512.0, this.attractionRadius + 128.0)
             );
-            float pieceScale = Math.min(8.0F, Math.max(3.0F, context.spec().scale() / 1.2F));
-            for (int index = 0; index < bursts; index++) {
-                BlockState state = this.debrisStates.get(index % this.debrisStates.size());
-                EffectDebrisSpawn spawn = (index % 4 == 0) ? shell : disk;
-                context.spawnDebris(EffectDebrisSpec.infallField(
+            int remaining = this.settings.surfaceBurstsPerTick();
+            boolean tearing = progress >= ContentBlackHoleCinematics.HORIZON_END
+                && progress < ContentBlackHoleCinematics.DESTABILISE;
+            boolean carving = this.hasCrater
+                && this.craterEditor != null
+                && !this.craterEditor.progress().finished();
+
+            if (tearing) {
+                int bursts = carving ? Math.max(1, remaining / 2) : remaining;
+                double radius = this.tearRadius(progress);
+                this.emitSurface(
+                    context,
                     this.center,
-                    state,
-                    this.settings.debrisPiecesPerBurst(),
-                    0.35,
-                    0.65,
-                    this.settings.debrisLifetimeTicks(),
-                    audience,
-                    this.debrisAttractor,
-                    spawn,
-                    pieceScale
-                ));
+                    this.coreRadius + 2.0,
+                    radius + SURFACE_OUTER_BAND,
+                    bursts,
+                    audience
+                );
+                remaining -= bursts;
             }
+            if (carving && remaining > 0) {
+                double radius = this.settings.craterRadius(context.spec().scale());
+                this.emitSurface(
+                    context,
+                    this.craterCenter,
+                    0.0,
+                    radius,
+                    remaining,
+                    audience
+                );
+            }
+            this.emitAccretion(context, audience);
         } catch (RuntimeException exception) {
             // Debris is cosmetic: a bad burst must never cancel the gameplay session.
             LOGGER.warn("Could not emit black-hole debris", exception);
         }
+    }
+
+    /**
+     * Whole-block chunks that leave the terrain surface and spiral in. The client projects each
+     * candidate onto its local heightmap, so pieces never float and use the real block texture.
+     */
+    private void emitSurface(
+        GameplayEffectContext context,
+        Vec3 center,
+        double innerRadius,
+        double outerRadius,
+        int bursts,
+        EffectAudience audience
+    ) {
+        if (bursts <= 0 || outerRadius <= 0.0) {
+            return;
+        }
+        double inner = Math.min(Math.max(0.0, innerRadius), outerRadius);
+        int states = this.debrisStates.size();
+        for (int index = 0; index < bursts; index++) {
+            BlockState state = this.debrisStates.get(
+                (int)((context.ageTicks() + index) % states)
+            );
+            context.spawnDebris(EffectDebrisSpec.infallField(
+                center,
+                state,
+                SURFACE_PIECES_PER_BURST,
+                0.35,
+                0.65,
+                this.settings.debrisLifetimeTicks(),
+                audience,
+                this.debrisAttractor,
+                new EffectDebrisSpawn.Surface(center, inner, outerRadius, SURFACE_LIFT),
+                SURFACE_PIECE_SCALE
+            ));
+        }
+    }
+
+    private void emitAccretion(GameplayEffectContext context, EffectAudience audience) {
+        double inflowRadius = this.inflowRadius(context);
+        EffectDebrisSpawn shell = new EffectDebrisSpawn.Shell(
+            this.center,
+            this.coreRadius * 1.1,
+            Math.max(this.coreRadius * 1.11, inflowRadius)
+        );
+        double craterRadius = this.settings.craterRadius(context.spec().scale());
+        double groundRadius = Math.min(inflowRadius, craterRadius);
+        double diskMin = debrisDiskInnerRadius(this.coreRadius, groundRadius);
+        EffectDebrisSpawn disk = this.hasCrater
+            ? new EffectDebrisSpawn.Disk(
+                this.craterCenter.add(0.0, 6.0, 0.0), diskMin, groundRadius, 5.0
+            )
+            : shell;
+        float pieceScale = Math.min(8.0F, Math.max(3.0F, context.spec().scale() / 1.2F));
+        BlockState state = this.debrisStates.get(
+            context.ageTicks() % this.debrisStates.size()
+        );
+        EffectDebrisSpawn spawn = (context.ageTicks() % 4 == 0) ? shell : disk;
+        context.spawnDebris(EffectDebrisSpec.infallField(
+            this.center,
+            state,
+            this.settings.debrisPiecesPerBurst(),
+            0.35,
+            0.65,
+            this.settings.debrisLifetimeTicks(),
+            audience,
+            this.debrisAttractor,
+            spawn,
+            pieceScale
+        ));
     }
 
     private double inflowRadius(GameplayEffectContext context) {

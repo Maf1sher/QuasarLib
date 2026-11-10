@@ -121,6 +121,7 @@ final class ClientEffectFrameRuntime {
 
     static void render(RenderLevelStageEvent event) {
         if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_BLOCK_ENTITIES) {
+            ClientEffectDebris.render(event);
             ClientScreenCompositor compositor = screenCompositor;
             if (compositor != null) {
                 compositor.captureOpaqueDepth(event);
@@ -134,7 +135,6 @@ final class ClientEffectFrameRuntime {
             long start = System.nanoTime();
             RenderEnvironment environment = currentEnvironment();
             manager().render(event, environment);
-            ClientEffectDebris.render(event);
             ClientQualityController.recordWorldRender(System.nanoTime() - start);
         } else if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
             long start = System.nanoTime();

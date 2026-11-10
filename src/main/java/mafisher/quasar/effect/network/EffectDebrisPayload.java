@@ -143,6 +143,12 @@ public record EffectDebrisPayload(
             buffer.writeDouble(disk.minRadius());
             buffer.writeDouble(disk.maxRadius());
             buffer.writeDouble(disk.ySpread());
+        } else if (payload.spawn() instanceof EffectDebrisSpawn.Surface surface) {
+            buffer.writeByte(3);
+            writeVec3(buffer, surface.center());
+            buffer.writeDouble(surface.minRadius());
+            buffer.writeDouble(surface.maxRadius());
+            buffer.writeDouble(surface.lift());
         } else {
             buffer.writeByte(0);
         }
@@ -176,6 +182,10 @@ public record EffectDebrisPayload(
             );
         } else if (spawnType == 2) {
             spawn = new EffectDebrisSpawn.Disk(
+                readVec3(buffer), buffer.readDouble(), buffer.readDouble(), buffer.readDouble()
+            );
+        } else if (spawnType == 3) {
+            spawn = new EffectDebrisSpawn.Surface(
                 readVec3(buffer), buffer.readDouble(), buffer.readDouble(), buffer.readDouble()
             );
         }
