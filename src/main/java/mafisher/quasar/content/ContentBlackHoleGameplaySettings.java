@@ -8,8 +8,6 @@ record ContentBlackHoleGameplaySettings(
     double tangentialStrength,
     double falloff,
     int maxForceTargets,
-    float tearStartFactor,
-    int tearRaysPerTick,
     int coreBlocksPerTick,
     int maxConsumeTargets,
     int debrisPiecesPerBurst,
@@ -18,11 +16,13 @@ record ContentBlackHoleGameplaySettings(
     boolean affectsCreativePlayers,
     float craterRadiusFactor,
     float craterDepthFactor,
-    float surfaceScrapeRadiusFactor,
-    int surfaceScrapeDepth,
     double craterImmediateSyncRadius,
     boolean craterJournal
 ) {
+    /** Hard safety cap for one carve; larger author scales keep a proportional effect below it. */
+    static final double MAX_CRATER_RADIUS = 192.0;
+    static final double MAX_CRATER_DEPTH = 192.0;
+
     static final ContentBlackHoleGameplaySettings DEFAULT = new ContentBlackHoleGameplaySettings(
         1.0F,
         18.0F,
@@ -30,19 +30,15 @@ record ContentBlackHoleGameplaySettings(
         0.10,
         1.25,
         128,
-        1.35F,
-        64,
         4_096,
         64,
         64,
-        8,
-        110,
-        true,
-        6.0F,
-        10.0F,
-        1.5F,
         3,
-        96.0,
+        64,
+        true,
+        12.0F,
+        12.0F,
+        8.0,
         true
     );
 
@@ -55,8 +51,6 @@ record ContentBlackHoleGameplaySettings(
             || tangentialStrength > 8.0
             || !Double.isFinite(falloff) || falloff < 0.0 || falloff > 16.0
             || maxForceTargets < 1 || maxForceTargets > 4_096
-            || !Float.isFinite(tearStartFactor) || tearStartFactor < 1.0F || tearStartFactor > 8.0F
-            || tearRaysPerTick < 0 || tearRaysPerTick > 512
             || coreBlocksPerTick < 1 || coreBlocksPerTick > 16_384
             || maxConsumeTargets < 1 || maxConsumeTargets > 4_096
             || debrisPiecesPerBurst < 1 || debrisPiecesPerBurst > 64
@@ -66,9 +60,6 @@ record ContentBlackHoleGameplaySettings(
             || craterRadiusFactor > 32.0F
             || !Float.isFinite(craterDepthFactor) || craterDepthFactor < 1.0F
             || craterDepthFactor > 32.0F
-            || !Float.isFinite(surfaceScrapeRadiusFactor) || surfaceScrapeRadiusFactor < 1.0F
-            || surfaceScrapeRadiusFactor > 4.0F
-            || surfaceScrapeDepth < 0 || surfaceScrapeDepth > 32
             || !Double.isFinite(craterImmediateSyncRadius)
             || craterImmediateSyncRadius < 0.0 || craterImmediateSyncRadius > 512.0) {
             throw new IllegalArgumentException("Invalid content black-hole gameplay settings");
@@ -84,11 +75,18 @@ record ContentBlackHoleGameplaySettings(
     }
 
     double craterRadius(float scale) {
-        // Keep very large author scales from turning one effect into an unbounded world edit.
-        return Math.min(96.0, Math.max(4.0, scale * (double)this.craterRadiusFactor));
+        // Destruction is proportional to the authored horizon size, with a safety cap for
+        // extreme author values that could not be carved within one effect lifetime.
+        return Math.min(
+            MAX_CRATER_RADIUS,
+            Math.max(4.0, scale * (double)this.craterRadiusFactor)
+        );
     }
 
     double craterDepth(float scale) {
-        return Math.min(128.0, Math.max(4.0, scale * (double)this.craterDepthFactor));
+        return Math.min(
+            MAX_CRATER_DEPTH,
+            Math.max(4.0, scale * (double)this.craterDepthFactor)
+        );
     }
 }

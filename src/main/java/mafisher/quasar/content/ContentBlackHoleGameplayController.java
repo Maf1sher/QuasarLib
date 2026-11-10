@@ -10,6 +10,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.WeakHashMap;
 import mafisher.quasar.effect.EffectAudience;
+import mafisher.quasar.effect.EffectBudgets;
 import mafisher.quasar.effect.EffectDamageShape;
 import mafisher.quasar.effect.EffectDebrisAttractor;
 import mafisher.quasar.effect.EffectDebrisSpec;
@@ -23,11 +24,8 @@ import mafisher.quasar.effect.VisualEffectSpec;
 import mafisher.quasar.effect.audio.EffectAudioSpec;
 import mafisher.quasar.effect.block.BlockChange;
 import mafisher.quasar.effect.gameplay.EffectBlockCursor;
-import mafisher.quasar.effect.gameplay.EffectBlockSample;
 import mafisher.quasar.effect.gameplay.EffectBlockVolume;
 import mafisher.quasar.effect.gameplay.EffectBulkBlockEditor;
-import mafisher.quasar.effect.gameplay.EffectRaycastResult;
-import mafisher.quasar.effect.gameplay.EffectRaycastStatus;
 import mafisher.quasar.effect.gameplay.GameplayEffectContext;
 import mafisher.quasar.effect.gameplay.GameplayEffectController;
 import mafisher.quasar.effect.gameplay.GameplayEffectEndReason;
@@ -37,7 +35,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
-import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.Blocks;
@@ -49,7 +46,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Content-owned black-hole gameplay: a budgeted core carve, visible surface tearing, accretion
+ * Content-owned black-hole gameplay: a budgeted core carve, a proportional final crater, accretion
  * forces, and horizon consumption. The visual child is owned by the session scope and uses the
  * same cinematic progress, so pausing, resume, and cleanup stay in one place.
  */
@@ -82,11 +79,11 @@ final class ContentBlackHoleGameplayController implements GameplayEffectControll
     private static final String CORE_DONE = "core_done";
     private static final String CORE_CURSOR = EffectBlockCursor.stateKey();
     private static final String CRATER_EDIT = "crater_edit";
-    private static final String SCRAPE_EDIT = "scrape_edit";
     private static final String CRATER_RELEASED = "crater_released";
     private static final String CRATER_X = "crater_x";
     private static final String CRATER_Y = "crater_y";
     private static final String CRATER_Z = "crater_z";
+    private static final int MAX_DEBRIS_STATES = 12;
 
     private final ContentBlackHoleGameplaySettings settings;
     private Vec3 center = Vec3.ZERO;
@@ -98,10 +95,7 @@ final class ContentBlackHoleGameplayController implements GameplayEffectControll
     private float yaw;
     private float pitch;
     private float roll;
-
-    private static final int TEAR_CLUSTER_RADIUS = 1;
-    private static final int TEAR_CLUSTER_BLOCKS = 27;
-    private static final int MAX_TEAR_STATES = 12;
+    private float craterStartProgress = 0.78F;
 
     private EffectBlockCursor coreCursor;
     private boolean coreStarted;
@@ -109,9 +103,9 @@ final class ContentBlackHoleGameplayController implements GameplayEffectControll
     private boolean visualStarted;
     private boolean hasCrater;
     private boolean craterSyncReleased;
+    private boolean craterLogged;
     private EffectBulkBlockEditor craterEditor;
-    private EffectBulkBlockEditor scrapeEditor;
-    private final List<BlockState> tearStates = new ArrayList<>(MAX_TEAR_STATES);
+    private final List<BlockState> debrisStates = new ArrayList<>(MAX_DEBRIS_STATES);
 
     ContentBlackHoleGameplayController() {
         this(SETTINGS);
@@ -133,6 +127,7 @@ final class ContentBlackHoleGameplayController implements GameplayEffectControll
         );
         this.craterCenter = this.computeCraterCenter(context);
         this.hasCrater = this.craterCenter.y > context.level().getMinBuildHeight() + 1.0;
+        this.craterStartProgress = this.computeCraterStart(context);
         this.ensureDebrisPalette();
         if (!context.persistentState().contains(CRATER_Y)) {
             context.updatePersistentState(tag -> {
@@ -160,6 +155,7 @@ final class ContentBlackHoleGameplayController implements GameplayEffectControll
             this.craterCenter = this.computeCraterCenter(context);
         }
         this.hasCrater = this.craterCenter.y > context.level().getMinBuildHeight() + 1.0;
+        this.craterStartProgress = this.computeCraterStart(context);
         this.ensureDebrisPalette();
         this.visualStarted = true;
         if (this.coreStarted && !this.coreDone) {
@@ -177,18 +173,14 @@ final class ContentBlackHoleGameplayController implements GameplayEffectControll
         if (progress >= ContentBlackHoleCinematics.IGNITION && !this.coreDone) {
             this.tickCore(context);
         }
-        if (progress >= ContentBlackHoleCinematics.HORIZON_END
-            && progress < ContentBlackHoleCinematics.DESTABILISE) {
-            this.tickSurfaceTear(context, progress);
-        }
         this.tickCrater(context, progress);
         if (progress >= ContentBlackHoleCinematics.HORIZON_END
             && progress < ContentBlackHoleCinematics.IMPLOSION) {
-            this.emitTearDebris(context, this.tearRadius(progress));
+            this.emitDebris(context);
             this.tickForces(context, frame);
         }
         if (progress >= ContentBlackHoleCinematics.IMPLOSION) {
-            this.tearStates.clear();
+            this.debrisStates.clear();
             this.releaseCraterSync(context);
         }
         this.saveEditorState(context);
@@ -200,12 +192,17 @@ final class ContentBlackHoleGameplayController implements GameplayEffectControll
         boolean keepChanges = reason == GameplayEffectEndReason.EXPIRED
             || !context.canRollbackChanges();
         if (this.craterEditor != null) {
+            EffectBulkBlockEditor.Progress carved = this.craterEditor.progress();
+            if (!carved.finished()) {
+                LOGGER.warn(
+                    "Black-hole crater carve stopped early: {} of {} sections, {} blocks",
+                    carved.completedSections(),
+                    carved.totalSections(),
+                    carved.clearedBlocks()
+                );
+            }
             this.craterEditor.close(keepChanges);
             this.craterEditor = null;
-        }
-        if (this.scrapeEditor != null) {
-            this.scrapeEditor.close(keepChanges);
-            this.scrapeEditor = null;
         }
         Set<UUID> sessions = ACTIVE.get(context.level());
         if (sessions != null) {
@@ -263,36 +260,51 @@ final class ContentBlackHoleGameplayController implements GameplayEffectControll
     }
 
     private void ensureDebrisPalette() {
-        if (!this.tearStates.isEmpty()) {
+        if (!this.debrisStates.isEmpty()) {
             return;
         }
-        this.tearStates.add(Blocks.STONE.defaultBlockState());
-        this.tearStates.add(Blocks.DIRT.defaultBlockState());
-        this.tearStates.add(Blocks.GRASS_BLOCK.defaultBlockState());
+        this.debrisStates.add(Blocks.STONE.defaultBlockState());
+        this.debrisStates.add(Blocks.DIRT.defaultBlockState());
+        this.debrisStates.add(Blocks.GRASS_BLOCK.defaultBlockState());
     }
 
     private void tickCrater(GameplayEffectContext context, float progress) {
         if (!this.hasCrater) {
             return;
         }
-        boolean open = progress >= ContentBlackHoleCinematics.HORIZON_END
-            && progress < ContentBlackHoleCinematics.IMPLOSION;
-        if (open && this.scrapeEditor == null) {
-            this.scrapeEditor = this.createScrapeEditor(context);
-        }
-        if (progress >= ContentBlackHoleCinematics.DESTABILISE
-            && progress < ContentBlackHoleCinematics.IMPLOSION
-            && this.craterEditor == null) {
+        if (this.craterEditor == null && progress >= this.craterStartProgress) {
             this.craterEditor = this.createCraterEditor(context);
+            double requestedRadius = context.spec().scale()
+                * (double)this.settings.craterRadiusFactor();
+            if (requestedRadius > ContentBlackHoleGameplaySettings.MAX_CRATER_RADIUS) {
+                LOGGER.warn(
+                    "Black-hole crater radius capped at {} (requested {})",
+                    ContentBlackHoleGameplaySettings.MAX_CRATER_RADIUS,
+                    requestedRadius
+                );
+            }
+            LOGGER.info(
+                "Starting black-hole crater carve at scale {}: radius {}, depth {}, start progress {}",
+                context.spec().scale(),
+                this.settings.craterRadius(context.spec().scale()),
+                this.settings.craterDepth(context.spec().scale()),
+                this.craterStartProgress
+            );
         }
-        if (this.craterEditor != null) {
-            this.craterEditor.tick();
+        if (this.craterEditor == null) {
+            return;
         }
-        if (this.scrapeEditor != null) {
-            this.scrapeEditor.tick();
-        }
-        this.mergeClearedStates(this.scrapeEditor);
+        this.craterEditor.tick();
         this.mergeClearedStates(this.craterEditor);
+        if (!this.craterLogged && this.craterEditor.progress().finished()) {
+            this.craterLogged = true;
+            EffectBulkBlockEditor.Progress carved = this.craterEditor.progress();
+            LOGGER.info(
+                "Finished black-hole crater carve: {} sections, {} blocks",
+                carved.completedSections(),
+                carved.clearedBlocks()
+            );
+        }
     }
 
     private EffectBulkBlockEditor createCraterEditor(GameplayEffectContext context) {
@@ -317,37 +329,16 @@ final class ContentBlackHoleGameplayController implements GameplayEffectControll
         ));
     }
 
-    private EffectBulkBlockEditor createScrapeEditor(GameplayEffectContext context) {
-        double radius = this.settings.craterRadius(context.spec().scale())
-            * this.settings.surfaceScrapeRadiusFactor();
-        double bottom = this.craterCenter.y - this.settings.surfaceScrapeDepth();
-        double top = this.craterCenter.y + 12.0;
-        EffectBlockVolume volume = EffectBlockVolume.cylinder(
-            new EffectPoint(this.craterCenter.x, this.craterCenter.y, this.craterCenter.z),
-            radius,
-            bottom,
-            top
-        );
-        return EffectBulkBlockEditor.create(context, new EffectBulkBlockEditor.Spec(
-            volume,
-            Blocks.AIR.defaultBlockState(),
-            true,
-            EffectBulkBlockEditor.SyncPolicy.MANUAL,
-            this.settings.craterImmediateSyncRadius(),
-            this.settings.craterJournal()
-        ));
-    }
-
     private void mergeClearedStates(EffectBulkBlockEditor editor) {
         if (editor == null) {
             return;
         }
         for (BlockState state : editor.clearedStates()) {
-            if (this.tearStates.size() >= MAX_TEAR_STATES) {
+            if (this.debrisStates.size() >= MAX_DEBRIS_STATES) {
                 return;
             }
-            if (!this.tearStates.contains(state)) {
-                this.tearStates.add(state);
+            if (!this.debrisStates.contains(state)) {
+                this.debrisStates.add(state);
             }
         }
     }
@@ -357,9 +348,6 @@ final class ContentBlackHoleGameplayController implements GameplayEffectControll
             return;
         }
         this.craterSyncReleased = true;
-        if (this.scrapeEditor != null) {
-            this.scrapeEditor.releaseSync();
-        }
         if (this.craterEditor != null) {
             this.craterEditor.releaseSync();
         }
@@ -367,19 +355,14 @@ final class ContentBlackHoleGameplayController implements GameplayEffectControll
     }
 
     private void saveEditorState(GameplayEffectContext context) {
-        if (this.craterEditor == null && this.scrapeEditor == null) {
+        if (this.craterEditor == null) {
             return;
         }
         if ((context.ageTicks() & 7) != 0) {
             return;
         }
         context.updatePersistentState(tag -> {
-            if (this.craterEditor != null) {
-                tag.put(CRATER_EDIT, this.craterEditor.save());
-            }
-            if (this.scrapeEditor != null) {
-                tag.put(SCRAPE_EDIT, this.scrapeEditor.save());
-            }
+            tag.put(CRATER_EDIT, this.craterEditor.save());
             tag.putBoolean(CRATER_RELEASED, this.craterSyncReleased);
             putCraterCenter(tag, this.craterCenter);
         });
@@ -434,89 +417,31 @@ final class ContentBlackHoleGameplayController implements GameplayEffectControll
         context.queueBlockChange(change);
     }
 
-    private void tickSurfaceTear(GameplayEffectContext context, float progress) {
-        int headroom = (int)Math.max(0.0, MAX_PENDING_HEADROOM - context.pendingBlockChanges());
-        int maxRays = headroom / TEAR_CLUSTER_BLOCKS;
-        if (maxRays <= 0) {
-            return;
-        }
-        double tearRadius = this.tearRadius(progress);
-
-        int rays = Math.min(this.settings.tearRaysPerTick(), maxRays);
-        RandomSource random = context.random();
-        for (int index = 0; index < rays; index++) {
-            Vec3 direction = randomDirection(random);
-            Vec3 from = this.center.add(direction.scale(tearRadius));
-            EffectRaycastResult result = context.world().raycast(
-                from,
-                this.center,
-                state -> !state.isAir() && state.getFluidState().isEmpty()
-            );
-            if (result.status() == EffectRaycastStatus.BUDGET_EXHAUSTED
-                || result.status() == EffectRaycastStatus.UNLOADED) {
-                break;
-            }
-            if (!result.isHit()) {
-                continue;
-            }
-            BlockPos position = result.hit().orElseThrow().position();
-            double dx = position.getX() + 0.5 - this.center.x;
-            double dy = position.getY() + 0.5 - this.center.y;
-            double dz = position.getZ() + 0.5 - this.center.z;
-            if (dx * dx + dy * dy + dz * dz <= this.coreRadius * this.coreRadius) {
-                continue;
-            }
-            this.queueTearCluster(context, position);
-        }
-    }
-
-    private void queueTearCluster(GameplayEffectContext context, BlockPos center) {
-        for (int x = -TEAR_CLUSTER_RADIUS; x <= TEAR_CLUSTER_RADIUS; x++) {
-            for (int y = -TEAR_CLUSTER_RADIUS; y <= TEAR_CLUSTER_RADIUS; y++) {
-                for (int z = -TEAR_CLUSTER_RADIUS; z <= TEAR_CLUSTER_RADIUS; z++) {
-                    BlockPos position = center.offset(x, y, z);
-                    if (!context.level().isInWorldBounds(position)) {
-                        continue;
-                    }
-                    context.queueBlockChange(
-                        new BlockChange(position, Blocks.AIR.defaultBlockState()),
-                        this::recordTearState
-                    );
-                }
-            }
-        }
-    }
-
-    private void recordTearState(EffectBlockSample sample) {
-        BlockState state = sample.state();
-        if (state.isAir() || this.tearStates.size() >= MAX_TEAR_STATES
-            || this.tearStates.contains(state)) {
-            return;
-        }
-        this.tearStates.add(state);
-    }
-
-    private void emitTearDebris(GameplayEffectContext context, double tearRadius) {
+    private void emitDebris(GameplayEffectContext context) {
         try {
             this.ensureDebrisPalette();
             int bursts = this.settings.debrisBurstsPerTick();
-            double outerRadius = Math.min(
-                this.attractionRadius * 0.9, Math.max(this.coreRadius * 1.15, tearRadius)
-            );
+            double inflowRadius = this.inflowRadius(context);
             EffectDebrisSpawn shell = new EffectDebrisSpawn.Shell(
-                this.center, this.coreRadius * 1.1, outerRadius
+                this.center,
+                this.coreRadius * 1.1,
+                Math.max(this.coreRadius * 1.11, inflowRadius)
             );
             double craterRadius = this.settings.craterRadius(context.spec().scale());
-            double diskMin = debrisDiskMinRadius(craterRadius, outerRadius);
+            double groundRadius = Math.min(inflowRadius, craterRadius);
+            double diskMin = debrisDiskInnerRadius(this.coreRadius, groundRadius);
             EffectDebrisSpawn disk = this.hasCrater
-                ? new EffectDebrisSpawn.Disk(this.craterCenter, diskMin, outerRadius, 2.5)
+                ? new EffectDebrisSpawn.Disk(
+                    this.craterCenter.add(0.0, 6.0, 0.0), diskMin, groundRadius, 5.0
+                )
                 : shell;
             EffectAudience audience = EffectAudience.nearby(
                 Math.min(512.0, this.attractionRadius + 128.0)
             );
+            float pieceScale = Math.min(8.0F, Math.max(3.0F, context.spec().scale() / 1.2F));
             for (int index = 0; index < bursts; index++) {
-                BlockState state = this.tearStates.get(index % this.tearStates.size());
-                EffectDebrisSpawn spawn = (index & 1) == 0 ? disk : shell;
+                BlockState state = this.debrisStates.get(index % this.debrisStates.size());
+                EffectDebrisSpawn spawn = (index % 4 == 0) ? shell : disk;
                 context.spawnDebris(EffectDebrisSpec.infallField(
                     this.center,
                     state,
@@ -527,13 +452,23 @@ final class ContentBlackHoleGameplayController implements GameplayEffectControll
                     audience,
                     this.debrisAttractor,
                     spawn,
-                    4.5F
+                    pieceScale
                 ));
             }
         } catch (RuntimeException exception) {
             // Debris is cosmetic: a bad burst must never cancel the gameplay session.
             LOGGER.warn("Could not emit black-hole debris", exception);
         }
+    }
+
+    private double inflowRadius(GameplayEffectContext context) {
+        double fullRadius = Math.min(1_024.0, Math.max(this.coreRadius, this.attractionRadius * 0.9));
+        double startRadius = this.coreRadius * 1.2;
+        int duration = Math.max(1, context.spec().phases().totalDurationTicks());
+        double openTick = ContentBlackHoleCinematics.HORIZON_END * duration;
+        double t = Math.max(0.0, Math.min(1.0, (context.ageTicks() - openTick) / 24.0));
+        double smooth = t * t * (3.0 - 2.0 * t);
+        return startRadius + (fullRadius - startRadius) * smooth;
     }
 
     private void tickForces(GameplayEffectContext context, ContentBlackHoleCinematics.Frame frame) {
@@ -578,15 +513,19 @@ final class ContentBlackHoleGameplayController implements GameplayEffectControll
         return this.mayAffect(entity);
     }
 
-    private double tearRadius(float progress) {
-        double start = Math.max(this.coreRadius * 1.05, this.coreRadius * this.settings.tearStartFactor());
-        double end = this.attractionRadius;
-        double window = Math.max(1.0E-6, ContentBlackHoleCinematics.DESTABILISE
-            - ContentBlackHoleCinematics.HORIZON_END);
-        double t = Math.max(0.0, Math.min(1.0,
-            (progress - ContentBlackHoleCinematics.HORIZON_END) / (window * 0.55)));
-        double eased = 1.0 - Math.pow(1.0 - t, 3.0);
-        return start + (end - start) * eased;
+    private float computeCraterStart(GameplayEffectContext context) {
+        double radius = this.settings.craterRadius(context.spec().scale());
+        double depth = this.settings.craterDepth(context.spec().scale());
+        double halfVolume = (2.0 / 3.0) * Math.PI * radius * radius * depth;
+        double estimatedSections = halfVolume / (16.0 * 16.0 * 16.0);
+        int budget = Math.max(1, Math.min(
+            context.spec().budget().maxSectionEdits(),
+            EffectBudgets.sectionEditsPerLevelTick()
+        ));
+        double neededTicks = estimatedSections / budget + 20.0;
+        int duration = Math.max(1, context.spec().phases().totalDurationTicks());
+        double start = ContentBlackHoleCinematics.IMPLOSION - neededTicks / duration - 0.01;
+        return (float)Math.max(0.52, Math.min(0.78, start));
     }
 
     private EffectBlockCursor restoreCursor(GameplayEffectContext context) {
@@ -618,35 +557,15 @@ final class ContentBlackHoleGameplayController implements GameplayEffectControll
         if (!craterTag.isEmpty()) {
             this.craterEditor = EffectBulkBlockEditor.restore(context, craterTag);
         }
-        CompoundTag scrapeTag = state.getCompound(SCRAPE_EDIT);
-        if (!scrapeTag.isEmpty()) {
-            this.scrapeEditor = EffectBulkBlockEditor.restore(context, scrapeTag);
-        }
     }
 
-    static double debrisDiskMinRadius(double craterRadius, double outerRadius) {
-        // The disk must shrink with the early attraction shell; a fixed crater-rim inner radius
-        // would exceed the outer radius during the first debris ticks and fail the session.
-        return Math.min(craterRadius * 0.8, outerRadius * 0.55);
+    static double debrisDiskInnerRadius(double coreRadius, double groundRadius) {
+        // Keep the hole in the middle of the ground disc without ever exceeding its outer radius.
+        return Math.min(groundRadius * 0.15, coreRadius);
     }
 
     private static Vec3 diskAxis(float yaw, float pitch, float roll) {
         Vector3f normal = ContentBlackHoleGeometry.basis(yaw, pitch, roll).normal();
         return new Vec3(normal.x, normal.y, normal.z).normalize();
-    }
-
-    private static Vec3 randomDirection(RandomSource random) {
-        double x;
-        double y;
-        double z;
-        double lengthSquared;
-        do {
-            x = random.nextDouble() * 2.0 - 1.0;
-            y = random.nextDouble() * 2.0 - 1.0;
-            z = random.nextDouble() * 2.0 - 1.0;
-            lengthSquared = x * x + y * y + z * z;
-        } while (lengthSquared <= 1.0E-6 || lengthSquared > 1.0);
-        double scale = 1.0 / Math.sqrt(lengthSquared);
-        return new Vec3(x * scale, y * scale, z * scale);
     }
 }

@@ -27,7 +27,7 @@ import org.slf4j.LoggerFactory;
  * terrain; the renderer batches every visible piece into the shared instanced draw path.
  */
 final class ClientEffectDebris {
-    static final int MAX_ACTIVE_PIECES = 8_192;
+    static final int MAX_ACTIVE_PIECES = 12_288;
 
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
     private static final EffectMesh CUBE = createCube();

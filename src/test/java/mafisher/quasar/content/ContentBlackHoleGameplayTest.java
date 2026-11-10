@@ -19,10 +19,14 @@ class ContentBlackHoleGameplayTest {
         assertEquals(6.0, settings.coreRadius(6.0F), 1.0E-6);
         assertEquals(108.0, settings.attractionRadius(6.0F), 1.0E-6);
         assertEquals(1_024.0, settings.attractionRadius(1_000.0F), 1.0E-6);
-        assertEquals(36.0, settings.craterRadius(6.0F), 1.0E-6);
-        assertEquals(60.0, settings.craterDepth(6.0F), 1.0E-6);
-        assertEquals(96.0, settings.craterRadius(1_000.0F), 1.0E-6);
-        assertEquals(128.0, settings.craterDepth(1_000.0F), 1.0E-6);
+        assertEquals(30.0, settings.craterRadius(2.5F), 1.0E-6);
+        assertEquals(72.0, settings.craterRadius(6.0F), 1.0E-6);
+        assertEquals(72.0, settings.craterDepth(6.0F), 1.0E-6);
+        assertEquals(144.0, settings.craterRadius(12.0F), 1.0E-6);
+        assertEquals(ContentBlackHoleGameplaySettings.MAX_CRATER_RADIUS,
+            settings.craterRadius(1_000.0F), 1.0E-6);
+        assertEquals(ContentBlackHoleGameplaySettings.MAX_CRATER_DEPTH,
+            settings.craterDepth(1_000.0F), 1.0E-6);
     }
 
     @Test
@@ -31,20 +35,17 @@ class ContentBlackHoleGameplayTest {
         for (float scale : new float[]{2.0F, 5.0F, 6.0F, 12.0F, 64.0F}) {
             double coreRadius = settings.coreRadius(scale);
             double craterRadius = settings.craterRadius(scale);
-            double tearRadius = Math.max(
-                coreRadius * 1.05, coreRadius * settings.tearStartFactor()
+            double inflowRadius = Math.min(
+                1_024.0, Math.max(coreRadius, settings.attractionRadius(scale) * 0.9)
             );
-            double outerRadius = Math.min(
-                settings.attractionRadius(scale) * 0.9,
-                Math.max(coreRadius * 1.15, tearRadius)
-            );
-            double innerRadius = ContentBlackHoleGameplayController.debrisDiskMinRadius(
-                craterRadius, outerRadius
+            double groundRadius = Math.min(inflowRadius, craterRadius);
+            double innerRadius = ContentBlackHoleGameplayController.debrisDiskInnerRadius(
+                coreRadius, groundRadius
             );
 
-            assertTrue(innerRadius <= outerRadius, "scale " + scale);
+            assertTrue(innerRadius <= groundRadius, "scale " + scale);
             assertDoesNotThrow(() -> new EffectDebrisSpawn.Disk(
-                new Vec3(0.0, 64.0, 0.0), innerRadius, outerRadius, 2.5
+                new Vec3(0.0, 64.0, 0.0), innerRadius, groundRadius, 5.0
             ));
         }
     }
@@ -71,7 +72,7 @@ class ContentBlackHoleGameplayTest {
         assertEquals(visual.scale(), spec.scale(), 1.0E-6F);
         assertTrue(spec.budget().maxBlockChanges() > 0);
         assertTrue(spec.budget().maxWorldSamples() > 0);
-        assertTrue(spec.budget().maxSectionEdits() > 0);
+        assertEquals(8, spec.budget().maxSectionEdits());
         assertTrue(spec.budget().maxDebrisPieces() >= 1_024);
     }
 
