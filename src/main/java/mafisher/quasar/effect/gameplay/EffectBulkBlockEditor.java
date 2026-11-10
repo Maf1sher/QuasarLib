@@ -1,9 +1,15 @@
 package mafisher.quasar.effect.gameplay;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.PriorityQueue;
 import java.util.Set;
 import mafisher.quasar.effect.EffectBounds;
 import mafisher.quasar.effect.block.BlockChange;
@@ -34,7 +40,8 @@ import org.slf4j.LoggerFactory;
  * cleared through the chunk-section palette instead of per-block level writes; partial boundary
  * sections fall back to per-block edits so the surface stays smooth. Heightmaps, lighting, block
  * entities, chunk tickets, and one full-chunk client resend per changed column are handled by the
- * engine.
+ * engine. {@link SyncPolicy#PROGRESSIVE} additionally reveals a column at its first edit and once
+ * more after its last section, so a radial front stays visible without per-block traffic.
  *
  * <p>Server authority is unchanged: protection is queried before each change and the block journal
  * records a compact section snapshot for rollback. Clients only present the final chunk.
@@ -45,7 +52,6 @@ public final class EffectBulkBlockEditor {
     private static final int MAX_CLEARED_STATES = 12;
     private static final int MAX_TICKET_CHUNKS = 1_024;
     private static final int MAX_SECTIONS = 16_384;
-    private static final int MAX_SECTIONS_PER_TICK = 8;
     private static final int MAX_STALLED_TICKS = 200;
     private static final Set<Block> INDESTRUCTIBLE = Set.of(
         Blocks.BEDROCK,
@@ -62,7 +68,15 @@ public final class EffectBulkBlockEditor {
     public enum SyncPolicy {
         IMMEDIATE,
         ON_COMPLETE,
-        MANUAL
+        MANUAL,
+        /** Reveals each changed column at its first edit and once more after its last section. */
+        PROGRESSIVE
+    }
+
+    /** Section cursor order. {@code CENTER_OUT} is the radial destruction-front mode. */
+    public enum Ordering {
+        TOP_DOWN,
+        CENTER_OUT
     }
 
     public record Spec(
@@ -89,52 +103,103 @@ public final class EffectBulkBlockEditor {
     private final GameplayEffectContext context;
     private final ServerLevel level;
     private final Spec spec;
-    private final List<SectionKey> sections;
+    private final Ordering ordering;
+    private final List<SectionEntry> sections;
     private final Set<ChunkPos> ticketChunks;
+    private final Map<ChunkPos, Integer> lastSectionIndexByChunk = new HashMap<>();
     private final Set<ChunkPos> dirtyChunks = new LinkedHashSet<>();
+    private final Set<ChunkPos> firstReleasedChunks = new HashSet<>();
     private final Set<BlockState> clearedStates = new LinkedHashSet<>();
     private int sectionIndex;
     private int stalledTicks;
     private long clearedBlocks;
+    private int editedSections;
+    private double frontScale;
     private boolean syncReleased;
     private boolean finished;
     private boolean closed;
 
-    private EffectBulkBlockEditor(GameplayEffectContext context, Spec spec) {
+    private EffectBulkBlockEditor(GameplayEffectContext context, Spec spec, Ordering ordering) {
         this.context = Objects.requireNonNull(context, "context");
         this.level = context.level();
         this.spec = Objects.requireNonNull(spec, "spec");
-        this.sections = buildSections(spec.volume(), this.level);
-        this.ticketChunks = ticketChunks(spec.volume());
+        this.ordering = ordering == null ? Ordering.TOP_DOWN : ordering;
+        this.sections = buildSections(spec.volume(), this.level, this.ordering);
+        this.ticketChunks = ticketChunks(this.sections);
+        this.indexSectionsByChunk();
         TerrainEditService.acquireTickets(this.level, this.ticketChunks);
     }
 
     public static EffectBulkBlockEditor create(GameplayEffectContext context, Spec spec) {
-        return new EffectBulkBlockEditor(context, spec);
+        return create(context, spec, Ordering.TOP_DOWN);
+    }
+
+    public static EffectBulkBlockEditor create(
+        GameplayEffectContext context,
+        Spec spec,
+        Ordering ordering
+    ) {
+        return new EffectBulkBlockEditor(context, spec, ordering);
     }
 
     /** Restores one editor from its persisted cursor tag. */
     public static EffectBulkBlockEditor restore(GameplayEffectContext context, CompoundTag tag) {
+        return restore(context, tag, Ordering.TOP_DOWN);
+    }
+
+    /** Restores one editor and uses {@code fallbackOrdering} for tags written before ordering. */
+    public static EffectBulkBlockEditor restore(
+        GameplayEffectContext context,
+        CompoundTag tag,
+        Ordering fallbackOrdering
+    ) {
         Objects.requireNonNull(context, "context");
         Objects.requireNonNull(tag, "tag");
+        Ordering ordering = fallbackOrdering == null ? Ordering.TOP_DOWN : fallbackOrdering;
+        if (tag.contains("ordering")) {
+            try {
+                ordering = Ordering.valueOf(tag.getString("ordering"));
+            } catch (IllegalArgumentException ignored) {
+                // Keep the caller's fallback for unknown future values.
+            }
+        }
         Spec spec = readSpec(tag);
-        EffectBulkBlockEditor editor = new EffectBulkBlockEditor(context, spec);
+        EffectBulkBlockEditor editor = new EffectBulkBlockEditor(context, spec, ordering);
         editor.sectionIndex = Math.max(0, Math.min(editor.sections.size(), tag.getInt("section_index")));
         editor.clearedBlocks = Math.max(0L, tag.getLong("cleared_blocks"));
+        editor.editedSections = tag.contains("edited_sections")
+            ? Math.max(0, Math.min(editor.sectionIndex, tag.getInt("edited_sections")))
+            : editor.sectionIndex;
         editor.syncReleased = tag.getBoolean("sync_released");
         editor.finished = tag.getBoolean("finished") || editor.sectionIndex >= editor.sections.size();
+        if (tag.contains("front_scale")) {
+            editor.frontScale = Math.max(0.0, Math.min(1.0, tag.getDouble("front_scale")));
+        } else {
+            editor.recomputeFrontScale();
+        }
         editor.rebuildDirtyState();
         return editor;
     }
 
     /** Advances the edit within the session and level-wide section budgets. */
     public Progress tick() {
+        return this.tick(Integer.MAX_VALUE);
+    }
+
+    /**
+     * Advances the edit by at most {@code maxSections} edited sections. Skipped all-air or
+     * already-clear sections do not consume the limit; the caller uses the limit to pace a
+     * destruction front without changing the engine's hard budget checks.
+     */
+    public Progress tick(int maxSections) {
         if (this.closed || this.finished) {
             return this.progress();
         }
+        int limit = Math.max(0, maxSections);
         int edited = 0;
-        while (this.sectionIndex < this.sections.size() && edited < MAX_SECTIONS_PER_TICK) {
-            SectionKey key = this.sections.get(this.sectionIndex);
+        while (this.sectionIndex < this.sections.size() && edited < limit) {
+            SectionEntry entry = this.sections.get(this.sectionIndex);
+            SectionKey key = entry.key();
             LevelChunk chunk = this.level.getChunkSource().getChunkNow(key.sectionX(), key.sectionZ());
             if (chunk == null) {
                 this.stalledTicks++;
@@ -165,11 +230,17 @@ public final class EffectBulkBlockEditor {
             this.sectionIndex++;
             this.stalledTicks = 0;
             this.editSection(chunk, section, key);
+            this.advanceFront(entry);
+            this.editedSections++;
             edited++;
+        }
+        if (this.spec.syncPolicy() == SyncPolicy.PROGRESSIVE) {
+            this.releaseFinalizedChunks();
         }
         if (this.sectionIndex >= this.sections.size()) {
             this.finished = true;
-            if (this.spec.syncPolicy() == SyncPolicy.ON_COMPLETE) {
+            if (this.spec.syncPolicy() == SyncPolicy.ON_COMPLETE
+                || this.spec.syncPolicy() == SyncPolicy.PROGRESSIVE) {
                 this.releaseSync();
             }
         }
@@ -187,6 +258,9 @@ public final class EffectBulkBlockEditor {
 
     private void requestAllSync() {
         for (ChunkPos chunk : this.dirtyChunks) {
+            if (this.spec.syncPolicy() == SyncPolicy.PROGRESSIVE) {
+                TerrainEditService.queuePriorityRelight(this.level, chunk);
+            }
             TerrainEditService.requestSync(this.level, chunk, true);
         }
     }
@@ -209,9 +283,128 @@ public final class EffectBulkBlockEditor {
         );
     }
 
+    /** Normalized radius of the furthest edited section, for radial destruction fronts. */
+    public double frontScale() {
+        return this.frontScale;
+    }
+
+    /** Number of sections that actually reached an edit attempt (skipped air is excluded). */
+    public int editedSections() {
+        return this.editedSections;
+    }
+
+    /**
+     * Whether any section left in the cursor still contains editable blocks. All-air and
+     * indestructible-only sections do not count, so a completed terrain carve can be recognised
+     * even when only empty sections remain in the ordered cursor.
+     */
+    public boolean hasPendingSolidSections() {
+        if (this.closed || this.finished) {
+            return false;
+        }
+        for (int index = this.sectionIndex; index < this.sections.size(); index++) {
+            SectionKey key = this.sections.get(index).key();
+            LevelChunk chunk = this.level.getChunkSource().getChunkNow(
+                key.sectionX(), key.sectionZ()
+            );
+            if (chunk == null) {
+                return true;
+            }
+            int sectionArrayIndex = this.level.getSectionIndexFromSectionY(key.sectionY());
+            LevelChunkSection section = chunk.getSection(sectionArrayIndex);
+            if (section == null) {
+                continue;
+            }
+            if (!section.hasOnlyAir() && section.maybeHas(state -> !state.isAir()
+                && !INDESTRUCTIBLE.contains(state.getBlock()))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** The volume this editor was created for. */
+    public EffectBlockVolume volume() {
+        return this.spec.volume();
+    }
+
+    /** Hard safety cap for one editor instance; callers can use it to size a carve. */
+    public static int maxSectionsPerEdit() {
+        return MAX_SECTIONS;
+    }
+
+    /** Hard safety cap for chunks held by one editor instance. */
+    public static int maxTicketChunks() {
+        return MAX_TICKET_CHUNKS;
+    }
+
+    /** Test hook: chunks whose client resend has not been released yet. */
+    int dirtyChunkCount() {
+        return this.dirtyChunks.size();
+    }
+
     /** Up to twelve distinct non-air states sampled from the cleared volume, for debris palettes. */
     public List<BlockState> clearedStates() {
         return List.copyOf(this.clearedStates);
+    }
+
+    private void advanceFront(SectionEntry entry) {
+        if (this.ordering != Ordering.CENTER_OUT) {
+            return;
+        }
+        this.frontScale = Math.max(
+            this.frontScale,
+            Math.min(1.0, Math.sqrt(entry.distanceSquared()))
+        );
+    }
+
+    private void recomputeFrontScale() {
+        this.frontScale = 0.0;
+        if (this.ordering != Ordering.CENTER_OUT) {
+            return;
+        }
+        int processed = Math.min(this.sectionIndex, this.sections.size());
+        for (int index = 0; index < processed; index++) {
+            SectionEntry entry = this.sections.get(index);
+            this.frontScale = Math.max(
+                this.frontScale,
+                Math.min(1.0, Math.sqrt(entry.distanceSquared()))
+            );
+        }
+    }
+
+    private void indexSectionsByChunk() {
+        for (int index = 0; index < this.sections.size(); index++) {
+            SectionKey key = this.sections.get(index).key();
+            ChunkPos chunk = new ChunkPos(key.sectionX(), key.sectionZ());
+            this.lastSectionIndexByChunk.merge(chunk, index, Math::max);
+        }
+    }
+
+    private void releaseFinalizedChunks() {
+        if (this.syncReleased) {
+            return;
+        }
+        Iterator<ChunkPos> iterator = this.dirtyChunks.iterator();
+        while (iterator.hasNext()) {
+            ChunkPos chunk = iterator.next();
+            boolean firstRelease = this.firstReleasedChunks.add(chunk);
+            if (firstRelease) {
+                // Reveal the freshly carved rim immediately so the client sees the front grow.
+                TerrainEditService.queuePriorityRelight(this.level, chunk);
+                TerrainEditService.requestSync(this.level, chunk, true);
+            }
+            int lastIndex = this.lastSectionIndexByChunk.getOrDefault(chunk, -1);
+            if (lastIndex < this.sectionIndex) {
+                if (!firstRelease) {
+                    // Final reveal after the last section in this column was processed.
+                    TerrainEditService.queuePriorityRelight(this.level, chunk);
+                    TerrainEditService.requestSync(this.level, chunk, true);
+                }
+                this.firstReleasedChunks.remove(chunk);
+                iterator.remove();
+            }
+        }
     }
 
     /** Persists the cursor and shape for session restore. */
@@ -221,10 +414,13 @@ public final class EffectBulkBlockEditor {
         tag.put("replacement", NbtUtils.writeBlockState(this.spec.replacement()));
         tag.putBoolean("remove_block_entities", this.spec.removeBlockEntities());
         tag.putString("sync_policy", this.spec.syncPolicy().name());
+        tag.putString("ordering", this.ordering.name());
         tag.putDouble("immediate_sync_radius", this.spec.immediateSyncRadius());
         tag.putBoolean("journal", this.spec.journal());
         tag.putInt("section_index", this.sectionIndex);
         tag.putLong("cleared_blocks", this.clearedBlocks);
+        tag.putInt("edited_sections", this.editedSections);
+        tag.putDouble("front_scale", this.frontScale);
         tag.putBoolean("sync_released", this.syncReleased);
         tag.putBoolean("finished", this.finished);
         return tag;
@@ -409,6 +605,9 @@ public final class EffectBulkBlockEditor {
         if (this.syncReleased || this.spec.syncPolicy() == SyncPolicy.IMMEDIATE) {
             return true;
         }
+        if (this.spec.syncPolicy() == SyncPolicy.PROGRESSIVE) {
+            return false;
+        }
         if (this.spec.immediateSyncRadius() <= 0.0) {
             return false;
         }
@@ -444,7 +643,7 @@ public final class EffectBulkBlockEditor {
 
     private void rebuildDirtyState() {
         for (int index = 0; index < this.sectionIndex && index < this.sections.size(); index++) {
-            SectionKey key = this.sections.get(index);
+            SectionKey key = this.sections.get(index).key();
             this.dirtyChunks.add(new ChunkPos(key.sectionX(), key.sectionZ()));
         }
         for (ChunkPos chunk : this.dirtyChunks) {
@@ -455,9 +654,10 @@ public final class EffectBulkBlockEditor {
         }
     }
 
-    private static List<SectionKey> buildSections(
+    private static List<SectionEntry> buildSections(
         EffectBlockVolume volume,
-        LevelHeightAccessor level
+        LevelHeightAccessor level,
+        Ordering ordering
     ) {
         EffectBounds bounds = volume.bounds();
         int minSectionX = SectionPos.blockToSectionCoord(Mth.floor(bounds.minX()));
@@ -472,13 +672,54 @@ public final class EffectBulkBlockEditor {
         );
         int minSectionZ = SectionPos.blockToSectionCoord(Mth.floor(bounds.minZ()));
         int maxSectionZ = SectionPos.blockToSectionCoord(Mth.floor(bounds.maxZ()));
-        List<SectionKey> sections = new ArrayList<>();
+
+        if (ordering == Ordering.CENTER_OUT) {
+            SectionShape shape = SectionShape.of(volume);
+            PriorityQueue<SectionEntry> nearest = new PriorityQueue<>(
+                Comparator.comparingDouble(SectionEntry::distanceSquared).reversed()
+            );
+            int total = 0;
+            for (int sectionY = maxSectionY; sectionY >= minSectionY; sectionY--) {
+                for (int sectionX = minSectionX; sectionX <= maxSectionX; sectionX++) {
+                    for (int sectionZ = minSectionZ; sectionZ <= maxSectionZ; sectionZ++) {
+                        if (!volume.intersectsSection(sectionX, sectionY, sectionZ)) {
+                            continue;
+                        }
+                        total++;
+                        double dx = (sectionX * 16.0 + 8.0 - shape.centerX()) / shape.radiusX();
+                        double dy = (sectionY * 16.0 + 8.0 - shape.centerY()) / shape.radiusY();
+                        double dz = (sectionZ * 16.0 + 8.0 - shape.centerZ()) / shape.radiusZ();
+                        nearest.add(new SectionEntry(
+                            new SectionKey(sectionX, sectionY, sectionZ),
+                            dx * dx + dy * dy + dz * dz
+                        ));
+                        if (nearest.size() > MAX_SECTIONS) {
+                            nearest.poll();
+                        }
+                    }
+                }
+            }
+            List<SectionEntry> sections = new ArrayList<>(nearest);
+            sections.sort(Comparator.comparingDouble(SectionEntry::distanceSquared));
+            if (total > MAX_SECTIONS) {
+                LOGGER.warn(
+                    "Bulk edit exceeds {} sections; keeping the {} nearest to the centre",
+                    MAX_SECTIONS,
+                    MAX_SECTIONS
+                );
+            }
+            return sections;
+        }
+
+        List<SectionEntry> sections = new ArrayList<>();
         outer:
         for (int sectionY = maxSectionY; sectionY >= minSectionY; sectionY--) {
             for (int sectionX = minSectionX; sectionX <= maxSectionX; sectionX++) {
                 for (int sectionZ = minSectionZ; sectionZ <= maxSectionZ; sectionZ++) {
                     if (volume.intersectsSection(sectionX, sectionY, sectionZ)) {
-                        sections.add(new SectionKey(sectionX, sectionY, sectionZ));
+                        sections.add(new SectionEntry(
+                            new SectionKey(sectionX, sectionY, sectionZ), 0.0
+                        ));
                         if (sections.size() >= MAX_SECTIONS) {
                             LOGGER.warn(
                                 "Bulk edit exceeds {} sections; the remaining volume is skipped", MAX_SECTIONS
@@ -492,24 +733,74 @@ public final class EffectBulkBlockEditor {
         return sections;
     }
 
-    private static Set<ChunkPos> ticketChunks(EffectBlockVolume volume) {
-        EffectBounds bounds = volume.bounds();
-        int minChunkX = SectionPos.blockToSectionCoord(Mth.floor(bounds.minX()));
-        int maxChunkX = SectionPos.blockToSectionCoord(Mth.floor(bounds.maxX()));
-        int minChunkZ = SectionPos.blockToSectionCoord(Mth.floor(bounds.minZ()));
-        int maxChunkZ = SectionPos.blockToSectionCoord(Mth.floor(bounds.maxZ()));
+    /** Test-friendly view of the ordered section cursor. */
+    static List<SectionKey> orderedSections(
+        EffectBlockVolume volume,
+        LevelHeightAccessor level,
+        Ordering ordering
+    ) {
+        return buildSections(volume, level, ordering).stream().map(SectionEntry::key).toList();
+    }
+
+    private static Set<ChunkPos> ticketChunks(List<SectionEntry> sections) {
         Set<ChunkPos> chunks = new LinkedHashSet<>();
-        outer:
-        for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
-            for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
-                chunks.add(new ChunkPos(chunkX, chunkZ));
-                if (chunks.size() >= MAX_TICKET_CHUNKS) {
-                    LOGGER.warn("Bulk edit area exceeds {} chunk tickets; some chunks may stay unloaded", MAX_TICKET_CHUNKS);
-                    break outer;
-                }
+        for (SectionEntry entry : sections) {
+            SectionKey key = entry.key();
+            chunks.add(new ChunkPos(key.sectionX(), key.sectionZ()));
+            if (chunks.size() >= MAX_TICKET_CHUNKS) {
+                LOGGER.warn(
+                    "Bulk edit area exceeds {} chunk tickets; some chunks may stay unloaded",
+                    MAX_TICKET_CHUNKS
+                );
+                break;
             }
         }
         return chunks;
+    }
+
+    private record SectionEntry(SectionKey key, double distanceSquared) {
+    }
+
+    private record SectionShape(
+        double centerX,
+        double centerY,
+        double centerZ,
+        double radiusX,
+        double radiusY,
+        double radiusZ
+    ) {
+        static SectionShape of(EffectBlockVolume volume) {
+            if (volume instanceof EffectBlockVolume.Ellipsoid ellipsoid) {
+                return new SectionShape(
+                    ellipsoid.center().x(),
+                    ellipsoid.center().y(),
+                    ellipsoid.center().z(),
+                    ellipsoid.radiusX(),
+                    ellipsoid.radiusY(),
+                    ellipsoid.radiusZ()
+                );
+            }
+            if (volume instanceof EffectBlockVolume.Sphere sphere) {
+                double radius = sphere.radius();
+                return new SectionShape(
+                    sphere.center().x(),
+                    sphere.center().y(),
+                    sphere.center().z(),
+                    radius,
+                    radius,
+                    radius
+                );
+            }
+            EffectBounds bounds = volume.bounds();
+            return new SectionShape(
+                (bounds.minX() + bounds.maxX()) * 0.5,
+                (bounds.minY() + bounds.maxY()) * 0.5,
+                (bounds.minZ() + bounds.maxZ()) * 0.5,
+                Math.max(0.5, (bounds.maxX() - bounds.minX()) * 0.5),
+                Math.max(0.5, (bounds.maxY() - bounds.minY()) * 0.5),
+                Math.max(0.5, (bounds.maxZ() - bounds.minZ()) * 0.5)
+            );
+        }
     }
 
     private static void writeVolume(CompoundTag tag, EffectBlockVolume volume) {
@@ -588,6 +879,6 @@ public final class EffectBulkBlockEditor {
         );
     }
 
-    private record SectionKey(int sectionX, int sectionY, int sectionZ) {
+    record SectionKey(int sectionX, int sectionY, int sectionZ) {
     }
 }

@@ -91,6 +91,15 @@ public final class TerrainEditService {
         state(level).relightQueue.add(chunk);
     }
 
+    /** Queues a chunk ahead of ordinary relights so a progressive reveal is not delayed. */
+    public static void queuePriorityRelight(ServerLevel level, ChunkPos chunk) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(chunk, "chunk");
+        LevelState state = state(level);
+        state.relightQueue.add(chunk);
+        state.priorityRelightQueue.add(chunk);
+    }
+
     /**
      * Queues one full-chunk client resend. When {@code afterRelight} is true the resend waits until
      * the chunk's light pass has completed, so clients never receive stale light.
@@ -130,7 +139,15 @@ public final class TerrainEditService {
         }
 
         int processed = 0;
-        List<ChunkPos> pending = new ArrayList<>(state.relightQueue);
+        List<ChunkPos> pending = new ArrayList<>(
+            state.priorityRelightQueue.size() + state.relightQueue.size()
+        );
+        pending.addAll(state.priorityRelightQueue);
+        for (ChunkPos chunk : state.relightQueue) {
+            if (!state.priorityRelightQueue.contains(chunk)) {
+                pending.add(chunk);
+            }
+        }
         for (ChunkPos chunk : pending) {
             if (processed >= LIGHT_CHUNKS_PER_TICK) {
                 break;
@@ -148,6 +165,7 @@ public final class TerrainEditService {
                 LOGGER.warn("Could not relight bulk-edited chunk {}", chunk, exception);
             }
             state.relightQueue.remove(chunk);
+            state.priorityRelightQueue.remove(chunk);
             processed++;
             if (state.syncAfterRelight.remove(chunk)) {
                 state.syncQueue.add(chunk);
@@ -203,6 +221,7 @@ public final class TerrainEditService {
     private static final class LevelState {
         private int sectionEditsUsed;
         private final Set<ChunkPos> relightQueue = new LinkedHashSet<>();
+        private final Set<ChunkPos> priorityRelightQueue = new LinkedHashSet<>();
         private final Set<ChunkPos> syncAfterRelight = new LinkedHashSet<>();
         private final Set<ChunkPos> syncQueue = new LinkedHashSet<>();
         private final Map<ChunkPos, Integer> tickets = new java.util.HashMap<>();

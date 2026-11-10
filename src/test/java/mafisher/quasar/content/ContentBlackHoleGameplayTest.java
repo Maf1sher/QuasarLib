@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import mafisher.quasar.effect.EffectAudience;
+import mafisher.quasar.effect.EffectBudgets;
 import mafisher.quasar.effect.EffectDebrisSpawn;
 import mafisher.quasar.effect.VisualEffectSpec;
 import mafisher.quasar.effect.gameplay.GameplayEffectSpec;
@@ -23,26 +24,29 @@ class ContentBlackHoleGameplayTest {
         assertEquals(72.0, settings.craterRadius(6.0F), 1.0E-6);
         assertEquals(72.0, settings.craterDepth(6.0F), 1.0E-6);
         assertEquals(144.0, settings.craterRadius(12.0F), 1.0E-6);
-        assertEquals(ContentBlackHoleGameplaySettings.MAX_CRATER_RADIUS,
-            settings.craterRadius(1_000.0F), 1.0E-6);
-        assertEquals(ContentBlackHoleGameplaySettings.MAX_CRATER_DEPTH,
-            settings.craterDepth(1_000.0F), 1.0E-6);
+        assertEquals(768.0, settings.craterRadius(64.0F), 1.0E-6);
+        assertEquals(768.0, settings.craterDepth(64.0F), 1.0E-6);
     }
 
     @Test
-    void tearRadiusGrowsFromTheCoreToTheAttractionRadius() {
-        double start = 8.0;
-        double end = 108.0;
-        assertEquals(start, ContentBlackHoleGameplayController.tearRadius(
-            start, end, ContentBlackHoleCinematics.HORIZON_END
+    void tearRadiusNeverExceedsTheFinalCrater() {
+        double craterRadius = 144.0;
+        double frontRadius = 8.0;
+        double band = 6.0;
+        assertEquals(14.0, ContentBlackHoleGameplayController.tearRadius(
+            frontRadius, craterRadius, band
         ), 1.0E-6);
-        assertEquals(end, ContentBlackHoleGameplayController.tearRadius(start, end, 0.6F), 1.0E-6);
+        assertEquals(craterRadius, ContentBlackHoleGameplayController.tearRadius(
+            craterRadius, craterRadius, band
+        ), 1.0E-6);
 
-        double previous = start;
-        for (float progress = 0.1F; progress <= 0.6F; progress += 0.02F) {
-            double radius = ContentBlackHoleGameplayController.tearRadius(start, end, progress);
-            assertTrue(radius >= previous - 1.0E-6, "progress " + progress);
-            assertTrue(radius <= end + 1.0E-6, "progress " + progress);
+        double previous = 0.0;
+        for (double front = 0.0; front <= craterRadius; front += 4.0) {
+            double radius = ContentBlackHoleGameplayController.tearRadius(
+                front, craterRadius, band
+            );
+            assertTrue(radius >= previous - 1.0E-6, "front " + front);
+            assertTrue(radius <= craterRadius + 1.0E-6, "front " + front);
             previous = radius;
         }
     }
@@ -50,7 +54,6 @@ class ContentBlackHoleGameplayTest {
     @Test
     void tearSettingsAreValidated() {
         ContentBlackHoleGameplaySettings settings = ContentBlackHoleGameplaySettings.DEFAULT;
-        assertEquals(1.35F, settings.tearStartFactor(), 1.0E-6F);
         assertEquals(64, settings.tearRaysPerTick());
     }
 
@@ -97,7 +100,7 @@ class ContentBlackHoleGameplayTest {
         assertEquals(visual.scale(), spec.scale(), 1.0E-6F);
         assertTrue(spec.budget().maxBlockChanges() > 0);
         assertTrue(spec.budget().maxWorldSamples() > 0);
-        assertEquals(8, spec.budget().maxSectionEdits());
+        assertEquals(EffectBudgets.sectionEditsPerLevelTick(), spec.budget().maxSectionEdits());
         assertTrue(spec.budget().maxDebrisPieces() >= 1_024);
     }
 

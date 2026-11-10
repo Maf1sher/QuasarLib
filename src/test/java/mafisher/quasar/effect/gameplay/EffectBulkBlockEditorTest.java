@@ -2,6 +2,7 @@ package mafisher.quasar.effect.gameplay;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -20,6 +21,7 @@ import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.LevelHeightAccessor;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -213,5 +215,73 @@ class EffectBulkBlockEditorTest {
         assertFalse(cylinder.contains(1.0, 11.0, 1.0));
         assertTrue(cylinder.intersectsSection(-1, 0, -1));
         assertFalse(cylinder.intersectsSection(2, 0, 0));
+    }
+
+    @Test
+    void centerOutOrderingStartsAtTheMiddleSection() {
+        LevelHeightAccessor height = mock(LevelHeightAccessor.class);
+        when(height.getMinSection()).thenReturn(-4);
+        when(height.getMaxSection()).thenReturn(4);
+        EffectBlockVolume sphere = EffectBlockVolume.sphere(
+            new EffectPoint(8.0, 8.0, 8.0), 40.0
+        );
+
+        List<EffectBulkBlockEditor.SectionKey> centered = EffectBulkBlockEditor.orderedSections(
+            sphere, height, EffectBulkBlockEditor.Ordering.CENTER_OUT
+        );
+        List<EffectBulkBlockEditor.SectionKey> topDown = EffectBulkBlockEditor.orderedSections(
+            sphere, height, EffectBulkBlockEditor.Ordering.TOP_DOWN
+        );
+
+        assertEquals(new EffectBulkBlockEditor.SectionKey(0, 0, 0), centered.get(0));
+        assertNotEquals(topDown.get(0), centered.get(0));
+        assertTrue(centered.size() > 1);
+    }
+
+    @Test
+    void progressiveSyncWaitsForTheLastSectionInAChunk() {
+        when(this.level.getMaxSection()).thenReturn(2);
+        when(this.level.getMaxBuildHeight()).thenReturn(32);
+        when(this.level.getSectionIndexFromSectionY(1)).thenReturn(1);
+        LevelChunkSection second = new LevelChunkSection(
+            new PalettedContainer<>(
+                Block.BLOCK_STATE_REGISTRY,
+                Blocks.AIR.defaultBlockState(),
+                PalettedContainer.Strategy.SECTION_STATES
+            ),
+            this.section.getBiomes()
+        );
+        second.setBlockState(8, 0, 8, Blocks.STONE.defaultBlockState(), false);
+        this.sections = new LevelChunkSection[]{this.section, second};
+        when(this.chunk.getSection(1)).thenAnswer(ignored -> this.sections[1]);
+        when(this.chunk.getSections()).thenReturn(this.sections);
+
+        EffectBulkBlockEditor editor = EffectBulkBlockEditor.create(
+            this.context,
+            new EffectBulkBlockEditor.Spec(
+                EffectBlockVolume.box(new mafisher.quasar.effect.EffectBounds(
+                    0.0, 0.0, 0.0, 15.999, 31.999, 15.999
+                )),
+                Blocks.AIR.defaultBlockState(),
+                true,
+                EffectBulkBlockEditor.SyncPolicy.PROGRESSIVE,
+                0.0,
+                false
+            ),
+            EffectBulkBlockEditor.Ordering.CENTER_OUT
+        );
+
+        editor.tick(1);
+        assertEquals(1, editor.progress().completedSections());
+        assertEquals(1, editor.editedSections());
+        assertEquals(1, editor.dirtyChunkCount());
+        assertTrue(editor.hasPendingSolidSections());
+
+        editor.tick(1);
+        assertEquals(2, editor.progress().completedSections());
+        assertEquals(2, editor.editedSections());
+        assertEquals(0, editor.dirtyChunkCount());
+        assertFalse(editor.hasPendingSolidSections());
+        editor.close(false);
     }
 }
