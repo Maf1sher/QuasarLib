@@ -2,7 +2,9 @@ package mafisher.quasar.effect.gameplay;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -11,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import mafisher.quasar.effect.EffectPoint;
+import mafisher.quasar.effect.block.BlockProtectionService;
 import mafisher.quasar.effect.persistence.BlockJournal;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerChunkCache;
@@ -33,6 +36,7 @@ class EffectBulkBlockEditorTest {
     private ServerChunkCache chunkSource;
     private LevelChunk chunk;
     private LevelChunkSection section;
+    private LevelChunkSection[] sections;
     private GameplayEffectContext context;
     private GameplayEffectSpec spec;
     private final ChunkPos chunkPos = new ChunkPos(0, 0);
@@ -53,6 +57,7 @@ class EffectBulkBlockEditorTest {
         this.section = new LevelChunkSection(states, biomes);
         this.section.setBlockState(8, 8, 8, Blocks.STONE.defaultBlockState(), false);
         this.section.setBlockState(0, 0, 0, Blocks.DIRT.defaultBlockState(), false);
+        this.sections = new LevelChunkSection[]{this.section};
 
         when(this.level.isClientSide()).thenReturn(false);
         when(this.level.dimension()).thenReturn(Level.OVERWORLD);
@@ -65,9 +70,9 @@ class EffectBulkBlockEditorTest {
         when(this.level.players()).thenReturn(List.of());
         when(this.chunkSource.getChunkNow(0, 0)).thenReturn(this.chunk);
         when(this.chunk.getPos()).thenReturn(this.chunkPos);
-        when(this.chunk.getSection(0)).thenReturn(this.section);
+        when(this.chunk.getSection(0)).thenAnswer(ignored -> this.sections[0]);
         when(this.chunk.getBlockEntities()).thenReturn(Map.of());
-        when(this.chunk.getSections()).thenReturn(new LevelChunkSection[]{this.section});
+        when(this.chunk.getSections()).thenReturn(this.sections);
 
         this.spec = mock(GameplayEffectSpec.class);
         when(this.spec.typeId()).thenReturn(
@@ -152,8 +157,42 @@ class EffectBulkBlockEditorTest {
 
         editor.tick();
 
-        assertTrue(this.section.hasOnlyAir());
+        assertTrue(this.sections[0].hasOnlyAir());
         assertEquals(2, editor.progress().clearedBlocks());
+        editor.close(false);
+    }
+
+    @Test
+    void replacesAFullyCoveredSectionWithoutRewritingEveryBlock() {
+        assumeTrue(!BlockProtectionService.hasProtections());
+        for (int index = 0; index < 16 * 16 * 16; index++) {
+            this.section.setBlockState(
+                index & 15,
+                (index >> 4) & 15,
+                (index >> 8) & 15,
+                Blocks.STONE.defaultBlockState(),
+                false
+            );
+        }
+        EffectBulkBlockEditor editor = EffectBulkBlockEditor.create(
+            this.context,
+            new EffectBulkBlockEditor.Spec(
+                EffectBlockVolume.box(new mafisher.quasar.effect.EffectBounds(
+                    0.0, 0.0, 0.0, 16.0, 16.0, 16.0
+                )),
+                Blocks.AIR.defaultBlockState(),
+                true,
+                EffectBulkBlockEditor.SyncPolicy.MANUAL,
+                0.0,
+                false
+            )
+        );
+
+        editor.tick();
+
+        assertNotSame(this.section, this.sections[0]);
+        assertTrue(this.sections[0].hasOnlyAir());
+        assertEquals(16 * 16 * 16, editor.progress().clearedBlocks());
         editor.close(false);
     }
 

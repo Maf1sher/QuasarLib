@@ -32,7 +32,7 @@ public final class QuasarConfig {
             "Requires a world restart."
         )
         .worldRestart()
-        .defineInRange("block_journal_max_sections", 512, 1, 65_536);
+        .defineInRange("block_journal_max_sections", 4_096, 1, 65_536);
 
     static final ModConfigSpec.IntValue STANDALONE_VISUAL_BUDGET = BUILDER
         .comment(
@@ -115,7 +115,7 @@ public final class QuasarConfig {
             "Requires a world restart."
         )
         .worldRestart()
-        .defineInRange("section_edits_per_level_tick", 4, 1, 256);
+        .defineInRange("section_edits_per_level_tick", 8, 1, 256);
 
     static final ModConfigSpec.IntValue ENTITY_SPAWNS_PER_LEVEL_TICK_BUDGET = BUILDER
         .comment(

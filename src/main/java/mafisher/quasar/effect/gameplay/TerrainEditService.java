@@ -26,8 +26,8 @@ import org.slf4j.LoggerFactory;
  */
 public final class TerrainEditService {
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
-    private static final int LIGHT_CHUNKS_PER_TICK = 1;
-    private static final int SYNC_CHUNKS_PER_TICK = 4;
+    private static final int LIGHT_CHUNKS_PER_TICK = 2;
+    private static final int SYNC_CHUNKS_PER_TICK = 32;
     private static final TicketType<ChunkPos> TERRAIN_TICKET = TicketType.create(
         "quasar_terrain_edit", Comparator.comparingLong(ChunkPos::toLong)
     );

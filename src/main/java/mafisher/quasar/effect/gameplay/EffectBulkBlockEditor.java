@@ -25,6 +25,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.world.level.chunk.PalettedContainer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,9 +44,9 @@ public final class EffectBulkBlockEditor {
     private static final int SECTION_BLOCKS = 16 * 16 * 16;
     private static final int MAX_CLEARED_STATES = 12;
     private static final int MAX_TICKET_CHUNKS = 1_024;
-    private static final int MAX_SECTIONS = 8_192;
+    private static final int MAX_SECTIONS = 16_384;
     private static final int MAX_SECTIONS_PER_TICK = 8;
-    private static final int MAX_STALLED_TICKS = 40;
+    private static final int MAX_STALLED_TICKS = 200;
     private static final Set<Block> INDESTRUCTIBLE = Set.of(
         Blocks.BEDROCK,
         Blocks.BARRIER,
@@ -236,6 +237,77 @@ public final class EffectBulkBlockEditor {
 
         boolean fullyInside = this.isFullyInside(key);
         boolean protectedWorld = BlockProtectionService.hasProtections();
+        boolean fastFullSection = fullyInside
+            && this.spec.replacement().isAir()
+            && !protectedWorld
+            && !section.maybeHas(state -> INDESTRUCTIBLE.contains(state.getBlock()));
+
+        int cleared;
+        int vetoed;
+        if (fastFullSection) {
+            cleared = this.clearWholeSection(chunk, section, key);
+            vetoed = 0;
+        } else {
+            int[] counts = this.clearByBlock(chunk, section, key, fullyInside, protectedWorld);
+            cleared = counts[0];
+            vetoed = counts[1];
+        }
+
+        if (cleared == 0 && vetoed == 0) {
+            return;
+        }
+        this.context.recordBulkSection(cleared, vetoed);
+        this.clearedBlocks += cleared;
+        if (cleared == 0) {
+            return;
+        }
+
+        if (this.spec.removeBlockEntities()) {
+            if (fastFullSection) {
+                removeAllBlockEntities(chunk, key.sectionY());
+            } else {
+                removeBlockEntities(chunk, section, key);
+            }
+        }
+        this.markChunkEdited(chunk, key, fastFullSection || section.hasOnlyAir());
+    }
+
+    /**
+     * Replaces a fully covered section with one air-filled section in one operation. This keeps
+     * large author scales practical without writing 4096 block states on the server thread.
+     */
+    private int clearWholeSection(LevelChunk chunk, LevelChunkSection section, SectionKey key) {
+        int[] cleared = {0};
+        section.getStates().count((state, count) -> {
+            if (!state.isAir() && !state.equals(this.spec.replacement())) {
+                cleared[0] += count;
+                if (this.clearedStates.size() < MAX_CLEARED_STATES) {
+                    this.clearedStates.add(state);
+                }
+            }
+        });
+        if (cleared[0] == 0) {
+            return 0;
+        }
+
+        int sectionArrayIndex = this.level.getSectionIndexFromSectionY(key.sectionY());
+        PalettedContainer<BlockState> states = new PalettedContainer<>(
+            Block.BLOCK_STATE_REGISTRY,
+            Blocks.AIR.defaultBlockState(),
+            PalettedContainer.Strategy.SECTION_STATES
+        );
+        LevelChunkSection replacement = new LevelChunkSection(states, section.getBiomes());
+        chunk.getSections()[sectionArrayIndex] = replacement;
+        return cleared[0];
+    }
+
+    private int[] clearByBlock(
+        LevelChunk chunk,
+        LevelChunkSection section,
+        SectionKey key,
+        boolean fullyInside,
+        boolean protectedWorld
+    ) {
         int cleared = 0;
         int vetoed = 0;
         int baseX = key.sectionX() << 4;
@@ -270,23 +342,14 @@ public final class EffectBulkBlockEditor {
             section.setBlockState(localX, localY, localZ, this.spec.replacement(), false);
             cleared++;
         }
+        return new int[]{cleared, vetoed};
+    }
 
-        if (cleared == 0 && vetoed == 0) {
-            return;
-        }
-        this.context.recordBulkSection(cleared, vetoed);
-        this.clearedBlocks += cleared;
-        if (cleared == 0) {
-            return;
-        }
-
-        if (this.spec.removeBlockEntities()) {
-            removeBlockEntities(chunk, section, key);
-        }
+    private void markChunkEdited(LevelChunk chunk, SectionKey key, boolean sectionAir) {
         if (this.level.getChunkSource().getLightEngine() != null) {
             this.level.getChunkSource().getLightEngine().updateSectionStatus(
                 SectionPos.of(key.sectionX(), key.sectionY(), key.sectionZ()),
-                section.hasOnlyAir()
+                sectionAir
             );
         }
         chunk.setUnsaved(true);
@@ -321,6 +384,19 @@ public final class EffectBulkBlockEditor {
             int localY = position.getY() & 15;
             int localZ = position.getZ() & 15;
             if (section.getBlockState(localX, localY, localZ).equals(this.spec.replacement())) {
+                removals.add(position.immutable());
+            }
+        }
+        for (BlockPos position : removals) {
+            chunk.removeBlockEntity(position);
+        }
+    }
+
+    private void removeAllBlockEntities(LevelChunk chunk, int sectionY) {
+        List<BlockPos> removals = new ArrayList<>();
+        for (BlockEntity blockEntity : chunk.getBlockEntities().values()) {
+            BlockPos position = blockEntity.getBlockPos();
+            if (SectionPos.blockToSectionCoord(position.getY()) == sectionY) {
                 removals.add(position.immutable());
             }
         }
