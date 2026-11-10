@@ -19,6 +19,7 @@ public final class GameplayEffectLifecycleEvents {
         if (event.getLevel() instanceof ServerLevel level) {
             GameplayEffectService.stopAll(level, GameplayEffectEndReason.LEVEL_UNLOAD, false);
             BlockRollbackService.clear(level);
+            TerrainEditService.clear(level);
         }
     }
 

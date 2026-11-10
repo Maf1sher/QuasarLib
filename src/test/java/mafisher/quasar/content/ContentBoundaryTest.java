@@ -80,6 +80,7 @@ class ContentBoundaryTest {
         "mafisher.quasar.effect.gameplay.EffectBlockCursor",
         "mafisher.quasar.effect.gameplay.EffectBlockSample",
         "mafisher.quasar.effect.gameplay.EffectBlockVolume",
+        "mafisher.quasar.effect.gameplay.EffectBulkBlockEditor",
         "mafisher.quasar.effect.gameplay.EffectPhase",
         "mafisher.quasar.effect.gameplay.EffectPhasePlan",
         "mafisher.quasar.effect.gameplay.EffectRaycastResult",

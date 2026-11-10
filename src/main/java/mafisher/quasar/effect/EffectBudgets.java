@@ -46,6 +46,10 @@ public final class EffectBudgets {
         return QuasarConfig.blockChangesPerLevelTickBudget();
     }
 
+    public static int sectionEditsPerLevelTick() {
+        return QuasarConfig.sectionEditsPerLevelTickBudget();
+    }
+
     public static int entitySpawnsPerLevelTick() {
         return QuasarConfig.entitySpawnsPerLevelTickBudget();
     }

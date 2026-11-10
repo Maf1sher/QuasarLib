@@ -40,6 +40,11 @@ public final class BlockProtectionService {
         return PROTECTIONS.size();
     }
 
+    /** Whether any protection callback is registered; callers can skip per-block checks when empty. */
+    public static boolean hasProtections() {
+        return !PROTECTIONS.isEmpty();
+    }
+
     /** Returns {@code true} when every protection allows the change. */
     public static boolean allows(BlockProtectionContext context) {
         Objects.requireNonNull(context, "context");

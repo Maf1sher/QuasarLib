@@ -14,8 +14,14 @@ import mafisher.quasar.effect.block.BlockChange;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.world.level.chunk.PalettedContainer;
+import net.minecraft.world.level.chunk.PalettedContainerRO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -58,6 +64,33 @@ class BlockJournalTest {
 
         assertTrue(journal.isTruncated());
         assertFalse(journal.canRollback());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void recordsAndRoundTripsASectionSnapshot() {
+        LevelChunk chunk = mock(LevelChunk.class);
+        when(chunk.getPos()).thenReturn(new ChunkPos(2, -3));
+        when(chunk.getBlockEntities()).thenReturn(java.util.Map.of());
+        PalettedContainer<BlockState> states = new PalettedContainer<>(
+            Block.BLOCK_STATE_REGISTRY,
+            Blocks.AIR.defaultBlockState(),
+            PalettedContainer.Strategy.SECTION_STATES
+        );
+        states.set(1, 2, 3, Blocks.STONE.defaultBlockState());
+        LevelChunkSection section = new LevelChunkSection(
+            states, mock(PalettedContainerRO.class)
+        );
+
+        BlockJournal journal = new BlockJournal();
+        assertTrue(journal.recordSection(this.level, chunk, 4, section));
+        assertEquals(1, journal.size());
+        assertEquals(1, journal.sectionCount());
+        assertTrue(journal.consumeDirty());
+
+        BlockJournal loaded = BlockJournal.load(journal.save());
+        assertEquals(1, loaded.sectionCount());
+        assertEquals(1, loaded.size());
     }
 
     @Test

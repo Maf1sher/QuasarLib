@@ -420,6 +420,7 @@ public final class GameplayEffectService {
         if (blockChangeBudget < 0) {
             throw new IllegalArgumentException("Block change application budget cannot be negative");
         }
+        TerrainEditService.beginTick(level);
         Map<UUID, ActiveSession> sessions = ACTIVE_SESSIONS.get(level);
         int remainingBlockChanges = blockChangeBudget;
         if (sessions != null && !sessions.isEmpty()) {
@@ -430,6 +431,7 @@ public final class GameplayEffectService {
             }
         }
         BlockRollbackService.tick(level, remainingBlockChanges);
+        TerrainEditService.tick(level);
         if (sessions == null || sessions.isEmpty()) {
             ACTIVE_SESSIONS.remove(level);
         }
@@ -509,9 +511,19 @@ public final class GameplayEffectService {
     }
 
     private static void persistJournal(ServerLevel level, ActiveSession session) {
-        if (session.context.consumeJournalDirty()) {
-            EffectPersistenceService.recordJournal(level, session.id, session.context.blockJournal());
+        persistJournal(level, session, false);
+    }
+
+    private static void persistJournal(ServerLevel level, ActiveSession session, boolean force) {
+        BlockJournal journal = session.context.blockJournal();
+        if (!journal.isDirty()) {
+            return;
         }
+        if (!force && journal.sectionCount() > 0 && level.getGameTime() % 20L != 0L) {
+            return;
+        }
+        journal.consumeDirty();
+        EffectPersistenceService.recordJournal(level, session.id, journal);
     }
 
     private static boolean destructivePolicyAllows(
@@ -593,7 +605,7 @@ public final class GameplayEffectService {
             journal.beginRollback();
             EffectPersistenceService.recordJournal(level, session.id, journal);
         } else if (!persistRemoval) {
-            persistJournal(level, session);
+            persistJournal(level, session, true);
         }
 
         try {

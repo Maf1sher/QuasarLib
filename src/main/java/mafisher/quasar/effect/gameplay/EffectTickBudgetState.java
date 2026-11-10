@@ -13,6 +13,7 @@ final class EffectTickBudgetState {
     private int blockChangesQueued;
     private int blockChangesApplied;
     private int blockChangesVetoed;
+    private int sectionEdits;
     private int worldSamples;
     private int forceTargetsExamined;
     private int forceTargetsAffected;
@@ -30,6 +31,7 @@ final class EffectTickBudgetState {
         this.blockChangesQueued = 0;
         this.blockChangesApplied = 0;
         this.blockChangesVetoed = 0;
+        this.sectionEdits = 0;
         this.worldSamples = 0;
         this.forceTargetsExamined = 0;
         this.forceTargetsAffected = 0;
@@ -71,6 +73,18 @@ final class EffectTickBudgetState {
 
     void recordBlockChangesVetoed(int vetoed) {
         this.blockChangesVetoed += vetoed;
+    }
+
+    int remainingSectionEdits() {
+        return Math.max(0, this.budget.maxSectionEdits() - this.sectionEdits);
+    }
+
+    boolean tryAcquireSectionEdit() {
+        if (this.remainingSectionEdits() <= 0) {
+            return false;
+        }
+        this.sectionEdits++;
+        return true;
     }
 
     boolean canSampleWorld() {
@@ -126,7 +140,8 @@ final class EffectTickBudgetState {
             this.worldSamples,
             this.forceTargetsExamined,
             this.forceTargetsAffected,
-            this.debrisPieces
+            this.debrisPieces,
+            this.sectionEdits
         );
     }
 }

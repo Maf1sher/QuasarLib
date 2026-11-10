@@ -24,6 +24,16 @@ public final class QuasarConfig {
         .worldRestart()
         .defineInRange("block_journal_max_entries", 65_536, 1, 1_000_000);
 
+    static final ModConfigSpec.IntValue BLOCK_JOURNAL_MAX_SECTIONS = BUILDER
+        .comment(
+            "Maximum recorded bulk section snapshots per destructive effect.",
+            "Bulk section edits compact hundreds of thousands of block changes into one snapshot.",
+            "Overflow still applies changes but disables rollback for that effect.",
+            "Requires a world restart."
+        )
+        .worldRestart()
+        .defineInRange("block_journal_max_sections", 512, 1, 65_536);
+
     static final ModConfigSpec.IntValue STANDALONE_VISUAL_BUDGET = BUILDER
         .comment(
             "Soft per-level budget for standalone client visuals.",
@@ -97,6 +107,16 @@ public final class QuasarConfig {
         .worldRestart()
         .defineInRange("block_changes_per_level_tick", 4_096, 1, 16_384);
 
+    static final ModConfigSpec.IntValue SECTION_EDITS_PER_LEVEL_TICK_BUDGET = BUILDER
+        .comment(
+            "Maximum bulk 16x16x16 section edits applied across all gameplay effects per level tick.",
+            "Bulk edits clear whole sections in one engine operation and resend affected chunks once.",
+            "This is a safety threshold; effects slow down instead of being rejected.",
+            "Requires a world restart."
+        )
+        .worldRestart()
+        .defineInRange("section_edits_per_level_tick", 4, 1, 256);
+
     static final ModConfigSpec.IntValue ENTITY_SPAWNS_PER_LEVEL_TICK_BUDGET = BUILDER
         .comment(
             "Maximum effect entity spawns applied per level tick.",
@@ -126,6 +146,15 @@ public final class QuasarConfig {
             return BLOCK_JOURNAL_MAX_ENTRIES.get();
         } catch (IllegalStateException notLoaded) {
             return BLOCK_JOURNAL_MAX_ENTRIES.getDefault();
+        }
+    }
+
+    /** Maximum recorded bulk section snapshots per effect before rollback is disabled. */
+    public static int blockJournalMaxSections() {
+        try {
+            return BLOCK_JOURNAL_MAX_SECTIONS.get();
+        } catch (IllegalStateException notLoaded) {
+            return BLOCK_JOURNAL_MAX_SECTIONS.getDefault();
         }
     }
 
@@ -167,6 +196,11 @@ public final class QuasarConfig {
     /** Maximum destructive block changes applied per level tick. */
     public static int blockChangesPerLevelTickBudget() {
         return value(BLOCK_CHANGES_PER_LEVEL_TICK_BUDGET);
+    }
+
+    /** Maximum bulk section edits applied across all effects per level tick. */
+    public static int sectionEditsPerLevelTickBudget() {
+        return value(SECTION_EDITS_PER_LEVEL_TICK_BUDGET);
     }
 
     /** Maximum effect entity spawns applied per level tick. */

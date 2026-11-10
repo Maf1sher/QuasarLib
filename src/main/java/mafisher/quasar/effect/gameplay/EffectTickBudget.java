@@ -8,14 +8,37 @@ public record EffectTickBudget(
     int maxBlockChanges,
     int maxWorldSamples,
     int maxForceTargets,
-    int maxDebrisPieces
+    int maxDebrisPieces,
+    int maxSectionEdits
 ) {
     public EffectTickBudget {
         if (maxTargetsExamined < 0 || maxHitboxCalls < 0 || maxEntitySpawns < 0
             || maxBlockChanges < 0 || maxWorldSamples < 0
-            || maxForceTargets < 0 || maxDebrisPieces < 0) {
+            || maxForceTargets < 0 || maxDebrisPieces < 0 || maxSectionEdits < 0) {
             throw new IllegalArgumentException("Effect tick budgets cannot be negative");
         }
+    }
+
+    /** Source-compatible constructor for effects that do not use bulk section edits. */
+    public EffectTickBudget(
+        int maxTargetsExamined,
+        int maxHitboxCalls,
+        int maxEntitySpawns,
+        int maxBlockChanges,
+        int maxWorldSamples,
+        int maxForceTargets,
+        int maxDebrisPieces
+    ) {
+        this(
+            maxTargetsExamined,
+            maxHitboxCalls,
+            maxEntitySpawns,
+            maxBlockChanges,
+            maxWorldSamples,
+            maxForceTargets,
+            maxDebrisPieces,
+            0
+        );
     }
 
     /** Source-compatible constructor for effects that do not use forces or debris. */
@@ -51,6 +74,7 @@ public record EffectTickBudget(
      */
     public static EffectTickBudget unlimited() {
         return new EffectTickBudget(
+            Integer.MAX_VALUE,
             Integer.MAX_VALUE,
             Integer.MAX_VALUE,
             Integer.MAX_VALUE,

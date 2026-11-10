@@ -31,7 +31,7 @@ public final class BlockRollbackService {
             EffectPersistenceService.recordStop(level, effectId);
             return false;
         }
-        if (journal.size() == 0) {
+        if (journal.isEmpty()) {
             EffectPersistenceService.recordStop(level, effectId);
             return false;
         }

@@ -334,13 +334,14 @@ public final class GameplayEffectContext {
         return result.processed();
     }
 
+    /** Whether the engine can restore all recorded changes for this session. */
+    public boolean canRollbackChanges() {
+        return this.blockJournal.canRollback();
+    }
+
     /** The engine-managed journal for this session. */
     BlockJournal blockJournal() {
         return this.blockJournal;
-    }
-
-    boolean consumeJournalDirty() {
-        return this.blockJournal.consumeDirty();
     }
 
     private boolean allowsBlockChange(BlockChange change, BlockState currentState) {
@@ -361,6 +362,32 @@ public final class GameplayEffectContext {
 
     public EffectTickCounters counters() {
         return this.budgetState.counters();
+    }
+
+    /** Remaining bulk section edits for this tick before the session budget is exhausted. */
+    public int remainingSectionEdits() {
+        return this.budgetState.remainingSectionEdits();
+    }
+
+    /**
+     * Reserves one bulk section edit against both the session budget and the level-wide section
+     * budget. Returns {@code false} when either soft budget is exhausted for this tick.
+     */
+    boolean tryAcquireSectionEdit() {
+        this.ensureOpen();
+        if (this.budgetState.remainingSectionEdits() <= 0) {
+            return false;
+        }
+        if (!TerrainEditService.tryAcquireSection(this.level)) {
+            return false;
+        }
+        return this.budgetState.tryAcquireSectionEdit();
+    }
+
+    /** Records the block changes produced by one bulk section edit. */
+    void recordBulkSection(int applied, int vetoed) {
+        this.budgetState.recordBlockChangesApplied(applied);
+        this.budgetState.recordBlockChangesVetoed(vetoed);
     }
 
     /** A defensive copy of consumer state carried by the persisted descriptor. */

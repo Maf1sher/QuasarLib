@@ -1,0 +1,178 @@
+package mafisher.quasar.effect.gameplay;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import mafisher.quasar.effect.EffectPoint;
+import mafisher.quasar.effect.persistence.BlockJournal;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerChunkCache;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.world.level.chunk.PalettedContainer;
+import net.minecraft.world.level.chunk.PalettedContainerRO;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+class EffectBulkBlockEditorTest {
+    private ServerLevel level;
+    private ServerChunkCache chunkSource;
+    private LevelChunk chunk;
+    private LevelChunkSection section;
+    private GameplayEffectContext context;
+    private GameplayEffectSpec spec;
+    private final ChunkPos chunkPos = new ChunkPos(0, 0);
+
+    @BeforeEach
+    @SuppressWarnings("unchecked")
+    void setUp() {
+        this.level = mock(ServerLevel.class);
+        this.chunkSource = mock(ServerChunkCache.class);
+        this.chunk = mock(LevelChunk.class);
+        PalettedContainer<BlockState> states = new PalettedContainer<>(
+            Block.BLOCK_STATE_REGISTRY,
+            Blocks.AIR.defaultBlockState(),
+            PalettedContainer.Strategy.SECTION_STATES
+        );
+        PalettedContainerRO<net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome>> biomes =
+            mock(PalettedContainerRO.class);
+        this.section = new LevelChunkSection(states, biomes);
+        this.section.setBlockState(8, 8, 8, Blocks.STONE.defaultBlockState(), false);
+        this.section.setBlockState(0, 0, 0, Blocks.DIRT.defaultBlockState(), false);
+
+        when(this.level.isClientSide()).thenReturn(false);
+        when(this.level.dimension()).thenReturn(Level.OVERWORLD);
+        when(this.level.getMinBuildHeight()).thenReturn(0);
+        when(this.level.getMaxBuildHeight()).thenReturn(16);
+        when(this.level.getMinSection()).thenReturn(0);
+        when(this.level.getMaxSection()).thenReturn(1);
+        when(this.level.getSectionIndexFromSectionY(0)).thenReturn(0);
+        when(this.level.getChunkSource()).thenReturn(this.chunkSource);
+        when(this.level.players()).thenReturn(List.of());
+        when(this.chunkSource.getChunkNow(0, 0)).thenReturn(this.chunk);
+        when(this.chunk.getPos()).thenReturn(this.chunkPos);
+        when(this.chunk.getSection(0)).thenReturn(this.section);
+        when(this.chunk.getBlockEntities()).thenReturn(Map.of());
+        when(this.chunk.getSections()).thenReturn(new LevelChunkSection[]{this.section});
+
+        this.spec = mock(GameplayEffectSpec.class);
+        when(this.spec.typeId()).thenReturn(
+            ResourceLocation.fromNamespaceAndPath("quasar_lib", "bulk_editor_test")
+        );
+        when(this.spec.ownerId()).thenReturn(null);
+        this.context = mock(GameplayEffectContext.class);
+        when(this.context.level()).thenReturn(this.level);
+        when(this.context.spec()).thenReturn(this.spec);
+        when(this.context.sessionId()).thenReturn(UUID.randomUUID());
+        when(this.context.tryAcquireSectionEdit()).thenReturn(true);
+        when(this.context.blockJournal()).thenReturn(new BlockJournal());
+    }
+
+    @AfterEach
+    void tearDown() {
+        TerrainEditService.clear(this.level);
+    }
+
+    @Test
+    void clearsInsideTheVolumeAndLeavesOutsideBlocks() {
+        EffectBulkBlockEditor editor = EffectBulkBlockEditor.create(
+            this.context,
+            new EffectBulkBlockEditor.Spec(
+                EffectBlockVolume.sphere(new EffectPoint(8.0, 8.0, 8.0), 4.0),
+                Blocks.AIR.defaultBlockState(),
+                true,
+                EffectBulkBlockEditor.SyncPolicy.MANUAL,
+                0.0,
+                true
+            )
+        );
+
+        editor.tick();
+
+        assertTrue(this.section.getBlockState(8, 8, 8).isAir());
+        assertEquals(Blocks.DIRT.defaultBlockState(), this.section.getBlockState(0, 0, 0));
+        assertTrue(editor.progress().finished());
+        assertEquals(1, editor.progress().clearedBlocks());
+        assertFalse(editor.clearedStates().isEmpty());
+        verify(this.chunk).setUnsaved(true);
+        editor.close(false);
+    }
+
+    @Test
+    void persistsAndRestoresAnIncompleteCursor() {
+        EffectBulkBlockEditor editor = EffectBulkBlockEditor.create(
+            this.context,
+            new EffectBulkBlockEditor.Spec(
+                EffectBlockVolume.sphere(new EffectPoint(8.0, 8.0, 8.0), 4.0),
+                Blocks.AIR.defaultBlockState(),
+                true,
+                EffectBulkBlockEditor.SyncPolicy.MANUAL,
+                0.0,
+                false
+            )
+        );
+        editor.tick();
+        var tag = editor.save();
+        editor.close(false);
+
+        EffectBulkBlockEditor restored = EffectBulkBlockEditor.restore(this.context, tag);
+        assertEquals(editor.progress(), restored.progress());
+        restored.close(false);
+    }
+
+    @Test
+    void clearsAFullSectionThroughThePalettePath() {
+        EffectBulkBlockEditor editor = EffectBulkBlockEditor.create(
+            this.context,
+            new EffectBulkBlockEditor.Spec(
+                EffectBlockVolume.box(new mafisher.quasar.effect.EffectBounds(
+                    0.0, 0.0, 0.0, 16.0, 16.0, 16.0
+                )),
+                Blocks.AIR.defaultBlockState(),
+                true,
+                EffectBulkBlockEditor.SyncPolicy.MANUAL,
+                0.0,
+                false
+            )
+        );
+
+        editor.tick();
+
+        assertTrue(this.section.hasOnlyAir());
+        assertEquals(2, editor.progress().clearedBlocks());
+        editor.close(false);
+    }
+
+    @Test
+    void ellipsoidAndCylinderBoundsAndContainmentAreConsistent() {
+        EffectBlockVolume ellipsoid = EffectBlockVolume.ellipsoid(
+            new EffectPoint(0.0, 0.0, 0.0), 4.0, 2.0, 3.0
+        );
+        assertTrue(ellipsoid.contains(0.5, 0.5, 0.5));
+        assertFalse(ellipsoid.contains(4.5, 0.5, 0.5));
+        assertTrue(ellipsoid.intersectsSection(-1, -1, -1));
+        assertFalse(ellipsoid.intersectsSection(2, 0, 0));
+
+        EffectBlockVolume cylinder = EffectBlockVolume.cylinder(
+            new EffectPoint(0.0, 0.0, 0.0), 4.0, 0.0, 10.0
+        );
+        assertTrue(cylinder.contains(1.0, 5.0, 1.0));
+        assertFalse(cylinder.contains(1.0, 11.0, 1.0));
+        assertTrue(cylinder.intersectsSection(-1, 0, -1));
+        assertFalse(cylinder.intersectsSection(2, 0, 0));
+    }
+}
