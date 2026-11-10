@@ -284,6 +284,15 @@ public final class GameplayEffectContext {
 
     /** Queues one block change; see {@link #queueBlockChange(BlockPos, BlockState)}. */
     public boolean queueBlockChange(BlockChange change) {
+        return this.queueBlockChange(change, null);
+    }
+
+    /**
+     * Queues one block change with an optional callback invoked after the engine successfully
+     * applies it. The callback receives the old block state and is not called for protection
+     * vetoes, unchanged blocks, or failed writes. Callbacks are transient and not persisted.
+     */
+    public boolean queueBlockChange(BlockChange change, Consumer<EffectBlockSample> applied) {
         this.ensureOpen();
         Objects.requireNonNull(change, "change");
         if (!this.capabilities.destructive()) {
@@ -299,7 +308,7 @@ public final class GameplayEffectContext {
                 "Block change position is outside the level: " + change.position()
             );
         }
-        if (!this.blockChanges.enqueue(change)) {
+        if (!this.blockChanges.enqueue(change, applied)) {
             return false;
         }
         this.budgetState.recordBlockChangeQueued();

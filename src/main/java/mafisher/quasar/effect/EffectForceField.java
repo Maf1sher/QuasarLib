@@ -15,7 +15,7 @@ import net.minecraft.world.phys.Vec3;
  * applies a constant strength throughout the volume.</p>
  */
 public sealed interface EffectForceField permits EffectForceField.Radial, EffectForceField.Shockwave,
-    EffectForceField.Vortex, EffectForceField.Pressure {
+    EffectForceField.Vortex, EffectForceField.Pressure, EffectForceField.Accretion {
     /** Hard safety ceiling for one force volume; larger scenarios use multiple fields. */
     double MAX_RADIUS = 1_024.0;
     /** Hard safety ceiling for one velocity delta per application. */
@@ -83,6 +83,26 @@ public sealed interface EffectForceField permits EffectForceField.Radial, Effect
         int maxTargets
     ) {
         return new Vortex(center, radius, tangentialStrength, inwardStrength, lift, falloff, maxTargets);
+    }
+
+    /**
+     * Creates a three-dimensional accretion field: inward pull plus tangential swirl around an
+     * arbitrary axis, with optional lift along that axis. Use the black-hole disk normal as the
+     * axis so the swirl follows a tilted disk.
+     */
+    static EffectForceField accretion(
+        EffectPoint center,
+        Vec3 axis,
+        double radius,
+        double inwardStrength,
+        double tangentialStrength,
+        double lift,
+        double falloff,
+        int maxTargets
+    ) {
+        return new Accretion(
+            center, axis, radius, inwardStrength, tangentialStrength, lift, falloff, maxTargets
+        );
     }
 
     /** Creates directional pressure inside an axis-aligned volume. */
@@ -222,6 +242,67 @@ public sealed interface EffectForceField permits EffectForceField.Radial, Effect
                 this.lift * factor,
                 (tangentZ * this.tangentialStrength + inwardZ * this.inwardStrength) * factor
             );
+        }
+    }
+
+    /**
+     * A spherical accretion field with an arbitrary swirl axis. Every target is pulled toward the
+     * center, rotated around {@code axis}, and optionally lifted along it. The field is pure math
+     * so optional physics bridges can reuse it unchanged.
+     */
+    record Accretion(
+        EffectPoint center,
+        Vec3 axis,
+        double radius,
+        double inwardStrength,
+        double tangentialStrength,
+        double lift,
+        double falloff,
+        int maxTargets
+    ) implements EffectForceField {
+        public Accretion {
+            requireCenter(center);
+            requirePoint(axis);
+            if (axis.lengthSqr() <= 0.0) {
+                throw new IllegalArgumentException("Accretion axis must not be zero");
+            }
+            axis = axis.normalize();
+            requireRadius(radius);
+            requireStrength(inwardStrength);
+            requireStrength(tangentialStrength);
+            requireLift(lift);
+            requireFalloff(falloff);
+            requireTargets(maxTargets);
+        }
+
+        @Override
+        public EffectBounds bounds() {
+            return sphereBounds(this.center, this.radius);
+        }
+
+        @Override
+        public Vec3 velocityDeltaAt(Vec3 point) {
+            requirePoint(point);
+            double dx = this.center.x() - point.x;
+            double dy = this.center.y() - point.y;
+            double dz = this.center.z() - point.z;
+            double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (distance <= 0.0 || distance >= this.radius) {
+                return Vec3.ZERO;
+            }
+            double factor = falloffFactor(distance, this.radius, this.falloff);
+            double inverse = 1.0 / distance;
+            Vec3 radial = new Vec3(dx * inverse, dy * inverse, dz * inverse);
+            Vec3 tangent = this.axis.cross(radial);
+            if (tangent.lengthSqr() > 1.0E-12) {
+                tangent = tangent.normalize();
+            } else {
+                tangent = Vec3.ZERO;
+            }
+            Vec3 inward = radial.scale(this.inwardStrength);
+            Vec3 swirl = tangent.scale(this.tangentialStrength);
+            Vec3 lift = this.axis.scale(this.lift);
+            return inward.add(swirl).add(lift).scale(factor);
         }
     }
 

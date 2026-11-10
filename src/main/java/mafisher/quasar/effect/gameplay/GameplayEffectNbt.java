@@ -58,6 +58,7 @@ public final class GameplayEffectNbt {
         tag.put("budget", budget);
         tag.putString("owner_policy", spec.ownerPolicy().name());
         tag.putString("priority", spec.priority().name());
+        tag.putFloat("scale", spec.scale());
         if (!spec.audio().isEmpty()) {
             tag.put("audio", EffectAudioNbt.save(spec.audio()));
         }
@@ -96,7 +97,8 @@ public final class GameplayEffectNbt {
             ),
             OwnerPolicy.valueOf(tag.getString("owner_policy")),
             audio,
-            EffectPriority.byName(tag.getString("priority"), EffectPriority.NORMAL)
+            EffectPriority.byName(tag.getString("priority"), EffectPriority.NORMAL),
+            tag.contains("scale", Tag.TAG_FLOAT) ? tag.getFloat("scale") : descriptor.scale()
         );
     }
 

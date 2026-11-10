@@ -42,8 +42,8 @@ public final class GameplayEffectService {
     /** Default per-owner start rate. Further starts are deferred, never rejected. */
     public static final int MAX_STARTS_PER_OWNER_PER_TICK = OwnerAdmission.MAX_STARTS_PER_OWNER_PER_TICK;
     /**
-     * Provisional level-wide ceiling for block changes applied per server tick. It keeps many
-     * sessions from exhausting the tick; it is a safety cap, not a measured balance budget.
+     * Legacy default for the level-wide block-change cap. The live value comes from
+     * {@link EffectBudgets#blockChangesPerLevelTick()} and is configurable.
      */
     public static final int MAX_BLOCK_CHANGES_PER_LEVEL_TICK = 512;
     /**
@@ -190,7 +190,7 @@ public final class GameplayEffectService {
             spec.typeId(),
             level.dimension().location(),
             new EffectTransform(new EffectPoint(spec.anchor().x, spec.anchor().y, spec.anchor().z), 0.0F, 0.0F, 0.0F),
-            1.0F,
+            spec.scale(),
             spec.seed(),
             startGameTime,
             spec.phases().totalDurationTicks(),
@@ -411,7 +411,7 @@ public final class GameplayEffectService {
 
     /** Advances every active session in one level by one server tick. */
     public static void tick(ServerLevel level) {
-        tick(level, MAX_BLOCK_CHANGES_PER_LEVEL_TICK);
+        tick(level, EffectBudgets.blockChangesPerLevelTick());
     }
 
     /** Package-private overload that lets tests exercise the level-wide block application budget. */

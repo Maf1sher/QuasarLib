@@ -42,6 +42,10 @@ public final class EffectBudgets {
         return QuasarConfig.cinematicSessionBudget();
     }
 
+    public static int blockChangesPerLevelTick() {
+        return QuasarConfig.blockChangesPerLevelTickBudget();
+    }
+
     public static int entitySpawnsPerLevelTick() {
         return QuasarConfig.entitySpawnsPerLevelTickBudget();
     }

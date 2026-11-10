@@ -34,7 +34,9 @@ final class EffectDebrisService {
             (float)spec.gravity(),
             spec.lifetimeTicks(),
             seed,
-            level.getGameTime()
+            level.getGameTime(),
+            spec.attractor(),
+            spec.spawn()
         );
         if (spec.audience() instanceof EffectAudience.Nearby nearby) {
             PacketDistributor.sendToPlayersNear(

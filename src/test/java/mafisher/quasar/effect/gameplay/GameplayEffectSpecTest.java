@@ -18,6 +18,23 @@ class GameplayEffectSpecTest {
         assertEquals(10, spec.budget().maxTargetsExamined());
         assertEquals(0, spec.budget().maxBlockChanges());
         assertEquals(OwnerPolicy.STOP_WHEN_UNAVAILABLE, spec.ownerPolicy());
+        assertEquals(1.0F, spec.scale(), 1.0E-6F);
+    }
+
+    @Test
+    void storesAnExplicitScaleAndRejectsInvalidValues() {
+        GameplayEffectSpec scaled = new GameplayEffectSpec(
+            id(), UUID.randomUUID(), Vec3.ZERO, plan(), 42L, budget(),
+            OwnerPolicy.CONTINUE, mafisher.quasar.effect.audio.EffectAudioSpec.NONE,
+            mafisher.quasar.effect.EffectPriority.HIGH, 12.0F
+        );
+        assertEquals(12.0F, scaled.scale(), 1.0E-6F);
+
+        assertThrows(IllegalArgumentException.class, () -> new GameplayEffectSpec(
+            id(), UUID.randomUUID(), Vec3.ZERO, plan(), 42L, budget(),
+            OwnerPolicy.CONTINUE, mafisher.quasar.effect.audio.EffectAudioSpec.NONE,
+            mafisher.quasar.effect.EffectPriority.HIGH, 0.0F
+        ));
     }
 
     @Test

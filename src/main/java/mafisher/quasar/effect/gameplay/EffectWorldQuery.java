@@ -71,6 +71,20 @@ public final class EffectWorldQuery {
         return Optional.of(this.level.getBlockState(position));
     }
 
+    /**
+     * Creates a resumable block cursor for a volume. The cursor never loads chunks, skips
+     * all-air sections, and charges the same world-sample budget as point queries.
+     */
+    public EffectBlockCursor cursor(EffectBlockVolume volume) {
+        this.openGuard.run();
+        Objects.requireNonNull(volume, "volume");
+        return new EffectBlockCursor(this.level, this.budget, this.openGuard, volume);
+    }
+
+    EffectBlockCursor newCursor(EffectBlockVolume volume) {
+        return new EffectBlockCursor(this.level, this.budget, this.openGuard, volume);
+    }
+
     /** Casts a ray that stops at the first non-air block with a colliding shape. */
     public EffectRaycastResult raycast(Vec3 from, Vec3 to) {
         return this.raycast(from, to, state -> !state.isAir());

@@ -28,18 +28,37 @@ public record EffectDebrisSpec(
     double spread,
     double gravity,
     int lifetimeTicks,
-    EffectAudience audience
+    EffectAudience audience,
+    EffectDebrisAttractor attractor,
+    EffectDebrisSpawn spawn
 ) {
     public static final int MAX_PIECES = 64;
     public static final int MAX_LIFETIME_TICKS = 200;
     public static final double MAX_SPEED = 16.0;
     public static final double MAX_GRAVITY = 1.0;
 
+    /** Source-compatible point burst without an attractor. */
+    public EffectDebrisSpec(
+        Vec3 origin,
+        BlockState state,
+        int pieces,
+        Vec3 direction,
+        double speed,
+        double spread,
+        double gravity,
+        int lifetimeTicks,
+        EffectAudience audience
+    ) {
+        this(origin, state, pieces, direction, speed, spread, gravity, lifetimeTicks, audience,
+            null, new EffectDebrisSpawn.Point());
+    }
+
     public EffectDebrisSpec {
         Objects.requireNonNull(origin, "origin");
         Objects.requireNonNull(state, "state");
         Objects.requireNonNull(direction, "direction");
         Objects.requireNonNull(audience, "audience");
+        spawn = spawn == null ? new EffectDebrisSpawn.Point() : spawn;
         if (!isFinite(origin) || !isFinite(direction)) {
             throw new IllegalArgumentException("Debris origin and direction must be finite");
         }
@@ -78,6 +97,28 @@ public record EffectDebrisSpec(
     ) {
         return new EffectDebrisSpec(
             origin, state, pieces, new Vec3(0.0, 1.0, 0.0), speed, 0.6, 0.08, lifetimeTicks, audience
+        );
+    }
+
+    /**
+     * A curved field burst: pieces start in {@code spawn} and spiral into the attractor horizon.
+     * The server emits a few of these per second instead of one payload per destroyed block.
+     */
+    public static EffectDebrisSpec infallField(
+        Vec3 origin,
+        BlockState state,
+        int pieces,
+        double speed,
+        double spread,
+        int lifetimeTicks,
+        EffectAudience audience,
+        EffectDebrisAttractor attractor,
+        EffectDebrisSpawn spawn
+    ) {
+        return new EffectDebrisSpec(
+            origin, state, pieces, Vec3.ZERO, speed, spread, 0.0, lifetimeTicks, audience,
+            Objects.requireNonNull(attractor, "attractor"),
+            Objects.requireNonNull(spawn, "spawn")
         );
     }
 

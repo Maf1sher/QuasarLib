@@ -5,6 +5,9 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import mafisher.quasar.effect.EffectDebrisAttractor;
+import mafisher.quasar.effect.EffectDebrisMath;
+import mafisher.quasar.effect.EffectDebrisSpawn;
 import mafisher.quasar.effect.network.EffectDebrisPayload;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -24,7 +27,7 @@ import org.slf4j.LoggerFactory;
  * terrain; the renderer batches every visible piece into the shared instanced draw path.
  */
 final class ClientEffectDebris {
-    static final int MAX_ACTIVE_PIECES = 1_024;
+    static final int MAX_ACTIVE_PIECES = 4_096;
 
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
     private static final EffectMesh CUBE = createCube();
@@ -70,6 +73,7 @@ final class ClientEffectDebris {
             red,
             green,
             blue,
+            payload.attractor(),
             pieces(payload)
         );
         BURSTS.add(burst);
@@ -116,11 +120,16 @@ final class ClientEffectDebris {
                 direction = direction.normalize();
             }
             double speed = payload.speed() * (0.45 + random.nextDouble() * 0.55);
-            Vec3 origin = payload.origin().add(
-                (random.nextDouble() * 2.0 - 1.0) * 0.35,
-                (random.nextDouble() * 2.0 - 1.0) * 0.35,
-                (random.nextDouble() * 2.0 - 1.0) * 0.35
-            );
+            Vec3 origin;
+            if (payload.spawn() instanceof EffectDebrisSpawn.Shell shell) {
+                origin = shellPoint(random, shell);
+            } else {
+                origin = payload.origin().add(
+                    (random.nextDouble() * 2.0 - 1.0) * 0.35,
+                    (random.nextDouble() * 2.0 - 1.0) * 0.35,
+                    (random.nextDouble() * 2.0 - 1.0) * 0.35
+                );
+            }
             int lifetime = Math.max(1, (int)Math.round(
                 payload.lifetimeTicks() * (0.7 + random.nextDouble() * 0.3)
             ));
@@ -173,17 +182,36 @@ final class ClientEffectDebris {
                     continue;
                 }
                 double progress = age / piece.lifetimeTicks();
-                double x = piece.position().x + piece.velocity().x * age;
-                double y = piece.position().y + piece.velocity().y * age
-                    + 0.5 * burst.gravity * age * age;
-                double z = piece.position().z + piece.velocity().z * age;
-                float alpha = (float)(1.0 - smoothstep(0.7, 1.0, progress));
+                double x;
+                double y;
+                double z;
+                float alpha;
+                float scale = piece.scale();
+                if (burst.attractor != null) {
+                    Vec3 position = EffectDebrisMath.infallPosition(
+                        piece.position(), burst.attractor, progress
+                    );
+                    if (position.distanceTo(burst.attractor.center()) <= burst.attractor.horizonRadius()) {
+                        continue;
+                    }
+                    x = position.x;
+                    y = position.y;
+                    z = position.z;
+                    alpha = (float)(1.0 - smoothstep(0.72, 1.0, progress));
+                    scale *= (float)(0.35 + 0.65 * (1.0 - progress));
+                } else {
+                    x = piece.position().x + piece.velocity().x * age;
+                    y = piece.position().y + piece.velocity().y * age
+                        + 0.5 * burst.gravity * age * age;
+                    z = piece.position().z + piece.velocity().z * age;
+                    alpha = (float)(1.0 - smoothstep(0.7, 1.0, progress));
+                }
                 Matrix4f model = new Matrix4f()
                     .translate((float)(x - camera.x), (float)(y - camera.y), (float)(z - camera.z))
                     .rotateY((float)Math.toRadians(piece.yaw() + piece.yawSpeed() * age))
                     .rotateX((float)Math.toRadians(piece.pitch() + piece.pitchSpeed() * age))
                     .rotateZ((float)Math.toRadians(piece.roll() + piece.rollSpeed() * age))
-                    .scale(piece.scale());
+                    .scale(scale);
                 instances.add(new InstancedBatchBuilder.Instance(
                     model,
                     burst.red,
@@ -247,6 +275,14 @@ final class ClientEffectDebris {
             total += burst.pieces.size();
         }
         return total;
+    }
+
+    private static Vec3 shellPoint(RandomSource random, EffectDebrisSpawn.Shell shell) {
+        double min = shell.minRadius();
+        double max = shell.maxRadius();
+        double radius = Math.cbrt(min * min * min
+            + random.nextDouble() * (max * max * max - min * min * min));
+        return shell.center().add(randomDirection(random).scale(radius));
     }
 
     private static Vec3 randomDirection(RandomSource random) {
@@ -342,6 +378,7 @@ final class ClientEffectDebris {
         private final float red;
         private final float green;
         private final float blue;
+        private final EffectDebrisAttractor attractor;
         private final List<Piece> pieces;
 
         private Burst(
@@ -355,6 +392,7 @@ final class ClientEffectDebris {
             float red,
             float green,
             float blue,
+            EffectDebrisAttractor attractor,
             List<Piece> pieces
         ) {
             this.startGameTime = startGameTime;
@@ -367,6 +405,7 @@ final class ClientEffectDebris {
             this.red = red;
             this.green = green;
             this.blue = blue;
+            this.attractor = attractor;
             this.pieces = List.copyOf(pieces);
         }
 

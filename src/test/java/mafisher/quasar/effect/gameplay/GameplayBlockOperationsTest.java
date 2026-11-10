@@ -101,6 +101,52 @@ class GameplayBlockOperationsTest {
     }
 
     @Test
+    void appliedCallbackReceivesTheOldStateOnlyAfterAWrite() {
+        BlockState oldState = mock(BlockState.class);
+        when(this.level.getBlockState(FIRST)).thenReturn(oldState);
+        List<EffectBlockSample> applied = new java.util.ArrayList<>();
+        CallbackController controller = new CallbackController(
+            new BlockChange(FIRST, this.state), applied
+        );
+        start(controller, 1);
+
+        GameplayEffectService.tick(this.level);
+
+        assertEquals(1, applied.size());
+        assertEquals(FIRST, applied.getFirst().position());
+        assertEquals(oldState, applied.getFirst().state());
+    }
+
+    @Test
+    void callbackIsNotCalledWhenTheWriteFails() {
+        when(this.level.setBlockAndUpdate(FIRST, this.state)).thenReturn(false);
+        List<EffectBlockSample> applied = new java.util.ArrayList<>();
+        CallbackController controller = new CallbackController(
+            new BlockChange(FIRST, this.state), applied
+        );
+        start(controller, 1);
+
+        GameplayEffectService.tick(this.level);
+
+        assertEquals(0, applied.size());
+    }
+
+    @Test
+    void interiorChangesSuppressNeighbourUpdates() {
+        BlockChange change = new BlockChange(FIRST, this.state, false);
+        CallbackController controller = new CallbackController(change, new java.util.ArrayList<>());
+        start(controller, 1);
+
+        GameplayEffectService.tick(this.level);
+
+        verify(this.level, never()).setBlockAndUpdate(FIRST, this.state);
+        verify(this.level).setBlock(FIRST, this.state,
+            net.minecraft.world.level.block.Block.UPDATE_CLIENTS
+                | net.minecraft.world.level.block.Block.UPDATE_KNOWN_SHAPE
+                | net.minecraft.world.level.block.Block.UPDATE_SUPPRESS_DROPS);
+    }
+
+    @Test
     void requiresTheDestructiveCapability() {
         QueueOnStartController controller = new QueueOnStartController(changes(FIRST));
 
@@ -330,6 +376,25 @@ class GameplayBlockOperationsTest {
                     this.accepted++;
                 }
             }
+        }
+
+        @Override
+        public void onTick(GameplayEffectContext context) {
+        }
+    }
+
+    private static final class CallbackController implements GameplayEffectController {
+        private final BlockChange change;
+        private final List<EffectBlockSample> applied;
+
+        private CallbackController(BlockChange change, List<EffectBlockSample> applied) {
+            this.change = change;
+            this.applied = applied;
+        }
+
+        @Override
+        public void onStart(GameplayEffectContext context) {
+            context.queueBlockChange(this.change, this.applied::add);
         }
 
         @Override

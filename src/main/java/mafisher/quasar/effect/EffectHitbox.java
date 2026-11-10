@@ -6,23 +6,37 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Predicate;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.AABB;
 
-/** Reusable server-authoritative damage volume for effect entities and gameplay executions. */
+/** Reusable server-authoritative damage or removal volume for gameplay executions. */
 public final class EffectHitbox {
     private EffectDamageShape shape;
     private final float damage;
     private final int rehitDelayTicks;
     private final int maxTargetsPerTick;
+    private final EffectHitboxOutcome outcome;
     private final EffectHitCooldowns hitCooldowns = new EffectHitCooldowns();
 
     public EffectHitbox(EffectDamageShape shape, float damage, int rehitDelayTicks, int maxTargetsPerTick) {
+        this(shape, damage, rehitDelayTicks, maxTargetsPerTick, EffectHitboxOutcome.DAMAGE);
+    }
+
+    public EffectHitbox(
+        EffectDamageShape shape,
+        float damage,
+        int rehitDelayTicks,
+        int maxTargetsPerTick,
+        EffectHitboxOutcome outcome
+    ) {
         this.shape = Objects.requireNonNull(shape, "shape");
-        if (!Float.isFinite(damage) || damage <= 0.0F) {
-            throw new IllegalArgumentException("Damage must be finite and positive");
+        this.outcome = Objects.requireNonNull(outcome, "outcome");
+        if (!Float.isFinite(damage) || damage < 0.0F
+            || (outcome == EffectHitboxOutcome.DAMAGE && damage <= 0.0F)) {
+            throw new IllegalArgumentException("Damage must be finite and positive for damage hitboxes");
         }
         if (rehitDelayTicks < 0 || maxTargetsPerTick < 1) {
             throw new IllegalArgumentException("Invalid hitbox limits");
@@ -30,6 +44,11 @@ public final class EffectHitbox {
         this.damage = damage;
         this.rehitDelayTicks = rehitDelayTicks;
         this.maxTargetsPerTick = maxTargetsPerTick;
+    }
+
+    /** A hitbox that removes non-player living targets and kills players with void damage. */
+    public static EffectHitbox removal(EffectDamageShape shape, int maxTargetsPerTick) {
+        return new EffectHitbox(shape, 0.0F, 0, maxTargetsPerTick, EffectHitboxOutcome.REMOVE);
     }
 
     /** Updates geometry while retaining this effect instance's per-target hit history. */
@@ -101,7 +120,11 @@ public final class EffectHitbox {
             }
             this.hitCooldowns.recordHit(target.getUUID(), effectAgeTicks);
             examined++;
-            if (target.hurt(damageSource, this.damage)) {
+            if (this.outcome == EffectHitboxOutcome.REMOVE) {
+                if (remove(level, target, damageSource)) {
+                    damaged++;
+                }
+            } else if (target.hurt(damageSource, this.damage)) {
                 damaged++;
             }
             if (examined >= targetLimit) {
@@ -109,6 +132,18 @@ public final class EffectHitbox {
             }
         }
         return new EffectHitResult(examined, damaged);
+    }
+
+    private static boolean remove(ServerLevel level, LivingEntity target, DamageSource damageSource) {
+        if (target instanceof ServerPlayer player) {
+            player.hurt(level.damageSources().fellOutOfWorld(), Float.MAX_VALUE);
+            if (!player.isRemoved() && player.isAlive()) {
+                player.die(level.damageSources().fellOutOfWorld());
+            }
+            return player.isRemoved() || !player.isAlive();
+        }
+        target.discard();
+        return target.isRemoved();
     }
 
     private static EffectBounds toEffectBounds(AABB bounds) {

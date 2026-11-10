@@ -3,6 +3,8 @@ package mafisher.quasar.effect.network;
 import io.netty.buffer.ByteBuf;
 import java.util.Objects;
 import mafisher.quasar.QuasarLib;
+import mafisher.quasar.effect.EffectDebrisAttractor;
+import mafisher.quasar.effect.EffectDebrisSpawn;
 import mafisher.quasar.effect.EffectDebrisSpec;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
@@ -25,7 +27,9 @@ public record EffectDebrisPayload(
     float gravity,
     int lifetimeTicks,
     long seed,
-    long serverGameTime
+    long serverGameTime,
+    EffectDebrisAttractor attractor,
+    EffectDebrisSpawn spawn
 ) implements CustomPacketPayload {
     public static final Type<EffectDebrisPayload> TYPE = new Type<>(
         ResourceLocation.fromNamespaceAndPath(QuasarLib.MOD_ID, "effect_debris")
@@ -35,10 +39,29 @@ public record EffectDebrisPayload(
         EffectDebrisPayload::decode
     );
 
+    /** Source-compatible ballistic payload. */
+    public EffectDebrisPayload(
+        ResourceLocation dimensionId,
+        Vec3 origin,
+        int blockStateId,
+        int pieces,
+        Vec3 direction,
+        float speed,
+        float spread,
+        float gravity,
+        int lifetimeTicks,
+        long seed,
+        long serverGameTime
+    ) {
+        this(dimensionId, origin, blockStateId, pieces, direction, speed, spread, gravity,
+            lifetimeTicks, seed, serverGameTime, null, new EffectDebrisSpawn.Point());
+    }
+
     public EffectDebrisPayload {
         Objects.requireNonNull(dimensionId, "dimensionId");
         Objects.requireNonNull(origin, "origin");
         Objects.requireNonNull(direction, "direction");
+        spawn = spawn == null ? new EffectDebrisSpawn.Point() : spawn;
         if (!isFinite(origin) || !isFinite(direction)) {
             throw new IllegalArgumentException("Debris payload positions must be finite");
         }
@@ -75,21 +98,51 @@ public record EffectDebrisPayload(
         ByteBufCodecs.VAR_INT.encode(buffer, payload.lifetimeTicks());
         buffer.writeLong(payload.seed());
         buffer.writeLong(payload.serverGameTime());
+        buffer.writeBoolean(payload.attractor() != null);
+        if (payload.attractor() != null) {
+            EffectDebrisAttractor attractor = payload.attractor();
+            writeVec3(buffer, attractor.center());
+            writeVec3(buffer, attractor.axis());
+            buffer.writeDouble(attractor.horizonRadius());
+            buffer.writeDouble(attractor.radialPull());
+            buffer.writeDouble(attractor.swirl());
+        }
+        buffer.writeBoolean(payload.spawn() instanceof EffectDebrisSpawn.Shell);
+        if (payload.spawn() instanceof EffectDebrisSpawn.Shell shell) {
+            writeVec3(buffer, shell.center());
+            buffer.writeDouble(shell.minRadius());
+            buffer.writeDouble(shell.maxRadius());
+        }
     }
 
     private static EffectDebrisPayload decode(ByteBuf buffer) {
+        ResourceLocation dimensionId = ResourceLocation.STREAM_CODEC.decode(buffer);
+        Vec3 origin = readVec3(buffer);
+        int blockStateId = ByteBufCodecs.VAR_INT.decode(buffer);
+        int pieces = ByteBufCodecs.VAR_INT.decode(buffer);
+        Vec3 direction = readVec3(buffer);
+        float speed = buffer.readFloat();
+        float spread = buffer.readFloat();
+        float gravity = buffer.readFloat();
+        int lifetimeTicks = ByteBufCodecs.VAR_INT.decode(buffer);
+        long seed = buffer.readLong();
+        long serverGameTime = buffer.readLong();
+        EffectDebrisAttractor attractor = null;
+        if (buffer.readBoolean()) {
+            attractor = new EffectDebrisAttractor(
+                readVec3(buffer), readVec3(buffer), buffer.readDouble(), buffer.readDouble(),
+                buffer.readDouble()
+            );
+        }
+        EffectDebrisSpawn spawn = new EffectDebrisSpawn.Point();
+        if (buffer.readBoolean()) {
+            spawn = new EffectDebrisSpawn.Shell(
+                readVec3(buffer), buffer.readDouble(), buffer.readDouble()
+            );
+        }
         return new EffectDebrisPayload(
-            ResourceLocation.STREAM_CODEC.decode(buffer),
-            readVec3(buffer),
-            ByteBufCodecs.VAR_INT.decode(buffer),
-            ByteBufCodecs.VAR_INT.decode(buffer),
-            readVec3(buffer),
-            buffer.readFloat(),
-            buffer.readFloat(),
-            buffer.readFloat(),
-            ByteBufCodecs.VAR_INT.decode(buffer),
-            buffer.readLong(),
-            buffer.readLong()
+            dimensionId, origin, blockStateId, pieces, direction, speed, spread, gravity,
+            lifetimeTicks, seed, serverGameTime, attractor, spawn
         );
     }
 

@@ -58,6 +58,31 @@ class EffectForceFieldTest {
     }
 
     @Test
+    void accretionPullsInwardAndSwirlsAroundItsAxis() {
+        EffectForceField field = EffectForceField.accretion(
+            ORIGIN, new Vec3(0.0, 1.0, 0.0), 10.0, 1.0, 1.0, 0.0, 0.0, 4
+        );
+
+        Vec3 delta = field.velocityDeltaAt(new Vec3(1.0, 0.0, 0.0));
+
+        assertEquals(-1.0, delta.x, 1.0E-9);
+        assertEquals(0.0, delta.y, 1.0E-9);
+        assertEquals(1.0, delta.z, 1.0E-9);
+        assertTrue(field.bounds().contains(ORIGIN));
+    }
+
+    @Test
+    void accretionLiftsAlongItsAxis() {
+        EffectForceField field = EffectForceField.accretion(
+            ORIGIN, new Vec3(0.0, 1.0, 0.0), 10.0, 0.0, 0.0, 0.5, 0.0, 4
+        );
+
+        Vec3 delta = field.velocityDeltaAt(new Vec3(1.0, 0.0, 0.0));
+
+        assertEquals(0.5, delta.y, 1.0E-9);
+    }
+
+    @Test
     void pressureActsOnlyInsideItsVolume() {
         EffectForceField field = new EffectForceField.Pressure(
             new EffectBounds(-5.0, -5.0, -5.0, 5.0, 5.0, 5.0),
@@ -86,6 +111,10 @@ class EffectForceFieldTest {
                 1.0,
                 0.0,
                 1
+            ));
+        assertThrows(IllegalArgumentException.class,
+            () -> EffectForceField.accretion(
+                ORIGIN, Vec3.ZERO, 10.0, 1.0, 1.0, 0.0, 0.0, 4
             ));
         assertTrue(EffectForceField.pull(ORIGIN, 4.0, 1.0, 1.0, 4).bounds().contains(ORIGIN));
     }

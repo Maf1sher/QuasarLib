@@ -17,7 +17,8 @@ public record GameplayEffectSpec(
     EffectTickBudget budget,
     OwnerPolicy ownerPolicy,
     EffectAudioSpec audio,
-    EffectPriority priority
+    EffectPriority priority,
+    float scale
 ) {
     public GameplayEffectSpec {
         Objects.requireNonNull(typeId, "typeId");
@@ -30,10 +31,13 @@ public record GameplayEffectSpec(
         if (!Double.isFinite(anchor.x) || !Double.isFinite(anchor.y) || !Double.isFinite(anchor.z)) {
             throw new IllegalArgumentException("Gameplay effect anchor must be finite");
         }
+        if (!Float.isFinite(scale) || scale <= 0.0F || scale > 128.0F) {
+            throw new IllegalArgumentException("Gameplay effect scale must be finite and between 0 and 128");
+        }
         audio.requireFitsWithin(phases.totalDurationTicks());
     }
 
-    /** Source-compatible constructor for effects that use the default priority. */
+    /** Source-compatible constructor for effects that use the default priority and scale. */
     public GameplayEffectSpec(
         ResourceLocation typeId,
         UUID ownerId,
@@ -44,9 +48,25 @@ public record GameplayEffectSpec(
         OwnerPolicy ownerPolicy,
         EffectAudioSpec audio
     ) {
-        this(typeId, ownerId, anchor, phases, seed, budget, ownerPolicy, audio, EffectPriority.NORMAL);
+        this(typeId, ownerId, anchor, phases, seed, budget, ownerPolicy, audio, EffectPriority.NORMAL, 1.0F);
     }
 
+    /** Source-compatible constructor for effects that use the default priority and scale. */
+    public GameplayEffectSpec(
+        ResourceLocation typeId,
+        UUID ownerId,
+        Vec3 anchor,
+        EffectPhasePlan phases,
+        long seed,
+        EffectTickBudget budget,
+        OwnerPolicy ownerPolicy,
+        EffectAudioSpec audio,
+        EffectPriority priority
+    ) {
+        this(typeId, ownerId, anchor, phases, seed, budget, ownerPolicy, audio, priority, 1.0F);
+    }
+
+    /** Source-compatible constructor for effects that use the default priority and scale. */
     public GameplayEffectSpec(
         ResourceLocation typeId,
         UUID ownerId,
@@ -57,6 +77,6 @@ public record GameplayEffectSpec(
         OwnerPolicy ownerPolicy
     ) {
         this(typeId, ownerId, anchor, phases, seed, budget, ownerPolicy, EffectAudioSpec.NONE,
-            EffectPriority.NORMAL);
+            EffectPriority.NORMAL, 1.0F);
     }
 }

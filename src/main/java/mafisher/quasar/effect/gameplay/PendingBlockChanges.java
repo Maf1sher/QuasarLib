@@ -4,9 +4,11 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Objects;
 import java.util.function.BiPredicate;
+import java.util.function.Consumer;
 import mafisher.quasar.effect.block.BlockChange;
 import mafisher.quasar.effect.persistence.BlockJournal;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,7 +23,7 @@ final class PendingBlockChanges {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
 
-    private final Deque<BlockChange> changes = new ArrayDeque<>();
+    private final Deque<QueuedChange> changes = new ArrayDeque<>();
     private final int maxPending;
 
     PendingBlockChanges() {
@@ -37,11 +39,20 @@ final class PendingBlockChanges {
 
     /** Queues one change, or returns {@code false} when the safety cap is reached. */
     boolean enqueue(BlockChange change) {
+        return this.enqueue(change, null);
+    }
+
+    /**
+     * Queues one change with an optional callback invoked only after the engine applies it. The
+     * callback receives the old block state, so effects can emit debris or secondary effects
+     * without showing work that protection vetoed.
+     */
+    boolean enqueue(BlockChange change, Consumer<EffectBlockSample> applied) {
         Objects.requireNonNull(change, "change");
         if (this.changes.size() >= this.maxPending) {
             return false;
         }
-        this.changes.addLast(change);
+        this.changes.addLast(new QueuedChange(change, applied));
         return true;
     }
 
@@ -89,7 +100,8 @@ final class PendingBlockChanges {
         int applied = 0;
         int vetoed = 0;
         while (processed < maxChanges && !this.changes.isEmpty()) {
-            BlockChange change = this.changes.removeFirst();
+            QueuedChange queued = this.changes.removeFirst();
+            BlockChange change = queued.change();
             processed++;
             if (!level.isInWorldBounds(change.position())) {
                 LOGGER.debug("Skipped out-of-bounds block change at {}", change.position());
@@ -125,8 +137,16 @@ final class PendingBlockChanges {
 
             boolean recorded = journal != null && journal.record(level, change, currentState);
             try {
-                if (level.setBlockAndUpdate(change.position(), change.state())) {
+                boolean changed = change.updateNeighbors()
+                    ? level.setBlockAndUpdate(change.position(), change.state())
+                    : level.setBlock(
+                        change.position(),
+                        change.state(),
+                        Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE | Block.UPDATE_SUPPRESS_DROPS
+                    );
+                if (changed) {
                     applied++;
+                    this.notifyApplied(queued, currentState);
                 } else if (recorded) {
                     journal.discardLast();
                 }
@@ -138,6 +158,24 @@ final class PendingBlockChanges {
             }
         }
         return new ApplyResult(processed, applied, vetoed);
+    }
+
+    private void notifyApplied(QueuedChange queued, BlockState oldState) {
+        Consumer<EffectBlockSample> callback = queued.applied();
+        if (callback == null) {
+            return;
+        }
+        try {
+            callback.accept(new EffectBlockSample(queued.change().position(), oldState));
+        } catch (RuntimeException exception) {
+            LOGGER.warn("Block-change callback failed at {}", queued.change().position(), exception);
+        }
+    }
+
+    private record QueuedChange(BlockChange change, Consumer<EffectBlockSample> applied) {
+        private QueuedChange {
+            Objects.requireNonNull(change, "change");
+        }
     }
 
     record ApplyResult(int processed, int applied, int vetoed) {

@@ -87,6 +87,16 @@ public final class QuasarConfig {
         .worldRestart()
         .defineInRange("cinematic_session_budget", 16, 1, 1_024);
 
+    static final ModConfigSpec.IntValue BLOCK_CHANGES_PER_LEVEL_TICK_BUDGET = BUILDER
+        .comment(
+            "Maximum destructive block changes applied across all gameplay effects per level tick.",
+            "This is a safety threshold; large cinematic effects degrade into a longer carve instead of",
+            "freezing the server. Raise it for very large black holes or terrain edits.",
+            "Requires a world restart."
+        )
+        .worldRestart()
+        .defineInRange("block_changes_per_level_tick", 4_096, 1, 16_384);
+
     static final ModConfigSpec.IntValue ENTITY_SPAWNS_PER_LEVEL_TICK_BUDGET = BUILDER
         .comment(
             "Maximum effect entity spawns applied per level tick.",
@@ -152,6 +162,11 @@ public final class QuasarConfig {
     /** Soft per-level budget for cinematic sessions. */
     public static int cinematicSessionBudget() {
         return value(CINEMATIC_SESSION_BUDGET);
+    }
+
+    /** Maximum destructive block changes applied per level tick. */
+    public static int blockChangesPerLevelTickBudget() {
+        return value(BLOCK_CHANGES_PER_LEVEL_TICK_BUDGET);
     }
 
     /** Maximum effect entity spawns applied per level tick. */
