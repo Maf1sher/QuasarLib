@@ -5,14 +5,26 @@ import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import mafisher.quasar.effect.EffectAudience;
+import mafisher.quasar.effect.EffectBudgets;
+import mafisher.quasar.effect.EffectPriority;
 import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.VisualEffectSpec;
 import mafisher.quasar.effect.audio.EffectAudioAttenuation;
 import mafisher.quasar.effect.audio.EffectAudioSpec;
+import mafisher.quasar.effect.gameplay.EffectPhase;
+import mafisher.quasar.effect.gameplay.EffectPhasePlan;
+import mafisher.quasar.effect.gameplay.EffectTickBudget;
+import mafisher.quasar.effect.gameplay.GameplayEffectHandle;
+import mafisher.quasar.effect.gameplay.GameplayEffectService;
+import mafisher.quasar.effect.gameplay.GameplayEffectSpec;
+import mafisher.quasar.effect.gameplay.OwnerPolicy;
+import mafisher.quasar.effect.persistence.EffectCapabilities;
+import mafisher.quasar.effect.persistence.EffectPersistenceOptions;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectService;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectSpec;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -75,8 +87,17 @@ final class ContentCommands {
                         context.getSource(),
                         BLACK_HOLE_DEFAULT_DISTANCE,
                         BLACK_HOLE_DEFAULT_SCALE,
-                        ContentBlackHoleGeometry.VARIANT_AMBER
+                        ContentBlackHoleGeometry.VARIANT_AMBER,
+                        false
                     ))
+                    .then(Commands.literal("visual")
+                        .executes(context -> startBlackHole(
+                            context.getSource(),
+                            BLACK_HOLE_DEFAULT_DISTANCE,
+                            BLACK_HOLE_DEFAULT_SCALE,
+                            ContentBlackHoleGeometry.VARIANT_AMBER,
+                            true
+                        )))
                     .then(blackHoleVariant("gold", ContentBlackHoleGeometry.VARIANT_GOLD))
                     .then(blackHoleVariant("neon", ContentBlackHoleGeometry.VARIANT_NEON))
                     .then(Commands.argument("distance", DoubleArgumentType.doubleArg(48.0, 512.0))
@@ -93,6 +114,8 @@ final class ContentCommands {
                                 (float)DoubleArgumentType.getDouble(context, "scale"),
                                 ContentBlackHoleGeometry.VARIANT_AMBER
                             )))))
+                .then(Commands.literal("blackhole-stop")
+                    .executes(context -> stopBlackHoles(context.getSource())))
         );
     }
 
@@ -193,8 +216,18 @@ final class ContentCommands {
     }
 
     private static int startBlackHole(CommandSourceStack source, double distance, float scale, int variant) {
+        return startBlackHole(source, distance, scale, variant, false);
+    }
+
+    private static int startBlackHole(
+        CommandSourceStack source,
+        double distance,
+        float scale,
+        int variant,
+        boolean visualOnly
+    ) {
         ServerLevel level = source.getLevel();
-        VisualEffectSpec spec = blackHoleSpec(
+        VisualEffectSpec visual = blackHoleSpec(
             source.getPosition(),
             source.getRotation().y,
             source.getRotation().x,
@@ -203,13 +236,84 @@ final class ContentCommands {
             variant,
             level.getRandom().nextLong()
         );
-        VisualEffectService.start(level, spec);
+        if (visualOnly) {
+            VisualEffectService.start(level, visual);
+            source.sendSuccess(
+                () -> Component.literal(
+                    "Started the visual-only content black hole ("
+                        + blackHoleVariantName(variant) + ") at "
+                        + (int)visual.position().x + ", " + (int)visual.position().y + ", "
+                        + (int)visual.position().z + " (horizon radius " + visual.scale() + ")."
+                ),
+                false
+            );
+            return 1;
+        }
+
+        GameplayEffectSpec spec = blackHoleGameplaySpec(visual);
+        CompoundTag initialState = new CompoundTag();
+        initialState.putFloat("yaw", visual.yaw());
+        initialState.putFloat("pitch", visual.pitch());
+        initialState.putFloat("roll", visual.roll());
+        GameplayEffectHandle handle;
+        try {
+            handle = GameplayEffectService.start(
+                level,
+                spec,
+                new ContentBlackHoleGameplayController(),
+                EffectPersistenceOptions.DEFAULT
+                    .withCapabilities(EffectCapabilities.destructiveCapability())
+                    .withState(initialState)
+            );
+        } catch (RuntimeException exception) {
+            source.sendFailure(Component.literal(exception.getMessage()));
+            return 0;
+        }
         source.sendSuccess(
             () -> Component.literal(
-                "Started the content black hole (" + blackHoleVariantName(variant) + ") at "
-                    + (int)spec.position().x + ", " + (int)spec.position().y + ", "
-                    + (int)spec.position().z + " (horizon radius " + spec.scale() + ")."
+                "Started the gameplay content black hole (" + blackHoleVariantName(variant) + ") at "
+                    + (int)visual.position().x + ", " + (int)visual.position().y + ", "
+                    + (int)visual.position().z + " (horizon radius " + visual.scale()
+                    + ", session " + handle.sessionId() + ")."
             ),
+            false
+        );
+        return 1;
+    }
+
+    static GameplayEffectSpec blackHoleGameplaySpec(VisualEffectSpec visual) {
+        int duration = visual.durationTicks();
+        int form = Math.max(1, Math.round(ContentBlackHoleCinematics.INTRO_END * duration));
+        int open = Math.max(1, Math.round((ContentBlackHoleCinematics.DESTABILISE
+            - ContentBlackHoleCinematics.INTRO_END) * duration));
+        int collapse = Math.max(1, Math.round((ContentBlackHoleCinematics.IMPLOSION
+            - ContentBlackHoleCinematics.DESTABILISE) * duration));
+        int aftermath = Math.max(1, duration - form - open - collapse);
+        EffectPhasePlan phases = EffectPhasePlan.of(
+            new EffectPhase("form", form),
+            new EffectPhase("open", open),
+            new EffectPhase("collapse", collapse),
+            new EffectPhase("aftermath", aftermath)
+        );
+        int blockChanges = Math.max(512, Math.min(4_096, EffectBudgets.blockChangesPerLevelTick()));
+        return new GameplayEffectSpec(
+            ContentEffectIds.BLACK_HOLE,
+            null,
+            visual.position(),
+            phases,
+            visual.seed(),
+            new EffectTickBudget(384, 4, 0, blockChanges, 16_384, 128, 256),
+            OwnerPolicy.STOP_WHEN_UNAVAILABLE,
+            visual.audio(),
+            EffectPriority.CRITICAL,
+            visual.scale()
+        );
+    }
+
+    private static int stopBlackHoles(CommandSourceStack source) {
+        int stopped = ContentBlackHoleGameplayController.stopAll(source.getLevel());
+        source.sendSuccess(
+            () -> Component.literal("Stopped " + stopped + " content black hole(s)."),
             false
         );
         return 1;
