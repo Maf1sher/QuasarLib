@@ -4,7 +4,8 @@ import java.util.Objects;
 import net.minecraft.world.phys.Vec3;
 
 /** Deterministic origin distribution for one client-only debris burst. */
-public sealed interface EffectDebrisSpawn permits EffectDebrisSpawn.Point, EffectDebrisSpawn.Shell {
+public sealed interface EffectDebrisSpawn
+    permits EffectDebrisSpawn.Point, EffectDebrisSpawn.Shell, EffectDebrisSpawn.Disk {
     /** A point burst using the spec's origin plus a small jitter. */
     record Point() implements EffectDebrisSpawn {
     }
@@ -27,6 +28,27 @@ public sealed interface EffectDebrisSpawn permits EffectDebrisSpawn.Point, Effec
 
         private static boolean isFinite(Vec3 value) {
             return Double.isFinite(value.x) && Double.isFinite(value.y) && Double.isFinite(value.z);
+        }
+    }
+
+    /** Pieces start on a horizontal annulus at {@code center}, with a small vertical spread. */
+    record Disk(Vec3 center, double minRadius, double maxRadius, double ySpread)
+        implements EffectDebrisSpawn {
+        public Disk {
+            Objects.requireNonNull(center, "center");
+            if (!Double.isFinite(center.x) || !Double.isFinite(center.y) || !Double.isFinite(center.z)) {
+                throw new IllegalArgumentException("Debris disk center must be finite");
+            }
+            if (!Double.isFinite(minRadius) || minRadius < 0.0
+                || !Double.isFinite(maxRadius) || maxRadius < minRadius) {
+                throw new IllegalArgumentException("Debris disk radii must be finite and ordered");
+            }
+            if (!Double.isFinite(ySpread) || ySpread < 0.0 || ySpread > 64.0) {
+                throw new IllegalArgumentException("Debris disk vertical spread must be between 0 and 64");
+            }
+            if (maxRadius > 1_024.0) {
+                throw new IllegalArgumentException("Debris disk radius must be at most 1024");
+            }
         }
     }
 }

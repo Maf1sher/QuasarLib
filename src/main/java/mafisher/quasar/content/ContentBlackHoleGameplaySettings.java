@@ -15,7 +15,13 @@ record ContentBlackHoleGameplaySettings(
     int debrisPiecesPerBurst,
     int debrisBurstsPerTick,
     int debrisLifetimeTicks,
-    boolean affectsCreativePlayers
+    boolean affectsCreativePlayers,
+    float craterRadiusFactor,
+    float craterDepthFactor,
+    float surfaceScrapeRadiusFactor,
+    int surfaceScrapeDepth,
+    double craterImmediateSyncRadius,
+    boolean craterJournal
 ) {
     static final ContentBlackHoleGameplaySettings DEFAULT = new ContentBlackHoleGameplaySettings(
         1.0F,
@@ -25,12 +31,18 @@ record ContentBlackHoleGameplaySettings(
         1.25,
         128,
         1.35F,
-        128,
+        64,
         4_096,
         64,
-        24,
-        6,
-        70,
+        64,
+        8,
+        110,
+        true,
+        6.0F,
+        10.0F,
+        1.5F,
+        3,
+        96.0,
         true
     );
 
@@ -49,7 +61,16 @@ record ContentBlackHoleGameplaySettings(
             || maxConsumeTargets < 1 || maxConsumeTargets > 4_096
             || debrisPiecesPerBurst < 1 || debrisPiecesPerBurst > 64
             || debrisBurstsPerTick < 1 || debrisBurstsPerTick > 32
-            || debrisLifetimeTicks < 1 || debrisLifetimeTicks > 200) {
+            || debrisLifetimeTicks < 1 || debrisLifetimeTicks > 200
+            || !Float.isFinite(craterRadiusFactor) || craterRadiusFactor < 1.0F
+            || craterRadiusFactor > 32.0F
+            || !Float.isFinite(craterDepthFactor) || craterDepthFactor < 1.0F
+            || craterDepthFactor > 32.0F
+            || !Float.isFinite(surfaceScrapeRadiusFactor) || surfaceScrapeRadiusFactor < 1.0F
+            || surfaceScrapeRadiusFactor > 4.0F
+            || surfaceScrapeDepth < 0 || surfaceScrapeDepth > 32
+            || !Double.isFinite(craterImmediateSyncRadius)
+            || craterImmediateSyncRadius < 0.0 || craterImmediateSyncRadius > 512.0) {
             throw new IllegalArgumentException("Invalid content black-hole gameplay settings");
         }
     }
@@ -60,5 +81,14 @@ record ContentBlackHoleGameplaySettings(
 
     double attractionRadius(float scale) {
         return Math.min(1_024.0, Math.max(coreRadius(scale), scale * (double)this.attractionRadiusFactor));
+    }
+
+    double craterRadius(float scale) {
+        // Keep very large author scales from turning one effect into an unbounded world edit.
+        return Math.min(96.0, Math.max(4.0, scale * (double)this.craterRadiusFactor));
+    }
+
+    double craterDepth(float scale) {
+        return Math.min(128.0, Math.max(4.0, scale * (double)this.craterDepthFactor));
     }
 }

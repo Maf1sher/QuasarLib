@@ -302,7 +302,7 @@ final class ContentCommands {
             visual.position(),
             phases,
             visual.seed(),
-            new EffectTickBudget(384, 4, 0, blockChanges, 16_384, 128, 256),
+            new EffectTickBudget(384, 4, 0, blockChanges, 16_384, 128, 1_024, 2),
             OwnerPolicy.STOP_WHEN_UNAVAILABLE,
             visual.audio(),
             EffectPriority.CRITICAL,

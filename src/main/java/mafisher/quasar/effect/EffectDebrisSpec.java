@@ -18,6 +18,7 @@ import net.minecraft.world.phys.Vec3;
  * @param gravity downward acceleration in blocks per tick squared; negative values float upward
  * @param lifetimeTicks visible lifetime, 1 to {@link #MAX_LIFETIME_TICKS}
  * @param audience players that should receive the burst
+ * @param scale multiplier applied to every piece size; 1 is the base debris cube
  */
 public record EffectDebrisSpec(
     Vec3 origin,
@@ -30,12 +31,32 @@ public record EffectDebrisSpec(
     int lifetimeTicks,
     EffectAudience audience,
     EffectDebrisAttractor attractor,
-    EffectDebrisSpawn spawn
+    EffectDebrisSpawn spawn,
+    float scale
 ) {
     public static final int MAX_PIECES = 64;
     public static final int MAX_LIFETIME_TICKS = 200;
     public static final double MAX_SPEED = 16.0;
     public static final double MAX_GRAVITY = 1.0;
+    public static final float MAX_SCALE = 8.0F;
+
+    /** Source-compatible constructor for bursts without an explicit scale. */
+    public EffectDebrisSpec(
+        Vec3 origin,
+        BlockState state,
+        int pieces,
+        Vec3 direction,
+        double speed,
+        double spread,
+        double gravity,
+        int lifetimeTicks,
+        EffectAudience audience,
+        EffectDebrisAttractor attractor,
+        EffectDebrisSpawn spawn
+    ) {
+        this(origin, state, pieces, direction, speed, spread, gravity, lifetimeTicks, audience,
+            attractor, spawn, 1.0F);
+    }
 
     /** Source-compatible point burst without an attractor. */
     public EffectDebrisSpec(
@@ -84,6 +105,9 @@ public record EffectDebrisSpec(
                 "Debris lifetime must be between 1 and " + MAX_LIFETIME_TICKS
             );
         }
+        if (!Float.isFinite(scale) || scale <= 0.0F || scale > MAX_SCALE) {
+            throw new IllegalArgumentException("Debris scale must be greater than 0 and at most " + MAX_SCALE);
+        }
     }
 
     /** A short ballistic burst with a small upward bias. */
@@ -115,10 +139,29 @@ public record EffectDebrisSpec(
         EffectDebrisAttractor attractor,
         EffectDebrisSpawn spawn
     ) {
+        return infallField(
+            origin, state, pieces, speed, spread, lifetimeTicks, audience, attractor, spawn, 1.0F
+        );
+    }
+
+    /** Infall burst with an explicit piece-size multiplier. */
+    public static EffectDebrisSpec infallField(
+        Vec3 origin,
+        BlockState state,
+        int pieces,
+        double speed,
+        double spread,
+        int lifetimeTicks,
+        EffectAudience audience,
+        EffectDebrisAttractor attractor,
+        EffectDebrisSpawn spawn,
+        float scale
+    ) {
         return new EffectDebrisSpec(
             origin, state, pieces, Vec3.ZERO, speed, spread, 0.0, lifetimeTicks, audience,
             Objects.requireNonNull(attractor, "attractor"),
-            Objects.requireNonNull(spawn, "spawn")
+            Objects.requireNonNull(spawn, "spawn"),
+            scale
         );
     }
 

@@ -36,7 +36,8 @@ final class EffectDebrisService {
             seed,
             level.getGameTime(),
             spec.attractor(),
-            spec.spawn()
+            spec.spawn(),
+            spec.scale()
         );
         if (spec.audience() instanceof EffectAudience.Nearby nearby) {
             PacketDistributor.sendToPlayersNear(

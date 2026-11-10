@@ -27,7 +27,7 @@ import org.slf4j.LoggerFactory;
  * terrain; the renderer batches every visible piece into the shared instanced draw path.
  */
 final class ClientEffectDebris {
-    static final int MAX_ACTIVE_PIECES = 4_096;
+    static final int MAX_ACTIVE_PIECES = 8_192;
 
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
     private static final EffectMesh CUBE = createCube();
@@ -74,6 +74,7 @@ final class ClientEffectDebris {
             green,
             blue,
             payload.attractor(),
+            payload.scale(),
             pieces(payload)
         );
         BURSTS.add(burst);
@@ -123,6 +124,8 @@ final class ClientEffectDebris {
             Vec3 origin;
             if (payload.spawn() instanceof EffectDebrisSpawn.Shell shell) {
                 origin = shellPoint(random, shell);
+            } else if (payload.spawn() instanceof EffectDebrisSpawn.Disk disk) {
+                origin = diskPoint(random, disk);
             } else {
                 origin = payload.origin().add(
                     (random.nextDouble() * 2.0 - 1.0) * 0.35,
@@ -186,7 +189,7 @@ final class ClientEffectDebris {
                 double y;
                 double z;
                 float alpha;
-                float scale = piece.scale();
+                float scale = piece.scale() * burst.scale;
                 if (burst.attractor != null) {
                     Vec3 position = EffectDebrisMath.infallPosition(
                         piece.position(), burst.attractor, progress
@@ -285,6 +288,18 @@ final class ClientEffectDebris {
         return shell.center().add(randomDirection(random).scale(radius));
     }
 
+    private static Vec3 diskPoint(RandomSource random, EffectDebrisSpawn.Disk disk) {
+        double min = disk.minRadius();
+        double max = disk.maxRadius();
+        double radius = Math.sqrt(min * min + random.nextDouble() * (max * max - min * min));
+        double angle = random.nextDouble() * Math.PI * 2.0;
+        return disk.center().add(
+            Math.cos(angle) * radius,
+            (random.nextDouble() * 2.0 - 1.0) * disk.ySpread(),
+            Math.sin(angle) * radius
+        );
+    }
+
     private static Vec3 randomDirection(RandomSource random) {
         double x;
         double y;
@@ -379,6 +394,7 @@ final class ClientEffectDebris {
         private final float green;
         private final float blue;
         private final EffectDebrisAttractor attractor;
+        private final float scale;
         private final List<Piece> pieces;
 
         private Burst(
@@ -393,6 +409,7 @@ final class ClientEffectDebris {
             float green,
             float blue,
             EffectDebrisAttractor attractor,
+            float scale,
             List<Piece> pieces
         ) {
             this.startGameTime = startGameTime;
@@ -406,6 +423,7 @@ final class ClientEffectDebris {
             this.green = green;
             this.blue = blue;
             this.attractor = attractor;
+            this.scale = scale;
             this.pieces = List.copyOf(pieces);
         }
 

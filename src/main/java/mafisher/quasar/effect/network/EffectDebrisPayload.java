@@ -29,7 +29,8 @@ public record EffectDebrisPayload(
     long seed,
     long serverGameTime,
     EffectDebrisAttractor attractor,
-    EffectDebrisSpawn spawn
+    EffectDebrisSpawn spawn,
+    float scale
 ) implements CustomPacketPayload {
     public static final Type<EffectDebrisPayload> TYPE = new Type<>(
         ResourceLocation.fromNamespaceAndPath(QuasarLib.MOD_ID, "effect_debris")
@@ -54,7 +55,27 @@ public record EffectDebrisPayload(
         long serverGameTime
     ) {
         this(dimensionId, origin, blockStateId, pieces, direction, speed, spread, gravity,
-            lifetimeTicks, seed, serverGameTime, null, new EffectDebrisSpawn.Point());
+            lifetimeTicks, seed, serverGameTime, null, new EffectDebrisSpawn.Point(), 1.0F);
+    }
+
+    /** Source-compatible payload without an explicit piece-size multiplier. */
+    public EffectDebrisPayload(
+        ResourceLocation dimensionId,
+        Vec3 origin,
+        int blockStateId,
+        int pieces,
+        Vec3 direction,
+        float speed,
+        float spread,
+        float gravity,
+        int lifetimeTicks,
+        long seed,
+        long serverGameTime,
+        EffectDebrisAttractor attractor,
+        EffectDebrisSpawn spawn
+    ) {
+        this(dimensionId, origin, blockStateId, pieces, direction, speed, spread, gravity,
+            lifetimeTicks, seed, serverGameTime, attractor, spawn, 1.0F);
     }
 
     public EffectDebrisPayload {
@@ -84,6 +105,9 @@ public record EffectDebrisPayload(
         if (lifetimeTicks < 1 || lifetimeTicks > EffectDebrisSpec.MAX_LIFETIME_TICKS) {
             throw new IllegalArgumentException("Invalid debris lifetime");
         }
+        if (!Float.isFinite(scale) || scale <= 0.0F || scale > EffectDebrisSpec.MAX_SCALE) {
+            throw new IllegalArgumentException("Invalid debris scale");
+        }
     }
 
     private static void encode(ByteBuf buffer, EffectDebrisPayload payload) {
@@ -95,6 +119,7 @@ public record EffectDebrisPayload(
         buffer.writeFloat(payload.speed());
         buffer.writeFloat(payload.spread());
         buffer.writeFloat(payload.gravity());
+        buffer.writeFloat(payload.scale());
         ByteBufCodecs.VAR_INT.encode(buffer, payload.lifetimeTicks());
         buffer.writeLong(payload.seed());
         buffer.writeLong(payload.serverGameTime());
@@ -107,11 +132,19 @@ public record EffectDebrisPayload(
             buffer.writeDouble(attractor.radialPull());
             buffer.writeDouble(attractor.swirl());
         }
-        buffer.writeBoolean(payload.spawn() instanceof EffectDebrisSpawn.Shell);
         if (payload.spawn() instanceof EffectDebrisSpawn.Shell shell) {
+            buffer.writeByte(1);
             writeVec3(buffer, shell.center());
             buffer.writeDouble(shell.minRadius());
             buffer.writeDouble(shell.maxRadius());
+        } else if (payload.spawn() instanceof EffectDebrisSpawn.Disk disk) {
+            buffer.writeByte(2);
+            writeVec3(buffer, disk.center());
+            buffer.writeDouble(disk.minRadius());
+            buffer.writeDouble(disk.maxRadius());
+            buffer.writeDouble(disk.ySpread());
+        } else {
+            buffer.writeByte(0);
         }
     }
 
@@ -124,6 +157,7 @@ public record EffectDebrisPayload(
         float speed = buffer.readFloat();
         float spread = buffer.readFloat();
         float gravity = buffer.readFloat();
+        float scale = buffer.readFloat();
         int lifetimeTicks = ByteBufCodecs.VAR_INT.decode(buffer);
         long seed = buffer.readLong();
         long serverGameTime = buffer.readLong();
@@ -135,14 +169,19 @@ public record EffectDebrisPayload(
             );
         }
         EffectDebrisSpawn spawn = new EffectDebrisSpawn.Point();
-        if (buffer.readBoolean()) {
+        int spawnType = buffer.readUnsignedByte();
+        if (spawnType == 1) {
             spawn = new EffectDebrisSpawn.Shell(
                 readVec3(buffer), buffer.readDouble(), buffer.readDouble()
+            );
+        } else if (spawnType == 2) {
+            spawn = new EffectDebrisSpawn.Disk(
+                readVec3(buffer), buffer.readDouble(), buffer.readDouble(), buffer.readDouble()
             );
         }
         return new EffectDebrisPayload(
             dimensionId, origin, blockStateId, pieces, direction, speed, spread, gravity,
-            lifetimeTicks, seed, serverGameTime, attractor, spawn
+            lifetimeTicks, seed, serverGameTime, attractor, spawn, scale
         );
     }
 
