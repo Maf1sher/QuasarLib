@@ -52,6 +52,23 @@ class ContentBlackHoleGameplayTest {
     }
 
     @Test
+    void groundFrontProjectsAnElevatedCoreOntoTheSurface() {
+        assertEquals(72.0, ContentBlackHoleGameplayController.groundFrontRadius(
+            72.0, 72.0, 72.0, 64.0, 64.0
+        ), 1.0E-6);
+        double elevated = Math.sqrt(72.0 * 72.0 - 30.0 * 30.0);
+        assertEquals(elevated, ContentBlackHoleGameplayController.groundFrontRadius(
+            72.0, 72.0, 72.0, 94.0, 64.0
+        ), 1.0E-6);
+        assertEquals(elevated, ContentBlackHoleGameplayController.groundFrontRadius(
+            72.0, 72.0, 72.0, 34.0, 64.0
+        ), 1.0E-6);
+        assertEquals(0.0, ContentBlackHoleGameplayController.groundFrontRadius(
+            30.0, 72.0, 72.0, 200.0, 64.0
+        ), 1.0E-6);
+    }
+
+    @Test
     void tearSettingsAreValidated() {
         ContentBlackHoleGameplaySettings settings = ContentBlackHoleGameplaySettings.DEFAULT;
         assertEquals(64, settings.tearRaysPerTick());

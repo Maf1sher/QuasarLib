@@ -44,7 +44,6 @@ final class ContentCommands {
     private static final double BLACK_HOLE_DEFAULT_DISTANCE = 160.0;
     private static final float BLACK_HOLE_DEFAULT_SCALE = 6.0F;
     private static final float BLACK_HOLE_DISK_PITCH = 8.0F;
-    private static final double BLACK_HOLE_MIN_HEIGHT_OFFSET = 24.0;
     private static final int DEFAULT_COLUMNS = 4;
     private static final int DEFAULT_ROWS = 4;
     private static final double DEFAULT_SPACING = DEBUG_SCALE * 2.0;
@@ -227,8 +226,11 @@ final class ContentCommands {
         boolean visualOnly
     ) {
         ServerLevel level = source.getLevel();
+        Vec3 origin = source.getPlayer() != null
+            ? source.getPlayer().getEyePosition()
+            : source.getPosition();
         VisualEffectSpec visual = blackHoleSpec(
-            source.getPosition(),
+            origin,
             source.getRotation().y,
             source.getRotation().x,
             distance,
@@ -337,11 +339,6 @@ final class ContentCommands {
         }
         Vec3 look = Vec3.directionFromRotation(viewPitch, viewYaw);
         Vec3 center = origin.add(look.scale(distance));
-        center = new Vec3(
-            center.x,
-            Math.max(center.y, origin.y + BLACK_HOLE_MIN_HEIGHT_OFFSET),
-            center.z
-        );
         EffectAudioSpec audio = ContentBlackHoleAudio.plan(center, BLACK_HOLE_LIFETIME_TICKS);
         return new VisualEffectSpec(
             ContentEffectIds.BLACK_HOLE,

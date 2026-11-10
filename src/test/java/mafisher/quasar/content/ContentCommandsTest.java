@@ -35,7 +35,7 @@ class ContentCommandsTest {
     }
 
     @Test
-    void blackHoleSpecPlacesTheShowpieceAheadAndAboveThePlayer() {
+    void blackHoleSpecPlacesTheShowpieceOnTheViewRay() {
         VisualEffectSpec spec = ContentCommands.blackHoleSpec(
             new Vec3(10.0, 70.0, -4.0),
             0.0F,
@@ -48,7 +48,7 @@ class ContentCommandsTest {
 
         assertEquals(ContentEffectIds.BLACK_HOLE, spec.effectId());
         assertEquals(10.0, spec.position().x, 0.0001);
-        assertEquals(94.0, spec.position().y, 0.0001);
+        assertEquals(70.0, spec.position().y, 0.0001);
         assertEquals(156.0, spec.position().z, 0.0001);
         assertEquals(0.0F, spec.yaw(), 0.0001F);
         assertEquals(8.0F, spec.pitch(), 0.0001F);
@@ -60,18 +60,19 @@ class ContentCommandsTest {
     }
 
     @Test
-    void blackHoleSpecClampsTheCenterAboveThePlayerWhenLookingDown() {
+    void blackHoleSpecKeepsDownwardRaysOnTheViewRay() {
         VisualEffectSpec spec = ContentCommands.blackHoleSpec(
             new Vec3(0.0, 70.0, 0.0),
             0.0F,
-            80.0F,
-            160.0,
+            30.0F,
+            100.0,
             12.0F,
             ContentBlackHoleGeometry.VARIANT_AMBER,
             1L
         );
 
-        assertEquals(94.0, spec.position().y, 0.0001);
+        assertEquals(20.0, spec.position().y, 0.01);
+        assertEquals(100.0 * Math.cos(Math.toRadians(30.0)), spec.position().z, 0.01);
     }
 
     @Test

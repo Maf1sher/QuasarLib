@@ -1,6 +1,7 @@
 package mafisher.quasar.content;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -129,6 +130,36 @@ class ContentBlackHoleDestructionPlanTest {
         assertEquals(20.0 - MIN_BUILD_HEIGHT - 1.0, plan.requestedDepth(), 1.0E-6);
         assertTrue(plan.depth() <= plan.requestedDepth());
         assertTrue(plan.radius() > 0.0);
+    }
+
+    @Test
+    void elevatedCoresKeepTheCraterCenteredOnTheCore() {
+        ContentBlackHoleGameplaySettings settings = ContentBlackHoleGameplaySettings.DEFAULT;
+        ContentBlackHoleDestructionPlan.Plan plan = ContentBlackHoleDestructionPlan.plan(
+            settings, 12.0F, 1_200, 16, 0.1F, 100.0, GROUND_Y, MIN_BUILD_HEIGHT
+        );
+
+        assertEquals(settings.craterRadius(12.0F), plan.radius(), 1.0E-6);
+        assertEquals(settings.craterDepth(12.0F), plan.depth(), 1.0E-6);
+        double undergroundFraction = (GROUND_Y - (100.0 - plan.depth())) / (2.0 * plan.depth());
+        assertEquals(
+            undergroundFraction,
+            plan.solidSections() / (double)plan.estimatedSections(),
+            0.01
+        );
+    }
+
+    @Test
+    void reachesTerrainRequiresTheEllipsoidToTouchTheSurfaceOrWorld() {
+        assertTrue(ContentBlackHoleDestructionPlan.reachesTerrain(
+            100.0, 72.0, GROUND_Y, MIN_BUILD_HEIGHT
+        ));
+        assertFalse(ContentBlackHoleDestructionPlan.reachesTerrain(
+            200.0, 72.0, GROUND_Y, MIN_BUILD_HEIGHT
+        ));
+        assertFalse(ContentBlackHoleDestructionPlan.reachesTerrain(
+            -100.0, 10.0, GROUND_Y, MIN_BUILD_HEIGHT
+        ));
     }
 
     @Test

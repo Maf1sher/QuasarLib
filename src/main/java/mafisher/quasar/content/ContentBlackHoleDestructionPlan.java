@@ -171,7 +171,7 @@ final class ContentBlackHoleDestructionPlan {
 
     /**
      * Estimates the number of 16x16x16 sections that intersect the part of the ellipsoid below
-     * the surface. The crater centre normally sits on the ground, so only the lower half counts;
+     * the surface. The ellipsoid is centred on the core, so only the underground part counts;
      * a hole placed inside a cave counts the part that is actually underground.
      */
     static int estimatedSections(
@@ -199,6 +199,18 @@ final class ContentBlackHoleDestructionPlan {
         }
         double volume = (4.0 / 3.0) * Math.PI * radius * depth * radius;
         return Math.max(1, (int)Math.ceil(volume / SECTION_BLOCKS * SECTION_SAFETY));
+    }
+
+    /** Whether a core-centred ellipsoid reaches the terrain surface or the world floor. */
+    static boolean reachesTerrain(
+        double centerY,
+        double depth,
+        double groundY,
+        double minBuildHeight
+    ) {
+        return depth > 0.0
+            && centerY + depth >= minBuildHeight
+            && centerY - depth <= groundY;
     }
 
     /** Sections the controller must edit this tick to finish remaining work by the hard end. */
