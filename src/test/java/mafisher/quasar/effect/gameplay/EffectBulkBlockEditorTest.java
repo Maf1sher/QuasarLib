@@ -63,9 +63,9 @@ class EffectBulkBlockEditorTest {
 
         when(this.level.isClientSide()).thenReturn(false);
         when(this.level.dimension()).thenReturn(Level.OVERWORLD);
-        when(this.level.getMinBuildHeight()).thenReturn(0);
+        when(this.level.getMinBuildHeight()).thenReturn(-16);
         when(this.level.getMaxBuildHeight()).thenReturn(16);
-        when(this.level.getMinSection()).thenReturn(0);
+        when(this.level.getMinSection()).thenReturn(-1);
         when(this.level.getMaxSection()).thenReturn(1);
         when(this.level.getSectionIndexFromSectionY(0)).thenReturn(0);
         when(this.level.getChunkSource()).thenReturn(this.chunkSource);
@@ -236,6 +236,157 @@ class EffectBulkBlockEditorTest {
         assertEquals(new EffectBulkBlockEditor.SectionKey(0, 0, 0), centered.get(0));
         assertNotEquals(topDown.get(0), centered.get(0));
         assertTrue(centered.size() > 1);
+    }
+
+    @Test
+    void tickToScaleStopsAtTheRequestedRadialFront() {
+        when(this.chunkSource.getChunkNow(
+            org.mockito.ArgumentMatchers.anyInt(),
+            org.mockito.ArgumentMatchers.anyInt()
+        )).thenReturn(this.chunk);
+        when(this.level.getMaxSection()).thenReturn(2);
+        when(this.level.getMaxBuildHeight()).thenReturn(32);
+        when(this.level.getSectionIndexFromSectionY(1)).thenReturn(1);
+        LevelChunkSection second = new LevelChunkSection(
+            new PalettedContainer<>(
+                Block.BLOCK_STATE_REGISTRY,
+                Blocks.AIR.defaultBlockState(),
+                PalettedContainer.Strategy.SECTION_STATES
+            ),
+            this.section.getBiomes()
+        );
+        second.setBlockState(8, 8, 8, Blocks.STONE.defaultBlockState(), false);
+        this.sections = new LevelChunkSection[]{this.section, second};
+        when(this.chunk.getSection(1)).thenAnswer(ignored -> this.sections[1]);
+        when(this.chunk.getSections()).thenReturn(this.sections);
+
+        EffectBulkBlockEditor editor = EffectBulkBlockEditor.create(
+            this.context,
+            new EffectBulkBlockEditor.Spec(
+                EffectBlockVolume.sphere(new EffectPoint(8.0, 8.0, 8.0), 40.0),
+                Blocks.AIR.defaultBlockState(),
+                true,
+                EffectBulkBlockEditor.SyncPolicy.PROGRESSIVE,
+                0.0,
+                false
+            ),
+            EffectBulkBlockEditor.Ordering.CENTER_OUT
+        );
+
+        editor.tickToScale(0.1, 10);
+        assertEquals(1, editor.progress().completedSections());
+        assertEquals(0, editor.dirtyChunkCount());
+        assertEquals(0.0, editor.frontScale(), 1.0E-6);
+
+        editor.tickToScale(0.25, 10);
+        assertTrue(editor.progress().completedSections() > 1);
+        assertTrue(editor.frontScale() > 0.0);
+        editor.close(false);
+    }
+
+    @Test
+    void unloadedChunkPausesTheFrontWithoutSkippingSections() {
+        when(this.chunkSource.getChunkNow(0, 0)).thenReturn(null);
+        EffectBulkBlockEditor editor = EffectBulkBlockEditor.create(
+            this.context,
+            new EffectBulkBlockEditor.Spec(
+                EffectBlockVolume.sphere(new EffectPoint(8.0, 8.0, 8.0), 4.0),
+                Blocks.AIR.defaultBlockState(),
+                true,
+                EffectBulkBlockEditor.SyncPolicy.PROGRESSIVE,
+                0.0,
+                false
+            ),
+            EffectBulkBlockEditor.Ordering.CENTER_OUT
+        );
+
+        editor.tickToScale(1.0, 10);
+        assertEquals(0, editor.progress().completedSections());
+        assertFalse(editor.progress().finished());
+
+        when(this.chunkSource.getChunkNow(0, 0)).thenReturn(this.chunk);
+        editor.tickToScale(1.0, 10);
+        assertEquals(1, editor.progress().completedSections());
+        assertTrue(editor.progress().finished());
+        editor.close(false);
+    }
+
+    @Test
+    void tickToScaleRejectsNonRadialOrdering() {
+        EffectBulkBlockEditor editor = EffectBulkBlockEditor.create(
+            this.context,
+            new EffectBulkBlockEditor.Spec(
+                EffectBlockVolume.sphere(new EffectPoint(8.0, 8.0, 8.0), 4.0),
+                Blocks.AIR.defaultBlockState(),
+                true,
+                EffectBulkBlockEditor.SyncPolicy.MANUAL,
+                0.0,
+                false
+            )
+        );
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+            IllegalStateException.class,
+            () -> editor.tickToScale(0.5, 1)
+        );
+        editor.close(false);
+    }
+
+    @Test
+    void deferredTicketReleaseWaitsForQueuedReveals() {
+        TerrainEditService.acquireTickets(this.level, List.of(this.chunkPos));
+        TerrainEditService.releaseTicketsWhenSettled(this.level, List.of(this.chunkPos));
+
+        verify(this.chunkSource, org.mockito.Mockito.never()).removeRegionTicket(
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.anyInt(),
+            org.mockito.ArgumentMatchers.any()
+        );
+
+        TerrainEditService.tick(this.level);
+
+        verify(this.chunkSource).removeRegionTicket(
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.anyInt(),
+            org.mockito.ArgumentMatchers.any()
+        );
+    }
+
+    @Test
+    void keepsTheBottomLayerToAvoidAVoidFloor() {
+        when(this.level.getMinBuildHeight()).thenReturn(0);
+        when(this.level.getMinSection()).thenReturn(0);
+        for (int index = 0; index < 16 * 16 * 16; index++) {
+            this.section.setBlockState(
+                index & 15,
+                (index >> 4) & 15,
+                (index >> 8) & 15,
+                Blocks.STONE.defaultBlockState(),
+                false
+            );
+        }
+        EffectBulkBlockEditor editor = EffectBulkBlockEditor.create(
+            this.context,
+            new EffectBulkBlockEditor.Spec(
+                EffectBlockVolume.box(new mafisher.quasar.effect.EffectBounds(
+                    0.0, 0.0, 0.0, 15.999, 15.999, 15.999
+                )),
+                Blocks.AIR.defaultBlockState(),
+                true,
+                EffectBulkBlockEditor.SyncPolicy.MANUAL,
+                0.0,
+                false
+            )
+        );
+
+        editor.tick();
+
+        assertEquals(Blocks.STONE.defaultBlockState(), this.section.getBlockState(8, 0, 8));
+        assertTrue(this.section.getBlockState(8, 1, 8).isAir());
+        assertEquals(16 * 16 * 15, editor.progress().clearedBlocks());
+        editor.close(false);
     }
 
     @Test

@@ -22,10 +22,8 @@ class ContentBlackHoleGameplayTest {
         assertEquals(1_024.0, settings.attractionRadius(1_000.0F), 1.0E-6);
         assertEquals(30.0, settings.craterRadius(2.5F), 1.0E-6);
         assertEquals(72.0, settings.craterRadius(6.0F), 1.0E-6);
-        assertEquals(72.0, settings.craterDepth(6.0F), 1.0E-6);
         assertEquals(144.0, settings.craterRadius(12.0F), 1.0E-6);
         assertEquals(768.0, settings.craterRadius(64.0F), 1.0E-6);
-        assertEquals(768.0, settings.craterDepth(64.0F), 1.0E-6);
     }
 
     @Test

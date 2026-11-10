@@ -6,14 +6,15 @@ import mafisher.quasar.effect.gameplay.EffectBulkBlockEditor;
  * Pure, headless destruction plan for the content black hole.
  *
  * <p>The authored scale is the only source of the requested crater size. The plan then fits
- * that shape into the available timeline and engine budgets: the ticket cap limits the radius
- * and the time/section budgets limit the depth. Work is paced by removed volume and ends with
- * a reveal reserve before {@code DESTABILISE}, so the closing phase contains no block edits.</p>
+ * one sphere into the available timeline and engine budgets. The front grows from the core
+ * radius to the final radius while removed terrain volume advances linearly with time, so the
+ * crater expands in every direction at once instead of deepening first. Work ends with a reveal
+ * reserve before {@code DESTABILISE}, so the closing phase contains no block edits.</p>
  */
 final class ContentBlackHoleDestructionPlan {
     private static final double SECTION_BLOCKS = 16.0 * 16.0 * 16.0;
     /** Whole-section estimates miss per-block boundary sections; keep a safety margin. */
-    private static final double SECTION_SAFETY = 1.2;
+    private static final double SECTION_SAFETY = 1.25;
     /** Chunk tickets are estimated from a circle; keep room for section-grid corners. */
     private static final double TICKET_SAFETY = 0.9;
     private static final float MIN_WINDOW = 0.05F;
@@ -21,15 +22,18 @@ final class ContentBlackHoleDestructionPlan {
     private static final float MIN_REVEAL_PROGRESS = 0.10F;
     /** Ensure short effects still reserve this many ticks for the reveal. */
     private static final float MIN_REVEAL_TICKS = 40.0F;
+    private static final int VOLUME_SEARCH_STEPS = 40;
 
     private ContentBlackHoleDestructionPlan() {
     }
 
     record Plan(
         double requestedRadius,
-        double requestedDepth,
         double radius,
-        double depth,
+        double coreRadius,
+        double centerY,
+        double groundY,
+        double minBuildHeight,
         float startProgress,
         /** Last progress at which blocks may be edited; the rest of the open phase is reveal-only. */
         float workEndProgress,
@@ -49,13 +53,40 @@ final class ContentBlackHoleDestructionPlan {
             return clamp01((progress - this.startProgress) / span);
         }
 
-        /** Analytic radial front scale for a uniformly scaled ellipsoid. */
-        double frontScaleAt(float progress) {
-            return Math.cbrt(fractionAt(progress));
-        }
-
-        int targetSectionsAt(float progress, int totalSections) {
-            return (int)Math.ceil(Math.max(0, totalSections) * fractionAt(progress));
+        /**
+         * Sphere radius at {@code progress}. The removed terrain volume advances linearly, then
+         * the radius is recovered from the spherical-cap volume. If the sphere never reaches
+         * terrain, the radius falls back to a linear growth so the visual still opens smoothly.
+         */
+        double radiusAt(float progress) {
+            if (this.radius <= 0.0) {
+                return 0.0;
+            }
+            double core = Math.max(0.0, Math.min(this.coreRadius, this.radius));
+            if (core >= this.radius) {
+                return this.radius;
+            }
+            double f = fractionAt(progress);
+            if (f <= 0.0) {
+                return core;
+            }
+            if (f >= 1.0) {
+                return this.radius;
+            }
+            double startVolume = terrainVolume(core, this.centerY, this.groundY, this.minBuildHeight);
+            double endVolume = terrainVolume(this.radius, this.centerY, this.groundY, this.minBuildHeight);
+            if (endVolume <= startVolume + 1.0E-6) {
+                return core + (this.radius - core) * f;
+            }
+            double targetVolume = startVolume + (endVolume - startVolume) * f;
+            return radiusForVolume(
+                targetVolume,
+                core,
+                this.radius,
+                this.centerY,
+                this.groundY,
+                this.minBuildHeight
+            );
         }
     }
 
@@ -69,9 +100,8 @@ final class ContentBlackHoleDestructionPlan {
         double groundY,
         double minBuildHeight
     ) {
-        double requestedRadius = settings.craterRadius(scale);
-        double maxDepth = Math.max(1.0, centerY - minBuildHeight - 1.0);
-        double requestedDepth = Math.min(settings.craterDepth(scale), maxDepth);
+        double coreRadius = settings.coreRadius(scale);
+        double requestedRadius = Math.max(settings.craterRadius(scale), coreRadius);
 
         float end = ContentBlackHoleCinematics.DESTABILISE;
         int duration = Math.max(1, durationTicks);
@@ -96,42 +126,34 @@ final class ContentBlackHoleDestructionPlan {
             EffectBulkBlockEditor.maxTicketChunks() * TICKET_SAFETY
         ));
         double ticketRadius = Math.sqrt(ticketCap * 256.0 / Math.PI);
-        double radius = Math.min(requestedRadius, ticketRadius);
-        double depth = requestedDepth;
-
-        int solidAtRequested = estimatedSections(
-            requestedRadius, requestedDepth, centerY, groundY, minBuildHeight
+        double sectionRadius = Math.cbrt(
+            sectionCap * SECTION_BLOCKS / ((4.0 / 3.0) * Math.PI) / SECTION_SAFETY
         );
-        int totalAtRequested = estimatedTotalSections(requestedRadius, requestedDepth);
-        long timeSections = (long)availableTicks * budget;
-        double radiusScaleSquared = (requestedRadius / radius) * (requestedRadius / radius);
-        double timeDepth = requestedDepth
-            * (timeSections / (double)Math.max(1, solidAtRequested))
-            * radiusScaleSquared;
-        double sectionDepth = requestedDepth
-            * (sectionCap / (double)Math.max(1, totalAtRequested))
-            * radiusScaleSquared;
-        depth = Math.max(1.0, Math.min(requestedDepth, Math.min(timeDepth, sectionDepth)));
+        double ceiling = Math.min(requestedRadius, Math.min(ticketRadius, sectionRadius));
+        double timeRadius = largestRadiusForTime(
+            coreRadius,
+            ceiling,
+            (long)availableTicks * budget,
+            centerY,
+            groundY,
+            minBuildHeight
+        );
+        double radius = Math.max(coreRadius, Math.min(ceiling, timeRadius));
 
-        int solidEstimated = estimatedSections(radius, depth, centerY, groundY, minBuildHeight);
-        int totalEstimated = estimatedTotalSections(radius, depth);
-        if (solidEstimated > timeSections) {
-            depth = Math.max(1.0, depth * timeSections / (double)solidEstimated);
-            solidEstimated = estimatedSections(radius, depth, centerY, groundY, minBuildHeight);
-            totalEstimated = estimatedTotalSections(radius, depth);
-        }
-        if (totalEstimated > sectionCap) {
-            depth = Math.max(1.0, depth * sectionCap / (double)totalEstimated);
-            solidEstimated = estimatedSections(radius, depth, centerY, groundY, minBuildHeight);
-            totalEstimated = Math.min(sectionCap, estimatedTotalSections(radius, depth));
-        }
+        int solidEstimated = estimatedSections(radius, centerY, groundY, minBuildHeight);
+        int totalEstimated = estimatedTotalSections(radius);
         int sectionsPerTick = Math.max(1, (int)Math.ceil(solidEstimated / (double)availableTicks));
+        boolean clamped = radius < requestedRadius - 1.0E-6
+            || radius > ceiling + 1.0E-6
+            || sectionsPerTick > budget;
 
         return new Plan(
             requestedRadius,
-            requestedDepth,
             radius,
-            depth,
+            coreRadius,
+            centerY,
+            groundY,
+            minBuildHeight,
             start,
             workEnd,
             availableTicks,
@@ -139,25 +161,30 @@ final class ContentBlackHoleDestructionPlan {
             solidEstimated,
             totalEstimated,
             sectionsPerTick,
-            radius < requestedRadius - 1.0E-6 || depth < requestedDepth - 1.0E-6
+            clamped
         );
     }
 
     /** Restores the timeline fields that survive a session resume. */
     static Plan restored(
         double radius,
-        double depth,
+        double coreRadius,
         float start,
         float workEnd,
         int sectionBudget,
         int solidSections,
-        int estimatedSections
+        int estimatedSections,
+        double centerY,
+        double groundY,
+        double minBuildHeight
     ) {
         return new Plan(
             radius,
-            depth,
             radius,
-            depth,
+            Math.max(0.0, coreRadius),
+            centerY,
+            groundY,
+            minBuildHeight,
             start,
             workEnd,
             0,
@@ -170,55 +197,138 @@ final class ContentBlackHoleDestructionPlan {
     }
 
     /**
-     * Estimates the number of 16x16x16 sections that intersect the part of the ellipsoid below
-     * the surface. The ellipsoid is centred on the core, so only the underground part counts;
-     * a hole placed inside a cave counts the part that is actually underground.
+     * Volume of the part of a sphere below a horizontal plane.
+     */
+    static double volumeBelowPlane(double radius, double centerY, double planeY) {
+        if (radius <= 0.0) {
+            return 0.0;
+        }
+        double offset = planeY - centerY;
+        if (offset <= -radius) {
+            return 0.0;
+        }
+        if (offset >= radius) {
+            return (4.0 / 3.0) * Math.PI * radius * radius * radius;
+        }
+        double capHeight = radius + offset;
+        return Math.PI * capHeight * capHeight * (3.0 * radius - capHeight) / 3.0;
+    }
+
+    /** Terrain volume between the world floor and the sampled surface. */
+    static double terrainVolume(
+        double radius,
+        double centerY,
+        double groundY,
+        double minBuildHeight
+    ) {
+        if (radius <= 0.0 || groundY <= minBuildHeight) {
+            return 0.0;
+        }
+        double belowGround = volumeBelowPlane(radius, centerY, groundY);
+        double belowFloor = volumeBelowPlane(radius, centerY, minBuildHeight + 1.0);
+        return Math.max(0.0, belowGround - belowFloor);
+    }
+
+    /** Inverse of {@link #terrainVolume} over the requested radius interval. */
+    static double radiusForVolume(
+        double volume,
+        double minRadius,
+        double maxRadius,
+        double centerY,
+        double groundY,
+        double minBuildHeight
+    ) {
+        double low = Math.max(0.0, minRadius);
+        double high = Math.max(low, maxRadius);
+        if (high <= low) {
+            return high;
+        }
+        if (volume <= terrainVolume(low, centerY, groundY, minBuildHeight)) {
+            return low;
+        }
+        if (volume >= terrainVolume(high, centerY, groundY, minBuildHeight)) {
+            return high;
+        }
+        for (int step = 0; step < VOLUME_SEARCH_STEPS; step++) {
+            double middle = (low + high) * 0.5;
+            if (terrainVolume(middle, centerY, groundY, minBuildHeight) < volume) {
+                low = middle;
+            } else {
+                high = middle;
+            }
+        }
+        return (low + high) * 0.5;
+    }
+
+    /**
+     * Number of sections that intersect the part of the sphere between the world floor and the
+     * surface. Caves and already-air blocks still count here; the editor skips them at edit time.
      */
     static int estimatedSections(
         double radius,
-        double depth,
         double centerY,
         double groundY,
         double minBuildHeight
     ) {
-        if (radius <= 0.0 || depth <= 0.0) {
-            return 1;
-        }
-        double fullVolume = (4.0 / 3.0) * Math.PI * radius * depth * radius;
-        double top = Math.min(centerY + depth, groundY);
-        double bottom = Math.max(centerY - depth, minBuildHeight);
-        double verticalFraction = top <= bottom ? 0.0 : (top - bottom) / (2.0 * depth);
-        double volume = fullVolume * clamp01(verticalFraction);
+        double volume = terrainVolume(radius, centerY, groundY, minBuildHeight);
         return Math.max(1, (int)Math.ceil(volume / SECTION_BLOCKS * SECTION_SAFETY));
     }
 
-    /** Estimates every section in the ellipsoid, including air above the surface. */
-    static int estimatedTotalSections(double radius, double depth) {
-        if (radius <= 0.0 || depth <= 0.0) {
+    /** Estimates every section in the sphere, including air above the surface. */
+    static int estimatedTotalSections(double radius) {
+        if (radius <= 0.0) {
             return 1;
         }
-        double volume = (4.0 / 3.0) * Math.PI * radius * depth * radius;
+        double volume = (4.0 / 3.0) * Math.PI * radius * radius * radius;
         return Math.max(1, (int)Math.ceil(volume / SECTION_BLOCKS * SECTION_SAFETY));
     }
 
-    /** Whether a core-centred ellipsoid reaches the terrain surface or the world floor. */
-    static boolean reachesTerrain(
+    /** Whether the sphere intersects any terrain between the world floor and the surface. */
+    static boolean intersectsTerrain(
         double centerY,
-        double depth,
+        double radius,
         double groundY,
         double minBuildHeight
     ) {
-        return depth > 0.0
-            && centerY + depth >= minBuildHeight
-            && centerY - depth <= groundY;
+        double floor = minBuildHeight + 1.0;
+        return radius > 0.0
+            && groundY >= floor
+            && centerY + radius >= floor
+            && centerY - radius <= groundY;
     }
 
-    /** Sections the controller must edit this tick to finish remaining work by the hard end. */
-    static int requiredSectionsPerTick(int remainingSections, int remainingTicks) {
-        if (remainingSections <= 0) {
-            return 0;
+    /** Whether the sphere crosses the sampled surface and can open a visible crater. */
+    static boolean breaksSurface(double centerY, double radius, double groundY) {
+        return radius > 0.0
+            && centerY - radius <= groundY
+            && centerY + radius >= groundY;
+    }
+
+    private static double largestRadiusForTime(
+        double minRadius,
+        double maxRadius,
+        long sectionCapacity,
+        double centerY,
+        double groundY,
+        double minBuildHeight
+    ) {
+        double low = Math.max(0.0, minRadius);
+        double high = Math.max(low, maxRadius);
+        if (estimatedSections(high, centerY, groundY, minBuildHeight) <= sectionCapacity) {
+            return high;
         }
-        return (int)Math.ceil(remainingSections / (double)Math.max(1, remainingTicks));
+        if (estimatedSections(low, centerY, groundY, minBuildHeight) >= sectionCapacity) {
+            return low;
+        }
+        for (int step = 0; step < VOLUME_SEARCH_STEPS; step++) {
+            double middle = (low + high) * 0.5;
+            if (estimatedSections(middle, centerY, groundY, minBuildHeight) <= sectionCapacity) {
+                low = middle;
+            } else {
+                high = middle;
+            }
+        }
+        return low;
     }
 
     private static double clamp01(double value) {

@@ -18,9 +18,8 @@ class ContentBlackHoleDestructionPlanTest {
         );
 
         assertEquals(settings.craterRadius(12.0F), plan.requestedRadius(), 1.0E-6);
-        assertEquals(127.0, plan.requestedDepth(), 1.0E-6);
         assertEquals(plan.requestedRadius(), plan.radius(), 1.0E-6);
-        assertEquals(plan.requestedDepth(), plan.depth(), 1.0E-6);
+        assertEquals(12.0, plan.coreRadius(), 1.0E-6);
         assertTrue(plan.startProgress() >= ContentBlackHoleCinematics.HORIZON_END);
         assertTrue(plan.workEndProgress() < ContentBlackHoleCinematics.DESTABILISE);
         assertEquals(
@@ -28,6 +27,19 @@ class ContentBlackHoleDestructionPlanTest {
             plan.workEndProgress(),
             1.0E-6
         );
+    }
+
+    @Test
+    void lateCoreFinishShiftsTheGrowthWindow() {
+        ContentBlackHoleGameplaySettings settings = ContentBlackHoleGameplaySettings.DEFAULT;
+        ContentBlackHoleDestructionPlan.Plan plan = ContentBlackHoleDestructionPlan.plan(
+            settings, 12.0F, 1_200, 16, 0.30F, GROUND_Y, GROUND_Y, MIN_BUILD_HEIGHT
+        );
+
+        assertEquals(0.30F, plan.startProgress(), 1.0E-6);
+        assertTrue(plan.workEndProgress() > plan.startProgress());
+        assertEquals(0.0, plan.fractionAt(plan.startProgress()), 1.0E-6);
+        assertEquals(plan.coreRadius(), plan.radiusAt(plan.startProgress()), 1.0E-6);
     }
 
     @Test
@@ -55,15 +67,6 @@ class ContentBlackHoleDestructionPlanTest {
     }
 
     @Test
-    void requiredSectionsPerTickCatchesUpBeforeTheDeadline() {
-        assertEquals(0, ContentBlackHoleDestructionPlan.requiredSectionsPerTick(0, 10));
-        assertEquals(1, ContentBlackHoleDestructionPlan.requiredSectionsPerTick(1, 10));
-        assertEquals(5, ContentBlackHoleDestructionPlan.requiredSectionsPerTick(50, 10));
-        assertEquals(50, ContentBlackHoleDestructionPlan.requiredSectionsPerTick(50, 1));
-        assertEquals(10, ContentBlackHoleDestructionPlan.requiredSectionsPerTick(10, 0));
-    }
-
-    @Test
     void largerHorizonsRequestLargerCraters() {
         ContentBlackHoleGameplaySettings settings = ContentBlackHoleGameplaySettings.DEFAULT;
         ContentBlackHoleDestructionPlan.Plan small = ContentBlackHoleDestructionPlan.plan(
@@ -75,12 +78,12 @@ class ContentBlackHoleDestructionPlanTest {
 
         assertEquals(small.requestedRadius() * 2.0, large.requestedRadius(), 1.0E-6);
         assertEquals(small.radius() * 2.0, large.radius(), 1.0E-6);
-        assertTrue(small.sectionsPerTick() < small.sectionBudget());
-        assertTrue(large.sectionsPerTick() < large.sectionBudget());
+        assertTrue(small.sectionsPerTick() <= small.sectionBudget() || small.budgetClamped());
+        assertTrue(large.sectionsPerTick() <= large.sectionBudget() || large.budgetClamped());
     }
 
     @Test
-    void oversizedCratersAreShrunkToFitTheWindow() {
+    void oversizedCratersAreShrunkUniformly() {
         ContentBlackHoleGameplaySettings settings = ContentBlackHoleGameplaySettings.DEFAULT;
         ContentBlackHoleDestructionPlan.Plan plan = ContentBlackHoleDestructionPlan.plan(
             settings, 64.0F, 200, 8, 0.1F, GROUND_Y, GROUND_Y, MIN_BUILD_HEIGHT
@@ -88,13 +91,13 @@ class ContentBlackHoleDestructionPlanTest {
 
         assertTrue(plan.budgetClamped());
         assertTrue(plan.radius() < plan.requestedRadius());
-        assertTrue(plan.depth() < plan.requestedDepth());
+        assertTrue(plan.radius() > plan.coreRadius());
         assertTrue(plan.estimatedSections() > 0);
         assertTrue(plan.sectionsPerTick() >= 1);
     }
 
     @Test
-    void ticketCapLimitsRadiusWithoutCollapsingDepth() {
+    void ticketAndSectionCapsLimitTheRadiusWithoutChangingTheShape() {
         ContentBlackHoleGameplaySettings settings = ContentBlackHoleGameplaySettings.DEFAULT;
         ContentBlackHoleDestructionPlan.Plan plan = ContentBlackHoleDestructionPlan.plan(
             settings, 64.0F, 2_400, 64, 0.1F, GROUND_Y, GROUND_Y, MIN_BUILD_HEIGHT
@@ -102,76 +105,113 @@ class ContentBlackHoleDestructionPlanTest {
 
         assertTrue(plan.budgetClamped());
         assertTrue(plan.radius() < plan.requestedRadius());
-        assertEquals(plan.requestedDepth(), plan.depth(), 1.0E-6);
-        assertTrue(plan.depth() > plan.radius() * 0.25);
+        assertTrue(plan.estimatedSections() <= 16_384);
     }
 
     @Test
-    void frontAndTargetSectionsFollowElapsedVolume() {
+    void terrainVolumeAdvancesLinearlyWithTheFront() {
         ContentBlackHoleGameplaySettings settings = ContentBlackHoleGameplaySettings.DEFAULT;
         ContentBlackHoleDestructionPlan.Plan plan = ContentBlackHoleDestructionPlan.plan(
             settings, 12.0F, 1_200, 16, 0.1F, GROUND_Y, GROUND_Y, MIN_BUILD_HEIGHT
         );
         float middle = (plan.startProgress() + plan.workEndProgress()) * 0.5F;
 
-        assertEquals(0.0, plan.fractionAt(plan.startProgress()), 1.0E-6);
-        assertEquals(1.0, plan.fractionAt(plan.workEndProgress()), 1.0E-6);
-        assertEquals(Math.cbrt(0.5), plan.frontScaleAt(middle), 1.0E-6);
-        assertTrue(Math.abs(plan.targetSectionsAt(middle, 1_000) - 500) <= 1);
-    }
-
-    @Test
-    void depthIsClampedToTheGroundButRadiusStillScales() {
-        ContentBlackHoleGameplaySettings settings = ContentBlackHoleGameplaySettings.DEFAULT;
-        ContentBlackHoleDestructionPlan.Plan plan = ContentBlackHoleDestructionPlan.plan(
-            settings, 12.0F, 1_200, 16, 0.1F, 20.0, 20.0, MIN_BUILD_HEIGHT
+        double startVolume = ContentBlackHoleDestructionPlan.terrainVolume(
+            plan.coreRadius(), GROUND_Y, GROUND_Y, MIN_BUILD_HEIGHT
+        );
+        double endVolume = ContentBlackHoleDestructionPlan.terrainVolume(
+            plan.radius(), GROUND_Y, GROUND_Y, MIN_BUILD_HEIGHT
+        );
+        double middleVolume = ContentBlackHoleDestructionPlan.terrainVolume(
+            plan.radiusAt(middle), GROUND_Y, GROUND_Y, MIN_BUILD_HEIGHT
         );
 
-        assertEquals(20.0 - MIN_BUILD_HEIGHT - 1.0, plan.requestedDepth(), 1.0E-6);
-        assertTrue(plan.depth() <= plan.requestedDepth());
-        assertTrue(plan.radius() > 0.0);
+        assertEquals(
+            startVolume + (endVolume - startVolume) * 0.5,
+            middleVolume,
+            Math.max(1.0, (endVolume - startVolume) * 1.0E-4)
+        );
     }
 
     @Test
-    void elevatedCoresKeepTheCraterCenteredOnTheCore() {
+    void radiusStartsAtTheCoreAndEndsAtTheFinalSphere() {
+        ContentBlackHoleGameplaySettings settings = ContentBlackHoleGameplaySettings.DEFAULT;
+        ContentBlackHoleDestructionPlan.Plan plan = ContentBlackHoleDestructionPlan.plan(
+            settings, 12.0F, 1_200, 16, 0.1F, GROUND_Y, GROUND_Y, MIN_BUILD_HEIGHT
+        );
+
+        assertEquals(plan.coreRadius(), plan.radiusAt(plan.startProgress()), 1.0E-6);
+        assertEquals(plan.radius(), plan.radiusAt(plan.workEndProgress()), 1.0E-6);
+        double previous = 0.0;
+        for (int step = 0; step <= 100; step++) {
+            float progress = plan.startProgress()
+                + (plan.workEndProgress() - plan.startProgress()) * step / 100.0F;
+            double radius = plan.radiusAt(progress);
+            assertTrue(radius >= previous - 1.0E-6, "progress " + progress);
+            previous = radius;
+        }
+    }
+
+    @Test
+    void elevatedCoresStillUseOneRoundSphere() {
         ContentBlackHoleGameplaySettings settings = ContentBlackHoleGameplaySettings.DEFAULT;
         ContentBlackHoleDestructionPlan.Plan plan = ContentBlackHoleDestructionPlan.plan(
             settings, 12.0F, 1_200, 16, 0.1F, 100.0, GROUND_Y, MIN_BUILD_HEIGHT
         );
 
         assertEquals(settings.craterRadius(12.0F), plan.radius(), 1.0E-6);
-        assertEquals(settings.craterDepth(12.0F), plan.depth(), 1.0E-6);
-        double undergroundFraction = (GROUND_Y - (100.0 - plan.depth())) / (2.0 * plan.depth());
-        assertEquals(
-            undergroundFraction,
-            plan.solidSections() / (double)plan.estimatedSections(),
-            0.01
-        );
+        assertTrue(ContentBlackHoleDestructionPlan.breaksSurface(
+            100.0, plan.radius(), GROUND_Y
+        ));
+        assertTrue(plan.radiusAt(plan.workEndProgress()) > plan.coreRadius());
     }
 
     @Test
-    void reachesTerrainRequiresTheEllipsoidToTouchTheSurfaceOrWorld() {
-        assertTrue(ContentBlackHoleDestructionPlan.reachesTerrain(
-            100.0, 72.0, GROUND_Y, MIN_BUILD_HEIGHT
+    void fullyUndergroundSpheresDoNotBreakTheSurface() {
+        assertTrue(ContentBlackHoleDestructionPlan.intersectsTerrain(
+            -100.0, 72.0, GROUND_Y, MIN_BUILD_HEIGHT
         ));
-        assertFalse(ContentBlackHoleDestructionPlan.reachesTerrain(
+        assertFalse(ContentBlackHoleDestructionPlan.breaksSurface(
+            -100.0, 72.0, GROUND_Y
+        ));
+        assertTrue(ContentBlackHoleDestructionPlan.breaksSurface(
+            0.0, 72.0, GROUND_Y
+        ));
+        assertFalse(ContentBlackHoleDestructionPlan.intersectsTerrain(
             200.0, 72.0, GROUND_Y, MIN_BUILD_HEIGHT
         ));
-        assertFalse(ContentBlackHoleDestructionPlan.reachesTerrain(
-            -100.0, 10.0, GROUND_Y, MIN_BUILD_HEIGHT
+        assertFalse(ContentBlackHoleDestructionPlan.breaksSurface(
+            200.0, 72.0, GROUND_Y
         ));
     }
 
     @Test
-    void restoredPlansKeepTheSectionTargets() {
+    void terrainVolumeUsesTheSphericalCapBelowTheSurfaceAndFloor() {
+        double full = ContentBlackHoleDestructionPlan.volumeBelowPlane(
+            10.0, 100.0, 200.0
+        );
+        assertEquals((4.0 / 3.0) * Math.PI * 1_000.0, full, 1.0E-6);
+        assertEquals(0.0, ContentBlackHoleDestructionPlan.volumeBelowPlane(
+            10.0, 100.0, 50.0
+        ), 1.0E-6);
+        double half = ContentBlackHoleDestructionPlan.volumeBelowPlane(
+            10.0, 100.0, 100.0
+        );
+        assertEquals((2.0 / 3.0) * Math.PI * 1_000.0, half, 1.0E-6);
+    }
+
+    @Test
+    void restoredPlansKeepTheRadiusAndWindow() {
         ContentBlackHoleDestructionPlan.Plan plan = ContentBlackHoleDestructionPlan.restored(
-            100.0, 50.0, 0.1F, 0.8F, 8, 123, 456
+            100.0, 10.0, 0.1F, 0.8F, 8, 123, 456,
+            GROUND_Y, GROUND_Y, MIN_BUILD_HEIGHT
         );
 
+        assertEquals(100.0, plan.radius(), 1.0E-6);
         assertEquals(123, plan.solidSections());
         assertEquals(456, plan.estimatedSections());
         assertEquals(1.0, plan.fractionAt(0.8F), 1.0E-6);
-        assertEquals(123, plan.targetSectionsAt(0.8F, plan.solidSections()));
+        assertEquals(100.0, plan.radiusAt(0.8F), 1.0E-6);
     }
 
     @Test

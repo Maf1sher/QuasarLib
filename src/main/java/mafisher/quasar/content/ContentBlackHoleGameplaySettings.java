@@ -9,14 +9,12 @@ record ContentBlackHoleGameplaySettings(
     double falloff,
     int maxForceTargets,
     int tearRaysPerTick,
-    int coreBlocksPerTick,
     int maxConsumeTargets,
     int debrisPiecesPerBurst,
     int surfaceBurstsPerTick,
     int debrisLifetimeTicks,
     boolean affectsCreativePlayers,
     float craterRadiusFactor,
-    float craterDepthFactor,
     boolean craterJournal
 ) {
     static final ContentBlackHoleGameplaySettings DEFAULT = new ContentBlackHoleGameplaySettings(
@@ -27,13 +25,11 @@ record ContentBlackHoleGameplaySettings(
         1.25,
         128,
         64,
-        4_096,
         64,
         32,
         2,
         64,
         true,
-        12.0F,
         12.0F,
         true
     );
@@ -48,15 +44,12 @@ record ContentBlackHoleGameplaySettings(
             || !Double.isFinite(falloff) || falloff < 0.0 || falloff > 16.0
             || maxForceTargets < 1 || maxForceTargets > 4_096
             || tearRaysPerTick < 0 || tearRaysPerTick > 512
-            || coreBlocksPerTick < 1 || coreBlocksPerTick > 16_384
             || maxConsumeTargets < 1 || maxConsumeTargets > 4_096
             || debrisPiecesPerBurst < 1 || debrisPiecesPerBurst > 64
             || surfaceBurstsPerTick < 1 || surfaceBurstsPerTick > 32
             || debrisLifetimeTicks < 1 || debrisLifetimeTicks > 200
             || !Float.isFinite(craterRadiusFactor) || craterRadiusFactor < 1.0F
-            || craterRadiusFactor > 32.0F
-            || !Float.isFinite(craterDepthFactor) || craterDepthFactor < 1.0F
-            || craterDepthFactor > 32.0F) {
+            || craterRadiusFactor > 32.0F) {
             throw new IllegalArgumentException("Invalid content black-hole gameplay settings");
         }
     }
@@ -69,14 +62,12 @@ record ContentBlackHoleGameplaySettings(
         return Math.min(1_024.0, Math.max(coreRadius(scale), scale * (double)this.attractionRadiusFactor));
     }
 
+    /**
+     * The requested destruction always follows the authored horizon. The destruction plan fits
+     * the sphere into the remaining timeline and engine budgets by shrinking the radius, so there
+     * is no fixed gameplay cap here.
+     */
     double craterRadius(float scale) {
-        // The requested destruction always follows the authored horizon. The destruction plan
-        // fits the shape into the remaining timeline and engine budgets, so there is no fixed
-        // gameplay cap here.
         return Math.max(4.0, scale * (double)this.craterRadiusFactor);
-    }
-
-    double craterDepth(float scale) {
-        return Math.max(4.0, scale * (double)this.craterDepthFactor);
     }
 }

@@ -1,11 +1,10 @@
 package mafisher.quasar.effect.gameplay;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -27,6 +26,8 @@ import org.slf4j.LoggerFactory;
 public final class TerrainEditService {
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
     private static final int LIGHT_CHUNKS_PER_TICK = 2;
+    /** Priority relights are the visible destruction front; let them keep up with section edits. */
+    private static final int PRIORITY_LIGHT_CHUNKS_PER_TICK = 6;
     private static final int SYNC_CHUNKS_PER_TICK = 32;
     private static final TicketType<ChunkPos> TERRAIN_TICKET = TicketType.create(
         "quasar_terrain_edit", Comparator.comparingLong(ChunkPos::toLong)
@@ -84,6 +85,29 @@ public final class TerrainEditService {
         }
     }
 
+    /**
+     * Releases tickets after the chunk's queued relight and client resend finish. The region
+     * ticket stays held until then so a closing editor cannot unload a chunk it just revealed.
+     */
+    public static void releaseTicketsWhenSettled(ServerLevel level, Collection<ChunkPos> chunks) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(chunks, "chunks");
+        LevelState state = state(level);
+        for (ChunkPos chunk : chunks) {
+            int count = state.tickets.getOrDefault(chunk, 0);
+            if (count <= 0) {
+                continue;
+            }
+            if (count <= 1) {
+                // Keep the region ticket; the tick loop removes it once the queues settle.
+                state.tickets.remove(chunk);
+                state.pendingTicketRelease.merge(chunk, 1, Integer::sum);
+            } else {
+                state.tickets.put(chunk, count - 1);
+            }
+        }
+    }
+
     /** Queues a chunk for heightmap and light recomputation. */
     public static void queueRelight(ServerLevel level, ChunkPos chunk) {
         Objects.requireNonNull(level, "level");
@@ -129,47 +153,37 @@ public final class TerrainEditService {
             return;
         }
 
-        if (!state.syncAfterRelight.isEmpty()) {
-            for (ChunkPos chunk : new ArrayList<>(state.syncAfterRelight)) {
-                if (!state.relightQueue.contains(chunk)) {
-                    state.syncAfterRelight.remove(chunk);
-                    state.syncQueue.add(chunk);
-                }
+        int priorityProcessed = 0;
+        int priorityScanned = 0;
+        Iterator<ChunkPos> priority = state.priorityRelightQueue.iterator();
+        while (priority.hasNext()
+            && priorityProcessed < PRIORITY_LIGHT_CHUNKS_PER_TICK
+            && priorityScanned < 64) {
+            priorityScanned++;
+            ChunkPos chunk = priority.next();
+            if (!relight(level, state, chunk)) {
+                // Leave an unloaded chunk queued; keep draining the rest of the front.
+                continue;
             }
+            priority.remove();
+            state.relightQueue.remove(chunk);
+            priorityProcessed++;
         }
 
         int processed = 0;
-        List<ChunkPos> pending = new ArrayList<>(
-            state.priorityRelightQueue.size() + state.relightQueue.size()
-        );
-        pending.addAll(state.priorityRelightQueue);
-        for (ChunkPos chunk : state.relightQueue) {
-            if (!state.priorityRelightQueue.contains(chunk)) {
-                pending.add(chunk);
+        int scanned = 0;
+        Iterator<ChunkPos> ordinary = state.relightQueue.iterator();
+        while (ordinary.hasNext() && processed < LIGHT_CHUNKS_PER_TICK && scanned < 64) {
+            scanned++;
+            ChunkPos chunk = ordinary.next();
+            if (state.priorityRelightQueue.contains(chunk)) {
+                continue;
             }
-        }
-        for (ChunkPos chunk : pending) {
-            if (processed >= LIGHT_CHUNKS_PER_TICK) {
-                break;
+            if (!relight(level, state, chunk)) {
+                continue;
             }
-            LevelChunk levelChunk = level.getChunkSource().getChunkNow(chunk.x, chunk.z);
-            if (levelChunk == null) {
-                break;
-            }
-            try {
-                Heightmap.primeHeightmaps(levelChunk, EnumSet.allOf(Heightmap.Types.class));
-                levelChunk.initializeLightSources();
-                level.getChunkSource().getLightEngine().propagateLightSources(chunk);
-                levelChunk.setUnsaved(true);
-            } catch (RuntimeException exception) {
-                LOGGER.warn("Could not relight bulk-edited chunk {}", chunk, exception);
-            }
-            state.relightQueue.remove(chunk);
-            state.priorityRelightQueue.remove(chunk);
+            ordinary.remove();
             processed++;
-            if (state.syncAfterRelight.remove(chunk)) {
-                state.syncQueue.add(chunk);
-            }
         }
 
         int synced = 0;
@@ -180,9 +194,29 @@ public final class TerrainEditService {
             synced++;
         }
 
+        Iterator<Map.Entry<ChunkPos, Integer>> pendingRelease =
+            state.pendingTicketRelease.entrySet().iterator();
+        while (pendingRelease.hasNext()) {
+            Map.Entry<ChunkPos, Integer> entry = pendingRelease.next();
+            ChunkPos chunk = entry.getKey();
+            if (state.relightQueue.contains(chunk)
+                || state.priorityRelightQueue.contains(chunk)
+                || state.syncAfterRelight.contains(chunk)
+                || state.syncQueue.contains(chunk)) {
+                continue;
+            }
+            pendingRelease.remove();
+            int held = Math.max(1, entry.getValue());
+            for (int index = 0; index < held; index++) {
+                level.getChunkSource().removeRegionTicket(TERRAIN_TICKET, chunk, 0, chunk);
+            }
+        }
+
         if (state.relightQueue.isEmpty()
+            && state.priorityRelightQueue.isEmpty()
             && state.syncAfterRelight.isEmpty()
             && state.syncQueue.isEmpty()
+            && state.pendingTicketRelease.isEmpty()
             && state.tickets.isEmpty()) {
             STATES.remove(level);
         }
@@ -195,13 +229,45 @@ public final class TerrainEditService {
         if (state == null) {
             return;
         }
-        for (ChunkPos chunk : state.tickets.keySet()) {
+        for (Map.Entry<ChunkPos, Integer> entry : state.tickets.entrySet()) {
+            releaseRegionTickets(level, entry.getKey(), Math.max(1, entry.getValue()));
+        }
+        for (Map.Entry<ChunkPos, Integer> entry : state.pendingTicketRelease.entrySet()) {
+            releaseRegionTickets(level, entry.getKey(), Math.max(1, entry.getValue()));
+        }
+    }
+
+    private static void releaseRegionTickets(ServerLevel level, ChunkPos chunk, int count) {
+        for (int index = 0; index < count; index++) {
             try {
                 level.getChunkSource().removeRegionTicket(TERRAIN_TICKET, chunk, 0, chunk);
             } catch (RuntimeException exception) {
                 LOGGER.debug("Could not release terrain-edit ticket for {}", chunk, exception);
             }
         }
+    }
+
+    /**
+     * Rebuilds one chunk's heightmaps and light. Unloaded chunks stay queued so a slowly loading
+     * chunk never stalls the rest of the destruction front.
+     */
+    private static boolean relight(ServerLevel level, LevelState state, ChunkPos chunk) {
+        LevelChunk levelChunk = level.getChunkSource().getChunkNow(chunk.x, chunk.z);
+        if (levelChunk == null) {
+            return false;
+        }
+        try {
+            Heightmap.primeHeightmaps(levelChunk, EnumSet.allOf(Heightmap.Types.class));
+            levelChunk.initializeLightSources();
+            level.getChunkSource().getLightEngine().propagateLightSources(chunk);
+            levelChunk.setUnsaved(true);
+        } catch (RuntimeException exception) {
+            LOGGER.warn("Could not relight bulk-edited chunk {}", chunk, exception);
+        }
+        if (state.syncAfterRelight.remove(chunk)) {
+            state.syncQueue.add(chunk);
+        }
+        return true;
     }
 
     private static void markForSync(ServerLevel level, ChunkPos chunk) {
@@ -224,6 +290,7 @@ public final class TerrainEditService {
         private final Set<ChunkPos> priorityRelightQueue = new LinkedHashSet<>();
         private final Set<ChunkPos> syncAfterRelight = new LinkedHashSet<>();
         private final Set<ChunkPos> syncQueue = new LinkedHashSet<>();
+        private final Map<ChunkPos, Integer> pendingTicketRelease = new java.util.HashMap<>();
         private final Map<ChunkPos, Integer> tickets = new java.util.HashMap<>();
     }
 }

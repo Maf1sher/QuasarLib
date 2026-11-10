@@ -3,7 +3,6 @@ package mafisher.quasar.effect.gameplay;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -40,8 +39,9 @@ import org.slf4j.LoggerFactory;
  * cleared through the chunk-section palette instead of per-block level writes; partial boundary
  * sections fall back to per-block edits so the surface stays smooth. Heightmaps, lighting, block
  * entities, chunk tickets, and one full-chunk client resend per changed column are handled by the
- * engine. {@link SyncPolicy#PROGRESSIVE} additionally reveals a column at its first edit and once
- * more after its last section, so a radial front stays visible without per-block traffic.
+ * engine. {@link SyncPolicy#PROGRESSIVE} additionally reveals a column once the current radial
+ * front has passed all of its sections, so the client never receives a half-carved column; depth
+ * reveals are spaced out and flushed at the end.
  *
  * <p>Server authority is unchanged: protection is queried before each change and the block journal
  * records a compact section snapshot for rollback. Clients only present the final chunk.
@@ -53,6 +53,8 @@ public final class EffectBulkBlockEditor {
     private static final int MAX_TICKET_CHUNKS = 1_024;
     private static final int MAX_SECTIONS = 16_384;
     private static final int MAX_STALLED_TICKS = 200;
+    /** Minimum normalized front advance before a column is revealed again. */
+    private static final double REVEAL_STEP = 0.15;
     private static final Set<Block> INDESTRUCTIBLE = Set.of(
         Blocks.BEDROCK,
         Blocks.BARRIER,
@@ -105,10 +107,13 @@ public final class EffectBulkBlockEditor {
     private final Spec spec;
     private final Ordering ordering;
     private final List<SectionEntry> sections;
+    /** Normalized front advance between depth reveals, tuned to about twelve blocks. */
+    private final double revealStep;
     private final Set<ChunkPos> ticketChunks;
-    private final Map<ChunkPos, Integer> lastSectionIndexByChunk = new HashMap<>();
+    /** Index of the next unprocessed section in each chunk, or {@code sections.size()}. */
+    private final Map<ChunkPos, Integer> nextSectionIndexByChunk = new HashMap<>();
     private final Set<ChunkPos> dirtyChunks = new LinkedHashSet<>();
-    private final Set<ChunkPos> firstReleasedChunks = new HashSet<>();
+    private final Map<ChunkPos, Double> lastReleaseScale = new HashMap<>();
     private final Set<BlockState> clearedStates = new LinkedHashSet<>();
     private int sectionIndex;
     private int stalledTicks;
@@ -125,6 +130,7 @@ public final class EffectBulkBlockEditor {
         this.spec = Objects.requireNonNull(spec, "spec");
         this.ordering = ordering == null ? Ordering.TOP_DOWN : ordering;
         this.sections = buildSections(spec.volume(), this.level, this.ordering);
+        this.revealStep = computeRevealStep(spec.volume());
         this.ticketChunks = ticketChunks(this.sections);
         this.indexSectionsByChunk();
         TerrainEditService.acquireTickets(this.level, this.ticketChunks);
@@ -177,6 +183,7 @@ public final class EffectBulkBlockEditor {
         } else {
             editor.recomputeFrontScale();
         }
+        editor.rebuildNextSectionIndices();
         editor.rebuildDirtyState();
         return editor;
     }
@@ -192,6 +199,31 @@ public final class EffectBulkBlockEditor {
      * destruction front without changing the engine's hard budget checks.
      */
     public Progress tick(int maxSections) {
+        return this.tickInternal(Double.POSITIVE_INFINITY, Math.max(0, maxSections));
+    }
+
+    /**
+     * Advances a {@link Ordering#CENTER_OUT} edit up to a normalized radius. Sections beyond the
+     * target stay queued, so the visible front follows the requested sphere instead of jumping
+     * to the final volume. The limit still caps edited sections for the level tick budget.
+     */
+    public Progress tickToScale(double scale) {
+        return this.tickToScale(scale, Integer.MAX_VALUE);
+    }
+
+    /** @see #tickToScale(double) */
+    public Progress tickToScale(double scale, int maxSections) {
+        if (this.ordering != Ordering.CENTER_OUT) {
+            throw new IllegalStateException("tickToScale requires CENTER_OUT ordering");
+        }
+        if (!Double.isFinite(scale)) {
+            throw new IllegalArgumentException("Front scale must be finite");
+        }
+        double clamped = Math.max(0.0, Math.min(1.0, scale));
+        return this.tickInternal(clamped * clamped, Math.max(0, maxSections));
+    }
+
+    private Progress tickInternal(double targetSquared, int maxSections) {
         if (this.closed || this.finished) {
             return this.progress();
         }
@@ -199,18 +231,18 @@ public final class EffectBulkBlockEditor {
         int edited = 0;
         while (this.sectionIndex < this.sections.size() && edited < limit) {
             SectionEntry entry = this.sections.get(this.sectionIndex);
+            if (entry.minDistanceSquared() > targetSquared) {
+                break;
+            }
             SectionKey key = entry.key();
             LevelChunk chunk = this.level.getChunkSource().getChunkNow(key.sectionX(), key.sectionZ());
             if (chunk == null) {
                 this.stalledTicks++;
-                if (this.stalledTicks > MAX_STALLED_TICKS) {
+                if (this.stalledTicks == MAX_STALLED_TICKS) {
                     LOGGER.warn(
-                        "Skipping bulk edit section {} {} {} because its chunk never loaded",
-                        key.sectionX(), key.sectionY(), key.sectionZ()
+                        "Bulk edit is waiting for chunk {} {}; the front will resume when it loads",
+                        key.sectionX(), key.sectionZ()
                     );
-                    this.sectionIndex++;
-                    this.stalledTicks = 0;
-                    continue;
                 }
                 break;
             }
@@ -220,6 +252,7 @@ public final class EffectBulkBlockEditor {
                 || section.hasOnlyAir()
                 || !section.maybeHas(state -> !state.isAir()
                     && !INDESTRUCTIBLE.contains(state.getBlock()))) {
+                this.passSection(entry);
                 this.sectionIndex++;
                 this.stalledTicks = 0;
                 continue;
@@ -231,11 +264,15 @@ public final class EffectBulkBlockEditor {
             this.stalledTicks = 0;
             this.editSection(chunk, section, key);
             this.advanceFront(entry);
+            this.passSection(entry);
             this.editedSections++;
             edited++;
         }
-        if (this.spec.syncPolicy() == SyncPolicy.PROGRESSIVE) {
-            this.releaseFinalizedChunks();
+        if (this.spec.syncPolicy() == SyncPolicy.PROGRESSIVE && !this.syncReleased) {
+            double targetScale = Double.isInfinite(targetSquared)
+                ? this.frontScale
+                : Math.min(1.0, Math.sqrt(Math.max(0.0, targetSquared)));
+            this.releaseFrontChunks(targetScale);
         }
         if (this.sectionIndex >= this.sections.size()) {
             this.finished = true;
@@ -245,6 +282,11 @@ public final class EffectBulkBlockEditor {
             }
         }
         return this.progress();
+    }
+
+    private void passSection(SectionEntry entry) {
+        ChunkPos chunk = new ChunkPos(entry.key().sectionX(), entry.key().sectionZ());
+        this.nextSectionIndexByChunk.put(chunk, entry.nextIndex());
     }
 
     /** Releases the deferred client resend for every chunk edited so far. */
@@ -273,7 +315,7 @@ public final class EffectBulkBlockEditor {
         if (releaseSync) {
             this.releaseSync();
         }
-        TerrainEditService.releaseTickets(this.level, this.ticketChunks);
+        TerrainEditService.releaseTicketsWhenSettled(this.level, this.ticketChunks);
         this.closed = true;
     }
 
@@ -286,6 +328,11 @@ public final class EffectBulkBlockEditor {
     /** Normalized radius of the furthest edited section, for radial destruction fronts. */
     public double frontScale() {
         return this.frontScale;
+    }
+
+    /** Cursor ordering this editor was created or restored with. */
+    public Ordering ordering() {
+        return this.ordering;
     }
 
     /** Number of sections that actually reached an edit attempt (skipped air is excluded). */
@@ -343,6 +390,22 @@ public final class EffectBulkBlockEditor {
         return this.dirtyChunks.size();
     }
 
+    /** Chunks held by this edit whose columns are not currently loaded. */
+    public int missingChunkCount() {
+        int missing = 0;
+        for (ChunkPos chunk : this.ticketChunks) {
+            if (this.level.getChunkSource().getChunkNow(chunk.x, chunk.z) == null) {
+                missing++;
+            }
+        }
+        return missing;
+    }
+
+    /** Whether every chunk held by this edit is loaded and ready for section edits. */
+    public boolean allChunksLoaded() {
+        return this.missingChunkCount() == 0;
+    }
+
     /** Up to twelve distinct non-air states sampled from the cleared volume, for debris palettes. */
     public List<BlockState> clearedStates() {
         return List.copyOf(this.clearedStates);
@@ -374,37 +437,62 @@ public final class EffectBulkBlockEditor {
     }
 
     private void indexSectionsByChunk() {
-        for (int index = 0; index < this.sections.size(); index++) {
-            SectionKey key = this.sections.get(index).key();
-            ChunkPos chunk = new ChunkPos(key.sectionX(), key.sectionZ());
-            this.lastSectionIndexByChunk.merge(chunk, index, Math::max);
+        this.rebuildNextSectionIndices();
+    }
+
+    /** Rebuilds the next-section cursor for every chunk from the current section index. */
+    private void rebuildNextSectionIndices() {
+        this.nextSectionIndexByChunk.clear();
+        int start = Math.max(0, Math.min(this.sectionIndex, this.sections.size()));
+        for (int index = this.sections.size() - 1; index >= start; index--) {
+            SectionEntry entry = this.sections.get(index);
+            this.nextSectionIndexByChunk.put(chunkOf(entry.key()), index);
+        }
+        for (SectionEntry entry : this.sections) {
+            this.nextSectionIndexByChunk.putIfAbsent(chunkOf(entry.key()), this.sections.size());
         }
     }
 
-    private void releaseFinalizedChunks() {
+    /**
+     * Reveals a chunk only after the current front has passed every section in its column. This
+     * keeps the client from receiving a half-carved column and spreads the relight work across
+     * the whole destruction window instead of a final flush.
+     */
+    private void releaseFrontChunks(double targetScale) {
         if (this.syncReleased) {
             return;
         }
+        double targetSquared = targetScale * targetScale;
         Iterator<ChunkPos> iterator = this.dirtyChunks.iterator();
         while (iterator.hasNext()) {
             ChunkPos chunk = iterator.next();
-            boolean firstRelease = this.firstReleasedChunks.add(chunk);
-            if (firstRelease) {
-                // Reveal the freshly carved rim immediately so the client sees the front grow.
-                TerrainEditService.queuePriorityRelight(this.level, chunk);
-                TerrainEditService.requestSync(this.level, chunk, true);
+            int nextIndex = this.nextSectionIndexByChunk.getOrDefault(chunk, this.sections.size());
+            if (nextIndex < this.sections.size()
+                && this.sections.get(nextIndex).minDistanceSquared() <= targetSquared) {
+                continue;
             }
-            int lastIndex = this.lastSectionIndexByChunk.getOrDefault(chunk, -1);
-            if (lastIndex < this.sectionIndex) {
-                if (!firstRelease) {
-                    // Final reveal after the last section in this column was processed.
-                    TerrainEditService.queuePriorityRelight(this.level, chunk);
-                    TerrainEditService.requestSync(this.level, chunk, true);
-                }
-                this.firstReleasedChunks.remove(chunk);
-                iterator.remove();
+            double previous = this.lastReleaseScale.getOrDefault(chunk, -1.0);
+            if (previous >= 0.0 && targetScale - previous < this.revealStep) {
+                continue;
             }
+            this.lastReleaseScale.put(chunk, targetScale);
+            TerrainEditService.queuePriorityRelight(this.level, chunk);
+            TerrainEditService.requestSync(this.level, chunk, true);
+            iterator.remove();
         }
+    }
+
+    private static ChunkPos chunkOf(SectionKey key) {
+        return new ChunkPos(key.sectionX(), key.sectionZ());
+    }
+
+    private static double computeRevealStep(EffectBlockVolume volume) {
+        EffectBounds bounds = volume.bounds();
+        double span = Math.max(
+            bounds.maxX() - bounds.minX(),
+            bounds.maxZ() - bounds.minZ()
+        ) * 0.5;
+        return Math.min(REVEAL_STEP, 12.0 / Math.max(1.0, span));
     }
 
     /** Persists the cursor and shape for session restore. */
@@ -433,7 +521,9 @@ public final class EffectBulkBlockEditor {
 
         boolean fullyInside = this.isFullyInside(key);
         boolean protectedWorld = BlockProtectionService.hasProtections();
+        boolean atWorldFloor = key.sectionY() <= this.level.getMinSection();
         boolean fastFullSection = fullyInside
+            && !atWorldFloor
             && this.spec.replacement().isAir()
             && !protectedWorld
             && !section.maybeHas(state -> INDESTRUCTIBLE.contains(state.getBlock()));
@@ -517,6 +607,10 @@ public final class EffectBulkBlockEditor {
             int worldX = baseX + localX;
             int worldY = baseY + localY;
             int worldZ = baseZ + localZ;
+            if (worldY <= this.level.getMinBuildHeight()) {
+                // Keep the bottom layer so a large carve never opens a see-through void floor.
+                continue;
+            }
             if (!fullyInside && !this.spec.volume().contains(
                 worldX + 0.5, worldY + 0.5, worldZ + 0.5
             )) {
@@ -551,9 +645,11 @@ public final class EffectBulkBlockEditor {
         chunk.setUnsaved(true);
         ChunkPos chunkPos = chunk.getPos();
         this.dirtyChunks.add(chunkPos);
-        TerrainEditService.queueRelight(this.level, chunkPos);
-        if (this.shouldSyncNow(chunkPos)) {
-            TerrainEditService.requestSync(this.level, chunkPos, true);
+        if (this.spec.syncPolicy() != SyncPolicy.PROGRESSIVE) {
+            TerrainEditService.queueRelight(this.level, chunkPos);
+            if (this.shouldSyncNow(chunkPos)) {
+                TerrainEditService.requestSync(this.level, chunkPos, true);
+            }
         }
     }
 
@@ -647,6 +743,13 @@ public final class EffectBulkBlockEditor {
             this.dirtyChunks.add(new ChunkPos(key.sectionX(), key.sectionZ()));
         }
         for (ChunkPos chunk : this.dirtyChunks) {
+            if (this.spec.syncPolicy() == SyncPolicy.PROGRESSIVE) {
+                if (this.syncReleased) {
+                    TerrainEditService.queuePriorityRelight(this.level, chunk);
+                    TerrainEditService.requestSync(this.level, chunk, true);
+                }
+                continue;
+            }
             TerrainEditService.queueRelight(this.level, chunk);
             if (this.syncReleased || this.shouldSyncNow(chunk)) {
                 TerrainEditService.requestSync(this.level, chunk, true);
@@ -676,7 +779,7 @@ public final class EffectBulkBlockEditor {
         if (ordering == Ordering.CENTER_OUT) {
             SectionShape shape = SectionShape.of(volume);
             PriorityQueue<SectionEntry> nearest = new PriorityQueue<>(
-                Comparator.comparingDouble(SectionEntry::distanceSquared).reversed()
+                Comparator.comparingDouble(SectionEntry::minDistanceSquared).reversed()
             );
             int total = 0;
             for (int sectionY = maxSectionY; sectionY >= minSectionY; sectionY--) {
@@ -691,7 +794,9 @@ public final class EffectBulkBlockEditor {
                         double dz = (sectionZ * 16.0 + 8.0 - shape.centerZ()) / shape.radiusZ();
                         nearest.add(new SectionEntry(
                             new SectionKey(sectionX, sectionY, sectionZ),
-                            dx * dx + dy * dy + dz * dz
+                            dx * dx + dy * dy + dz * dz,
+                            minDistanceSquared(shape, sectionX, sectionY, sectionZ),
+                            0
                         ));
                         if (nearest.size() > MAX_SECTIONS) {
                             nearest.poll();
@@ -700,7 +805,7 @@ public final class EffectBulkBlockEditor {
                 }
             }
             List<SectionEntry> sections = new ArrayList<>(nearest);
-            sections.sort(Comparator.comparingDouble(SectionEntry::distanceSquared));
+            sections.sort(Comparator.comparingDouble(SectionEntry::minDistanceSquared));
             if (total > MAX_SECTIONS) {
                 LOGGER.warn(
                     "Bulk edit exceeds {} sections; keeping the {} nearest to the centre",
@@ -708,7 +813,7 @@ public final class EffectBulkBlockEditor {
                     MAX_SECTIONS
                 );
             }
-            return sections;
+            return withNextIndices(sections);
         }
 
         List<SectionEntry> sections = new ArrayList<>();
@@ -718,7 +823,7 @@ public final class EffectBulkBlockEditor {
                 for (int sectionZ = minSectionZ; sectionZ <= maxSectionZ; sectionZ++) {
                     if (volume.intersectsSection(sectionX, sectionY, sectionZ)) {
                         sections.add(new SectionEntry(
-                            new SectionKey(sectionX, sectionY, sectionZ), 0.0
+                            new SectionKey(sectionX, sectionY, sectionZ), 0.0, 0.0, 0
                         ));
                         if (sections.size() >= MAX_SECTIONS) {
                             LOGGER.warn(
@@ -730,7 +835,55 @@ public final class EffectBulkBlockEditor {
                 }
             }
         }
-        return sections;
+        return withNextIndices(sections);
+    }
+
+    /** Annotates each section with the next cursor index in the same chunk column. */
+    private static List<SectionEntry> withNextIndices(List<SectionEntry> sections) {
+        SectionEntry[] entries = sections.toArray(new SectionEntry[0]);
+        Map<ChunkPos, Integer> nextByChunk = new HashMap<>();
+        for (int index = entries.length - 1; index >= 0; index--) {
+            SectionEntry entry = entries[index];
+            ChunkPos chunk = chunkOf(entry.key());
+            int next = nextByChunk.getOrDefault(chunk, entries.length);
+            nextByChunk.put(chunk, index);
+            entries[index] = new SectionEntry(
+                entry.key(), entry.distanceSquared(), entry.minDistanceSquared(), next
+            );
+        }
+        return List.of(entries);
+    }
+
+    /** Minimum normalized distance from the shape centre to a section box. */
+    private static double minDistanceSquared(
+        SectionShape shape,
+        int sectionX,
+        int sectionY,
+        int sectionZ
+    ) {
+        double minX = sectionX * 16.0;
+        double minY = sectionY * 16.0;
+        double minZ = sectionZ * 16.0;
+        double dx = axisMinDistance(
+            (minX - shape.centerX()) / shape.radiusX(),
+            (minX + 16.0 - shape.centerX()) / shape.radiusX()
+        );
+        double dy = axisMinDistance(
+            (minY - shape.centerY()) / shape.radiusY(),
+            (minY + 16.0 - shape.centerY()) / shape.radiusY()
+        );
+        double dz = axisMinDistance(
+            (minZ - shape.centerZ()) / shape.radiusZ(),
+            (minZ + 16.0 - shape.centerZ()) / shape.radiusZ()
+        );
+        return dx * dx + dy * dy + dz * dz;
+    }
+
+    private static double axisMinDistance(double min, double max) {
+        if (max < 0.0) {
+            return -max;
+        }
+        return min > 0.0 ? min : 0.0;
     }
 
     /** Test-friendly view of the ordered section cursor. */
@@ -758,7 +911,12 @@ public final class EffectBulkBlockEditor {
         return chunks;
     }
 
-    private record SectionEntry(SectionKey key, double distanceSquared) {
+    private record SectionEntry(
+        SectionKey key,
+        double distanceSquared,
+        double minDistanceSquared,
+        int nextIndex
+    ) {
     }
 
     private record SectionShape(
