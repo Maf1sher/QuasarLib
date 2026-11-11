@@ -43,6 +43,9 @@ import mafisher.quasar.effect.scale.SegmentedVisualEffectService;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectSpec;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.StringTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -62,6 +65,7 @@ class EffectRestoreServiceTest {
     private static final ResourceLocation DIMENSION = ResourceLocation.fromNamespaceAndPath("minecraft", "overworld");
 
     private ServerLevel level;
+    private DimensionDataStorage storage;
     private EffectSavedData store;
     private long gameTime;
 
@@ -69,14 +73,14 @@ class EffectRestoreServiceTest {
     void setUp() {
         TestConfig.loadDefaults();
         this.level = mock(ServerLevel.class);
-        DimensionDataStorage storage = mock(DimensionDataStorage.class);
+        this.storage = mock(DimensionDataStorage.class);
         this.store = new EffectSavedData();
         when(this.level.isClientSide()).thenReturn(false);
         when(this.level.dimension()).thenReturn(Level.OVERWORLD);
         when(this.level.players()).thenReturn(List.of());
         when(this.level.getGameTime()).thenAnswer(ignored -> this.gameTime);
-        when(this.level.getDataStorage()).thenReturn(storage);
-        doReturn(this.store).when(storage).computeIfAbsent(
+        when(this.level.getDataStorage()).thenReturn(this.storage);
+        doReturn(this.store).when(this.storage).computeIfAbsent(
             any(SavedData.Factory.class), eq(EffectSavedData.FILE_ID)
         );
         this.gameTime = 40L;
@@ -333,6 +337,138 @@ class EffectRestoreServiceTest {
 
         verify(this.level).setBlockAndUpdate(position, oldState);
         assertFalse(this.store.contains(instanceId));
+    }
+
+    @Test
+    void restoringAVisualDoesNotDirtyAnUnchangedStore() {
+        this.store.put(visualDescriptor(0L, 200, DIMENSION));
+        this.store.setDirty(false);
+
+        EffectRecoveryReport report = EffectRestoreService.restoreLevel(this.level);
+
+        assertEquals(1, report.restored());
+        assertFalse(this.store.isDirty());
+    }
+
+    @Test
+    void restoringSegmentedDoesNotDirtyAnUnchangedStore() {
+        SegmentedVisualEffectSpec spec = new SegmentedVisualEffectSpec(
+            EFFECT,
+            new net.minecraft.world.phys.Vec3(0.0, 64.0, 0.0),
+            0.0F, 0.0F, 0.0F,
+            1.0F, 2, 2, 4.0,
+            200,
+            7L,
+            EffectAudience.dimensionWide()
+        );
+        SegmentedVisualEffectService.start(this.level, spec);
+        SegmentedVisualEffectService.stopAll(this.level, false);
+        VisualEffectService.clear(this.level);
+        this.gameTime = 80L;
+        this.store.setDirty(false);
+
+        EffectRecoveryReport report = EffectRestoreService.restoreLevel(this.level);
+
+        assertEquals(1, report.restored());
+        assertFalse(this.store.isDirty());
+    }
+
+    @Test
+    void reportsANewerSchemaWithoutTouchingTheStore() {
+        CompoundTag source = new CompoundTag();
+        source.putInt("schema_version", 99);
+        source.putString("future", "data");
+        this.store = EffectSavedData.load(source, null);
+        doReturn(this.store).when(this.storage).computeIfAbsent(
+            any(SavedData.Factory.class), eq(EffectSavedData.FILE_ID)
+        );
+
+        EffectRecoveryReport report = EffectRestoreService.restoreLevel(this.level);
+
+        assertEquals(1, report.messages().size());
+        assertTrue(report.messages().getFirst().contains("newer"));
+        assertFalse(this.store.isDirty());
+        assertEquals(99, this.store.save(new CompoundTag(), null).getInt("schema_version"));
+    }
+
+    @Test
+    void reportsRemovedOwnedChildren() {
+        UUID parentId = UUID.randomUUID();
+        EffectDescriptor parent = gameplayDescriptor(parentId, null);
+        EffectDescriptor child = visualDescriptor(0L, 200, DIMENSION).withOwnerSessionId(parentId);
+        this.store.put(parent);
+        this.store.put(child);
+        BlockJournal journal = new BlockJournal();
+        journal.record(
+            this.level,
+            new BlockChange(new BlockPos(0, 64, 0), Blocks.AIR.defaultBlockState()),
+            Blocks.STONE.defaultBlockState()
+        );
+        journal.beginRollback();
+        this.store.putJournal(parentId, journal);
+
+        EffectRecoveryReport report = EffectRestoreService.restoreLevel(this.level);
+
+        assertEquals(1, report.rollbacks());
+        assertTrue(report.messages().stream().anyMatch(message -> message.contains("Removed 1 child effect")));
+        assertTrue(this.store.contains(parentId));
+        assertFalse(this.store.contains(child.instanceId()));
+    }
+
+    @Test
+    void quarantinesSegmentedEffectWithInvalidSegmentIds() {
+        SegmentedVisualEffectSpec spec = new SegmentedVisualEffectSpec(
+            EFFECT,
+            new net.minecraft.world.phys.Vec3(0.0, 64.0, 0.0),
+            0.0F, 0.0F, 0.0F,
+            1.0F, 2, 2, 4.0,
+            200,
+            7L,
+            EffectAudience.dimensionWide()
+        );
+        UUID coordinatorId = SegmentedVisualEffectService.start(this.level, spec).coordinatorId();
+        SegmentedVisualEffectService.stopAll(this.level, false);
+        VisualEffectService.clear(this.level);
+        this.gameTime = 80L;
+        EffectDescriptor descriptor = this.store.find(coordinatorId);
+        CompoundTag state = descriptor.state();
+        ListTag segmentIds = state.getList("segment_ids", Tag.TAG_STRING);
+        segmentIds.set(0, StringTag.valueOf(UUID.randomUUID().toString()));
+        this.store.put(descriptor.withState(state));
+
+        EffectRecoveryReport report = EffectRestoreService.restoreLevel(this.level);
+
+        assertEquals(1, report.quarantined());
+        assertFalse(this.store.contains(coordinatorId));
+        assertEquals(1, this.store.quarantineCount());
+    }
+
+    private static EffectDescriptor gameplayDescriptor(UUID instanceId, UUID ownerSessionId) {
+        GameplayEffectSpec spec = new GameplayEffectSpec(
+            EFFECT,
+            null,
+            new net.minecraft.world.phys.Vec3(0.0, 64.0, 0.0),
+            EffectPhasePlan.of(new EffectPhase("strike", 100)),
+            3L,
+            EffectTickBudget.unlimited(),
+            OwnerPolicy.CONTINUE
+        );
+        return new EffectDescriptor(
+            instanceId,
+            EffectKind.GAMEPLAY,
+            EFFECT,
+            DIMENSION,
+            new EffectTransform(new EffectPoint(0.0, 64.0, 0.0), 0.0F, 0.0F, 0.0F),
+            1.0F,
+            3L,
+            0L,
+            100,
+            EffectAudience.dimensionWide(),
+            EffectCapabilities.NONE,
+            EffectPersistence.RESUMABLE,
+            ownerSessionId,
+            GameplayEffectNbt.saveDescriptorState(spec, new CompoundTag())
+        );
     }
 
     private static EffectDescriptor visualDescriptor(long startGameTime, int durationTicks,

@@ -57,6 +57,15 @@ public final class EffectRestoreService {
         if (store == null) {
             return EffectRecoveryReport.EMPTY;
         }
+        if (store.isNewerSchema()) {
+            String message = "Effect store schema " + store.schemaVersion()
+                + " is newer than supported schema " + EffectSavedData.SCHEMA_VERSION
+                + "; left untouched";
+            LOGGER.warn(message);
+            EffectRecoveryReport report = new EffectRecoveryReport(0, 0, 0, 0, 0, List.of(message));
+            REPORTS.put(level, report);
+            return report;
+        }
 
         List<EffectDescriptor> descriptors = new ArrayList<>(store.descriptors());
         descriptors.sort(Comparator.comparingInt(descriptor -> RESTORE_ORDER.indexOf(descriptor.kind())));
@@ -74,15 +83,17 @@ public final class EffectRestoreService {
                 continue;
             }
             handledRollbacks.add(descriptor.instanceId());
+            int owned = store.removeOwnedBy(descriptor.instanceId());
+            if (owned > 0) {
+                messages.add("Removed " + owned + " child effect(s) owned by " + descriptor.instanceId());
+            }
             if (!descriptor.dimensionId().equals(level.dimension().location())) {
-                store.removeOwnedBy(descriptor.instanceId());
                 store.quarantine(descriptor.instanceId());
                 quarantined++;
                 messages.add("Quarantined pending rollback " + descriptor.instanceId()
                     + " in " + descriptor.dimensionId());
                 continue;
             }
-            store.removeOwnedBy(descriptor.instanceId());
             if (BlockRollbackService.schedule(level, descriptor.instanceId(), journal)) {
                 rollbacks++;
                 messages.add("Rolling back " + descriptor.instanceId());
@@ -124,7 +135,6 @@ public final class EffectRestoreService {
             }
         }
 
-        store.setDirty();
         EffectRecoveryReport report = new EffectRecoveryReport(
             restored, expired, quarantined, unsupported, rollbacks, messages
         );
@@ -160,7 +170,7 @@ public final class EffectRestoreService {
         CinematicTimeline timeline = CinematicTimelineRegistry.find(descriptor.typeId()).orElseThrow(
             () -> new IllegalArgumentException("Unknown cinematic timeline " + descriptor.typeId())
         );
-        CompoundTag state = descriptor.state();
+        CompoundTag state = descriptor.stateView();
         if (state.getBoolean("anchored")) {
             Vec3 anchor = new Vec3(
                 state.getDouble("anchor_x"),
@@ -194,7 +204,7 @@ public final class EffectRestoreService {
     }
 
     private static boolean restoreSegmented(ServerLevel level, EffectDescriptor descriptor) {
-        CompoundTag state = descriptor.state();
+        CompoundTag state = descriptor.stateView();
         EffectAudioSpec audio = EffectAudioNbt.loadFrom(state);
         SegmentTerrainConform terrain = new SegmentTerrainConform(
             SegmentHeightSource.byName(state.getString("terrain_source"), SegmentHeightSource.NONE),
@@ -214,12 +224,12 @@ public final class EffectRestoreService {
             descriptor.seed(),
             descriptor.audience(),
             audio,
-            priority(descriptor),
+            priority(state, descriptor),
             Math.max(1, state.getInt("layers")),
             state.getDouble("layer_spacing"),
             terrain
         );
-        List<UUID> segmentIds = segmentIds(descriptor);
+        List<UUID> segmentIds = segmentIds(state, descriptor);
         return SegmentedVisualEffectService.restore(
             level,
             spec,
@@ -231,6 +241,7 @@ public final class EffectRestoreService {
     }
 
     private static boolean restoreVisual(ServerLevel level, EffectDescriptor descriptor) {
+        CompoundTag state = descriptor.stateView();
         VisualEffectSpec spec = new VisualEffectSpec(
             descriptor.typeId(),
             transformPosition(descriptor),
@@ -241,8 +252,8 @@ public final class EffectRestoreService {
             descriptor.durationTicks(),
             descriptor.seed(),
             descriptor.audience(),
-            EffectAudioNbt.loadFrom(descriptor.state()),
-            priority(descriptor)
+            EffectAudioNbt.loadFrom(state),
+            priority(state, descriptor)
         );
         VisualEffectHandle handle = VisualEffectService.restore(
             level,
@@ -271,24 +282,35 @@ public final class EffectRestoreService {
         return new Vec3(position.x(), position.y(), position.z());
     }
 
-    private static EffectPriority priority(EffectDescriptor descriptor) {
-        return EffectPriority.byName(descriptor.state().getString("priority"), EffectPriority.NORMAL);
+    private static EffectPriority priority(CompoundTag state, EffectDescriptor descriptor) {
+        String context = descriptor.kind().name() + " effect " + descriptor.instanceId();
+        return EffectPriority.byName(state.getString("priority"), EffectPriority.NORMAL, context);
     }
 
-    private static List<UUID> segmentIds(EffectDescriptor descriptor) {
-        CompoundTag state = descriptor.state();
+    private static List<UUID> segmentIds(CompoundTag state, EffectDescriptor descriptor) {
         int count = Math.max(0, state.getInt("columns") * state.getInt("rows")
             * Math.max(1, state.getInt("layers")));
         if (!state.contains("segment_ids")) {
             return SegmentedVisualEffectService.restoreSegmentIds(descriptor.instanceId(), count);
         }
         var stored = state.getList("segment_ids", Tag.TAG_STRING);
+        if (stored.size() != count) {
+            throw new IllegalArgumentException(
+                "Effect " + descriptor.instanceId() + " expected " + count
+                    + " segment IDs but found " + stored.size()
+            );
+        }
         List<UUID> ids = new ArrayList<>(stored.size());
         for (int index = 0; index < stored.size(); index++) {
-            ids.add(UUID.fromString(stored.getString(index)));
+            try {
+                ids.add(UUID.fromString(stored.getString(index)));
+            } catch (IllegalArgumentException exception) {
+                throw new IllegalArgumentException(
+                    "Invalid segment ID at index " + index + " for effect " + descriptor.instanceId(),
+                    exception
+                );
+            }
         }
-        return ids.size() == count
-            ? List.copyOf(ids)
-            : SegmentedVisualEffectService.restoreSegmentIds(descriptor.instanceId(), count);
+        return List.copyOf(ids);
     }
 }

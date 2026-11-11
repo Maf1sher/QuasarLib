@@ -2,12 +2,14 @@ package mafisher.quasar.effect.scale;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import mafisher.quasar.effect.EffectAudience;
@@ -284,6 +286,55 @@ class SegmentedVisualEffectServiceTest {
                 assertEquals(64.0, payload.heights().y(column, row));
             }
         }
+    }
+
+    @Test
+    void restoreAcceptsDeterministicSegmentIds() {
+        UUID coordinatorId = UUID.randomUUID();
+        List<UUID> segmentIds = SegmentedVisualEffectService.restoreSegmentIds(coordinatorId, 4);
+
+        SegmentedVisualEffectHandle handle = SegmentedVisualEffectService.restore(
+            this.level, spec(2, 2, 200), coordinatorId, 0L, segmentIds, null
+        );
+
+        assertTrue(SegmentedVisualEffectService.isActive(this.level, handle));
+        assertEquals(4, SegmentedVisualEffectService.activeSegmentCount(this.level));
+    }
+
+    @Test
+    void restoreRejectsMismatchedSegmentCount() {
+        UUID coordinatorId = UUID.randomUUID();
+        List<UUID> segmentIds = SegmentedVisualEffectService.restoreSegmentIds(coordinatorId, 3);
+
+        assertThrows(IllegalArgumentException.class, () -> SegmentedVisualEffectService.restore(
+            this.level, spec(2, 2, 200), coordinatorId, 0L, segmentIds, null
+        ));
+    }
+
+    @Test
+    void restoreRejectsNonDeterministicSegmentId() {
+        UUID coordinatorId = UUID.randomUUID();
+        List<UUID> segmentIds = new ArrayList<>(
+            SegmentedVisualEffectService.restoreSegmentIds(coordinatorId, 4)
+        );
+        segmentIds.set(1, UUID.randomUUID());
+
+        assertThrows(IllegalArgumentException.class, () -> SegmentedVisualEffectService.restore(
+            this.level, spec(2, 2, 200), coordinatorId, 0L, segmentIds, null
+        ));
+    }
+
+    @Test
+    void restoreRejectsDuplicateSegmentIds() {
+        UUID coordinatorId = UUID.randomUUID();
+        List<UUID> segmentIds = new ArrayList<>(
+            SegmentedVisualEffectService.restoreSegmentIds(coordinatorId, 4)
+        );
+        segmentIds.set(1, segmentIds.get(0));
+
+        assertThrows(IllegalArgumentException.class, () -> SegmentedVisualEffectService.restore(
+            this.level, spec(2, 2, 200), coordinatorId, 0L, segmentIds, null
+        ));
     }
 
     private static SegmentedVisualEffectSpec terrainSpec(int columns, int rows, double spacing) {

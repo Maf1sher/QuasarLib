@@ -104,6 +104,32 @@ public final class SegmentedVisualEffectService {
         return SegmentIds.segmentId(coordinatorId, index);
     }
 
+    private static void validateRestoredSegmentIds(UUID coordinatorId, int count, List<UUID> ids) {
+        if (ids.size() != count) {
+            throw new IllegalArgumentException(
+                "Segmented effect " + coordinatorId + " expected " + count
+                    + " segment IDs but found " + ids.size()
+            );
+        }
+        Set<UUID> seen = new HashSet<>(count);
+        for (int index = 0; index < count; index++) {
+            UUID expected = segmentId(coordinatorId, index);
+            UUID actual = ids.get(index);
+            if (!expected.equals(actual)) {
+                throw new IllegalArgumentException(
+                    "Segmented effect " + coordinatorId + " has segment ID " + actual
+                        + " at index " + index + ", expected " + expected
+                );
+            }
+            if (!seen.add(actual)) {
+                throw new IllegalArgumentException(
+                    "Segmented effect " + coordinatorId + " repeats segment ID " + actual
+                        + " at index " + index
+                );
+            }
+        }
+    }
+
     /** Restores a coordinator with its original segment identities and start time. */
     public static SegmentedVisualEffectHandle restore(
         ServerLevel level,
@@ -156,10 +182,8 @@ public final class SegmentedVisualEffectService {
         if (level.isClientSide()) {
             throw new IllegalStateException("Segmented visual effects are server-authoritative");
         }
-        if (restoredSegmentIds != null && restoredSegmentIds.size() != spec.segmentCount()) {
-            LOGGER.warn("Could not restore segmented effect {}: expected {} segment IDs but found {}",
-                coordinatorId, spec.segmentCount(), restoredSegmentIds.size());
-            return null;
+        if (restoredSegmentIds != null) {
+            validateRestoredSegmentIds(coordinatorId, spec.segmentCount(), restoredSegmentIds);
         }
         SegmentHeightProfile heights = resolveHeights(level, spec, restoredDescriptor);
 
@@ -192,7 +216,10 @@ public final class SegmentedVisualEffectService {
         saveHeights(state, heights);
         ListTag ids = new ListTag();
         for (int index = 0; index < spec.segmentCount(); index++) {
-            ids.add(StringTag.valueOf(segmentId(coordinatorId, index).toString()));
+            UUID id = restoredSegmentIds == null
+                ? segmentId(coordinatorId, index)
+                : restoredSegmentIds.get(index);
+            ids.add(StringTag.valueOf(id.toString()));
         }
         state.put("segment_ids", ids);
         state.putString("priority", spec.priority().name());

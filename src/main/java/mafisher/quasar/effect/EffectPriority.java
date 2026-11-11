@@ -1,5 +1,8 @@
 package mafisher.quasar.effect;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * Author-declared importance of one effect. Capacity budgets are soft: when a level is over
  * budget the engine culls the lowest-priority effect instead of rejecting a start with an
@@ -16,6 +19,8 @@ public enum EffectPriority {
     HIGH(3),
     /** Scripted or focal effects that should only be culled by another critical effect. */
     CRITICAL(4);
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(EffectPriority.class);
 
     private final int weight;
 
@@ -39,6 +44,20 @@ public enum EffectPriority {
         try {
             return valueOf(name);
         } catch (IllegalArgumentException unknown) {
+            return fallback;
+        }
+    }
+
+    /** Parses a persisted name and reports a missing or unreadable value with its effect context. */
+    public static EffectPriority byName(String name, EffectPriority fallback, String context) {
+        if (name == null || name.isEmpty()) {
+            LOGGER.debug("Missing persisted priority for {}; using {}", context, fallback);
+            return fallback;
+        }
+        try {
+            return valueOf(name);
+        } catch (IllegalArgumentException unknown) {
+            LOGGER.warn("Unknown persisted priority '{}' for {}; using {}", name, context, fallback);
             return fallback;
         }
     }

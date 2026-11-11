@@ -34,7 +34,7 @@ public final class EffectDescriptorNbt {
         if (descriptor.ownerSessionId() != null) {
             tag.putUUID("owner_session", descriptor.ownerSessionId());
         }
-        tag.put("state", descriptor.state());
+        tag.put("state", descriptor.stateView().copy());
         return tag;
     }
 

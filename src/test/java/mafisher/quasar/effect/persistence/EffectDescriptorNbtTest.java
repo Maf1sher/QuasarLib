@@ -3,6 +3,8 @@ package mafisher.quasar.effect.persistence;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -45,6 +47,30 @@ class EffectDescriptorNbtTest {
         read.putString("phase", "mutated");
 
         assertEquals("telegraph", descriptor.state().getString("phase"));
+    }
+
+    @Test
+    void transformUpdatesReuseOwnedState() {
+        EffectDescriptor descriptor = descriptor(new CompoundTag());
+        EffectDescriptor updated = descriptor.withTransform(
+            new EffectTransform(new EffectPoint(3.0, 70.0, 4.0), 1.0F, 2.0F, 3.0F)
+        );
+
+        assertNotSame(descriptor, updated);
+        assertSame(descriptor.stateView(), updated.stateView());
+        assertEquals(descriptor.state(), updated.state());
+    }
+
+    @Test
+    void withStateCopiesOnlyTheNewState() {
+        EffectDescriptor descriptor = descriptor(new CompoundTag());
+        CompoundTag state = new CompoundTag();
+        state.putString("phase", "strike");
+
+        EffectDescriptor updated = descriptor.withState(state);
+        state.putString("phase", "mutated");
+
+        assertEquals("strike", updated.state().getString("phase"));
     }
 
     @Test

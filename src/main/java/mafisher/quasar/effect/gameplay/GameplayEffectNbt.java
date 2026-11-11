@@ -67,7 +67,8 @@ public final class GameplayEffectNbt {
     }
 
     public static GameplayEffectSpec loadSpec(EffectDescriptor descriptor) {
-        CompoundTag tag = descriptor.state().getCompound(SPEC_KEY);
+        CompoundTag state = descriptor.state();
+        CompoundTag tag = state.getCompound(SPEC_KEY);
         if (tag.isEmpty()) {
             throw new IllegalArgumentException("Gameplay descriptor is missing its spec state");
         }
@@ -99,7 +100,11 @@ public final class GameplayEffectNbt {
             ),
             OwnerPolicy.valueOf(tag.getString("owner_policy")),
             audio,
-            EffectPriority.byName(tag.getString("priority"), EffectPriority.NORMAL),
+            EffectPriority.byName(
+                tag.getString("priority"),
+                EffectPriority.NORMAL,
+                "GAMEPLAY effect " + descriptor.instanceId()
+            ),
             tag.contains("scale", Tag.TAG_FLOAT) ? tag.getFloat("scale") : descriptor.scale()
         );
     }

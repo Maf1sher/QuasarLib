@@ -26,15 +26,15 @@ public final class EffectSavedData extends SavedData {
     public static final int SCHEMA_VERSION = 2;
 
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
+    private static final String QUARANTINED_JOURNAL_KEY = "quarantined_journal";
 
     private final Map<UUID, EffectDescriptor> descriptors = new LinkedHashMap<>();
-    /** Raw NBT from the last load, preserved so unsupported entries can be quarantined verbatim. */
-    private final Map<UUID, CompoundTag> rawDescriptors = new LinkedHashMap<>();
     private final Map<UUID, BlockJournal> journals = new LinkedHashMap<>();
     private final ListTag quarantine = new ListTag();
     private int schemaVersion = SCHEMA_VERSION;
     private boolean newerSchema;
     private CompoundTag newerSchemaSource;
+    private boolean readOnlyWriteLogged;
 
     public EffectSavedData() {
     }
@@ -50,51 +50,73 @@ public final class EffectSavedData extends SavedData {
         if (version > SCHEMA_VERSION) {
             data.newerSchema = true;
             data.newerSchemaSource = tag.copy();
+            LOGGER.warn(
+                "Effect store {} uses schema {} but this build supports {}; keeping it read-only",
+                FILE_ID,
+                version,
+                SCHEMA_VERSION
+            );
             return data;
         }
 
+        data.loadDescriptors(tag);
+        if (version >= 2) {
+            data.loadJournals(tag);
+        }
+        data.loadQuarantine(tag);
+        return data;
+    }
+
+    private void loadDescriptors(CompoundTag tag) {
         ListTag effects = tag.getList("effects", Tag.TAG_COMPOUND);
         for (int index = 0; index < effects.size(); index++) {
             CompoundTag entry = effects.getCompound(index);
             try {
                 EffectDescriptor descriptor = EffectDescriptorNbt.load(entry);
-                if (data.descriptors.containsKey(descriptor.instanceId())) {
-                    data.quarantine.add(entry.copy());
+                if (this.descriptors.containsKey(descriptor.instanceId())) {
+                    LOGGER.warn("Quarantining duplicate effect {} from {}", descriptor.instanceId(), FILE_ID);
+                    this.quarantine.add(entry.copy());
                     continue;
                 }
-                data.descriptors.put(descriptor.instanceId(), descriptor);
-                data.rawDescriptors.put(descriptor.instanceId(), entry.copy());
+                this.descriptors.put(descriptor.instanceId(), descriptor);
             } catch (RuntimeException exception) {
-                data.quarantine.add(entry.copy());
+                this.quarantine.add(entry.copy());
+                LOGGER.warn("Quarantining an unreadable effect entry from {}", FILE_ID, exception);
             }
         }
+    }
 
-        if (version >= 2) {
-            ListTag storedJournals = tag.getList("journals", Tag.TAG_COMPOUND);
-            for (int index = 0; index < storedJournals.size(); index++) {
-                CompoundTag entry = storedJournals.getCompound(index);
-                UUID instanceId = entry.contains("effect_id") ? entry.getUUID("effect_id") : null;
-                if (instanceId == null || !data.descriptors.containsKey(instanceId)) {
-                    continue;
-                }
-                try {
-                    data.journals.put(instanceId, BlockJournal.load(entry));
-                } catch (RuntimeException exception) {
-                    LOGGER.warn("Quarantining effect {} with an unreadable block journal", instanceId, exception);
-                    CompoundTag raw = data.rawDescriptors.remove(instanceId);
-                    data.descriptors.remove(instanceId);
-                    if (raw != null) {
-                        data.quarantine.add(raw);
-                    }
-                }
+    private void loadJournals(CompoundTag tag) {
+        ListTag storedJournals = tag.getList("journals", Tag.TAG_COMPOUND);
+        for (int index = 0; index < storedJournals.size(); index++) {
+            CompoundTag entry = storedJournals.getCompound(index);
+            UUID instanceId = entry.contains("effect_id") ? entry.getUUID("effect_id") : null;
+            if (instanceId == null) {
+                LOGGER.warn("Ignoring a block journal without an effect ID in {}", FILE_ID);
+                continue;
+            }
+            EffectDescriptor descriptor = this.descriptors.get(instanceId);
+            if (descriptor == null) {
+                LOGGER.warn("Ignoring a block journal for unknown effect {} in {}", instanceId, FILE_ID);
+                continue;
+            }
+            try {
+                this.journals.put(instanceId, BlockJournal.load(entry));
+            } catch (RuntimeException exception) {
+                LOGGER.warn("Quarantining effect {} with an unreadable block journal", instanceId, exception);
+                CompoundTag raw = EffectDescriptorNbt.save(descriptor);
+                raw.put(QUARANTINED_JOURNAL_KEY, entry.copy());
+                this.quarantine.add(raw);
+                this.descriptors.remove(instanceId);
             }
         }
+    }
 
+    private void loadQuarantine(CompoundTag tag) {
         ListTag storedQuarantine = tag.getList("quarantine", Tag.TAG_COMPOUND);
         for (int index = 0; index < storedQuarantine.size(); index++) {
-            data.quarantine.add(storedQuarantine.getCompound(index).copy());
+            this.quarantine.add(storedQuarantine.getCompound(index).copy());
         }
-        return data;
     }
 
     @Override
@@ -140,20 +162,21 @@ public final class EffectSavedData extends SavedData {
 
     public void put(EffectDescriptor descriptor) {
         Objects.requireNonNull(descriptor, "descriptor");
-        if (this.newerSchema) {
+        if (!this.writable("put")) {
             return;
         }
-        this.descriptors.put(descriptor.instanceId(), descriptor);
-        this.setDirty();
+        EffectDescriptor previous = this.descriptors.put(descriptor.instanceId(), descriptor);
+        if (!Objects.equals(previous, descriptor)) {
+            this.setDirty();
+        }
     }
 
     public void remove(UUID instanceId) {
         Objects.requireNonNull(instanceId, "instanceId");
-        if (this.newerSchema) {
+        if (!this.writable("remove")) {
             return;
         }
         boolean removed = this.descriptors.remove(instanceId) != null;
-        this.rawDescriptors.remove(instanceId);
         boolean journalRemoved = this.journals.remove(instanceId) != null;
         if (removed || journalRemoved) {
             this.setDirty();
@@ -163,51 +186,91 @@ public final class EffectSavedData extends SavedData {
     /** Moves one unreadable or unsupported descriptor into the preserved quarantine list. */
     public void quarantine(UUID instanceId) {
         Objects.requireNonNull(instanceId, "instanceId");
-        if (this.newerSchema) {
+        if (!this.writable("quarantine")) {
             return;
         }
-        CompoundTag raw = this.rawDescriptors.get(instanceId);
         EffectDescriptor descriptor = this.descriptors.get(instanceId);
-        if (raw == null && descriptor != null) {
+        BlockJournal journal = this.journals.get(instanceId);
+        CompoundTag raw = null;
+        if (descriptor != null) {
             try {
                 raw = EffectDescriptorNbt.save(descriptor);
             } catch (RuntimeException exception) {
                 LOGGER.warn("Could not serialize quarantined effect {}", instanceId, exception);
             }
         }
-        this.rawDescriptors.remove(instanceId);
         this.descriptors.remove(instanceId);
-        BlockJournal journal = this.journals.remove(instanceId);
+        this.journals.remove(instanceId);
         if (raw != null) {
+            if (journal != null && journal.isRollbackPending()) {
+                try {
+                    raw.put(QUARANTINED_JOURNAL_KEY, journal.save());
+                    LOGGER.warn(
+                        "Preserved a pending block rollback for quarantined effect {} ({} recorded change(s))",
+                        instanceId,
+                        journal.size()
+                    );
+                } catch (RuntimeException exception) {
+                    LOGGER.warn("Could not preserve the block rollback for quarantined effect {}",
+                        instanceId, exception);
+                }
+            }
             this.quarantine.add(raw);
             this.setDirty();
-        } else if (journal != null) {
-            this.setDirty();
-        }
-        if (journal != null && journal.isRollbackPending()) {
-            LOGGER.warn("Discarding a pending block rollback for quarantined effect {}", instanceId);
+        } else {
+            if (journal != null) {
+                this.setDirty();
+            }
+            if (journal != null && journal.isRollbackPending()) {
+                LOGGER.warn("Discarding a pending block rollback for quarantined effect {}", instanceId);
+            }
         }
     }
 
     /** Removes descriptors owned by one parent session and returns how many were removed. */
     public int removeOwnedBy(UUID ownerSessionId) {
         Objects.requireNonNull(ownerSessionId, "ownerSessionId");
-        if (this.newerSchema) {
+        if (!this.writable("removeOwnedBy")) {
             return 0;
         }
         List<UUID> owned = this.descriptors.values().stream()
             .filter(descriptor -> ownerSessionId.equals(descriptor.ownerSessionId()))
             .map(EffectDescriptor::instanceId)
             .toList();
+        List<UUID> removed = new ArrayList<>();
+        List<UUID> retained = new ArrayList<>();
+        int removedJournals = 0;
         for (UUID instanceId : owned) {
+            BlockJournal journal = this.journals.get(instanceId);
+            if (journal != null && journal.isRollbackPending()) {
+                retained.add(instanceId);
+                continue;
+            }
             this.descriptors.remove(instanceId);
-            this.rawDescriptors.remove(instanceId);
-            this.journals.remove(instanceId);
+            if (this.journals.remove(instanceId) != null) {
+                removedJournals++;
+            }
+            removed.add(instanceId);
         }
-        if (!owned.isEmpty()) {
+        if (!removed.isEmpty()) {
             this.setDirty();
+            LOGGER.info(
+                "Removed {} child effect(s) and {} journal(s) owned by {}: {}",
+                removed.size(),
+                removedJournals,
+                ownerSessionId,
+                removed
+            );
         }
-        return owned.size();
+        if (!retained.isEmpty()) {
+            LOGGER.warn(
+                "Kept {} child effect(s) owned by {} because their rollback is pending: {}",
+                retained.size(),
+                ownerSessionId,
+                retained
+            );
+        }
+        return removed.size();
     }
 
     public BlockJournal journal(UUID instanceId) {
@@ -222,7 +285,7 @@ public final class EffectSavedData extends SavedData {
     public boolean putJournal(UUID instanceId, BlockJournal journal) {
         Objects.requireNonNull(instanceId, "instanceId");
         Objects.requireNonNull(journal, "journal");
-        if (this.newerSchema || !this.descriptors.containsKey(instanceId)) {
+        if (!this.writable("putJournal") || !this.descriptors.containsKey(instanceId)) {
             return false;
         }
         this.journals.put(instanceId, journal);
@@ -232,7 +295,7 @@ public final class EffectSavedData extends SavedData {
 
     public void removeJournal(UUID instanceId) {
         Objects.requireNonNull(instanceId, "instanceId");
-        if (this.newerSchema) {
+        if (!this.writable("removeJournal")) {
             return;
         }
         if (this.journals.remove(instanceId) != null) {
@@ -264,5 +327,22 @@ public final class EffectSavedData extends SavedData {
     /** A defensive copy of journal IDs, used by diagnostics and tests. */
     public List<UUID> journalIds() {
         return new ArrayList<>(this.journals.keySet());
+    }
+
+    private boolean writable(String operation) {
+        if (!this.newerSchema) {
+            return true;
+        }
+        if (!this.readOnlyWriteLogged) {
+            this.readOnlyWriteLogged = true;
+            LOGGER.warn(
+                "Ignoring {} for effect store {}: schema {} is newer than supported schema {}",
+                operation,
+                FILE_ID,
+                this.schemaVersion,
+                SCHEMA_VERSION
+            );
+        }
+        return false;
     }
 }

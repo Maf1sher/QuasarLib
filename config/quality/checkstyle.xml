@@ -13,7 +13,10 @@
         <property name="max" value="500"/>
     </module>
 
+    <module name="SuppressWarningsFilter"/>
+
     <module name="TreeWalker">
+        <module name="SuppressWarningsHolder"/>
         <module name="AvoidStarImport"/>
         <module name="UnusedImports"/>
         <module name="MethodLength">

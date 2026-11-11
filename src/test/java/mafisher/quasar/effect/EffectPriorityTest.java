@@ -22,4 +22,12 @@ class EffectPriorityTest {
         assertEquals(EffectPriority.LOW, EffectPriority.byName("", EffectPriority.LOW));
         assertEquals(EffectPriority.LOW, EffectPriority.byName(null, EffectPriority.LOW));
     }
+
+    @Test
+    void parsesPersistedNamesWithContextAndAFallback() {
+        assertEquals(EffectPriority.HIGH, EffectPriority.byName("HIGH", EffectPriority.NORMAL, "test"));
+        assertEquals(EffectPriority.NORMAL, EffectPriority.byName("unknown", EffectPriority.NORMAL, "test"));
+        assertEquals(EffectPriority.NORMAL, EffectPriority.byName("", EffectPriority.NORMAL, "test"));
+        assertEquals(EffectPriority.NORMAL, EffectPriority.byName(null, EffectPriority.NORMAL, "test"));
+    }
 }

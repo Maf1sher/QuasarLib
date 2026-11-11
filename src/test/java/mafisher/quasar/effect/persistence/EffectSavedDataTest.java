@@ -170,6 +170,88 @@ class EffectSavedDataTest {
         assertFalse(data.putJournal(UUID.randomUUID(), journal()));
     }
 
+    @Test
+    void quarantinesTheLatestDescriptorState() {
+        EffectDescriptor descriptor = descriptor(9L);
+        CompoundTag original = new CompoundTag();
+        original.putString("phase", "original");
+        EffectSavedData data = new EffectSavedData();
+        data.put(descriptor.withState(original));
+        EffectSavedData loaded = EffectSavedData.load(data.save(new CompoundTag(), null), null);
+
+        CompoundTag updated = new CompoundTag();
+        updated.putString("phase", "updated");
+        loaded.put(descriptor.withState(updated));
+        loaded.quarantine(descriptor.instanceId());
+
+        assertEquals("updated", loaded.quarantineEntries().getCompound(0)
+            .getCompound("state").getString("phase"));
+    }
+
+    @Test
+    void puttingAnEqualDescriptorDoesNotDirtyTheStore() {
+        EffectSavedData data = new EffectSavedData();
+        EffectDescriptor descriptor = descriptor(10L);
+        data.put(descriptor);
+        data.setDirty(false);
+
+        data.put(descriptor);
+        assertFalse(data.isDirty());
+
+        data.put(descriptor.withScale(2.0F));
+        assertTrue(data.isDirty());
+    }
+
+    @Test
+    void newerSchemaStoreIgnoresWritesWithoutDirtying() {
+        CompoundTag source = new CompoundTag();
+        source.putInt("schema_version", 99);
+        source.putString("future", "data");
+        EffectSavedData data = EffectSavedData.load(source, null);
+
+        data.put(descriptor(11L));
+        data.remove(UUID.randomUUID());
+        data.removeOwnedBy(UUID.randomUUID());
+
+        assertFalse(data.isDirty());
+        assertTrue(data.instanceIds().isEmpty());
+        assertEquals("data", data.save(new CompoundTag(), null).getString("future"));
+    }
+
+    @Test
+    void removeOwnedByKeepsChildrenWithPendingRollback() {
+        EffectSavedData data = new EffectSavedData();
+        UUID parent = UUID.randomUUID();
+        EffectDescriptor child = descriptor(12L, parent);
+        data.put(child);
+        BlockJournal journal = journal();
+        journal.beginRollback();
+        data.putJournal(child.instanceId(), journal);
+
+        assertEquals(0, data.removeOwnedBy(parent));
+
+        assertTrue(data.contains(child.instanceId()));
+        assertEquals(1, data.journalIds().size());
+    }
+
+    @Test
+    void quarantinePreservesPendingJournal() {
+        EffectSavedData data = new EffectSavedData();
+        EffectDescriptor descriptor = descriptor(13L);
+        data.put(descriptor);
+        BlockJournal journal = journal();
+        journal.beginRollback();
+        data.putJournal(descriptor.instanceId(), journal);
+
+        data.quarantine(descriptor.instanceId());
+
+        CompoundTag entry = data.quarantineEntries().getCompound(0);
+        assertTrue(entry.contains("quarantined_journal"));
+        assertEquals(BlockJournal.SCHEMA_VERSION,
+            entry.getCompound("quarantined_journal").getInt("journal_schema"));
+        assertNull(data.journal(descriptor.instanceId()));
+    }
+
     private static BlockJournal journal() {
         ServerLevel level = mock(ServerLevel.class);
         when(level.getBlockEntity(net.minecraft.core.BlockPos.ZERO)).thenReturn(null);
