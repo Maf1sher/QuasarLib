@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 import java.util.UUID;
 import mafisher.quasar.effect.block.BlockChange;
 import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -71,6 +72,40 @@ class BlockRollbackServiceTest {
         journal.record(this.level, new BlockChange(SECOND, this.air), this.stone);
 
         assertFalse(BlockRollbackService.schedule(this.level, EFFECT, journal));
+        assertEquals(0, BlockRollbackService.activeCount(this.level));
+    }
+
+    @Test
+    void keepsFailedRollbacksScheduledUntilTheyAdvance() {
+        BlockJournal journal = journal();
+        journal.beginRollback();
+        when(this.level.getBlockState(SECOND)).thenReturn(this.air);
+        when(this.level.setBlockAndUpdate(any(), any())).thenReturn(false);
+
+        assertTrue(BlockRollbackService.schedule(this.level, EFFECT, journal));
+        assertEquals(0, BlockRollbackService.tick(this.level, 1));
+        assertEquals(1, BlockRollbackService.activeCount(this.level));
+
+        when(this.level.setBlockAndUpdate(any(), any())).thenReturn(true);
+        when(this.level.getBlockState(FIRST)).thenReturn(this.air);
+        BlockRollbackService.tick(this.level, 2);
+
+        assertEquals(0, BlockRollbackService.activeCount(this.level));
+        verify(this.level, times(2)).setBlockAndUpdate(SECOND, this.stone);
+        verify(this.level).setBlockAndUpdate(FIRST, this.stone);
+    }
+
+    @Test
+    void skipsPendingJournalsWithMissingCursors() {
+        BlockJournal journal = journal();
+        journal.beginRollback();
+        CompoundTag tag = journal.save();
+        tag.remove("cursor");
+
+        BlockJournal loaded = BlockJournal.load(tag);
+
+        assertTrue(loaded.isTruncated());
+        assertFalse(BlockRollbackService.schedule(this.level, EFFECT, loaded));
         assertEquals(0, BlockRollbackService.activeCount(this.level));
     }
 

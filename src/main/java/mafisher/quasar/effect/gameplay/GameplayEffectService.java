@@ -597,7 +597,7 @@ public final class GameplayEffectService {
         boolean rollback = wantsRollback && journal.canRollback();
         if (wantsRollback && journal.isTruncated()) {
             LOGGER.warn(
-                "Block journal for {} was truncated; leaving its changes permanent",
+                "Block journal for {} was invalid or truncated; leaving its changes permanent",
                 session.id
             );
         }

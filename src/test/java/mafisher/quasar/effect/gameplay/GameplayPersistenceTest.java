@@ -212,6 +212,34 @@ class GameplayPersistenceTest {
     }
 
     @Test
+    void keepsAFailedRollbackPersistedUntilItSucceeds() {
+        GameplayEffectSpec spec = destroyerSpec(4, 20);
+        QueueController controller = new QueueController(new BlockChange(FIRST, this.newState));
+        GameplayEffectHandle handle = startDestroyer(spec, controller);
+        GameplayEffectService.tick(this.level);
+        verify(this.level).setBlockAndUpdate(FIRST, this.newState);
+
+        GameplayEffectService.stop(this.level, handle, GameplayEffectEndReason.CANCELLED);
+        doReturn(false).when(this.level).setBlockAndUpdate(FIRST, this.oldState);
+
+        BlockRollbackService.tick(this.level, 10);
+
+        assertTrue(this.store.contains(handle.sessionId()));
+        BlockJournal journal = this.store.journal(handle.sessionId());
+        assertNotNull(journal);
+        assertTrue(journal.isRollbackPending());
+
+        when(this.level.setBlockAndUpdate(FIRST, this.oldState)).thenAnswer(invocation -> {
+            this.worldState.set(this.oldState);
+            return true;
+        });
+        BlockRollbackService.tick(this.level, 10);
+
+        assertFalse(this.store.contains(handle.sessionId()));
+        assertNull(this.store.journal(handle.sessionId()));
+    }
+
+    @Test
     void expiryKeepsBlockChangesAndDropsTheJournal() {
         GameplayEffectSpec spec = destroyerSpec(4, 1);
         QueueController controller = new QueueController(new BlockChange(FIRST, this.newState));

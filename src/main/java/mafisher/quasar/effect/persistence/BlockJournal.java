@@ -32,11 +32,16 @@ import org.slf4j.LoggerFactory;
 /**
  * Engine-managed journal of applied block changes for one gameplay effect. Entries are recorded
  * before the world write, rolled back in reverse order, and persisted with the level effect store.
+ * Rollback advances its cursors only after a successful restore; invalid or newer journals fail
+ * closed instead of replaying restored snapshots.
  */
 public final class BlockJournal {
+    static final int SCHEMA_VERSION = 1;
+
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
     private static final int SECTION_BLOCK_COST = 4_096;
     private static final String POSITION_KEY = "quasar_pos";
+    private static final String SCHEMA_KEY = "journal_schema";
 
     private final List<Entry> entries = new ArrayList<>();
     private final List<SectionEntry> sections = new ArrayList<>();
@@ -48,6 +53,7 @@ public final class BlockJournal {
     private boolean rollbackPending;
     private boolean truncated;
     private boolean dirty;
+    private boolean failureLogged;
 
     public BlockJournal() {
         this(-1, -1);
@@ -223,16 +229,24 @@ public final class BlockJournal {
         return wasDirty;
     }
 
+    /**
+     * Restores up to the budget. Cursors move only after a successful restore, so transient failures
+     * keep the same entry pending for the next tick.
+     */
     RollbackStep rollbackNext(ServerLevel level, int maxChanges) {
         Objects.requireNonNull(level, "level");
         if (maxChanges < 0) {
             throw new IllegalArgumentException("Rollback budget cannot be negative");
+        }
+        if (this.truncated) {
+            throw new IllegalStateException("Cannot roll back a truncated or invalid block journal");
         }
         if (!this.rollbackPending) {
             this.beginRollback();
         }
 
         int processed = 0;
+        int advanced = 0;
         int restored = 0;
         int conflicts = 0;
         while (this.sectionCursor > 0) {
@@ -240,21 +254,28 @@ public final class BlockJournal {
             int cost = SECTION_BLOCK_COST;
             if (processed + cost > maxChanges) {
                 if (processed == 0) {
-                    return new RollbackStep(0, 0, 0, false);
+                    return new RollbackStep(0, 0, 0, 0, 0, false);
                 }
                 break;
             }
-            this.sectionCursor--;
             processed += cost;
-            if (restoreSection(level, entry)) {
-                restored += entry.blockCount();
-            } else {
-                conflicts++;
+            boolean sectionRestored;
+            try {
+                sectionRestored = restoreSection(level, entry);
+            } catch (RuntimeException exception) {
+                logRollbackFailure("Could not restore a section snapshot at {}", entry.pos(), exception);
+                return failedStep(processed, advanced, restored, conflicts);
             }
+            if (!sectionRestored) {
+                return failedStep(processed, advanced, restored, conflicts);
+            }
+            this.sectionCursor--;
+            advanced++;
+            restored += entry.blockCount();
+            this.failureLogged = false;
         }
         while (processed < maxChanges && this.cursor > 0) {
             Entry entry = this.entries.get(this.cursor - 1);
-            this.cursor--;
             processed++;
 
             try {
@@ -262,35 +283,58 @@ public final class BlockJournal {
                     level.getChunkAt(entry.position);
                 }
             } catch (RuntimeException exception) {
-                LOGGER.warn("Could not load a chunk for block rollback at {}", entry.position, exception);
-                continue;
+                logRollbackFailure("Could not load a chunk for block rollback at {}", entry.position, exception);
+                return failedStep(processed, advanced, restored, conflicts);
             }
 
             BlockState currentState;
             try {
                 currentState = level.getBlockState(entry.position);
             } catch (RuntimeException exception) {
-                LOGGER.warn("Could not read a block for rollback at {}", entry.position, exception);
-                continue;
+                logRollbackFailure("Could not read a block for rollback at {}", entry.position, exception);
+                return failedStep(processed, advanced, restored, conflicts);
             }
             if (!currentState.equals(entry.newState)) {
+                this.cursor--;
+                advanced++;
                 conflicts++;
+                this.failureLogged = false;
                 continue;
             }
 
             try {
-                if (level.setBlockAndUpdate(entry.position, entry.oldState)) {
-                    restored++;
-                    restoreBlockEntity(level, entry);
+                if (!level.setBlockAndUpdate(entry.position, entry.oldState)) {
+                    logRollbackFailure("Could not roll back the block at {}", entry.position);
+                    return failedStep(processed, advanced, restored, conflicts);
                 }
             } catch (RuntimeException exception) {
-                LOGGER.warn("Could not roll back the block at {}", entry.position, exception);
+                logRollbackFailure("Could not roll back the block at {}", entry.position, exception);
+                return failedStep(processed, advanced, restored, conflicts);
             }
+            this.cursor--;
+            advanced++;
+            restored++;
+            this.failureLogged = false;
+            restoreBlockEntity(level, entry);
         }
 
-        this.dirty = this.dirty || processed > 0;
+        this.dirty = this.dirty || advanced > 0;
         boolean complete = this.cursor == 0 && this.sectionCursor == 0;
-        return new RollbackStep(processed, restored, conflicts, complete);
+        return new RollbackStep(processed, advanced, restored, conflicts, 0, complete);
+    }
+
+    private RollbackStep failedStep(int processed, int advanced, int restored, int conflicts) {
+        this.dirty = this.dirty || advanced > 0;
+        return new RollbackStep(processed, advanced, restored, conflicts, 1, false);
+    }
+
+    private void logRollbackFailure(String message, Object... arguments) {
+        if (this.failureLogged) {
+            LOGGER.debug(message, arguments);
+        } else {
+            LOGGER.warn(message, arguments);
+            this.failureLogged = true;
+        }
     }
 
     private static byte[] writeSection(LevelChunkSection section) {
@@ -340,17 +384,20 @@ public final class BlockJournal {
         }
     }
 
-    private static boolean restoreSection(ServerLevel level, SectionEntry entry) {
+    private boolean restoreSection(ServerLevel level, SectionEntry entry) {
         LevelChunk chunk;
         try {
             chunk = level.getChunk(entry.pos().x, entry.pos().z);
         } catch (RuntimeException exception) {
-            LOGGER.warn("Could not load a chunk for section rollback at {}", entry.pos(), exception);
+            logRollbackFailure("Could not load a chunk for section rollback at {}", entry.pos(), exception);
             return false;
         }
         int index = level.getSectionIndexFromSectionY(entry.sectionY());
         LevelChunkSection[] target = chunk.getSections();
         if (index < 0 || index >= target.length) {
+            logRollbackFailure(
+                "Could not find section " + entry.sectionY() + " for block rollback in " + entry.pos()
+            );
             return false;
         }
 
@@ -363,7 +410,7 @@ public final class BlockJournal {
             restored.read(buffer);
             restored.recalcBlockCounts();
         } catch (RuntimeException exception) {
-            LOGGER.warn("Could not read a section snapshot for rollback at {}", entry.pos(), exception);
+            logRollbackFailure("Could not read a section snapshot for rollback at {}", entry.pos(), exception);
             return false;
         } finally {
             buffer.release();
@@ -412,6 +459,7 @@ public final class BlockJournal {
 
     CompoundTag save() {
         CompoundTag tag = new CompoundTag();
+        tag.putInt(SCHEMA_KEY, SCHEMA_VERSION);
         ListTag list = new ListTag();
         for (Entry entry : this.entries) {
             CompoundTag entryTag = new CompoundTag();
@@ -451,6 +499,27 @@ public final class BlockJournal {
 
     static BlockJournal load(CompoundTag tag) {
         BlockJournal journal = new BlockJournal();
+        int version = tag.contains(SCHEMA_KEY) ? tag.getInt(SCHEMA_KEY) : 0;
+        if (version < 0 || version > SCHEMA_VERSION) {
+            journal.rollbackPending = tag.getBoolean("rollback_pending");
+            journal.truncated = true;
+            LOGGER.warn(
+                "Block journal schema {} is not supported (expected 0..{}); rollback is disabled",
+                version,
+                SCHEMA_VERSION
+            );
+            return journal;
+        }
+        journal.loadEntries(tag);
+        journal.loadSections(tag);
+        journal.truncated = journal.truncated || tag.getBoolean("truncated");
+        journal.rollbackPending = tag.getBoolean("rollback_pending");
+        journal.loadCursors(tag);
+        journal.enforceCaps();
+        return journal;
+    }
+
+    private void loadEntries(CompoundTag tag) {
         ListTag list = tag.getList("entries", Tag.TAG_COMPOUND);
         for (int index = 0; index < list.size(); index++) {
             CompoundTag entryTag = list.getCompound(index);
@@ -467,13 +536,15 @@ public final class BlockJournal {
                 CompoundTag blockEntity = entryTag.contains("block_entity")
                     ? entryTag.getCompound("block_entity").copy()
                     : null;
-                journal.entries.add(new Entry(position, oldState, newState, blockEntity));
+                this.entries.add(new Entry(position, oldState, newState, blockEntity));
             } catch (RuntimeException exception) {
                 LOGGER.warn("Skipping an unreadable block journal entry; rollback will be disabled", exception);
-                journal.truncated = true;
+                this.truncated = true;
             }
         }
+    }
 
+    private void loadSections(CompoundTag tag) {
         ListTag sectionList = tag.getList("sections", Tag.TAG_COMPOUND);
         for (int index = 0; index < sectionList.size(); index++) {
             CompoundTag entryTag = sectionList.getCompound(index);
@@ -484,54 +555,77 @@ public final class BlockJournal {
                 for (int entityIndex = 0; entityIndex < blockEntityList.size(); entityIndex++) {
                     blockEntities.add(blockEntityList.getCompound(entityIndex).copy());
                 }
-                journal.sections.add(new SectionEntry(
-                    new ChunkPos(entryTag.getInt("x"), entryTag.getInt("z")),
-                    entryTag.getInt("sy"),
+                ChunkPos pos = new ChunkPos(entryTag.getInt("x"), entryTag.getInt("z"));
+                int sectionY = entryTag.getInt("sy");
+                this.sections.add(new SectionEntry(
+                    pos,
+                    sectionY,
                     data,
                     blockEntities,
                     entryTag.getInt("blocks")
                 ));
+                this.recordedSections.add(SectionPos.asLong(pos.x, sectionY, pos.z));
             } catch (RuntimeException exception) {
                 LOGGER.warn("Skipping an unreadable section journal entry; rollback will be disabled", exception);
-                journal.truncated = true;
+                this.truncated = true;
             }
         }
-
-        journal.rollbackPending = tag.getBoolean("rollback_pending");
-        journal.truncated = tag.getBoolean("truncated");
-        for (SectionEntry entry : journal.sections) {
-            journal.recordedSections.add(
-                SectionPos.asLong(entry.pos().x, entry.sectionY(), entry.pos().z)
-            );
-        }
-        journal.cursor = tag.contains("cursor")
-            ? Math.min(journal.entries.size(), Math.max(0, tag.getInt("cursor")))
-            : journal.entries.size();
-        journal.sectionCursor = tag.contains("section_cursor")
-            ? Math.min(journal.sections.size(), Math.max(0, tag.getInt("section_cursor")))
-            : journal.sections.size();
-        if (!journal.rollbackPending) {
-            journal.cursor = journal.entries.size();
-            journal.sectionCursor = journal.sections.size();
-        }
-
-        int maxEntries = QuasarConfig.blockJournalMaxEntries();
-        if (journal.entries.size() > maxEntries) {
-            journal.entries.clear();
-            journal.cursor = 0;
-            journal.truncated = true;
-        }
-        int maxSections = QuasarConfig.blockJournalMaxSections();
-        if (journal.sections.size() > maxSections) {
-            journal.sections.clear();
-            journal.recordedSections.clear();
-            journal.sectionCursor = 0;
-            journal.truncated = true;
-        }
-        return journal;
     }
 
-    record RollbackStep(int processed, int restored, int conflicts, boolean complete) {
+    private void loadCursors(CompoundTag tag) {
+        if (!this.rollbackPending) {
+            this.cursor = this.entries.size();
+            this.sectionCursor = this.sections.size();
+            return;
+        }
+        if (!cursorIsValid(tag, "cursor", this.entries.size())
+            || !cursorIsValid(tag, "section_cursor", this.sections.size())) {
+            this.cursor = 0;
+            this.sectionCursor = 0;
+            this.truncated = true;
+            LOGGER.warn(
+                "Block journal has missing or invalid rollback cursors; "
+                    + "rollback is disabled instead of replaying restored snapshots"
+            );
+            return;
+        }
+        this.cursor = this.entries.isEmpty() ? 0 : tag.getInt("cursor");
+        this.sectionCursor = this.sections.isEmpty() ? 0 : tag.getInt("section_cursor");
+    }
+
+    private static boolean cursorIsValid(CompoundTag tag, String key, int size) {
+        if (!tag.contains(key)) {
+            return size == 0;
+        }
+        int cursor = tag.getInt(key);
+        return cursor >= 0 && cursor <= size;
+    }
+
+    private void enforceCaps() {
+        int maxEntries = QuasarConfig.blockJournalMaxEntries();
+        if (this.entries.size() > maxEntries) {
+            this.entries.clear();
+            this.cursor = 0;
+            this.truncated = true;
+        }
+        int maxSections = QuasarConfig.blockJournalMaxSections();
+        if (this.sections.size() > maxSections) {
+            this.sections.clear();
+            this.recordedSections.clear();
+            this.sectionCursor = 0;
+            this.truncated = true;
+        }
+    }
+
+    /** One budgeted rollback step; {@code advanced} retires work and {@code failed} asks for a retry. */
+    record RollbackStep(
+        int processed,
+        int advanced,
+        int restored,
+        int conflicts,
+        int failed,
+        boolean complete
+    ) {
     }
 
     private record SectionEntry(

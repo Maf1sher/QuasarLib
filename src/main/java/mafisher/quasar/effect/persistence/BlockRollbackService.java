@@ -27,7 +27,7 @@ public final class BlockRollbackService {
         Objects.requireNonNull(effectId, "effectId");
         Objects.requireNonNull(journal, "journal");
         if (journal.isTruncated()) {
-            LOGGER.warn("Skipping block rollback for {}: the journal was truncated", effectId);
+            LOGGER.warn("Skipping block rollback for {}: the journal is invalid or truncated", effectId);
             EffectPersistenceService.recordStop(level, effectId);
             return false;
         }
@@ -62,29 +62,51 @@ public final class BlockRollbackService {
                 break;
             }
             BlockJournal journal = tasks.get(effectId);
-            if (journal == null) {
-                continue;
-            }
-            BlockJournal.RollbackStep step = journal.rollbackNext(level, remaining);
-            remaining -= step.processed();
-            if (step.processed() > 0 || step.complete()) {
-                EffectPersistenceService.recordJournal(level, effectId, journal);
-            }
-            if (step.complete()) {
-                EffectPersistenceService.recordStop(level, effectId);
-                tasks.remove(effectId);
-                LOGGER.info(
-                    "Completed block rollback for {}: restored {}, conflicts {}",
-                    effectId,
-                    step.restored(),
-                    step.conflicts()
-                );
+            if (journal != null) {
+                remaining = rollbackTask(level, effectId, journal, tasks, remaining);
             }
         }
         if (tasks.isEmpty()) {
             TASKS.remove(level);
         }
         return remaining;
+    }
+
+    private static int rollbackTask(
+        ServerLevel level,
+        UUID effectId,
+        BlockJournal journal,
+        Map<UUID, BlockJournal> tasks,
+        int remaining
+    ) {
+        BlockJournal.RollbackStep step;
+        try {
+            step = journal.rollbackNext(level, remaining);
+        } catch (RuntimeException exception) {
+            LOGGER.error(
+                "Block rollback for {} failed unexpectedly; the journal stays saved for a later resume",
+                effectId,
+                exception
+            );
+            tasks.remove(effectId);
+            return remaining;
+        }
+        if (step.advanced() > 0 || step.complete()) {
+            EffectPersistenceService.recordJournal(level, effectId, journal);
+        }
+        if (step.complete()) {
+            EffectPersistenceService.recordStop(level, effectId);
+            tasks.remove(effectId);
+            LOGGER.info(
+                "Completed block rollback for {}: restored {}, conflicts {}",
+                effectId,
+                step.restored(),
+                step.conflicts()
+            );
+        } else if (step.failed() > 0) {
+            LOGGER.debug("Block rollback for {} did not advance; it will retry", effectId);
+        }
+        return remaining - step.processed();
     }
 
     /** Drops in-memory tasks for a level; journals remain in save data for the next load. */

@@ -5,8 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -26,6 +28,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class BlockJournalTest {
+    private static final BlockPos POSITION = new BlockPos(1, 64, 2);
+
     private ServerLevel level;
 
     @BeforeEach
@@ -64,6 +68,8 @@ class BlockJournalTest {
 
         assertTrue(journal.isTruncated());
         assertFalse(journal.canRollback());
+        journal.beginRollback();
+        assertThrows(IllegalStateException.class, () -> journal.rollbackNext(this.level, 1));
     }
 
     @Test
@@ -133,8 +139,10 @@ class BlockJournalTest {
         BlockJournal.RollbackStep step = loaded.rollbackNext(this.level, 1);
 
         assertEquals(1, step.processed());
+        assertEquals(1, step.advanced());
         assertEquals(1, step.restored());
         assertEquals(0, step.conflicts());
+        assertEquals(0, step.failed());
         assertTrue(step.complete());
         verify(this.level).setBlockAndUpdate(position, oldState);
     }
@@ -151,8 +159,10 @@ class BlockJournalTest {
         BlockJournal.RollbackStep step = journal.rollbackNext(this.level, 1);
 
         assertEquals(1, step.processed());
+        assertEquals(1, step.advanced());
         assertEquals(0, step.restored());
         assertEquals(1, step.conflicts());
+        assertEquals(0, step.failed());
         verify(this.level, never()).setBlockAndUpdate(any(), any());
     }
 
@@ -172,6 +182,289 @@ class BlockJournalTest {
         journal.rollbackNext(this.level, 1);
 
         verify(this.level).getChunkAt(position);
+    }
+
+    @Test
+    void keepsTheEntryPendingWhenTheChunkCannotLoad() {
+        BlockJournal journal = journalWithEntry();
+        journal.beginRollback();
+        when(this.level.hasChunkAt(POSITION)).thenReturn(false);
+        when(this.level.getChunkAt(POSITION)).thenThrow(new RuntimeException("unloaded"));
+
+        BlockJournal.RollbackStep step = journal.rollbackNext(this.level, 1);
+
+        assertEquals(1, step.processed());
+        assertEquals(0, step.advanced());
+        assertEquals(1, step.failed());
+        assertFalse(step.complete());
+        verify(this.level, never()).setBlockAndUpdate(any(), any());
+
+        when(this.level.hasChunkAt(POSITION)).thenReturn(true);
+        when(this.level.getBlockState(POSITION)).thenReturn(Blocks.AIR.defaultBlockState());
+        step = journal.rollbackNext(this.level, 1);
+
+        assertTrue(step.complete());
+        verify(this.level).setBlockAndUpdate(POSITION, Blocks.STONE.defaultBlockState());
+    }
+
+    @Test
+    void keepsTheEntryPendingWhenTheReadFails() {
+        BlockJournal journal = journalWithEntry();
+        journal.beginRollback();
+        when(this.level.getBlockState(POSITION)).thenThrow(new RuntimeException("read failed"));
+
+        BlockJournal.RollbackStep step = journal.rollbackNext(this.level, 1);
+
+        assertEquals(0, step.advanced());
+        assertEquals(1, step.failed());
+        assertFalse(step.complete());
+
+        doReturn(Blocks.AIR.defaultBlockState()).when(this.level).getBlockState(POSITION);
+        step = journal.rollbackNext(this.level, 1);
+
+        assertTrue(step.complete());
+        verify(this.level).setBlockAndUpdate(POSITION, Blocks.STONE.defaultBlockState());
+    }
+
+    @Test
+    void keepsTheEntryPendingWhenTheWriteIsRejected() {
+        BlockJournal journal = journalWithEntry();
+        journal.beginRollback();
+        when(this.level.getBlockState(POSITION)).thenReturn(Blocks.AIR.defaultBlockState());
+        when(this.level.setBlockAndUpdate(POSITION, Blocks.STONE.defaultBlockState())).thenReturn(false);
+
+        BlockJournal.RollbackStep step = journal.rollbackNext(this.level, 1);
+
+        assertEquals(0, step.advanced());
+        assertEquals(1, step.failed());
+        assertFalse(step.complete());
+
+        doReturn(true).when(this.level).setBlockAndUpdate(
+            POSITION,
+            Blocks.STONE.defaultBlockState()
+        );
+        step = journal.rollbackNext(this.level, 1);
+
+        assertTrue(step.complete());
+        verify(this.level, times(2)).setBlockAndUpdate(POSITION, Blocks.STONE.defaultBlockState());
+    }
+
+    @Test
+    void keepsTheEntryPendingWhenTheWriteThrows() {
+        BlockJournal journal = journalWithEntry();
+        journal.beginRollback();
+        when(this.level.getBlockState(POSITION)).thenReturn(Blocks.AIR.defaultBlockState());
+        when(this.level.setBlockAndUpdate(POSITION, Blocks.STONE.defaultBlockState()))
+            .thenThrow(new RuntimeException("write failed"));
+
+        BlockJournal.RollbackStep step = journal.rollbackNext(this.level, 1);
+
+        assertEquals(0, step.advanced());
+        assertEquals(1, step.failed());
+        assertFalse(step.complete());
+
+        doReturn(true).when(this.level).setBlockAndUpdate(
+            POSITION,
+            Blocks.STONE.defaultBlockState()
+        );
+        step = journal.rollbackNext(this.level, 1);
+
+        assertTrue(step.complete());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void keepsTheSectionPendingWhenTheChunkCannotLoad() {
+        LevelChunk chunk = mock(LevelChunk.class);
+        when(chunk.getPos()).thenReturn(new ChunkPos(2, -3));
+        when(chunk.getBlockEntities()).thenReturn(java.util.Map.of());
+        PalettedContainer<BlockState> states = new PalettedContainer<>(
+            Block.BLOCK_STATE_REGISTRY,
+            Blocks.AIR.defaultBlockState(),
+            PalettedContainer.Strategy.SECTION_STATES
+        );
+        LevelChunkSection section = new LevelChunkSection(
+            states, mock(PalettedContainerRO.class)
+        );
+
+        BlockJournal journal = new BlockJournal();
+        assertTrue(journal.recordSection(this.level, chunk, 4, section));
+        journal.beginRollback();
+        when(this.level.getChunk(2, -3)).thenThrow(new RuntimeException("unloaded"));
+
+        BlockJournal.RollbackStep step = journal.rollbackNext(this.level, 4_096);
+
+        assertEquals(4_096, step.processed());
+        assertEquals(0, step.advanced());
+        assertEquals(1, step.failed());
+        assertFalse(step.complete());
+
+        step = journal.rollbackNext(this.level, 4_096);
+
+        assertFalse(step.complete());
+        verify(this.level, times(2)).getChunk(2, -3);
+    }
+
+    @Test
+    void keepsPartialProgressWhenALaterEntryFails() {
+        BlockState air = Blocks.AIR.defaultBlockState();
+        BlockState stone = Blocks.STONE.defaultBlockState();
+        BlockPos first = new BlockPos(0, 64, 0);
+        BlockPos second = new BlockPos(1, 64, 0);
+        BlockJournal journal = new BlockJournal();
+        journal.record(this.level, new BlockChange(first, air), stone);
+        journal.record(this.level, new BlockChange(second, air), stone);
+        journal.beginRollback();
+        when(this.level.getBlockState(second)).thenReturn(air);
+        when(this.level.getBlockState(first)).thenThrow(new RuntimeException("read failed"));
+
+        BlockJournal.RollbackStep step = journal.rollbackNext(this.level, 2);
+
+        assertEquals(2, step.processed());
+        assertEquals(1, step.advanced());
+        assertEquals(1, step.restored());
+        assertEquals(1, step.failed());
+        assertFalse(step.complete());
+
+        doReturn(air).when(this.level).getBlockState(first);
+        step = journal.rollbackNext(this.level, 2);
+
+        assertTrue(step.complete());
+        verify(this.level).setBlockAndUpdate(first, stone);
+        verify(this.level).setBlockAndUpdate(second, stone);
+    }
+
+    @Test
+    void writesTheJournalSchemaVersion() {
+        assertEquals(
+            BlockJournal.SCHEMA_VERSION,
+            new BlockJournal().save().getInt("journal_schema")
+        );
+    }
+
+    @Test
+    void roundTripsPartialRollbackProgress() {
+        BlockState air = Blocks.AIR.defaultBlockState();
+        BlockState stone = Blocks.STONE.defaultBlockState();
+        BlockPos first = new BlockPos(0, 64, 0);
+        BlockPos second = new BlockPos(1, 64, 0);
+        BlockJournal journal = new BlockJournal();
+        journal.record(this.level, new BlockChange(first, air), stone);
+        journal.record(this.level, new BlockChange(second, air), stone);
+        journal.beginRollback();
+        when(this.level.getBlockState(second)).thenReturn(air);
+
+        BlockJournal.RollbackStep step = journal.rollbackNext(this.level, 1);
+        assertFalse(step.complete());
+        assertEquals(1, step.advanced());
+
+        BlockJournal loaded = BlockJournal.load(journal.save());
+        when(this.level.getBlockState(first)).thenReturn(air);
+        step = loaded.rollbackNext(this.level, 1);
+
+        assertTrue(step.complete());
+        verify(this.level).setBlockAndUpdate(first, stone);
+        verify(this.level, times(1)).setBlockAndUpdate(second, stone);
+    }
+
+    @Test
+    void rejectsPendingRollbackWithoutCursors() {
+        BlockJournal journal = journalWithEntry();
+        journal.beginRollback();
+        CompoundTag tag = journal.save();
+        tag.remove("cursor");
+
+        BlockJournal loaded = BlockJournal.load(tag);
+
+        assertTrue(loaded.isTruncated());
+        assertFalse(loaded.canRollback());
+        assertThrows(IllegalStateException.class, () -> loaded.rollbackNext(this.level, 1));
+    }
+
+    @Test
+    void rejectsLegacyPendingRollbackWithoutCursors() {
+        BlockJournal journal = journalWithEntry();
+        journal.beginRollback();
+        CompoundTag tag = journal.save();
+        tag.remove("journal_schema");
+        tag.remove("cursor");
+
+        BlockJournal loaded = BlockJournal.load(tag);
+
+        assertTrue(loaded.isTruncated());
+        assertFalse(loaded.canRollback());
+    }
+
+    @Test
+    void rejectsOutOfRangeRollbackCursors() {
+        BlockJournal journal = journalWithEntry();
+        journal.beginRollback();
+        CompoundTag tag = journal.save();
+        tag.putInt("cursor", journal.size() + 1);
+
+        BlockJournal loaded = BlockJournal.load(tag);
+
+        assertTrue(loaded.isTruncated());
+        assertFalse(loaded.canRollback());
+    }
+
+    @Test
+    void rejectsNewerJournalSchemas() {
+        BlockJournal journal = journalWithEntry();
+        journal.beginRollback();
+        CompoundTag tag = journal.save();
+        tag.putInt("journal_schema", BlockJournal.SCHEMA_VERSION + 1);
+
+        BlockJournal loaded = BlockJournal.load(tag);
+
+        assertTrue(loaded.isTruncated());
+        assertTrue(loaded.isRollbackPending());
+        assertFalse(loaded.canRollback());
+        assertEquals(0, loaded.size());
+    }
+
+    @Test
+    void rejectsNegativeJournalSchemas() {
+        BlockJournal journal = journalWithEntry();
+        CompoundTag tag = journal.save();
+        tag.putInt("journal_schema", -1);
+
+        BlockJournal loaded = BlockJournal.load(tag);
+
+        assertTrue(loaded.isTruncated());
+        assertFalse(loaded.canRollback());
+    }
+
+    @Test
+    void migratesLegacyJournalsThatStillHaveCursors() {
+        BlockJournal journal = journalWithEntry();
+        journal.beginRollback();
+        CompoundTag tag = journal.save();
+        tag.remove("journal_schema");
+
+        BlockJournal loaded = BlockJournal.load(tag);
+
+        assertFalse(loaded.isTruncated());
+        assertTrue(loaded.isRollbackPending());
+        assertTrue(loaded.canRollback());
+    }
+
+    @Test
+    void keepsUnreadableEntriesTruncatedWhenTheTagClaimsOtherwise() {
+        CompoundTag tag = new CompoundTag();
+        tag.putInt("journal_schema", BlockJournal.SCHEMA_VERSION);
+        tag.putBoolean("rollback_pending", true);
+        tag.putBoolean("truncated", false);
+        net.minecraft.nbt.ListTag sections = new net.minecraft.nbt.ListTag();
+        CompoundTag section = new CompoundTag();
+        section.putInt("sy", 4_000);
+        sections.add(section);
+        tag.put("sections", sections);
+
+        BlockJournal loaded = BlockJournal.load(tag);
+
+        assertTrue(loaded.isTruncated());
+        assertFalse(loaded.canRollback());
     }
 
     @Test
@@ -203,5 +496,15 @@ class BlockJournalTest {
         tag.put("entries", new net.minecraft.nbt.ListTag());
 
         assertEquals(0, BlockJournal.load(tag).size());
+    }
+
+    private BlockJournal journalWithEntry() {
+        BlockJournal journal = new BlockJournal();
+        journal.record(
+            this.level,
+            new BlockChange(POSITION, Blocks.AIR.defaultBlockState()),
+            Blocks.STONE.defaultBlockState()
+        );
+        return journal;
     }
 }
