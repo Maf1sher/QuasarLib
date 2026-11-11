@@ -77,7 +77,7 @@ class PendingBlockChangesTest {
     }
 
     @Test
-    void skipsOutOfBoundsPositionsAndUnloadedChunks() {
+    void keepsChangesInUnloadedChunksQueuedInsteadOfDroppingThem() {
         PendingBlockChanges pending = new PendingBlockChanges(4);
         BlockChange outOfBounds = change(0);
         BlockChange unloaded = change(1);
@@ -87,10 +87,20 @@ class PendingBlockChangesTest {
         pending.enqueue(unloaded);
 
         PendingBlockChanges.ApplyResult result = pending.apply(this.level, 4);
-        assertEquals(2, result.processed());
+
+        assertEquals(1, result.processed());
         assertEquals(0, result.applied());
-        assertEquals(0, pending.size());
+        assertEquals(1, result.deferred());
+        assertEquals(1, pending.size());
         verify(this.level, never()).setBlockAndUpdate(any(), any());
+
+        when(this.level.hasChunkAt(unloaded.position())).thenReturn(true);
+        result = pending.apply(this.level, 1);
+
+        assertEquals(1, result.processed());
+        assertEquals(1, result.applied());
+        assertEquals(0, result.deferred());
+        assertEquals(0, pending.size());
     }
 
     @Test

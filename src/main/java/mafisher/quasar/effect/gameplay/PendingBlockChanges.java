@@ -29,6 +29,7 @@ final class PendingBlockChanges {
 
     private final Deque<QueuedChange> changes = new ArrayDeque<>();
     private final int maxPending;
+    private boolean deferredLogged;
 
     PendingBlockChanges() {
         this(DEFAULT_MAX_PENDING);
@@ -93,10 +94,10 @@ final class PendingBlockChanges {
     }
 
     /**
-     * Applies at most {@code maxChanges} queued changes in insertion order. Positions outside the
-     * level or in unloaded chunks are skipped; no-op changes do not invoke the protection gate;
-     * individual block-update failures are logged and do not stop the queue. The result reports
-     * processed entries (which consume the budget), changes handed to the level, and vetoes.
+     * Applies at most {@code maxChanges} queued changes in insertion order. Out-of-bounds positions
+     * are skipped; unloaded chunks are requeued without consuming the budget; no-op changes do not
+     * invoke the protection gate; individual block-update failures are logged and do not stop the
+     * queue. The result reports processed entries, applied changes, vetoes, and deferred entries.
      */
     ApplyResult apply(
         ServerLevel level,
@@ -113,19 +114,32 @@ final class PendingBlockChanges {
         int processed = 0;
         int applied = 0;
         int vetoed = 0;
-        while (processed < maxChanges && !this.changes.isEmpty()) {
+        int deferred = 0;
+        int attempts = 0;
+        int maxAttempts = this.changes.size();
+        while (processed < maxChanges && !this.changes.isEmpty() && attempts < maxAttempts) {
             QueuedChange queued = this.changes.removeFirst();
             BlockChange change = queued.change();
-            processed++;
+            attempts++;
             if (!level.isInWorldBounds(change.position())) {
+                processed++;
                 LOGGER.debug("Skipped out-of-bounds block change at {}", change.position());
                 continue;
             }
             if (!level.hasChunkAt(change.position())) {
-                LOGGER.debug("Skipped block change in an unloaded chunk at {}", change.position());
+                this.changes.addLast(queued);
+                deferred++;
+                if (!this.deferredLogged) {
+                    this.deferredLogged = true;
+                    LOGGER.warn(
+                        "{} block changes are waiting for unloaded chunks; they stay queued",
+                        this.changes.size()
+                    );
+                }
                 continue;
             }
 
+            processed++;
             BlockState currentState;
             try {
                 currentState = level.getBlockState(change.position());
@@ -176,7 +190,10 @@ final class PendingBlockChanges {
                 LOGGER.warn("Failed to apply block change at {}", change.position(), exception);
             }
         }
-        return new ApplyResult(processed, applied, vetoed);
+        if (deferred == 0) {
+            this.deferredLogged = false;
+        }
+        return new ApplyResult(processed, applied, vetoed, deferred);
     }
 
     private boolean recordSection(ServerLevel level, BlockJournal journal, BlockPos position) {
@@ -218,9 +235,10 @@ final class PendingBlockChanges {
         }
     }
 
-    record ApplyResult(int processed, int applied, int vetoed) {
+    record ApplyResult(int processed, int applied, int vetoed, int deferred) {
         ApplyResult {
-            if (processed < 0 || applied < 0 || vetoed < 0 || applied + vetoed > processed) {
+            if (processed < 0 || applied < 0 || vetoed < 0 || deferred < 0
+                || applied + vetoed > processed) {
                 throw new IllegalArgumentException("Invalid block change application result");
             }
         }

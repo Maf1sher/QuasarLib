@@ -117,6 +117,16 @@ public final class QuasarConfig {
         .worldRestart()
         .defineInRange("section_edits_per_level_tick", 8, 1, 256);
 
+    static final ModConfigSpec.IntValue TERRAIN_TICKET_BUDGET = BUILDER
+        .comment(
+            "Maximum chunk tickets held by bulk terrain edits across one level.",
+            "A bulk edit reserves all of its chunks at once; a request above the remaining budget waits.",
+            "The minimum keeps one maximum-size edit (1024 chunks) able to start.",
+            "Requires a world restart."
+        )
+        .worldRestart()
+        .defineInRange("terrain_ticket_budget", 4_096, 1_024, 131_072);
+
     static final ModConfigSpec.IntValue ENTITY_SPAWNS_PER_LEVEL_TICK_BUDGET = BUILDER
         .comment(
             "Maximum effect entity spawns applied per level tick.",
@@ -204,6 +214,11 @@ public final class QuasarConfig {
     /** Maximum bulk section edits applied across all effects per level tick. */
     public static int sectionEditsPerLevelTickBudget() {
         return value(SECTION_EDITS_PER_LEVEL_TICK_BUDGET);
+    }
+
+    /** Maximum chunk tickets held by bulk terrain edits across one level. */
+    public static int terrainTicketBudget() {
+        return value(TERRAIN_TICKET_BUDGET);
     }
 
     /** Maximum effect entity spawns applied per level tick. */

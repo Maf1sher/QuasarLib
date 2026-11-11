@@ -108,6 +108,7 @@ public final class EffectBulkBlockEditor {
     /** Normalized front advance between depth reveals, tuned to about twelve blocks. */
     private final double revealStep;
     private final Set<ChunkPos> ticketChunks;
+    private final Set<ChunkPos> heldTicketChunks = new LinkedHashSet<>();
     /** Index of the next unprocessed section in each chunk, or {@code sections.size()}. */
     private final Map<ChunkPos, Integer> nextSectionIndexByChunk = new HashMap<>();
     private final Set<ChunkPos> dirtyChunks = new LinkedHashSet<>();
@@ -115,12 +116,14 @@ public final class EffectBulkBlockEditor {
     private final Set<BlockState> clearedStates = new LinkedHashSet<>();
     private int sectionIndex;
     private int stalledTicks;
+    private int ticketWaitTicks;
     private long clearedBlocks;
     private int editedSections;
     private double frontScale;
     private boolean syncReleased;
     private boolean finished;
     private boolean closed;
+    private boolean ticketsAcquired;
 
     private EffectBulkBlockEditor(GameplayEffectContext context, Spec spec, Ordering ordering) {
         this.context = Objects.requireNonNull(context, "context");
@@ -131,7 +134,7 @@ public final class EffectBulkBlockEditor {
         this.revealStep = computeRevealStep(spec.volume());
         this.ticketChunks = ticketChunks(this.sections);
         this.indexSectionsByChunk();
-        TerrainEditService.acquireTickets(this.level, this.ticketChunks);
+        this.context.onClose(this::releaseTickets);
     }
 
     public static EffectBulkBlockEditor create(GameplayEffectContext context, Spec spec) {
@@ -225,6 +228,9 @@ public final class EffectBulkBlockEditor {
         if (this.closed || this.finished) {
             return this.progress();
         }
+        if (!this.ensureTickets()) {
+            return this.progress();
+        }
         int limit = Math.max(0, maxSections);
         int edited = 0;
         while (this.sectionIndex < this.sections.size() && edited < limit) {
@@ -266,20 +272,30 @@ public final class EffectBulkBlockEditor {
             this.editedSections++;
             edited++;
         }
-        if (this.spec.syncPolicy() == SyncPolicy.PROGRESSIVE && !this.syncReleased) {
-            double targetScale = Double.isInfinite(targetSquared)
-                ? this.frontScale
-                : Math.min(1.0, Math.sqrt(Math.max(0.0, targetSquared)));
-            this.releaseFrontChunks(targetScale);
-        }
-        if (this.sectionIndex >= this.sections.size()) {
-            this.finished = true;
-            if (this.spec.syncPolicy() == SyncPolicy.ON_COMPLETE
-                || this.spec.syncPolicy() == SyncPolicy.PROGRESSIVE) {
-                this.releaseSync();
-            }
-        }
+        this.releaseProgressiveFront(targetSquared);
+        this.finishIfComplete();
         return this.progress();
+    }
+
+    private void releaseProgressiveFront(double targetSquared) {
+        if (this.spec.syncPolicy() != SyncPolicy.PROGRESSIVE || this.syncReleased) {
+            return;
+        }
+        double targetScale = Double.isInfinite(targetSquared)
+            ? this.frontScale
+            : Math.min(1.0, Math.sqrt(Math.max(0.0, targetSquared)));
+        this.releaseFrontChunks(targetScale);
+    }
+
+    private void finishIfComplete() {
+        if (this.sectionIndex < this.sections.size()) {
+            return;
+        }
+        this.finished = true;
+        if (this.spec.syncPolicy() == SyncPolicy.ON_COMPLETE
+            || this.spec.syncPolicy() == SyncPolicy.PROGRESSIVE) {
+            this.releaseSync();
+        }
     }
 
     private void passSection(SectionEntry entry) {
@@ -313,8 +329,37 @@ public final class EffectBulkBlockEditor {
         if (releaseSync) {
             this.releaseSync();
         }
-        TerrainEditService.releaseTicketsWhenSettled(this.level, this.ticketChunks);
+        this.releaseTickets();
         this.closed = true;
+    }
+
+    private boolean ensureTickets() {
+        if (this.ticketsAcquired) {
+            return true;
+        }
+        if (!TerrainEditService.tryAcquireTickets(this.level, this.ticketChunks)) {
+            this.ticketWaitTicks++;
+            if (this.ticketWaitTicks == MAX_STALLED_TICKS) {
+                LOGGER.warn(
+                    "Bulk edit is waiting for {} chunk tickets; the aggregate ticket budget is full",
+                    this.ticketChunks.size()
+                );
+            }
+            return false;
+        }
+        this.heldTicketChunks.addAll(this.ticketChunks);
+        this.ticketsAcquired = true;
+        this.ticketWaitTicks = 0;
+        return true;
+    }
+
+    private void releaseTickets() {
+        if (!this.ticketsAcquired) {
+            return;
+        }
+        TerrainEditService.releaseTicketsWhenSettled(this.level, this.heldTicketChunks);
+        this.heldTicketChunks.clear();
+        this.ticketsAcquired = false;
     }
 
     public Progress progress() {
@@ -513,10 +558,6 @@ public final class EffectBulkBlockEditor {
     }
 
     private void editSection(LevelChunk chunk, LevelChunkSection section, SectionKey key) {
-        if (this.spec.journal()) {
-            this.context.blockJournal().recordSection(this.level, chunk, key.sectionY(), section);
-        }
-
         boolean fullyInside = this.isFullyInside(key);
         boolean protectedWorld = this.context.hasBlockProtection();
         boolean atWorldFloor = key.sectionY() <= this.level.getMinSection();
@@ -529,10 +570,22 @@ public final class EffectBulkBlockEditor {
         int cleared;
         int vetoed;
         if (fastFullSection) {
-            cleared = this.clearWholeSection(chunk, section, key);
+            cleared = this.countClearable(section);
+            if (cleared == 0) {
+                return;
+            }
+            this.recordSnapshot(chunk, section, key);
+            this.clearWholeSection(chunk, section, key);
             vetoed = 0;
         } else {
-            int[] counts = this.clearByBlock(chunk, section, key, fullyInside, protectedWorld);
+            int[] counts = this.clearByBlock(
+                chunk,
+                section,
+                key,
+                fullyInside,
+                protectedWorld,
+                () -> this.recordSnapshot(chunk, section, key)
+            );
             cleared = counts[0];
             vetoed = counts[1];
         }
@@ -556,24 +609,29 @@ public final class EffectBulkBlockEditor {
         this.markChunkEdited(chunk, key, fastFullSection || section.hasOnlyAir());
     }
 
-    /**
-     * Replaces a fully covered section with one air-filled section in one operation. This keeps
-     * large author scales practical without writing 4096 block states on the server thread.
-     */
-    private int clearWholeSection(LevelChunk chunk, LevelChunkSection section, SectionKey key) {
+    private void recordSnapshot(LevelChunk chunk, LevelChunkSection section, SectionKey key) {
+        if (this.spec.journal()) {
+            this.context.blockJournal().recordSection(this.level, chunk, key.sectionY(), section);
+        }
+    }
+
+    /** Counts blocks a whole-section replacement would clear without touching the world. */
+    private int countClearable(LevelChunkSection section) {
         int[] cleared = {0};
         section.getStates().count((state, count) -> {
             if (!state.isAir() && !state.equals(this.spec.replacement())) {
                 cleared[0] += count;
-                if (this.clearedStates.size() < MAX_CLEARED_STATES) {
-                    this.clearedStates.add(state);
-                }
+                this.addClearedState(state);
             }
         });
-        if (cleared[0] == 0) {
-            return 0;
-        }
+        return cleared[0];
+    }
 
+    /**
+     * Replaces a fully covered section with one air-filled section in one operation. This keeps
+     * large author scales practical without writing 4096 block states on the server thread.
+     */
+    private void clearWholeSection(LevelChunk chunk, LevelChunkSection section, SectionKey key) {
         int sectionArrayIndex = this.level.getSectionIndexFromSectionY(key.sectionY());
         PalettedContainer<BlockState> states = new PalettedContainer<>(
             Block.BLOCK_STATE_REGISTRY,
@@ -582,7 +640,6 @@ public final class EffectBulkBlockEditor {
         );
         LevelChunkSection replacement = new LevelChunkSection(states, section.getBiomes());
         chunk.getSections()[sectionArrayIndex] = replacement;
-        return cleared[0];
     }
 
     private int[] clearByBlock(
@@ -590,10 +647,12 @@ public final class EffectBulkBlockEditor {
         LevelChunkSection section,
         SectionKey key,
         boolean fullyInside,
-        boolean protectedWorld
+        boolean protectedWorld,
+        Runnable beforeFirstWrite
     ) {
         int cleared = 0;
         int vetoed = 0;
+        boolean snapshotRecorded = false;
         int baseX = key.sectionX() << 4;
         int baseY = key.sectionY() << 4;
         int baseZ = key.sectionZ() << 4;
@@ -624,13 +683,21 @@ public final class EffectBulkBlockEditor {
                 vetoed++;
                 continue;
             }
-            if (this.clearedStates.size() < MAX_CLEARED_STATES) {
-                this.clearedStates.add(current);
+            if (!snapshotRecorded) {
+                beforeFirstWrite.run();
+                snapshotRecorded = true;
             }
+            this.addClearedState(current);
             section.setBlockState(localX, localY, localZ, this.spec.replacement(), false);
             cleared++;
         }
         return new int[]{cleared, vetoed};
+    }
+
+    private void addClearedState(BlockState state) {
+        if (this.clearedStates.size() < MAX_CLEARED_STATES) {
+            this.clearedStates.add(state);
+        }
     }
 
     private void markChunkEdited(LevelChunk chunk, SectionKey key, boolean sectionAir) {
@@ -798,8 +865,8 @@ public final class EffectBulkBlockEditor {
                     }
                 }
             }
-            List<SectionEntry> sections = new ArrayList<>(nearest);
-            sections.sort(Comparator.comparingDouble(SectionEntry::minDistanceSquared));
+            List<SectionEntry> sorted = new ArrayList<>(nearest);
+            sorted.sort(Comparator.comparingDouble(SectionEntry::minDistanceSquared));
             if (total > MAX_SECTIONS) {
                 LOGGER.warn(
                     "Bulk edit exceeds {} sections; keeping the {} nearest to the centre",
@@ -807,29 +874,63 @@ public final class EffectBulkBlockEditor {
                     MAX_SECTIONS
                 );
             }
-            return withNextIndices(sections);
+            return withNextIndices(limitSectionsToTicketChunks(sorted));
         }
 
         List<SectionEntry> sections = new ArrayList<>();
+        Set<ChunkPos> chunks = new LinkedHashSet<>();
         outer:
         for (int sectionY = maxSectionY; sectionY >= minSectionY; sectionY--) {
             for (int sectionX = minSectionX; sectionX <= maxSectionX; sectionX++) {
                 for (int sectionZ = minSectionZ; sectionZ <= maxSectionZ; sectionZ++) {
-                    if (volume.intersectsSection(sectionX, sectionY, sectionZ)) {
-                        sections.add(new SectionEntry(
-                            new SectionKey(sectionX, sectionY, sectionZ), 0.0, 0.0, 0
-                        ));
-                        if (sections.size() >= MAX_SECTIONS) {
-                            LOGGER.warn(
-                                "Bulk edit exceeds {} sections; the remaining volume is skipped", MAX_SECTIONS
-                            );
-                            break outer;
-                        }
+                    if (!volume.intersectsSection(sectionX, sectionY, sectionZ)) {
+                        continue;
+                    }
+                    ChunkPos chunk = new ChunkPos(sectionX, sectionZ);
+                    if (!chunks.contains(chunk) && chunks.size() >= MAX_TICKET_CHUNKS) {
+                        LOGGER.warn(
+                            "Bulk edit exceeds {} chunk tickets; the remaining volume is skipped",
+                            MAX_TICKET_CHUNKS
+                        );
+                        break outer;
+                    }
+                    chunks.add(chunk);
+                    sections.add(new SectionEntry(
+                        new SectionKey(sectionX, sectionY, sectionZ), 0.0, 0.0, 0
+                    ));
+                    if (sections.size() >= MAX_SECTIONS) {
+                        LOGGER.warn(
+                            "Bulk edit exceeds {} sections; the remaining volume is skipped", MAX_SECTIONS
+                        );
+                        break outer;
                     }
                 }
             }
         }
         return withNextIndices(sections);
+    }
+
+    /**
+     * Keeps the nearest sections whose chunks fit the per-edit ticket cap. A radial edit therefore
+     * degrades to a smaller radius instead of leaving unticketed sections that can never be edited.
+     */
+    private static List<SectionEntry> limitSectionsToTicketChunks(List<SectionEntry> sorted) {
+        List<SectionEntry> kept = new ArrayList<>();
+        Set<ChunkPos> chunks = new LinkedHashSet<>();
+        for (SectionEntry entry : sorted) {
+            ChunkPos chunk = chunkOf(entry.key());
+            if (!chunks.contains(chunk) && chunks.size() >= MAX_TICKET_CHUNKS) {
+                LOGGER.warn(
+                    "Bulk edit exceeds {} chunk tickets; keeping the {} nearest sections",
+                    MAX_TICKET_CHUNKS,
+                    kept.size()
+                );
+                break;
+            }
+            chunks.add(chunk);
+            kept.add(entry);
+        }
+        return kept;
     }
 
     /** Annotates each section with the next cursor index in the same chunk column. */
@@ -894,13 +995,6 @@ public final class EffectBulkBlockEditor {
         for (SectionEntry entry : sections) {
             SectionKey key = entry.key();
             chunks.add(new ChunkPos(key.sectionX(), key.sectionZ()));
-            if (chunks.size() >= MAX_TICKET_CHUNKS) {
-                LOGGER.warn(
-                    "Bulk edit area exceeds {} chunk tickets; some chunks may stay unloaded",
-                    MAX_TICKET_CHUNKS
-                );
-                break;
-            }
         }
         return chunks;
     }

@@ -1,7 +1,5 @@
 package mafisher.quasar.effect.gameplay;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -29,11 +27,12 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Read-mostly view of one active gameplay effect session. */
 public final class GameplayEffectContext {
-    private static final int MAX_PENDING_AUDIO_TRIGGERS = 16;
-
+    private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
     private final ServerLevel level;
     private final EffectScope scope;
     private final GameplayEffectSpec spec;
@@ -42,7 +41,8 @@ public final class GameplayEffectContext {
     private final BlockJournal blockJournal;
     private final EffectTickBudgetState budgetState;
     private final PendingBlockChanges blockChanges = new PendingBlockChanges();
-    private final List<PendingAudioTrigger> pendingAudioTriggers = new ArrayList<>();
+    private final PendingAudioTriggers pendingAudioTriggers = new PendingAudioTriggers();
+    private final EffectCloseActions closeActions = new EffectCloseActions();
 
     private boolean audioStarted;
     private int ageTicks;
@@ -162,10 +162,7 @@ public final class GameplayEffectContext {
         if (this.audioStarted) {
             return EffectAudioService.trigger(this.level, this.sessionId, triggerId, position);
         }
-        if (this.pendingAudioTriggers.size() >= MAX_PENDING_AUDIO_TRIGGERS) {
-            this.pendingAudioTriggers.remove(0);
-        }
-        this.pendingAudioTriggers.add(new PendingAudioTrigger(triggerId, position));
+        this.pendingAudioTriggers.add(triggerId, position);
         return true;
     }
 
@@ -453,15 +450,9 @@ public final class GameplayEffectContext {
     }
 
     void flushAudioTriggers() {
-        if (!this.audioStarted) {
-            return;
+        if (this.audioStarted) {
+            this.pendingAudioTriggers.flush(this.level, this.sessionId);
         }
-        for (PendingAudioTrigger pending : this.pendingAudioTriggers) {
-            EffectAudioService.trigger(
-                this.level, this.sessionId, pending.triggerId(), pending.position()
-            );
-        }
-        this.pendingAudioTriggers.clear();
     }
 
     void beginTick(int ageTicks) {
@@ -481,13 +472,24 @@ public final class GameplayEffectContext {
         this.random = RandomSource.create(EffectSeeds.forTick(this.spec.seed(), ageTicks));
     }
 
-    void close() {
-        this.open = false;
-        this.blockChanges.clear();
-        this.pendingAudioTriggers.clear();
+    /** Registers engine-owned cleanup that must run even when a controller callback throws. */
+    void onClose(Runnable action) {
+        this.closeActions.add(action);
     }
 
-    private record PendingAudioTrigger(String triggerId, Vec3 position) {
+    void close() {
+        this.open = false;
+        this.closeActions.run(this.spec.typeId().toString());
+        int discarded = this.blockChanges.size();
+        this.blockChanges.clear();
+        this.pendingAudioTriggers.clear();
+        if (discarded > 0) {
+            LOGGER.warn(
+                "Discarded {} pending block changes for gameplay effect {}",
+                discarded,
+                this.spec.typeId()
+            );
+        }
     }
 
     private void ensureOpen() {

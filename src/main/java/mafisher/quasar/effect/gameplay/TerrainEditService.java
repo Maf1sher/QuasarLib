@@ -1,14 +1,17 @@
 package mafisher.quasar.effect.gameplay;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.WeakHashMap;
+import mafisher.quasar.QuasarConfig;
 import mafisher.quasar.effect.EffectBudgets;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -55,17 +58,47 @@ public final class TerrainEditService {
         return true;
     }
 
-    /** Loads the chunk columns touched by a bulk edit for the duration of that edit. */
-    public static void acquireTickets(ServerLevel level, Collection<ChunkPos> chunks) {
+    /**
+     * Reserves chunk columns for one bulk edit, all or nothing. The aggregate ticket budget keeps
+     * concurrent edits from pinning an unbounded area; a rejected reservation waits for a retry
+     * instead of acquiring a partial set that could stall the edit front.
+     */
+    public static boolean tryAcquireTickets(ServerLevel level, Collection<ChunkPos> chunks) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(chunks, "chunks");
+        Set<ChunkPos> unique = new LinkedHashSet<>(chunks);
+        if (unique.isEmpty()) {
+            return true;
+        }
         LevelState state = state(level);
-        for (ChunkPos chunk : chunks) {
-            int count = state.tickets.getOrDefault(chunk, 0);
-            if (count == 0) {
-                level.getChunkSource().addRegionTicket(TERRAIN_TICKET, chunk, 0, chunk);
+        if (state.heldTickets + unique.size() > QuasarConfig.terrainTicketBudget()) {
+            return false;
+        }
+
+        List<ChunkPos> acquired = new ArrayList<>(unique.size());
+        try {
+            for (ChunkPos chunk : unique) {
+                int count = state.tickets.getOrDefault(chunk, 0);
+                if (count == 0) {
+                    level.getChunkSource().addRegionTicket(TERRAIN_TICKET, chunk, 0, chunk);
+                }
+                state.tickets.put(chunk, count + 1);
+                state.heldTickets++;
+                acquired.add(chunk);
             }
-            state.tickets.put(chunk, count + 1);
+            return true;
+        } catch (RuntimeException exception) {
+            for (ChunkPos chunk : acquired) {
+                releaseOneTicket(level, state, chunk);
+            }
+            throw exception;
+        }
+    }
+
+    /** Best-effort compatibility wrapper; callers that can wait should use the returning method. */
+    public static void acquireTickets(ServerLevel level, Collection<ChunkPos> chunks) {
+        if (!tryAcquireTickets(level, chunks)) {
+            LOGGER.warn("Could not reserve terrain-edit chunk tickets within the level budget");
         }
     }
 
@@ -74,14 +107,8 @@ public final class TerrainEditService {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(chunks, "chunks");
         LevelState state = state(level);
-        for (ChunkPos chunk : chunks) {
-            int count = state.tickets.getOrDefault(chunk, 0);
-            if (count <= 1) {
-                state.tickets.remove(chunk);
-                level.getChunkSource().removeRegionTicket(TERRAIN_TICKET, chunk, 0, chunk);
-            } else {
-                state.tickets.put(chunk, count - 1);
-            }
+        for (ChunkPos chunk : new LinkedHashSet<>(chunks)) {
+            releaseOneTicket(level, state, chunk);
         }
     }
 
@@ -104,8 +131,27 @@ public final class TerrainEditService {
                 state.pendingTicketRelease.merge(chunk, 1, Integer::sum);
             } else {
                 state.tickets.put(chunk, count - 1);
+                state.heldTickets--;
             }
         }
+    }
+
+    private static void releaseOneTicket(ServerLevel level, LevelState state, ChunkPos chunk) {
+        int count = state.tickets.getOrDefault(chunk, 0);
+        if (count <= 0) {
+            return;
+        }
+        if (count == 1) {
+            state.tickets.remove(chunk);
+            try {
+                level.getChunkSource().removeRegionTicket(TERRAIN_TICKET, chunk, 0, chunk);
+            } catch (RuntimeException exception) {
+                LOGGER.debug("Could not release a terrain-edit ticket for {}", chunk, exception);
+            }
+        } else {
+            state.tickets.put(chunk, count - 1);
+        }
+        state.heldTickets = Math.max(0, state.heldTickets - 1);
     }
 
     /** Queues a chunk for heightmap and light recomputation. */
@@ -210,6 +256,7 @@ public final class TerrainEditService {
             for (int index = 0; index < held; index++) {
                 level.getChunkSource().removeRegionTicket(TERRAIN_TICKET, chunk, 0, chunk);
             }
+            state.heldTickets = Math.max(0, state.heldTickets - held);
         }
 
         if (state.relightQueue.isEmpty()
@@ -217,7 +264,8 @@ public final class TerrainEditService {
             && state.syncAfterRelight.isEmpty()
             && state.syncQueue.isEmpty()
             && state.pendingTicketRelease.isEmpty()
-            && state.tickets.isEmpty()) {
+            && state.tickets.isEmpty()
+            && state.heldTickets == 0) {
             STATES.remove(level);
         }
     }
@@ -229,12 +277,13 @@ public final class TerrainEditService {
         if (state == null) {
             return;
         }
-        for (Map.Entry<ChunkPos, Integer> entry : state.tickets.entrySet()) {
-            releaseRegionTickets(level, entry.getKey(), Math.max(1, entry.getValue()));
+        for (ChunkPos chunk : state.tickets.keySet()) {
+            releaseRegionTickets(level, chunk, 1);
         }
-        for (Map.Entry<ChunkPos, Integer> entry : state.pendingTicketRelease.entrySet()) {
-            releaseRegionTickets(level, entry.getKey(), Math.max(1, entry.getValue()));
+        for (ChunkPos chunk : state.pendingTicketRelease.keySet()) {
+            releaseRegionTickets(level, chunk, 1);
         }
+        state.heldTickets = 0;
     }
 
     private static void releaseRegionTickets(ServerLevel level, ChunkPos chunk, int count) {
@@ -286,6 +335,7 @@ public final class TerrainEditService {
 
     private static final class LevelState {
         private int sectionEditsUsed;
+        private int heldTickets;
         private final Set<ChunkPos> relightQueue = new LinkedHashSet<>();
         private final Set<ChunkPos> priorityRelightQueue = new LinkedHashSet<>();
         private final Set<ChunkPos> syncAfterRelight = new LinkedHashSet<>();

@@ -180,7 +180,7 @@ class GameplayBlockOperationsTest {
     }
 
     @Test
-    void skipsChangesInUnloadedChunks() {
+    void keepsChangesInUnloadedChunksQueuedUntilTheChunkLoads() {
         when(this.level.hasChunkAt(FIRST)).thenReturn(false);
         QueueOnStartController controller = new QueueOnStartController(changes(FIRST));
         start(controller, 1);
@@ -188,6 +188,12 @@ class GameplayBlockOperationsTest {
         GameplayEffectService.tick(this.level);
 
         verify(this.level, never()).setBlockAndUpdate(any(), any());
+        assertEquals(1, controller.context.pendingBlockChanges());
+
+        when(this.level.hasChunkAt(FIRST)).thenReturn(true);
+        GameplayEffectService.tick(this.level);
+
+        verify(this.level).setBlockAndUpdate(FIRST, this.state);
         assertEquals(0, controller.context.pendingBlockChanges());
     }
 

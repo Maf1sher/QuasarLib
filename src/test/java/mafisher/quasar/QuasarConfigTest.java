@@ -45,6 +45,7 @@ class QuasarConfigTest {
         assertEquals(1, QuasarConfig.gameplayStartsPerOwnerPerTickBudget());
         assertEquals(256, QuasarConfig.gameplayPendingBudget());
         assertEquals(16, QuasarConfig.cinematicSessionBudget());
+        assertEquals(4_096, QuasarConfig.terrainTicketBudget());
         assertEquals(256, QuasarConfig.entitySpawnsPerLevelTickBudget());
     }
 }

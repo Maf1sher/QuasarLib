@@ -7,12 +7,15 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import mafisher.quasar.effect.EffectBounds;
 import mafisher.quasar.effect.EffectPoint;
@@ -44,6 +47,7 @@ class EffectBulkBlockEditorTest {
     private LevelChunkSection[] sections;
     private GameplayEffectContext context;
     private GameplayEffectSpec spec;
+    private BlockJournal journal;
     private final ChunkPos chunkPos = new ChunkPos(0, 0);
 
     @BeforeEach
@@ -89,7 +93,8 @@ class EffectBulkBlockEditorTest {
         when(this.context.spec()).thenReturn(this.spec);
         when(this.context.sessionId()).thenReturn(UUID.randomUUID());
         when(this.context.tryAcquireSectionEdit()).thenReturn(true);
-        when(this.context.blockJournal()).thenReturn(new BlockJournal());
+        this.journal = new BlockJournal();
+        when(this.context.blockJournal()).thenReturn(this.journal);
     }
 
     @AfterEach
@@ -143,7 +148,93 @@ class EffectBulkBlockEditorTest {
         assertEquals(Blocks.STONE.defaultBlockState(), this.section.getBlockState(8, 8, 8));
         assertEquals(Blocks.DIRT.defaultBlockState(), this.section.getBlockState(0, 0, 0));
         assertEquals(0, editor.progress().clearedBlocks());
+        assertEquals(0, this.journal.sectionCount());
         editor.close(false);
+    }
+
+    @Test
+    void doesNotSnapshotASectionWithoutClearableBlocks() {
+        EffectBulkBlockEditor editor = EffectBulkBlockEditor.create(
+            this.context,
+            new EffectBulkBlockEditor.Spec(
+                EffectBlockVolume.box(new EffectBounds(12.0, 12.0, 12.0, 16.0, 16.0, 16.0)),
+                Blocks.AIR.defaultBlockState(),
+                true,
+                EffectBulkBlockEditor.SyncPolicy.MANUAL,
+                0.0,
+                true
+            )
+        );
+
+        editor.tick();
+
+        assertEquals(0, editor.progress().clearedBlocks());
+        assertEquals(0, this.journal.sectionCount());
+        editor.close(false);
+    }
+
+    @Test
+    void snapshotsOnceBeforeTheFirstAllowedPartialWrite() {
+        EffectBulkBlockEditor editor = EffectBulkBlockEditor.create(
+            this.context,
+            new EffectBulkBlockEditor.Spec(
+                EffectBlockVolume.box(new EffectBounds(7.0, 7.0, 7.0, 10.0, 10.0, 10.0)),
+                Blocks.AIR.defaultBlockState(),
+                true,
+                EffectBulkBlockEditor.SyncPolicy.MANUAL,
+                0.0,
+                true
+            )
+        );
+
+        editor.tick();
+
+        assertEquals(1, editor.progress().clearedBlocks());
+        assertEquals(1, this.journal.sectionCount());
+        editor.close(false);
+    }
+
+    @Test
+    void reservesTicketsOnlyWhenTheFirstTickRuns() {
+        EffectBulkBlockEditor editor = EffectBulkBlockEditor.create(
+            this.context,
+            new EffectBulkBlockEditor.Spec(
+                EffectBlockVolume.sphere(new EffectPoint(8.0, 8.0, 8.0), 4.0),
+                Blocks.AIR.defaultBlockState(),
+                true,
+                EffectBulkBlockEditor.SyncPolicy.MANUAL,
+                0.0,
+                false
+            )
+        );
+
+        verify(this.chunkSource, org.mockito.Mockito.never())
+            .addRegionTicket(any(), any(), anyInt(), any());
+
+        editor.tick();
+
+        verify(this.chunkSource).addRegionTicket(any(), any(), anyInt(), any());
+        editor.close(false);
+    }
+
+    @Test
+    void clampsAVolumeToTheChunkTicketCap() {
+        LevelHeightAccessor height = mock(LevelHeightAccessor.class);
+        when(height.getMinSection()).thenReturn(-1);
+        when(height.getMaxSection()).thenReturn(1);
+
+        List<EffectBulkBlockEditor.SectionKey> sections = EffectBulkBlockEditor.orderedSections(
+            EffectBlockVolume.box(new EffectBounds(0.0, 0.0, 0.0, 640.0, 16.0, 640.0)),
+            height,
+            EffectBulkBlockEditor.Ordering.TOP_DOWN
+        );
+        Set<ChunkPos> chunks = new LinkedHashSet<>();
+        for (EffectBulkBlockEditor.SectionKey section : sections) {
+            chunks.add(new ChunkPos(section.sectionX(), section.sectionZ()));
+        }
+
+        assertEquals(EffectBulkBlockEditor.maxTicketChunks(), sections.size());
+        assertEquals(EffectBulkBlockEditor.maxTicketChunks(), chunks.size());
     }
 
     @Test
