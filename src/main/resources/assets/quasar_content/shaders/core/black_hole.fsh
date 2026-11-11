@@ -75,7 +75,9 @@ out vec4 fragColor;
 
 const int MAX_STEPS = 256;
 const float PI = 3.14159265359;
-const float DISK_OPACITY = 1.5;
+const float DISK_OPACITY = 2.4;
+const float DISK_BODY_OCCLUSION = 0.98;
+const float DISK_BODY_EMISSION = 0.20;
 const float B_CRITICAL = 2.59807621135;
 
 float hash13(vec3 point) {
@@ -307,6 +309,40 @@ float cameraInsideDisk(vec3 cameraRelative) {
     return insideAnnulus * nearPlane;
 }
 
+/**
+ * Coverage of the optically thick body of the accretion disk. The rims stay
+ * soft for the cinematic fade, but the body must suppress everything behind it:
+ * an additive glow alone lets terrain show through the ring.
+ */
+float diskBodyCoverage(float radial) {
+    float span = DiskOuterRadius - DiskInnerRadius;
+    if (span <= 0.001) {
+        return 0.0;
+    }
+    float t = clamp((radial - DiskInnerRadius) / span, 0.0, 1.0);
+    return smoothstep(0.0, 0.05, t) * (1.0 - smoothstep(0.82, 1.0, t));
+}
+
+/**
+ * Straight-ray footprint of the optically thick disk body. The raymarch already
+ * accumulates optical depth, but a sparse slab, a bent path, or a low step
+ * budget can still let the scene bleed through. This screen-space mask makes the
+ * projected disk body opaque in the final composite as well.
+ */
+float diskScreenCoverage(vec3 origin, vec3 direction) {
+    float denominator = dot(direction, DiskNormal);
+    if (abs(denominator) < 0.0001) {
+        return 0.0;
+    }
+    float distance = dot(-origin, DiskNormal) / denominator;
+    if (distance <= 0.0) {
+        return 0.0;
+    }
+    vec3 hit = origin + direction * distance;
+    float radial = length(hit - DiskNormal * dot(hit, DiskNormal));
+    return diskBodyCoverage(radial) * clamp(DiskBrightness, 0.0, 1.0);
+}
+
 struct SceneRay {
     vec3 origin;
     vec3 direction;
@@ -509,7 +545,8 @@ float geodesicStep(float radius, float horizonRadius) {
  * depth-test the disk surface instead of a bounding-sphere entry.
  */
 void accumulateDisk(vec3 before, vec3 after, vec3 cameraRelative, vec3 rayVelocity,
-    inout vec3 emission, inout float transmittance, inout float nearestDiskEntry) {
+    inout vec3 emission, inout float transmittance, inout float nearestDiskEntry,
+    inout float diskCoverage) {
     float beforeHeight = dot(before, DiskNormal);
     float afterHeight = dot(after, DiskNormal);
     float segmentLength = length(after - before);
@@ -517,13 +554,23 @@ void accumulateDisk(vec3 before, vec3 after, vec3 cameraRelative, vec3 rayVeloci
     // the volume while the segment is inside the slab instead of dropping the disk.
     if (abs(beforeHeight) <= DiskThickness && abs(afterHeight) <= DiskThickness) {
         vec3 midpoint = mix(before, after, 0.5);
+        float radial = length(midpoint - DiskNormal * dot(midpoint, DiskNormal));
         vec4 slabDisk = sampleDisk(midpoint, cameraRelative);
         float slabOpacity = 1.0 - exp(-max(slabDisk.a, 0.0) * segmentLength * DISK_OPACITY);
-        if (slabOpacity > 0.001) {
+        // The body is optically thick even where the procedural density is low;
+        // otherwise the background shows through the ring's noise gaps. Fade
+        // with the authored disk brightness so a forming disk cannot become an
+        // opaque black band before its emission appears.
+        float body = diskBodyCoverage(radial) * clamp(DiskBrightness, 0.0, 1.0);
+        float occlusion = max(slabOpacity, body * DISK_BODY_OCCLUSION);
+        if (occlusion > 0.001) {
             nearestDiskEntry = min(nearestDiskEntry, length(midpoint - cameraRelative));
         }
-        emission += slabDisk.rgb * slabOpacity * transmittance;
-        transmittance *= (1.0 - slabOpacity);
+        // Keep the emission wispy but give the gaps a dim base so they read as
+        // hot plasma, not as holes cut out of the ring.
+        emission += slabDisk.rgb * max(slabOpacity, body * DISK_BODY_EMISSION) * transmittance;
+        diskCoverage = max(diskCoverage, occlusion);
+        transmittance *= (1.0 - occlusion);
         return;
     }
     if (beforeHeight * afterHeight > 0.0 || abs(beforeHeight - afterHeight) < 0.000001) {
@@ -543,11 +590,14 @@ void accumulateDisk(vec3 before, vec3 after, vec3 cameraRelative, vec3 rayVeloci
     float thickness = max(DiskThickness, 0.001);
     float pathLength = clamp(2.0 * thickness / max(cosTheta, 0.15), 0.02, 8.0 * thickness);
     float opacity = 1.0 - exp(-max(disk.a, 0.0) * pathLength * DISK_OPACITY);
-    if (opacity > 0.001) {
+    float body = diskBodyCoverage(radial) * clamp(DiskBrightness, 0.0, 1.0);
+    float occlusion = max(opacity, body * DISK_BODY_OCCLUSION);
+    if (occlusion > 0.001) {
         nearestDiskEntry = min(nearestDiskEntry, length(hit - cameraRelative));
     }
-    emission += disk.rgb * opacity * transmittance;
-    transmittance *= (1.0 - opacity);
+    emission += disk.rgb * max(opacity, body * DISK_BODY_EMISSION) * transmittance;
+    diskCoverage = max(diskCoverage, occlusion);
+    transmittance *= (1.0 - occlusion);
 }
 
 vec4 renderBlackHole(vec2 uv) {
@@ -623,6 +673,8 @@ vec4 renderBlackHole(vec2 uv) {
     float closestHoleRadius = 1.0e30;
     float closestEntry = max(tEntry, 0.0);
     float nearestDiskEntry = depthScale;
+    float diskCoverage = 0.0;
+    float diskScreenMask = diskScreenCoverage(traceOrigin, traceDirection);
 
     for (int stepIndex = 0; stepIndex < MAX_STEPS; stepIndex++) {
         if (stepIndex >= steps) {
@@ -653,7 +705,7 @@ vec4 renderBlackHole(vec2 uv) {
         vec3 nextVelocity = velocity + stepLength * a2;
 
         accumulateDisk(position, nextPosition, traceOrigin, midVelocity,
-            emission, transmittance, nearestDiskEntry);
+            emission, transmittance, nearestDiskEntry, diskCoverage);
         position = nextPosition;
         velocity = nextVelocity;
         if (transmittance < 0.001) {
@@ -661,13 +713,59 @@ vec4 renderBlackHole(vec2 uv) {
         }
     }
 
-    // The disk can sit in front of the closest-approach point; use whichever surface
-    // the pixel actually shows. Entries stay relative to traceOrigin so the water
-    // surface leg is added once, by the composite pass.
-    float nearestEntry = min(closestEntry, nearestDiskEntry);
+    // A single depth cannot represent every layer of the effect. A near-side
+    // disk covers the horizon, while a far-side disk is still the surface the
+    // pixel shows outside the shadow. Using the minimum of both painted the
+    // ring over terrain between the hole and the disk; choose the layer that
+    // actually owns the pixel instead. Entries stay relative to traceOrigin so
+    // the water surface leg is added once, by the composite pass.
+    bool diskVisible = diskCoverage > 0.02 && nearestDiskEntry < depthScale;
+    float nearestEntry = closestEntry;
+    if (diskVisible) {
+        nearestEntry = captured ? min(closestEntry, nearestDiskEntry) : nearestDiskEntry;
+    }
+
+    // Photon-ring and inner-rim profiles are evaluated before the background is
+    // re-added. A bright emissive ring is a surface: terrain behind it must not
+    // shine through its glow.
+    float stabilization = smoothstep(0.0, 0.10, Progress)
+        * (1.0 - smoothstep(0.86, 1.0, Progress));
+    float pixelWorld = max(0.0001,
+        2.0 * max(holeDistance, radius) / max(abs(WorldProjMat[1][1]) * ViewportHeight, 1.0));
+    float ringWidth = max(0.055 * radius, pixelWorld * 1.5);
+    float primaryOffset = (impact - shadowImpact) / ringWidth;
+    float secondaryOffset = (impact - shadowImpact - 0.35 * radius) / (ringWidth * 1.6);
+    float primaryRing = exp(-primaryOffset * primaryOffset);
+    float secondaryRing = exp(-secondaryOffset * secondaryOffset) * 0.30;
+    float innerRimOffset = (impact - shadowImpact - 0.12 * radius) / (0.10 * radius);
+    float innerRim = exp(-innerRimOffset * innerRimOffset);
+    // Use the actual ring/inner-rim light amplitudes, not the raw Gaussian
+    // profiles: the dim tails must stay additive instead of carving a dark band
+    // out of the background. Gate by facing like the ring light itself.
+    float ringGlow = (primaryRing + secondaryRing) * RingStrength * 0.18;
+    float innerGlow = innerRim * RingStrength * 0.12;
+    float ringOcclusion = smoothstep(0.02, 0.20,
+        max(ringGlow, innerGlow) * stabilization) * facing;
+    float coreOcclusion = facing * (1.0 - smoothstep(
+        shadowImpact * 1.05, shadowImpact * 1.35, impact));
+    float opaqueCoverage = max(max(diskScreenMask, coreOcclusion), ringOcclusion);
 
     vec3 emissionTint = foregroundTintAt(
         uv, nearestEntry + max(ray.surfaceDistance, 0.0), 0.5);
+    // A scene-derived tint is only reliable when a foreground medium is known
+    // from the camera-to-effect path, or when depth puts the layer in front.
+    // Otherwise background water/ice would print its colors onto the opaque
+    // disk/core/ring and read as terrain behind the black hole.
+    if (MediumPathLength <= 0.0 && opaqueCoverage > 0.01) {
+        float tintEntry = nearestEntry + max(ray.surfaceDistance, 0.0);
+        float tintDepth = viewDistance(
+            texture(ForegroundDepthSampler, uv).r, uv);
+        bool layerInFront = ForegroundDepthValid > 0.5
+            && tintDepth < tintEntry - 0.5;
+        if (!layerInFront) {
+            emissionTint = mix(emissionTint, vec3(1.0), opaqueCoverage);
+        }
+    }
     // Tint only the effect's own emission. The lensed background is the scene the
     // player already sees through the glass; tinting it paints a dark halo.
     vec3 color = emission * emissionTint;
@@ -732,18 +830,9 @@ vec4 renderBlackHole(vec2 uv) {
                 }
             }
         }
-        float innerOcclusion = facing * (1.0 - smoothstep(
-            shadowImpact * 1.05, shadowImpact * 1.35, impact
-        ));
-        backgroundLight = background * transmittance * (1.0 - innerOcclusion);
+        backgroundLight = background * transmittance * (1.0 - coreOcclusion)
+            * (1.0 - ringOcclusion) * (1.0 - diskScreenMask);
     }
-
-    // Cinematic photon-ring glow. It is symmetric in the impact parameter and is not
-    // suppressed by disk alpha, so the back side cannot disappear independently.
-    float stabilization = smoothstep(0.0, 0.10, Progress)
-        * (1.0 - smoothstep(0.86, 1.0, Progress));
-    float pixelWorld = max(0.0001,
-        2.0 * max(holeDistance, radius) / max(abs(WorldProjMat[1][1]) * ViewportHeight, 1.0));
 
     // A dark shockwave absorbs the lensed background inside its annulus. The thin
     // bright rim is added later, so the wave reads as light being eaten, not emitted.
@@ -756,21 +845,17 @@ vec4 renderBlackHole(vec2 uv) {
         backgroundLight *= absorbFactor;
     }
 
-    float ringWidth = max(0.055 * radius, pixelWorld * 1.5);
-    float primaryOffset = (impact - shadowImpact) / ringWidth;
-    float secondaryOffset = (impact - shadowImpact - 0.35 * radius) / (ringWidth * 1.6);
-    float primaryRing = exp(-primaryOffset * primaryOffset);
-    float secondaryRing = exp(-secondaryOffset * secondaryOffset) * 0.30;
+    // Cinematic photon-ring glow. It is symmetric in the impact parameter and is not
+    // suppressed by disk alpha, so the back side cannot disappear independently.
     vec3 ringColor = mix(vec3(1.0, 0.93, 0.78), vec3(0.72, 0.92, 1.0), Charge);
     float pulse = 0.85 + 0.15 * sin(AgeTicks * 0.08 + Seed * 6.2831853);
     vec3 ringLight = ringColor * (primaryRing + secondaryRing) * RingStrength * 0.18
         * pulse * stabilization * (0.35 + 0.65 * transmittance);
     color += (ringLight / (vec3(1.0) + ringLight)) * emissionTint * facing;
 
-    // A hot inner rim bridges the shadow and the disk inner edge. It also hides
-    // the thin background sliver that would otherwise show through the gap.
-    float innerRimOffset = (impact - shadowImpact - 0.12 * radius) / (0.10 * radius);
-    float innerRim = exp(-innerRimOffset * innerRimOffset);
+    // A hot inner rim bridges the shadow and the disk inner edge. Its profile
+    // already contributes to ringOcclusion, so the background cannot show
+    // through the thin gap.
     vec3 innerRimColor = mix(vec3(1.0, 0.86, 0.62), vec3(0.75, 0.90, 1.0), Charge);
     vec3 innerRimLight = innerRimColor * innerRim * RingStrength * 0.12 * stabilization;
     color += (innerRimLight / (vec3(1.0) + innerRimLight)) * emissionTint * facing;
@@ -900,9 +985,17 @@ void main() {
     // in alpha instead, so recompute coverage here at full composite resolution.
     float coverage = clamp(texture(MaskSampler, texCoord).r * MaskStrength, 0.0, 1.0) * Fade;
     coverage *= 1.0 - smoothstep(lensRadius * 0.88, lensRadius * 1.04, impact);
+    float diskScreenMask = diskScreenCoverage(traceOrigin, traceDirection);
+    float coreMask = (1.0 - smoothstep(
+            max(BlackHoleRadius, 0.001) * B_CRITICAL * 1.05,
+            max(BlackHoleRadius, 0.001) * B_CRITICAL * 1.35,
+            impact)) * frontFacing(direction);
+    float opaqueMask = max(diskScreenMask, coreMask);
     bool footprint = insideLens || tEntry >= 0.0;
     bool visible = footprint && sceneDistance >= entryDistance - depthBias;
-    float alpha = coverage * (visible ? 1.0 : 0.0);
+    // The disk and shadow are opaque surfaces: force their pixels over the scene
+    // even if the mask coverage is soft, but never over genuine foreground depth.
+    float alpha = visible ? max(coverage, opaqueMask) : 0.0;
 
     // Physically motivated surface transmission instead of a fixed blue wash.
     float surfaceTransmittance = 1.0;
@@ -915,8 +1008,9 @@ void main() {
 
     vec3 color = effectColor.rgb;
     // At grazing angles the surface reflects the scene already in sceneColor.
-    // Blend toward that reflection instead of painting a black disc.
-    color = mix(sceneColor.rgb, color, surfaceTransmittance);
+    // Blend toward that reflection instead of painting a black disc. Opaque
+    // disk/core pixels keep their effect color even across a water surface.
+    color = mix(sceneColor.rgb, color, max(surfaceTransmittance, opaqueMask));
 
     vec3 center = mix(sceneColor.rgb, color, alpha);
     center *= 1.0 - clamp(Darkness, 0.0, 0.75);

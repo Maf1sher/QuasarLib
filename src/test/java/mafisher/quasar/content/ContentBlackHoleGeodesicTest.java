@@ -71,7 +71,7 @@ class ContentBlackHoleGeodesicTest {
         );
 
         assertTrue(trace.captured());
-        double entry = ContentBlackHoleGeodesic.nearestSurfaceEntry(trace, Double.NaN);
+        double entry = ContentBlackHoleGeodesic.nearestSurfaceEntry(trace, Double.NaN, false);
         assertTrue(entry > distance - 2.0 * horizon,
             "the traced entry must sit at the horizon, not at a bounding sphere: " + entry);
         assertFalse(ContentBlackHoleGeodesic.isVisibleAtDepth(distance - 10.0, entry, 0.1),
@@ -87,7 +87,7 @@ class ContentBlackHoleGeodesicTest {
         );
 
         assertFalse(trace.captured(), "the ray passes outside the shadow");
-        double entry = ContentBlackHoleGeodesic.nearestSurfaceEntry(trace, Double.NaN);
+        double entry = ContentBlackHoleGeodesic.nearestSurfaceEntry(trace, Double.NaN, false);
         assertTrue(entry > 150.0,
             "a lens-only pixel must use the closest traced approach, not the lens shell: " + entry);
         assertFalse(ContentBlackHoleGeodesic.isVisibleAtDepth(150.0, entry, 0.1),
@@ -108,12 +108,40 @@ class ContentBlackHoleGeodesicTest {
 
         assertTrue(diskTrace.crossings() > 0, "the ray must cross the disk annulus");
         double entry = ContentBlackHoleGeodesic.nearestSurfaceEntry(
-            diskTrace.trace(), diskTrace.nearestDiskEntry());
+            diskTrace.trace(), diskTrace.nearestDiskEntry(), true);
         assertTrue(entry < 150.0, "the near disk crossing is in front of the hole: " + entry);
         assertTrue(ContentBlackHoleGeodesic.isVisibleAtDepth(155.0, entry, 0.1),
             "an entity behind the near disk may still show the disk");
         assertFalse(ContentBlackHoleGeodesic.isVisibleAtDepth(entry - 20.0, entry, 0.1),
             "an entity in front of the near disk must hide it");
+    }
+
+    @Test
+    void farSideDiskOwnsTheDepthOutsideTheShadow() {
+        ContentBlackHoleGeodesic.DiskTrace diskTrace = ContentBlackHoleGeodesic.traceWithDisk(
+            new Vector3d(160.0, 100.0, 0.0),
+            new Vector3d(-1.0, -100.0 / 210.0, 0.0),
+            6.0,
+            new Vector3d(0.0, 1.0, 0.0),
+            18.0,
+            54.0,
+            STEPS
+        );
+
+        assertFalse(diskTrace.trace().captured(), "the ray passes outside the shadow");
+        assertTrue(diskTrace.crossings() > 0, "the ray must cross the far side of the disk");
+        double closest = diskTrace.trace().nearestEntry();
+        double disk = diskTrace.nearestDiskEntry();
+        assertTrue(disk > closest,
+            "the far-side disk must sit behind the closest approach: " + disk + " > " + closest);
+        double entry = ContentBlackHoleGeodesic.nearestSurfaceEntry(
+            diskTrace.trace(), disk, true);
+        assertEquals(disk, entry, 1.0E-6,
+            "a visible far-side disk must own the effect depth");
+        assertFalse(ContentBlackHoleGeodesic.isVisibleAtDepth(closest + 4.0, entry, 0.1),
+            "terrain between the hole and the far-side disk must hide the disk");
+        assertTrue(ContentBlackHoleGeodesic.isVisibleAtDepth(disk + 10.0, entry, 0.1),
+            "terrain beyond the far-side disk must not clip it");
     }
 
     @Test

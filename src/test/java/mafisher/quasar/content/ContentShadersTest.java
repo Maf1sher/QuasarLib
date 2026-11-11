@@ -132,7 +132,7 @@ class ContentShadersTest {
             "the background lens must be disabled inside the disk");
         assertFalse(shader.contains("emission *= 1.0 - 0.90 * diskCameraFade"),
             "the accretion disk must stay visible when the camera enters its ring");
-        assertTrue(shader.contains("float innerOcclusion = facing *"),
+        assertTrue(shader.contains("float coreOcclusion = facing *"),
             "only the screen-space shadow may fade for rays pointing away");
         int horizon = shader.indexOf("length(cameraRelative) <= radius * 1.02");
         int footprint = shader.indexOf("float tEntry = raySphereEntry");
@@ -167,6 +167,10 @@ class ContentShadersTest {
             "the effect surface must be the nearest traced point, not a bounding volume");
         assertTrue(shader.contains("nearestDiskEntry"),
             "the disk must contribute its own traced crossing depth");
+        assertTrue(shader.contains("diskCoverage") && shader.contains("bool diskVisible"),
+            "the composite must choose the visible disk layer's depth");
+        assertTrue(shader.contains("captured ? min(closestEntry, nearestDiskEntry) : nearestDiskEntry"),
+            "a far-side disk must own the depth instead of the hole's closest approach");
         assertTrue(shader.contains("encodeEffectDepth") && shader.contains("decodeEffectDepth"),
             "the raymarch must carry the effect entry into the composite pass");
         assertTrue(shader.contains("sceneDistance"),
@@ -181,6 +185,32 @@ class ContentShadersTest {
             "per-sample unlensed depth clips the bent light path at the horizon");
         assertTrue(!shader.contains("maxLensDelta"),
             "the lens warp must not be clamped to a tiny screen-space delta");
+    }
+
+    @Test
+    void blackHoleRingAndDiskOccludeTheBackground() throws IOException {
+        String shader = readAsset("assets/quasar_content/shaders/core/black_hole.fsh");
+        assertTrue(shader.contains("float diskBodyCoverage(float radial)"),
+            "the disk body must have an explicit optical-thickness coverage");
+        assertTrue(shader.contains("diskBodyCoverage(radial) * clamp(DiskBrightness, 0.0, 1.0)"),
+            "a forming disk must not become an opaque black band before it emits");
+        assertTrue(shader.contains("max(slabOpacity, body * DISK_BODY_OCCLUSION)")
+                && shader.contains("max(opacity, body * DISK_BODY_OCCLUSION)"),
+            "low-density disk gaps must still suppress the background");
+        assertTrue(shader.contains("float ringOcclusion = smoothstep"),
+            "the photon ring must occlude the background behind its bright body");
+        assertTrue(shader.contains("(1.0 - ringOcclusion)"),
+            "the ring occlusion must be applied to the re-added background");
+        assertTrue(shader.contains("backgroundLight = background * transmittance * (1.0 - coreOcclusion)"),
+            "the shadow and disk must still attenuate the background");
+        assertTrue(shader.contains("float diskScreenCoverage(vec3 origin, vec3 direction)"),
+            "the disk body must also occlude the final composite");
+        assertTrue(shader.contains("(1.0 - diskScreenMask)"),
+            "the screen-space disk mask must remove the background");
+        assertTrue(shader.contains("float opaqueMask = max(diskScreenMask, coreMask)"),
+            "the opaque disk/core mask must force the effect over the scene");
+        assertTrue(shader.contains("MediumPathLength <= 0.0 && opaqueCoverage > 0.01"),
+            "background water/ice must not tint the opaque disk/core/ring");
     }
 
     @Test
@@ -265,7 +295,7 @@ class ContentShadersTest {
         assertTrue(shader.contains("SurfaceY") && shader.contains("SurfaceActive"));
         assertTrue(shader.contains("BloomSampler") && shader.contains("EmissiveOnly"),
             "bloom must sample the emissive layer instead of the lensed background");
-        assertTrue(shader.contains("innerOcclusion"),
+        assertTrue(shader.contains("coreOcclusion"),
             "the shadow-to-ring gap must not show the lensed background");
     }
 

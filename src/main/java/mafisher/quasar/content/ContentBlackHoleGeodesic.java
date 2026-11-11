@@ -241,11 +241,20 @@ final class ContentBlackHoleGeodesic {
         return sceneDistance >= Math.max(0.0, effectEntry) - depthBias;
     }
 
-    /** Combines the traced path entry with the nearest disk crossing, when present. */
-    static double nearestSurfaceEntry(Trace trace, double nearestDiskEntry) {
+    /**
+     * Mirrors the shader's layer selection. A near-side disk covers the horizon,
+     * while a far-side disk is still the surface the pixel shows outside the
+     * shadow. Using the minimum for every layer paints the ring over terrain
+     * that sits between the hole and the disk.
+     */
+    static double nearestSurfaceEntry(Trace trace, double nearestDiskEntry, boolean diskVisible) {
         Objects.requireNonNull(trace, "trace");
-        return Double.isNaN(nearestDiskEntry)
-            ? trace.nearestEntry() : Math.min(trace.nearestEntry(), nearestDiskEntry);
+        if (!diskVisible || Double.isNaN(nearestDiskEntry)) {
+            return trace.nearestEntry();
+        }
+        return trace.captured()
+            ? Math.min(trace.nearestEntry(), nearestDiskEntry)
+            : nearestDiskEntry;
     }
 
     private static double stepLength(double radius, double horizonRadius) {
