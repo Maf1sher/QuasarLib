@@ -1,7 +1,5 @@
 package mafisher.quasar.effect;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import mafisher.quasar.effect.scale.SegmentLink;
@@ -14,14 +12,17 @@ import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** Server-owned group of visual effects and Minecraft entities created by one effect execution. */
+/**
+ * Server-owned group of visual effects and Minecraft entities created by one effect execution.
+ * Finished or culled visuals are pruned from the ownership ledger on the next scope operation.
+ */
 public final class EffectScope implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
 
     private final ServerLevel level;
     private final UUID sessionId;
-    private final Map<UUID, VisualEffectHandle> activeVisuals = new HashMap<>();
     private final EffectScopeResources resources = new EffectScopeResources();
+    private final EffectScopeVisuals visuals;
     private boolean closed;
     private boolean persistRemovalOnClose = true;
 
@@ -32,6 +33,11 @@ public final class EffectScope implements AutoCloseable {
     public EffectScope(ServerLevel level, UUID sessionId) {
         this.level = Objects.requireNonNull(level, "level");
         this.sessionId = Objects.requireNonNull(sessionId, "sessionId");
+        this.visuals = new EffectScopeVisuals(
+            this.level,
+            this.resources,
+            () -> this.persistRemovalOnClose
+        );
     }
 
     public UUID sessionId() {
@@ -55,16 +61,18 @@ public final class EffectScope implements AutoCloseable {
         this.ensureOpen();
         Objects.requireNonNull(spec, "spec");
         Objects.requireNonNull(lifetimePolicy, "lifetimePolicy");
+        this.visuals.prune();
 
         VisualEffectHandle handle = VisualEffectService.start(this.level, spec, segmentLink,
             lifetimePolicy == EffectLifetimePolicy.CANCEL_WITH_SCOPE
                 ? EffectPersistenceOptions.DEFAULT.withOwnerSessionId(this.sessionId)
                 : EffectPersistenceOptions.DEFAULT);
         UUID instanceId = handle.instanceId();
-        this.activeVisuals.put(instanceId, handle);
-        if (lifetimePolicy == EffectLifetimePolicy.CANCEL_WITH_SCOPE) {
-            this.resources.track(() -> this.stopVisual(instanceId, this.persistRemovalOnClose));
-        }
+        this.visuals.track(
+            instanceId,
+            handle,
+            lifetimePolicy == EffectLifetimePolicy.CANCEL_WITH_SCOPE
+        );
         return instanceId;
     }
 
@@ -79,25 +87,14 @@ public final class EffectScope implements AutoCloseable {
         if (!instanceId.equals(handle.instanceId())) {
             throw new IllegalArgumentException("Adopted visual ID does not match its handle");
         }
-        this.activeVisuals.put(instanceId, handle);
-        this.resources.track(() -> {
-            if (this.activeVisuals.remove(instanceId) != null) {
-                VisualEffectService.stop(this.level, handle, this.persistRemovalOnClose);
-            }
-        });
+        this.visuals.prune();
+        this.visuals.track(instanceId, handle, true);
     }
 
     /** Stops a visual created by this scope and removes it from the cleanup ledger. */
     public void stopVisual(UUID instanceId) {
-        stopVisual(instanceId, true);
-    }
-
-    private void stopVisual(UUID instanceId, boolean persistRemoval) {
-        VisualEffectHandle handle = this.activeVisuals.remove(Objects.requireNonNull(instanceId, "instanceId"));
-        if (handle == null) {
-            return;
-        }
-        VisualEffectService.stop(this.level, handle, persistRemoval);
+        this.visuals.prune();
+        this.visuals.stop(instanceId, true);
     }
 
     /** Updates a visual created by this scope without changing its lifetime or ownership. */
@@ -105,10 +102,7 @@ public final class EffectScope implements AutoCloseable {
         this.ensureOpen();
         Objects.requireNonNull(instanceId, "instanceId");
         Objects.requireNonNull(transform, "transform");
-        VisualEffectHandle handle = this.activeVisuals.get(instanceId);
-        if (handle != null) {
-            VisualEffectService.update(this.level, handle, transform);
-        }
+        this.visuals.update(instanceId, transform);
     }
 
     /** Spawns a registered entity and optionally binds its removal to this scope. */
@@ -163,6 +157,7 @@ public final class EffectScope implements AutoCloseable {
         if (this.closed) {
             return;
         }
+        this.visuals.prune();
         this.closed = true;
         this.persistRemovalOnClose = persistRemoval;
         try {
@@ -170,8 +165,12 @@ public final class EffectScope implements AutoCloseable {
         } catch (RuntimeException exception) {
             LOGGER.error("Failed to clean up effect scope {}", this.sessionId, exception);
         } finally {
-            this.activeVisuals.clear();
+            this.visuals.clear();
         }
+    }
+
+    int activeVisualCount() {
+        return this.visuals.size();
     }
 
     private void ensureOpen() {

@@ -130,6 +130,15 @@ class VisualEffectBudgetTest {
         assertEquals(1, report.culledEffects());
     }
 
+    @Test
+    void reportDoesNotCreateLevelState() {
+        EffectBudgetReport report = EffectBudgetService.report(this.level);
+
+        assertEquals(0, report.standaloneVisuals());
+        assertEquals(0L, report.culledEffects());
+        assertFalse(LevelStateSlot.isTracked(this.level));
+    }
+
     private VisualEffectHandle start(EffectPriority priority) {
         return VisualEffectService.start(this.level, spec(priority));
     }

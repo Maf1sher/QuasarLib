@@ -2,6 +2,7 @@ package mafisher.quasar.effect.persistence;
 
 import java.util.List;
 import mafisher.quasar.QuasarLib;
+import mafisher.quasar.effect.EffectLevelLifecycle;
 import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.audio.EffectAudioPlan;
 import mafisher.quasar.effect.audio.EffectAudioService;
@@ -16,7 +17,6 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
-import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 /** Restores persisted effects on level load and sends resume snapshots to joining players. */
@@ -28,23 +28,8 @@ public final class EffectPersistenceEvents {
     @SubscribeEvent
     public static void onLevelLoad(LevelEvent.Load event) {
         if (event.getLevel() instanceof ServerLevel level) {
+            EffectLevelLifecycle.reset(level);
             EffectRestoreService.restoreLevel(level);
-        }
-    }
-
-    @SubscribeEvent
-    public static void onLevelUnload(LevelEvent.Unload event) {
-        if (event.getLevel() instanceof ServerLevel level) {
-            VisualEffectService.clear(level);
-            EffectAudioService.clear(level);
-        }
-    }
-
-    @SubscribeEvent
-    public static void onServerStopping(ServerStoppingEvent event) {
-        for (ServerLevel level : event.getServer().getAllLevels()) {
-            VisualEffectService.clear(level);
-            EffectAudioService.clear(level);
         }
     }
 

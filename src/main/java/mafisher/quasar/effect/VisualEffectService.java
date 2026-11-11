@@ -21,7 +21,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.WeakHashMap;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
@@ -42,7 +41,7 @@ public final class VisualEffectService {
     public static final int MAX_ACTIVE_EFFECTS_PER_LEVEL = 128;
     private static final int GRID_MIN_PLAYERS = 8;
     private static final long GRID_MIN_QUERIES = 256L;
-    private static final Map<ServerLevel, Map<UUID, ActiveEffect>> ACTIVE_EFFECTS = new WeakHashMap<>();
+    private static final LevelStateSlot<VisualState> STATE = LevelStateSlot.create(VisualState::new);
     private static Integer budgetOverride;
 
     private VisualEffectService() {
@@ -156,6 +155,9 @@ public final class VisualEffectService {
         Map<UUID, ActiveEffect> effects = activeEffects(level);
         effects.put(instanceId, active);
         if (!enforceBudget(level, effects, instanceId)) {
+            if (effects.isEmpty()) {
+                STATE.remove(level);
+            }
             return new VisualEffectHandle(instanceId);
         }
         Map<UUID, ServerPlayer> audience = new LinkedHashMap<>();
@@ -226,11 +228,11 @@ public final class VisualEffectService {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(ownerSessionId, "ownerSessionId");
         Objects.requireNonNull(scope, "scope");
-        Map<UUID, ActiveEffect> effects = ACTIVE_EFFECTS.get(level);
-        if (effects == null) {
+        VisualState state = STATE.peek(level);
+        if (state == null) {
             return;
         }
-        for (ActiveEffect active : effects.values()) {
+        for (ActiveEffect active : state.effects.values()) {
             if (active.descriptor() != null && ownerSessionId.equals(active.descriptor().ownerSessionId())) {
                 UUID instanceId = active.payload().instanceId();
                 scope.adoptVisual(instanceId, new VisualEffectHandle(instanceId));
@@ -289,6 +291,9 @@ public final class VisualEffectService {
         ActiveEffect active = new ActiveEffect(payload, spec.audience(), transform, descriptor, spec.priority());
         effects.put(instanceId, active);
         if (!enforceBudget(level, effects, instanceId)) {
+            if (effects.isEmpty()) {
+                STATE.remove(level);
+            }
             return new VisualEffectHandle(instanceId);
         }
         Map<UUID, ServerPlayer> audience = new LinkedHashMap<>();
@@ -344,6 +349,9 @@ public final class VisualEffectService {
         ActiveEffect active = new ActiveEffect(payload, spec.audience(), transform, descriptor, spec.priority());
         effects.put(instanceId, active);
         if (!enforceBudget(level, effects, instanceId)) {
+            if (effects.isEmpty()) {
+                STATE.remove(level);
+            }
             return new VisualEffectHandle(instanceId);
         }
         Map<UUID, ServerPlayer> audience = new LinkedHashMap<>();
@@ -442,12 +450,12 @@ public final class VisualEffectService {
     public static void stop(ServerLevel level, VisualEffectHandle handle, boolean persistRemoval) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(handle, "handle");
-        Map<UUID, ActiveEffect> effects = ACTIVE_EFFECTS.get(level);
-        if (effects == null) {
+        VisualState state = STATE.peek(level);
+        if (state == null) {
             EffectAudioService.stop(level, handle.instanceId());
             return;
         }
-        ActiveEffect active = effects.remove(handle.instanceId());
+        ActiveEffect active = state.effects.remove(handle.instanceId());
         if (active != null) {
             sendStop(level, active);
             if (persistRemoval) {
@@ -455,16 +463,20 @@ public final class VisualEffectService {
             }
         }
         EffectAudioService.stop(level, handle.instanceId());
-        if (effects.isEmpty()) {
-            ACTIVE_EFFECTS.remove(level);
+        if (state.effects.isEmpty()) {
+            STATE.remove(level);
         }
     }
 
     /** Keeps active visual state in sync with players who enter or leave its audience. */
     public static void tick(ServerLevel level) {
-        Map<UUID, ActiveEffect> effects = activeEffects(level);
+        VisualState state = STATE.peek(level);
+        if (state == null) {
+            return;
+        }
+        Map<UUID, ActiveEffect> effects = state.effects;
         if (effects.isEmpty()) {
-            ACTIVE_EFFECTS.remove(level);
+            removeEmptyState(level, state);
             return;
         }
 
@@ -510,13 +522,14 @@ public final class VisualEffectService {
                 }
             }
         }
+        removeEmptyState(level, state);
     }
 
     /** Number of active visual effects in one level. */
     public static int activeCount(ServerLevel level) {
         Objects.requireNonNull(level, "level");
-        Map<UUID, ActiveEffect> effects = ACTIVE_EFFECTS.get(level);
-        return effects == null ? 0 : effects.size();
+        VisualState state = STATE.peek(level);
+        return state == null ? 0 : state.effects.size();
     }
 
     /**
@@ -527,15 +540,15 @@ public final class VisualEffectService {
     public static List<StartVisualEffectPayload> resumePayloads(ServerLevel level, ServerPlayer player) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(player, "player");
-        Map<UUID, ActiveEffect> effects = ACTIVE_EFFECTS.get(level);
-        if (effects == null || effects.isEmpty()) {
+        VisualState state = STATE.peek(level);
+        if (state == null || state.effects.isEmpty()) {
             return List.of();
         }
 
         long serverGameTime = level.getGameTime();
         List<StartVisualEffectPayload> payloads = new ArrayList<>();
         Map<UUID, ServerPlayer> audience = new LinkedHashMap<>();
-        for (ActiveEffect active : effects.values()) {
+        for (ActiveEffect active : state.effects.values()) {
             audience.clear();
             collectAudience(level, active, null, audience);
             if (audience.containsKey(player.getUUID())) {
@@ -551,7 +564,7 @@ public final class VisualEffectService {
     /** Drops transient runtime state for a level without deleting persisted descriptors. */
     public static void clear(ServerLevel level) {
         Objects.requireNonNull(level, "level");
-        ACTIVE_EFFECTS.remove(level);
+        STATE.remove(level);
         EffectAudioService.clear(level);
         EffectBudgetService.clear(level);
     }
@@ -613,13 +626,19 @@ public final class VisualEffectService {
         }
     }
 
+    private static void removeEmptyState(ServerLevel level, VisualState state) {
+        if (state.effects.isEmpty()) {
+            STATE.remove(level);
+        }
+    }
+
     private static Map<UUID, ActiveEffect> activeEffects(ServerLevel level) {
-        return ACTIVE_EFFECTS.computeIfAbsent(level, ignored -> new LinkedHashMap<>());
+        return STATE.get(level).effects;
     }
 
     private static ActiveEffect findActive(ServerLevel level, VisualEffectHandle handle) {
-        Map<UUID, ActiveEffect> effects = ACTIVE_EFFECTS.get(level);
-        ActiveEffect active = effects == null ? null : effects.get(handle.instanceId());
+        VisualState state = STATE.peek(level);
+        ActiveEffect active = state == null ? null : state.effects.get(handle.instanceId());
         if (active == null || EffectTimeline.isFinished(
             level.getGameTime(), active.payload().startGameTime(), active.payload().durationTicks()
         )) {
@@ -640,6 +659,10 @@ public final class VisualEffectService {
 
     private static StopVisualEffectPayload stopPayload(ServerLevel level, ActiveEffect active) {
         return new StopVisualEffectPayload(active.payload().instanceId(), level.dimension().location());
+    }
+
+    private static final class VisualState {
+        private final Map<UUID, ActiveEffect> effects = new LinkedHashMap<>();
     }
 
     private static final class ActiveEffect {

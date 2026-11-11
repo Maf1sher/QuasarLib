@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.WeakHashMap;
 import mafisher.quasar.effect.EffectBudgetService;
 import mafisher.quasar.effect.EffectBudgets;
 import mafisher.quasar.effect.EffectScope;
@@ -15,6 +14,7 @@ import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectPoint;
+import mafisher.quasar.effect.LevelStateSlot;
 import mafisher.quasar.effect.audio.EffectAudioPlan;
 import mafisher.quasar.effect.audio.EffectAudioService;
 import mafisher.quasar.effect.persistence.BlockJournal;
@@ -24,7 +24,6 @@ import mafisher.quasar.effect.persistence.EffectCapabilities;
 import mafisher.quasar.effect.persistence.EffectKind;
 import mafisher.quasar.effect.persistence.EffectPersistenceOptions;
 import mafisher.quasar.effect.persistence.EffectPersistenceService;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import org.slf4j.Logger;
@@ -54,9 +53,7 @@ public final class GameplayEffectService {
     static final int RESTORED_OWNER_GRACE_TICKS = 6_000;
 
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
-    private static final Map<ServerLevel, Map<UUID, ActiveSession>> ACTIVE_SESSIONS = new WeakHashMap<>();
-    private static final Map<ServerLevel, OwnerAdmission> OWNER_ADMISSIONS = new WeakHashMap<>();
-    private static final Map<ServerLevel, List<PendingStart>> PENDING_STARTS = new WeakHashMap<>();
+    private static final LevelStateSlot<GameplayState> STATE = LevelStateSlot.create(GameplayState::new);
     private static Integer sessionBudgetOverride;
     private static Integer perOwnerBudgetOverride;
     private static Integer startRateOverride;
@@ -126,7 +123,8 @@ public final class GameplayEffectService {
      * owner budget is full, so the caller can queue the start instead.
      */
     private static boolean tryStartFresh(ServerLevel level, PendingStart pending) {
-        Map<UUID, ActiveSession> sessions = activeSessions(level);
+        GameplayState state = state(level);
+        Map<UUID, ActiveSession> sessions = state.sessions;
         if (sessions.size() >= sessionBudget()) {
             return false;
         }
@@ -155,9 +153,7 @@ public final class GameplayEffectService {
             if (scope != null) {
                 scope.close();
             }
-            if (sessions.isEmpty()) {
-                ACTIVE_SESSIONS.remove(level);
-            }
+            cleanupIfEmpty(level, state);
             throw exception;
         }
 
@@ -205,6 +201,7 @@ public final class GameplayEffectService {
     /**
      * Restores one gameplay session with its original identity, start time, and consumer state.
      * The controller factory must be registered in {@link GameplayEffectTypeRegistry}.
+     * Restoring a session that is already active or pending keeps the existing session.
      */
     public static GameplayEffectHandle restore(
         ServerLevel level,
@@ -220,6 +217,15 @@ public final class GameplayEffectService {
         Objects.requireNonNull(controller, "controller");
         if (level.isClientSide()) {
             throw new IllegalStateException("Gameplay effects are server-authoritative");
+        }
+        GameplayEffectHandle handle = new GameplayEffectHandle(sessionId);
+        if (isActive(level, handle) || isPending(level, handle)) {
+            LOGGER.warn(
+                "Skipped duplicate restore of gameplay effect {} in {}: the session is already known",
+                spec.typeId(),
+                level.dimension().location()
+            );
+            return handle;
         }
 
         BlockJournal journal = EffectPersistenceService.journalOrNull(level, sessionId);
@@ -262,7 +268,11 @@ public final class GameplayEffectService {
 
     /** Attempts to resume a persisted session immediately; returns {@code false} when capacity is full. */
     private static boolean tryRestoreNow(ServerLevel level, PendingStart pending) {
-        Map<UUID, ActiveSession> sessions = activeSessions(level);
+        GameplayState state = state(level);
+        Map<UUID, ActiveSession> sessions = state.sessions;
+        if (skipAlreadyActive(level, pending, sessions)) {
+            return true;
+        }
         if (sessions.size() >= sessionBudget()) {
             return false;
         }
@@ -318,12 +328,29 @@ public final class GameplayEffectService {
         return true;
     }
 
+    private static boolean skipAlreadyActive(
+        ServerLevel level,
+        PendingStart pending,
+        Map<UUID, ActiveSession> sessions
+    ) {
+        if (!sessions.containsKey(pending.id)) {
+            return false;
+        }
+        LOGGER.warn(
+            "Skipped duplicate restore of gameplay effect {} in {}: session {} is already active",
+            pending.spec.typeId(),
+            level.dimension().location(),
+            pending.id
+        );
+        return true;
+    }
+
     /** Scope of one active session, used to reattach persisted child visuals after restore. */
     public static EffectScope scope(ServerLevel level, GameplayEffectHandle handle) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(handle, "handle");
-        Map<UUID, ActiveSession> sessions = ACTIVE_SESSIONS.get(level);
-        ActiveSession session = sessions == null ? null : sessions.get(handle.sessionId());
+        GameplayState state = STATE.peek(level);
+        ActiveSession session = state == null ? null : state.sessions.get(handle.sessionId());
         return session == null ? null : session.scope;
     }
 
@@ -338,8 +365,8 @@ public final class GameplayEffectService {
         if (removePending(level, handle.sessionId(), true)) {
             return;
         }
-        Map<UUID, ActiveSession> sessions = ACTIVE_SESSIONS.get(level);
-        ActiveSession session = sessions == null ? null : sessions.get(handle.sessionId());
+        GameplayState state = STATE.peek(level);
+        ActiveSession session = state == null ? null : state.sessions.get(handle.sessionId());
         if (session != null) {
             finish(level, session, reason, true);
         }
@@ -357,47 +384,46 @@ public final class GameplayEffectService {
     public static int stopAll(ServerLevel level, GameplayEffectEndReason reason, boolean persistRemoval) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(reason, "reason");
-        clearPending(level, persistRemoval);
-        Map<UUID, ActiveSession> sessions = ACTIVE_SESSIONS.get(level);
-        if (sessions == null) {
-            OWNER_ADMISSIONS.remove(level);
+        GameplayState state = STATE.peek(level);
+        if (state == null) {
             return 0;
         }
-        int count = sessions.size();
-        for (ActiveSession session : new ArrayList<>(sessions.values())) {
+        clearPending(level, state, persistRemoval);
+        int count = state.sessions.size();
+        for (ActiveSession session : new ArrayList<>(state.sessions.values())) {
             finish(level, session, reason, persistRemoval);
         }
-        ACTIVE_SESSIONS.remove(level);
-        OWNER_ADMISSIONS.remove(level);
+        STATE.remove(level);
         return count;
     }
 
     public static int activeCount(ServerLevel level) {
         Objects.requireNonNull(level, "level");
-        Map<UUID, ActiveSession> sessions = ACTIVE_SESSIONS.get(level);
-        return sessions == null ? 0 : sessions.size();
+        GameplayState state = STATE.peek(level);
+        return state == null ? 0 : state.sessions.size();
     }
 
     /** Number of gameplay starts waiting for capacity in one level. */
     public static int pendingCount(ServerLevel level) {
         Objects.requireNonNull(level, "level");
-        List<PendingStart> pending = PENDING_STARTS.get(level);
-        return pending == null ? 0 : pending.size();
+        GameplayState state = STATE.peek(level);
+        return state == null ? 0 : state.pendingStarts.size();
     }
 
     /** Whether one gameplay session is currently active. */
     public static boolean isActive(ServerLevel level, GameplayEffectHandle handle) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(handle, "handle");
-        Map<UUID, ActiveSession> sessions = ACTIVE_SESSIONS.get(level);
-        return sessions != null && sessions.containsKey(handle.sessionId());
+        GameplayState state = STATE.peek(level);
+        return state != null && state.sessions.containsKey(handle.sessionId());
     }
 
     /** Whether one gameplay start is queued and will run when capacity becomes available. */
     public static boolean isPending(ServerLevel level, GameplayEffectHandle handle) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(handle, "handle");
-        List<PendingStart> pending = PENDING_STARTS.get(level);
+        GameplayState state = STATE.peek(level);
+        List<PendingStart> pending = state == null ? null : state.pendingStarts;
         if (pending == null) {
             return false;
         }
@@ -421,7 +447,8 @@ public final class GameplayEffectService {
             throw new IllegalArgumentException("Block change application budget cannot be negative");
         }
         TerrainEditService.beginTick(level);
-        Map<UUID, ActiveSession> sessions = ACTIVE_SESSIONS.get(level);
+        GameplayState state = STATE.peek(level);
+        Map<UUID, ActiveSession> sessions = state == null ? null : state.sessions;
         int remainingBlockChanges = blockChangeBudget;
         if (sessions != null && !sessions.isEmpty()) {
             for (ActiveSession session : new ArrayList<>(sessions.values())) {
@@ -432,10 +459,8 @@ public final class GameplayEffectService {
         }
         BlockRollbackService.tick(level, remainingBlockChanges);
         TerrainEditService.tick(level);
-        if (sessions == null || sessions.isEmpty()) {
-            ACTIVE_SESSIONS.remove(level);
-        }
         drainPending(level);
+        cleanupIfEmpty(level, state);
     }
 
     private static int tickSession(ServerLevel level, ActiveSession session, int remainingBlockChanges) {
@@ -587,7 +612,8 @@ public final class GameplayEffectService {
         GameplayEffectEndReason reason,
         boolean persistRemoval
     ) {
-        Map<UUID, ActiveSession> sessions = ACTIVE_SESSIONS.get(level);
+        GameplayState state = STATE.peek(level);
+        Map<UUID, ActiveSession> sessions = state == null ? null : state.sessions;
         if (sessions == null || sessions.remove(session.id) == null) {
             return;
         }
@@ -616,7 +642,7 @@ public final class GameplayEffectService {
             session.context.close();
             session.scope.close(persistRemoval);
             EffectAudioService.stop(level, session.id);
-            OwnerAdmission admission = OWNER_ADMISSIONS.get(level);
+            OwnerAdmission admission = state.ownerAdmission;
             if (admission != null) {
                 admission.recordEnd(session.spec.ownerId());
             }
@@ -630,9 +656,6 @@ public final class GameplayEffectService {
             }
         } else if (persistRemoval) {
             EffectPersistenceService.recordStop(level, session.id);
-        }
-        if (sessions.isEmpty()) {
-            ACTIVE_SESSIONS.remove(level);
         }
     }
 
@@ -675,7 +698,7 @@ public final class GameplayEffectService {
 
     /** Queues a start that could not run immediately; returns false when the queue dropped it. */
     private static boolean enqueue(ServerLevel level, PendingStart pending) {
-        List<PendingStart> queue = PENDING_STARTS.computeIfAbsent(level, ignored -> new ArrayList<>());
+        List<PendingStart> queue = state(level).pendingStarts;
         queue.add(pending);
         while (queue.size() > EffectBudgets.gameplayPending()) {
             PendingStart victim = lowestPriority(queue);
@@ -711,11 +734,11 @@ public final class GameplayEffectService {
 
     /** Admits queued starts in priority order once capacity frees up. */
     private static void drainPending(ServerLevel level) {
-        List<PendingStart> queue = PENDING_STARTS.get(level);
-        if (queue == null || queue.isEmpty()) {
-            PENDING_STARTS.remove(level);
+        GameplayState state = STATE.peek(level);
+        if (state == null || state.pendingStarts.isEmpty()) {
             return;
         }
+        List<PendingStart> queue = state.pendingStarts;
         List<PendingStart> snapshot = new ArrayList<>(queue);
         snapshot.sort(
             Comparator.comparingInt((PendingStart start) -> start.spec.priority().weight())
@@ -746,16 +769,14 @@ public final class GameplayEffectService {
                 LOGGER.error("Queued gameplay effect {} failed to start", pending.spec.typeId(), exception);
             }
         }
-        if (queue.isEmpty()) {
-            PENDING_STARTS.remove(level);
-        }
     }
 
     private static boolean removePending(ServerLevel level, UUID id, boolean persistRemoval) {
-        List<PendingStart> queue = PENDING_STARTS.get(level);
-        if (queue == null) {
+        GameplayState state = STATE.peek(level);
+        if (state == null) {
             return false;
         }
+        List<PendingStart> queue = state.pendingStarts;
         for (int index = 0; index < queue.size(); index++) {
             PendingStart pending = queue.get(index);
             if (!pending.id.equals(id)) {
@@ -765,35 +786,50 @@ public final class GameplayEffectService {
             if (persistRemoval && pending.restored) {
                 EffectPersistenceService.recordStop(level, pending.id);
             }
-            if (queue.isEmpty()) {
-                PENDING_STARTS.remove(level);
-            }
             return true;
         }
         return false;
     }
 
-    private static void clearPending(ServerLevel level, boolean persistRemoval) {
-        List<PendingStart> queue = PENDING_STARTS.remove(level);
-        if (queue == null || !persistRemoval) {
+    private static void clearPending(ServerLevel level, GameplayState state, boolean persistRemoval) {
+        List<PendingStart> queue = state.pendingStarts;
+        if (queue.isEmpty()) {
             return;
         }
-        for (PendingStart pending : queue) {
+        List<PendingStart> cleared = new ArrayList<>(queue);
+        queue.clear();
+        if (!persistRemoval) {
+            return;
+        }
+        for (PendingStart pending : cleared) {
             if (pending.restored) {
                 EffectPersistenceService.recordStop(level, pending.id);
             }
         }
     }
 
-    private static Map<UUID, ActiveSession> activeSessions(ServerLevel level) {
-        return ACTIVE_SESSIONS.computeIfAbsent(level, ignored -> new LinkedHashMap<>());
+    private static GameplayState state(ServerLevel level) {
+        return STATE.get(level);
+    }
+
+    private static void cleanupIfEmpty(ServerLevel level, GameplayState state) {
+        if (state != null && state.sessions.isEmpty() && state.pendingStarts.isEmpty()) {
+            STATE.remove(level);
+        }
     }
 
     private static OwnerAdmission ownerAdmission(ServerLevel level) {
-        return OWNER_ADMISSIONS.computeIfAbsent(
-            level,
-            ignored -> new OwnerAdmission(perOwnerBudget(), startsPerTick())
-        );
+        GameplayState state = state(level);
+        if (state.ownerAdmission == null) {
+            state.ownerAdmission = new OwnerAdmission(perOwnerBudget(), startsPerTick());
+        }
+        return state.ownerAdmission;
+    }
+
+    private static final class GameplayState {
+        private final Map<UUID, ActiveSession> sessions = new LinkedHashMap<>();
+        private final List<PendingStart> pendingStarts = new ArrayList<>();
+        private OwnerAdmission ownerAdmission;
     }
 
     private static final class PendingStart {

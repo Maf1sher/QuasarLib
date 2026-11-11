@@ -22,6 +22,20 @@ class EffectScopeResourcesTest {
     }
 
     @Test
+    void untrackRemovesOnePendingCleanup() {
+        EffectScopeResources resources = new EffectScopeResources();
+        List<String> cleaned = new ArrayList<>();
+        Object cancelled = new Object();
+        resources.track(cancelled, () -> cleaned.add("cancelled"));
+        resources.track(() -> cleaned.add("kept"));
+
+        resources.untrack(cancelled);
+        resources.close();
+
+        assertEquals(List.of("kept"), cleaned);
+    }
+
+    @Test
     void cleansResourcesAddedAfterCloseImmediately() {
         EffectScopeResources resources = new EffectScopeResources();
         resources.close();

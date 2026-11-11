@@ -9,13 +9,13 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.WeakHashMap;
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectBudgetService;
 import mafisher.quasar.effect.EffectBudgets;
 import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectTimeline;
 import mafisher.quasar.effect.EffectTransform;
+import mafisher.quasar.effect.LevelStateSlot;
 import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.audio.EffectAudioPlan;
 import mafisher.quasar.effect.audio.EffectAudioService;
@@ -49,7 +49,7 @@ public final class SegmentedVisualEffectService {
     /** Default dedicated per-level budget; segmented cells never count against the standalone visual cap. */
     public static final int MAX_ACTIVE_SEGMENTS_PER_LEVEL = SegmentedEffectLimits.MAX_SEGMENTS_PER_LEVEL;
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
-    private static final Map<ServerLevel, Map<UUID, ActiveSegmentedEffect>> ACTIVE_COORDINATORS = new WeakHashMap<>();
+    private static final LevelStateSlot<SegmentState> STATE = LevelStateSlot.create(SegmentState::new);
     private static Integer budgetOverride;
 
     private SegmentedVisualEffectService() {
@@ -163,7 +163,8 @@ public final class SegmentedVisualEffectService {
         }
         SegmentHeightProfile heights = resolveHeights(level, spec, restoredDescriptor);
 
-        Map<UUID, ActiveSegmentedEffect> active = activeSegments(level);
+        SegmentState segmentState = STATE.get(level);
+        Map<UUID, ActiveSegmentedEffect> active = segmentState.coordinators;
         ActiveSegmentedEffect replaced = active.get(coordinatorId);
         int replacedSegments = replaced == null ? 0 : replaced.spec.segmentCount();
         int activeSegments = activeSegmentCount(active) - replacedSegments;
@@ -238,6 +239,9 @@ public final class SegmentedVisualEffectService {
             active.remove(coordinatorId);
             sendStop(level, activeEffect);
             EffectAudioService.stop(level, coordinatorId);
+            if (active.isEmpty()) {
+                STATE.remove(level);
+            }
             throw exception;
         }
         return new SegmentedVisualEffectHandle(coordinatorId);
@@ -271,18 +275,18 @@ public final class SegmentedVisualEffectService {
     public static void stop(ServerLevel level, SegmentedVisualEffectHandle handle) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(handle, "handle");
-        Map<UUID, ActiveSegmentedEffect> active = ACTIVE_COORDINATORS.get(level);
-        if (active == null) {
+        SegmentState state = STATE.peek(level);
+        if (state == null) {
             return;
         }
-        ActiveSegmentedEffect removed = active.remove(handle.coordinatorId());
+        ActiveSegmentedEffect removed = state.coordinators.remove(handle.coordinatorId());
         if (removed != null) {
-            sendStop(level, removed);
-            EffectPersistenceService.recordStop(level, handle.coordinatorId());
+            release(level, handle.coordinatorId(), removed, true);
+        } else {
+            EffectAudioService.stop(level, handle.coordinatorId());
         }
-        EffectAudioService.stop(level, handle.coordinatorId());
-        if (active.isEmpty()) {
-            ACTIVE_COORDINATORS.remove(level);
+        if (state.coordinators.isEmpty()) {
+            STATE.remove(level);
         }
     }
 
@@ -297,28 +301,30 @@ public final class SegmentedVisualEffectService {
      */
     public static int stopAll(ServerLevel level, boolean persistRemoval) {
         Objects.requireNonNull(level, "level");
-        Map<UUID, ActiveSegmentedEffect> active = ACTIVE_COORDINATORS.remove(level);
-        if (active == null) {
+        SegmentState state = STATE.peek(level);
+        if (state == null) {
             return 0;
         }
-        for (ActiveSegmentedEffect activeEffect : active.values()) {
-            sendStop(level, activeEffect);
-            EffectAudioService.stop(level, activeEffect.descriptor.instanceId());
-            if (persistRemoval) {
-                EffectPersistenceService.recordStop(level, activeEffect.descriptor.instanceId());
-            }
+        STATE.remove(level);
+        int count = state.coordinators.size();
+        for (Map.Entry<UUID, ActiveSegmentedEffect> entry : state.coordinators.entrySet()) {
+            release(level, entry.getKey(), entry.getValue(), persistRemoval);
         }
-        return active.size();
+        state.coordinators.clear();
+        return count;
     }
 
     /** Advances coordinator lifetimes and audience membership in one level. */
     public static void tick(ServerLevel level) {
         Objects.requireNonNull(level, "level");
-        Map<UUID, ActiveSegmentedEffect> active = ACTIVE_COORDINATORS.get(level);
-        if (active == null || active.isEmpty()) {
-            ACTIVE_COORDINATORS.remove(level);
+        SegmentState state = STATE.peek(level);
+        if (state == null || state.coordinators.isEmpty()) {
+            if (state != null) {
+                STATE.remove(level);
+            }
             return;
         }
+        Map<UUID, ActiveSegmentedEffect> active = state.coordinators;
 
         long gameTime = level.getGameTime();
         Map<UUID, ServerPlayer> audience = new LinkedHashMap<>();
@@ -359,21 +365,21 @@ public final class SegmentedVisualEffectService {
             }
         }
         if (active.isEmpty()) {
-            ACTIVE_COORDINATORS.remove(level);
+            STATE.remove(level);
         }
     }
 
     public static int activeCount(ServerLevel level) {
         Objects.requireNonNull(level, "level");
-        Map<UUID, ActiveSegmentedEffect> active = ACTIVE_COORDINATORS.get(level);
-        return active == null ? 0 : active.size();
+        SegmentState state = STATE.peek(level);
+        return state == null ? 0 : state.coordinators.size();
     }
 
     /** Number of reserved segment cells in one level. */
     public static int activeSegmentCount(ServerLevel level) {
         Objects.requireNonNull(level, "level");
-        Map<UUID, ActiveSegmentedEffect> active = ACTIVE_COORDINATORS.get(level);
-        return active == null ? 0 : activeSegmentCount(active);
+        SegmentState state = STATE.peek(level);
+        return state == null ? 0 : activeSegmentCount(state.coordinators);
     }
 
     /** Whether one coordinator is currently active; culled or finished handles return {@code false}. */
@@ -422,9 +428,9 @@ public final class SegmentedVisualEffectService {
                 );
                 return;
             }
-            ActiveSegmentedEffect victimEffect = active.get(victim);
+            ActiveSegmentedEffect victimEffect = active.remove(victim);
             int released = victimEffect == null ? 0 : victimEffect.spec.segmentCount();
-            stop(level, new SegmentedVisualEffectHandle(victim));
+            release(level, victim, victimEffect, true);
             EffectBudgetService.recordCull(level);
             LOGGER.info(
                 "Culled segmented effect {} in {} to free {} segment slot(s) of a soft budget of {}",
@@ -460,15 +466,15 @@ public final class SegmentedVisualEffectService {
     public static List<StartSegmentedVisualEffectPayload> resumePayloads(ServerLevel level, ServerPlayer player) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(player, "player");
-        Map<UUID, ActiveSegmentedEffect> active = ACTIVE_COORDINATORS.get(level);
-        if (active == null || active.isEmpty()) {
+        SegmentState state = STATE.peek(level);
+        if (state == null || state.coordinators.isEmpty()) {
             return List.of();
         }
 
         long serverGameTime = level.getGameTime();
         List<StartSegmentedVisualEffectPayload> payloads = new ArrayList<>();
         Map<UUID, ServerPlayer> audience = new LinkedHashMap<>();
-        for (ActiveSegmentedEffect activeEffect : active.values()) {
+        for (ActiveSegmentedEffect activeEffect : state.coordinators.values()) {
             audience.clear();
             collectAudience(level, activeEffect, audience);
             if (audience.containsKey(player.getUUID())) {
@@ -649,12 +655,24 @@ public final class SegmentedVisualEffectService {
     }
 
     private static ActiveSegmentedEffect find(ServerLevel level, SegmentedVisualEffectHandle handle) {
-        Map<UUID, ActiveSegmentedEffect> active = ACTIVE_COORDINATORS.get(level);
-        return active == null ? null : active.get(handle.coordinatorId());
+        SegmentState state = STATE.peek(level);
+        return state == null ? null : state.coordinators.get(handle.coordinatorId());
     }
 
-    private static Map<UUID, ActiveSegmentedEffect> activeSegments(ServerLevel level) {
-        return ACTIVE_COORDINATORS.computeIfAbsent(level, ignored -> new LinkedHashMap<>());
+    private static void release(
+        ServerLevel level,
+        UUID coordinatorId,
+        ActiveSegmentedEffect effect,
+        boolean persistRemoval
+    ) {
+        if (effect == null) {
+            return;
+        }
+        sendStop(level, effect);
+        if (persistRemoval) {
+            EffectPersistenceService.recordStop(level, coordinatorId);
+        }
+        EffectAudioService.stop(level, coordinatorId);
     }
 
     private static int activeSegmentCount(Map<UUID, ActiveSegmentedEffect> active) {
@@ -663,6 +681,10 @@ public final class SegmentedVisualEffectService {
             count += effect.spec.segmentCount();
         }
         return count;
+    }
+
+    private static final class SegmentState {
+        private final Map<UUID, ActiveSegmentedEffect> coordinators = new LinkedHashMap<>();
     }
 
     private static final class ActiveSegmentedEffect {

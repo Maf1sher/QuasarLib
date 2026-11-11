@@ -1,21 +1,33 @@
 package mafisher.quasar.effect;
 
-import java.util.ArrayDeque;
-import java.util.Deque;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
-/** LIFO cleanup ledger with idempotent close semantics. */
+/** LIFO cleanup ledger with idempotent close and keyed cancellation semantics. */
 final class EffectScopeResources implements AutoCloseable {
-    private final Deque<Runnable> cleanups = new ArrayDeque<>();
+    private final Map<Object, Runnable> cleanups = new LinkedHashMap<>();
     private boolean closed;
 
     void track(Runnable cleanup) {
+        track(new Object(), cleanup);
+    }
+
+    void track(Object key, Runnable cleanup) {
+        Objects.requireNonNull(key, "key");
         Objects.requireNonNull(cleanup, "cleanup");
         if (this.closed) {
             cleanup.run();
             return;
         }
-        this.cleanups.push(cleanup);
+        this.cleanups.put(key, cleanup);
+    }
+
+    void untrack(Object key) {
+        Objects.requireNonNull(key, "key");
+        this.cleanups.remove(key);
     }
 
     @Override
@@ -24,10 +36,12 @@ final class EffectScopeResources implements AutoCloseable {
             return;
         }
         this.closed = true;
+        List<Runnable> pending = new ArrayList<>(this.cleanups.values());
+        this.cleanups.clear();
         RuntimeException failure = null;
-        while (!this.cleanups.isEmpty()) {
+        for (int index = pending.size() - 1; index >= 0; index--) {
             try {
-                this.cleanups.pop().run();
+                pending.get(index).run();
             } catch (RuntimeException exception) {
                 if (failure == null) {
                     failure = exception;

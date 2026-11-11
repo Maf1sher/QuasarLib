@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -19,6 +20,7 @@ import mafisher.quasar.TestConfig;
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectPriority;
+import mafisher.quasar.effect.EffectScope;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.VisualEffectSpec;
 import mafisher.quasar.effect.audio.EffectAudioSpec;
@@ -110,6 +112,29 @@ class GameplayPersistenceTest {
         assertEquals(0, controller.starts);
         assertEquals(1, controller.resumes);
         assertEquals(1, controller.resumedPhase);
+    }
+
+    @Test
+    void duplicateRestoreKeepsTheExistingSessionAndScope() {
+        GameplayEffectSpec spec = spec();
+        this.gameTime = 5L;
+        EffectDescriptor descriptor = descriptor(spec, new CompoundTag());
+        RecordingController first = new RecordingController();
+        GameplayEffectHandle handle = GameplayEffectService.restore(
+            this.level, spec, SESSION, 0L, descriptor, first
+        );
+        EffectScope scope = GameplayEffectService.scope(this.level, handle);
+
+        RecordingController second = new RecordingController();
+        GameplayEffectHandle duplicate = GameplayEffectService.restore(
+            this.level, spec, SESSION, 0L, descriptor, second
+        );
+
+        assertEquals(SESSION, duplicate.sessionId());
+        assertEquals(1, GameplayEffectService.activeCount(this.level));
+        assertEquals(1, first.resumes);
+        assertEquals(0, second.resumes);
+        assertSame(scope, GameplayEffectService.scope(this.level, handle));
     }
 
     @Test

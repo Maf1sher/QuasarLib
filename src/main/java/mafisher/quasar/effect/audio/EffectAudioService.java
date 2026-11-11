@@ -9,8 +9,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.WeakHashMap;
 import mafisher.quasar.effect.EffectAudience;
+import mafisher.quasar.effect.LevelStateSlot;
 import mafisher.quasar.effect.network.EffectAudioPlanPayload;
 import mafisher.quasar.effect.network.EffectAudioTriggerPayload;
 import mafisher.quasar.effect.network.StopEffectAudioPayload;
@@ -33,7 +33,7 @@ public final class EffectAudioService {
 
     private static final int RESUME_GRACE_TICKS = EffectAudioPlan.GRACE_TICKS;
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
-    private static final Map<ServerLevel, Map<UUID, ActiveAudio>> ACTIVE_PLANS = new WeakHashMap<>();
+    private static final LevelStateSlot<AudioState> STATE = LevelStateSlot.create(AudioState::new);
 
     private EffectAudioService() {
     }
@@ -50,14 +50,15 @@ public final class EffectAudioService {
             throw new IllegalArgumentException("Effect audio plan dimension does not match its level");
         }
 
-        Map<UUID, ActiveAudio> plans = activePlans(level);
+        AudioState state = STATE.get(level);
+        Map<UUID, ActiveAudio> plans = state.plans;
         ActiveAudio replaced = plans.remove(plan.effectId());
         if (replaced != null) {
             replaced.stop(level);
         }
         if (plan.cueCount() == 0 && plan.triggerCount() == 0) {
             if (plans.isEmpty()) {
-                ACTIVE_PLANS.remove(level);
+                STATE.remove(level);
             }
             return;
         }
@@ -80,16 +81,16 @@ public final class EffectAudioService {
     public static void stop(ServerLevel level, UUID effectId) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(effectId, "effectId");
-        Map<UUID, ActiveAudio> plans = ACTIVE_PLANS.get(level);
-        if (plans == null) {
+        AudioState state = STATE.peek(level);
+        if (state == null) {
             return;
         }
-        ActiveAudio active = plans.remove(effectId);
+        ActiveAudio active = state.plans.remove(effectId);
         if (active != null) {
             active.stop(level);
         }
-        if (plans.isEmpty()) {
-            ACTIVE_PLANS.remove(level);
+        if (state.plans.isEmpty()) {
+            STATE.remove(level);
         }
     }
 
@@ -117,8 +118,8 @@ public final class EffectAudioService {
             throw new IllegalArgumentException("Effect audio trigger position must be finite");
         }
 
-        Map<UUID, ActiveAudio> plans = ACTIVE_PLANS.get(level);
-        ActiveAudio active = plans == null ? null : plans.get(effectId);
+        AudioState state = STATE.peek(level);
+        ActiveAudio active = state == null ? null : state.plans.get(effectId);
         if (active == null) {
             return false;
         }
@@ -150,30 +151,36 @@ public final class EffectAudioService {
     /** Stops every plan in one level and returns how many were active. */
     public static int stopAll(ServerLevel level) {
         Objects.requireNonNull(level, "level");
-        Map<UUID, ActiveAudio> plans = ACTIVE_PLANS.remove(level);
-        if (plans == null) {
+        AudioState state = STATE.peek(level);
+        if (state == null) {
             return 0;
         }
-        for (ActiveAudio active : plans.values()) {
+        STATE.remove(level);
+        int count = state.plans.size();
+        for (ActiveAudio active : state.plans.values()) {
             active.stop(level);
         }
-        return plans.size();
+        state.plans.clear();
+        return count;
     }
 
     /** Drops runtime state without sending packets; used on level unload and server shutdown. */
     public static void clear(ServerLevel level) {
         Objects.requireNonNull(level, "level");
-        ACTIVE_PLANS.remove(level);
+        STATE.remove(level);
     }
 
     /** Expires finished plans and reconciles audience membership. */
     public static void tick(ServerLevel level) {
         Objects.requireNonNull(level, "level");
-        Map<UUID, ActiveAudio> plans = ACTIVE_PLANS.get(level);
-        if (plans == null || plans.isEmpty()) {
-            ACTIVE_PLANS.remove(level);
+        AudioState state = STATE.peek(level);
+        if (state == null || state.plans.isEmpty()) {
+            if (state != null) {
+                STATE.remove(level);
+            }
             return;
         }
+        Map<UUID, ActiveAudio> plans = state.plans;
 
         long gameTime = level.getGameTime();
         Iterator<Map.Entry<UUID, ActiveAudio>> iterator = plans.entrySet().iterator();
@@ -188,7 +195,7 @@ public final class EffectAudioService {
             active.syncAudience(level);
         }
         if (plans.isEmpty()) {
-            ACTIVE_PLANS.remove(level);
+            STATE.remove(level);
         }
     }
 
@@ -200,14 +207,14 @@ public final class EffectAudioService {
     public static List<EffectAudioPlan> resumePlans(ServerLevel level, ServerPlayer player) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(player, "player");
-        Map<UUID, ActiveAudio> plans = ACTIVE_PLANS.get(level);
-        if (plans == null || plans.isEmpty()) {
+        AudioState state = STATE.peek(level);
+        if (state == null || state.plans.isEmpty()) {
             return List.of();
         }
 
         List<EffectAudioPlan> result = new ArrayList<>();
         long gameTime = level.getGameTime();
-        for (ActiveAudio active : plans.values()) {
+        for (ActiveAudio active : state.plans.values()) {
             int planAge = (int)Math.min(Integer.MAX_VALUE,
                 Math.max(0L, gameTime - active.plan.startGameTime()));
             boolean playable = active.plan.dimensionId().equals(level.dimension().location())
@@ -226,15 +233,15 @@ public final class EffectAudioService {
 
     public static int activeCount(ServerLevel level) {
         Objects.requireNonNull(level, "level");
-        Map<UUID, ActiveAudio> plans = ACTIVE_PLANS.get(level);
-        return plans == null ? 0 : plans.size();
+        AudioState state = STATE.peek(level);
+        return state == null ? 0 : state.plans.size();
     }
 
     static EffectAudioPlan planOrNull(ServerLevel level, UUID effectId) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(effectId, "effectId");
-        Map<UUID, ActiveAudio> plans = ACTIVE_PLANS.get(level);
-        ActiveAudio active = plans == null ? null : plans.get(effectId);
+        AudioState state = STATE.peek(level);
+        ActiveAudio active = state == null ? null : state.plans.get(effectId);
         return active == null ? null : active.plan;
     }
 
@@ -242,8 +249,8 @@ public final class EffectAudioService {
         return (int)Math.min(Integer.MAX_VALUE, Math.max(0L, level.getGameTime() - plan.startGameTime()));
     }
 
-    private static Map<UUID, ActiveAudio> activePlans(ServerLevel level) {
-        return ACTIVE_PLANS.computeIfAbsent(level, ignored -> new LinkedHashMap<>());
+    private static final class AudioState {
+        private final Map<UUID, ActiveAudio> plans = new LinkedHashMap<>();
     }
 
     private static final class ActiveAudio {

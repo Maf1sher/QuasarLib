@@ -1,8 +1,6 @@
 package mafisher.quasar.effect;
 
-import java.util.Map;
 import java.util.Objects;
-import java.util.WeakHashMap;
 import mafisher.quasar.effect.cinematic.CinematicEffectService;
 import mafisher.quasar.effect.gameplay.GameplayEffectService;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectService;
@@ -13,7 +11,7 @@ import net.minecraft.server.level.ServerLevel;
  * spawns here so operators can inspect degradation from one place.
  */
 public final class EffectBudgetService {
-    private static final Map<ServerLevel, Counters> COUNTERS = new WeakHashMap<>();
+    private static final LevelStateSlot<BudgetState> STATE = LevelStateSlot.create(BudgetState::new);
 
     private EffectBudgetService() {
     }
@@ -21,7 +19,8 @@ public final class EffectBudgetService {
     /** Current capacity state and cumulative degradation counters for one level. */
     public static EffectBudgetReport report(ServerLevel level) {
         Objects.requireNonNull(level, "level");
-        Counters counters = counters(level);
+        BudgetState state = STATE.peek(level);
+        Counters counters = state == null ? null : state.counters;
         return new EffectBudgetReport(
             VisualEffectService.activeCount(level),
             EffectBudgets.standaloneVisuals(),
@@ -33,9 +32,9 @@ public final class EffectBudgetService {
             EffectBudgets.gameplayPending(),
             CinematicEffectService.activeCount(level),
             EffectBudgets.cinematicSessions(),
-            counters.culledEffects,
-            counters.deferredStarts,
-            counters.droppedEntitySpawns
+            counters == null ? 0L : counters.culledEffects,
+            counters == null ? 0L : counters.deferredStarts,
+            counters == null ? 0L : counters.droppedEntitySpawns
         );
     }
 
@@ -57,7 +56,11 @@ public final class EffectBudgetService {
     /** Whether one more entity spawn fits in the level's current tick without consuming a slot. */
     public static boolean entitySpawnBudgetAvailable(ServerLevel level) {
         Objects.requireNonNull(level, "level");
-        Counters counters = counters(level);
+        BudgetState state = STATE.peek(level);
+        if (state == null) {
+            return true;
+        }
+        Counters counters = state.counters;
         return counters.spawnTick != level.getGameTime()
             || counters.spawnsThisTick < EffectBudgets.entitySpawnsPerLevelTick();
     }
@@ -87,11 +90,15 @@ public final class EffectBudgetService {
     /** Drops transient counters for a level; active services are unaffected. */
     public static void clear(ServerLevel level) {
         Objects.requireNonNull(level, "level");
-        COUNTERS.remove(level);
+        STATE.remove(level);
     }
 
     private static Counters counters(ServerLevel level) {
-        return COUNTERS.computeIfAbsent(level, ignored -> new Counters());
+        return STATE.get(level).counters;
+    }
+
+    private static final class BudgetState {
+        private final Counters counters = new Counters();
     }
 
     private static final class Counters {

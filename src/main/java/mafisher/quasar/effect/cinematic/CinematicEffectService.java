@@ -8,7 +8,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.WeakHashMap;
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectBudgetService;
 import mafisher.quasar.effect.EffectBudgets;
@@ -16,6 +15,7 @@ import mafisher.quasar.effect.EffectPriority;
 import mafisher.quasar.effect.EffectScope;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.EffectPoint;
+import mafisher.quasar.effect.LevelStateSlot;
 import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.audio.EffectAudioAttenuation;
 import mafisher.quasar.effect.audio.EffectAudioCue;
@@ -42,7 +42,7 @@ public final class CinematicEffectService {
     public static final int MAX_ACTIVE_SESSIONS_PER_LEVEL = 16;
 
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
-    private static final Map<ServerLevel, Map<UUID, ActiveCinematic>> ACTIVE_SESSIONS = new WeakHashMap<>();
+    private static final LevelStateSlot<CinematicState> STATE = LevelStateSlot.create(CinematicState::new);
     private static Integer budgetOverride;
 
     private CinematicEffectService() {
@@ -128,7 +128,8 @@ public final class CinematicEffectService {
             throw new IllegalStateException("Cinematic effects are server-authoritative");
         }
 
-        Map<UUID, ActiveCinematic> sessions = ACTIVE_SESSIONS.get(level);
+        CinematicState current = STATE.peek(level);
+        Map<UUID, ActiveCinematic> sessions = current == null ? null : current.sessions;
         if (sessions != null && sessions.size() >= budget()
             && !admitByPriority(level, sessions, timeline.priority())) {
             EffectBudgetService.recordCull(level);
@@ -155,13 +156,13 @@ public final class CinematicEffectService {
         } catch (RuntimeException | Error exception) {
             session.close(level, false);
             if (sessions != null && sessions.isEmpty()) {
-                ACTIVE_SESSIONS.remove(level);
+                STATE.remove(level);
             }
             throw exception;
         }
 
         if (!session.closed) {
-            activeSessions(level).put(sessionId, session);
+            state(level).sessions.put(sessionId, session);
             EffectPersistenceService.recordStart(level, descriptor);
             if (session.audioPlan != null) {
                 EffectAudioService.start(level, session.audioPlan, EffectAudience.dimensionWide());
@@ -204,11 +205,14 @@ public final class CinematicEffectService {
     /** Advances one level's cinematic sessions. A failed session is logged, closed, and removed. */
     public static void tick(ServerLevel level) {
         Objects.requireNonNull(level, "level");
-        Map<UUID, ActiveCinematic> sessions = ACTIVE_SESSIONS.get(level);
-        if (sessions == null || sessions.isEmpty()) {
-            ACTIVE_SESSIONS.remove(level);
+        CinematicState state = STATE.peek(level);
+        if (state == null || state.sessions.isEmpty()) {
+            if (state != null) {
+                STATE.remove(level);
+            }
             return;
         }
+        Map<UUID, ActiveCinematic> sessions = state.sessions;
 
         long gameTime = level.getGameTime();
         Iterator<Map.Entry<UUID, ActiveCinematic>> iterator = sessions.entrySet().iterator();
@@ -226,7 +230,7 @@ public final class CinematicEffectService {
             }
         }
         if (sessions.isEmpty()) {
-            ACTIVE_SESSIONS.remove(level);
+            STATE.remove(level);
         }
     }
 
@@ -234,16 +238,16 @@ public final class CinematicEffectService {
     public static void stop(ServerLevel level, CinematicEffectHandle handle) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(handle, "handle");
-        Map<UUID, ActiveCinematic> sessions = ACTIVE_SESSIONS.get(level);
-        if (sessions == null) {
+        CinematicState state = STATE.peek(level);
+        if (state == null) {
             return;
         }
-        ActiveCinematic session = sessions.remove(handle.sessionId());
+        ActiveCinematic session = state.sessions.remove(handle.sessionId());
         if (session != null) {
             session.close(level, true);
         }
-        if (sessions.isEmpty()) {
-            ACTIVE_SESSIONS.remove(level);
+        if (state.sessions.isEmpty()) {
+            STATE.remove(level);
         }
     }
 
@@ -258,28 +262,31 @@ public final class CinematicEffectService {
      */
     public static int stopAll(ServerLevel level, boolean persistRemoval) {
         Objects.requireNonNull(level, "level");
-        Map<UUID, ActiveCinematic> sessions = ACTIVE_SESSIONS.remove(level);
-        if (sessions == null) {
+        CinematicState state = STATE.peek(level);
+        if (state == null) {
             return 0;
         }
-        for (ActiveCinematic session : sessions.values()) {
+        STATE.remove(level);
+        int count = state.sessions.size();
+        for (ActiveCinematic session : state.sessions.values()) {
             session.close(level, persistRemoval);
         }
-        return sessions.size();
+        state.sessions.clear();
+        return count;
     }
 
     public static int activeCount(ServerLevel level) {
         Objects.requireNonNull(level, "level");
-        Map<UUID, ActiveCinematic> sessions = ACTIVE_SESSIONS.get(level);
-        return sessions == null ? 0 : sessions.size();
+        CinematicState state = STATE.peek(level);
+        return state == null ? 0 : state.sessions.size();
     }
 
     /** Whether one cinematic session is currently active; culled or finished handles return {@code false}. */
     public static boolean isActive(ServerLevel level, CinematicEffectHandle handle) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(handle, "handle");
-        Map<UUID, ActiveCinematic> sessions = ACTIVE_SESSIONS.get(level);
-        ActiveCinematic session = sessions == null ? null : sessions.get(handle.sessionId());
+        CinematicState state = STATE.peek(level);
+        ActiveCinematic session = state == null ? null : state.sessions.get(handle.sessionId());
         return session != null
             && !session.closed
             && level.getGameTime() - session.startGameTime < session.timeline.durationTicks();
@@ -340,8 +347,12 @@ public final class CinematicEffectService {
         return true;
     }
 
-    private static Map<UUID, ActiveCinematic> activeSessions(ServerLevel level) {
-        return ACTIVE_SESSIONS.computeIfAbsent(level, ignored -> new LinkedHashMap<>());
+    private static CinematicState state(ServerLevel level) {
+        return STATE.get(level);
+    }
+
+    private static final class CinematicState {
+        private final Map<UUID, ActiveCinematic> sessions = new LinkedHashMap<>();
     }
 
     private static final class ActiveCinematic {

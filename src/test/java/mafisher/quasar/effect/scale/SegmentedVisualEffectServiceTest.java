@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 import java.util.List;
 import java.util.UUID;
 import mafisher.quasar.effect.EffectAudience;
+import mafisher.quasar.effect.EffectBudgetService;
 import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectPriority;
 import mafisher.quasar.effect.EffectTransform;
@@ -51,6 +52,7 @@ class SegmentedVisualEffectServiceTest {
         SegmentedVisualEffectService.stopAll(this.level);
         VisualEffectService.clear(this.level);
         EffectAudioService.clear(this.level);
+        SegmentedVisualEffectService.resetBudgetForTesting();
     }
 
     @Test
@@ -150,6 +152,24 @@ class SegmentedVisualEffectServiceTest {
 
         assertEquals(0, SegmentedVisualEffectService.activeCount(this.level));
         assertEquals(0, SegmentedVisualEffectService.activeSegmentCount(this.level));
+    }
+
+    @Test
+    void cullingTheOnlyCoordinatorKeepsTheNewcomerRegistered() {
+        SegmentedVisualEffectService.overrideBudgetForTesting(1);
+        SegmentedVisualEffectHandle first = SegmentedVisualEffectService.start(this.level, spec(1, 1, 200));
+        SegmentedVisualEffectHandle second = SegmentedVisualEffectService.start(this.level, spec(1, 1, 200));
+
+        assertFalse(SegmentedVisualEffectService.isActive(this.level, first));
+        assertTrue(SegmentedVisualEffectService.isActive(this.level, second));
+        assertEquals(1, SegmentedVisualEffectService.activeCount(this.level));
+        assertEquals(1, SegmentedVisualEffectService.activeSegmentCount(this.level));
+        assertEquals(1, EffectBudgetService.report(this.level).segments());
+
+        this.gameTime = 200L;
+        SegmentedVisualEffectService.tick(this.level);
+
+        assertEquals(0, SegmentedVisualEffectService.activeCount(this.level));
     }
 
     @Test

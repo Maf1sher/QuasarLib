@@ -1,29 +1,30 @@
-package mafisher.quasar.effect.scale;
+package mafisher.quasar.effect;
 
 import mafisher.quasar.QuasarLib;
+import mafisher.quasar.effect.gameplay.GameplayEffectEndReason;
 import net.minecraft.server.level.ServerLevel;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 
-/** Closes segmented effects when their level or the server goes away. */
+/** Clears every per-level effect runtime when its level or the server goes away. */
 @EventBusSubscriber(modid = QuasarLib.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
-public final class SegmentedEffectLifecycleEvents {
-    private SegmentedEffectLifecycleEvents() {
+public final class EffectLevelLifecycleEvents {
+    private EffectLevelLifecycleEvents() {
     }
 
     @SubscribeEvent
     public static void onLevelUnload(LevelEvent.Unload event) {
         if (event.getLevel() instanceof ServerLevel level) {
-            SegmentedVisualEffectService.stopAll(level, false);
+            EffectLevelLifecycle.clear(level, false, GameplayEffectEndReason.LEVEL_UNLOAD);
         }
     }
 
     @SubscribeEvent
     public static void onServerStopping(ServerStoppingEvent event) {
         for (ServerLevel level : event.getServer().getAllLevels()) {
-            SegmentedVisualEffectService.stopAll(level, false);
+            EffectLevelLifecycle.clear(level, false, GameplayEffectEndReason.SERVER_STOPPING);
         }
     }
 }
