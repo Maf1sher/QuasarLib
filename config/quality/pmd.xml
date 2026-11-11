@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<ruleset name="QuasarLib quality gate"
+    xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+    <description>
+        Structural rules only. Style is handled by Checkstyle and the project
+        formatter; these rules flag classes and methods with too many reasons to
+        change and error handlers that hide failures.
+    </description>
+
+    <rule ref="category/java/design.xml/GodClass"/>
+    <rule ref="category/java/design.xml/TooManyFields"/>
+    <rule ref="category/java/design.xml/TooManyMethods"/>
+    <rule ref="category/java/design.xml/CognitiveComplexity"/>
+    <rule ref="category/java/errorprone.xml/AvoidCatchingThrowable"/>
+    <rule ref="category/java/bestpractices.xml/PreserveStackTrace"/>
+</ruleset>

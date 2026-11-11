@@ -1,5 +1,7 @@
 plugins {
     id 'java-library'
+    id 'checkstyle'
+    id 'pmd'
     id 'net.neoforged.moddev' version '2.0.148'
     id 'idea'
 }
@@ -43,6 +45,54 @@ dependencies {
 
 tasks.named('test', Test).configure {
     useJUnitPlatform()
+}
+
+// Quality gate. The tasks always produce reports; scripts/quality.sh compares
+// them with config/quality/baseline.json and rejects regressions. Legacy debt is
+// recorded in the baseline instead of blocking the build on day one.
+checkstyle {
+    toolVersion = '10.21.0'
+    configFile = file('config/quality/checkstyle.xml')
+    ignoreFailures = true
+}
+
+pmd {
+    toolVersion = '7.8.0'
+    ruleSets = []
+    ruleSetFiles = files('config/quality/pmd.xml')
+    ignoreFailures = true
+}
+
+tasks.withType(Checkstyle).configureEach {
+    maxErrors = Integer.MAX_VALUE
+    maxWarnings = Integer.MAX_VALUE
+    reports {
+        xml.required = true
+        html.required = false
+    }
+}
+
+tasks.withType(Pmd).configureEach {
+    maxFailures = Integer.MAX_VALUE
+    reports {
+        xml.required = true
+        html.required = false
+    }
+}
+
+tasks.named('checkstyleMain', Checkstyle) {
+    source = fileTree('src/main/java')
+}
+tasks.named('pmdMain', Pmd) {
+    source = fileTree('src/main/java')
+}
+// The ratchet tracks production sources first. Test-source rules can be added
+// once their baseline is reviewed separately.
+tasks.named('checkstyleTest') {
+    enabled = false
+}
+tasks.named('pmdTest') {
+    enabled = false
 }
 
 neoForge {
