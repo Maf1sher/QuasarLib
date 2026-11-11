@@ -242,6 +242,13 @@ public final class CompatRegistry {
         }
     }
 
+    /** Whether a custom protection bridge is registered; {@code false} for the vanilla fallback. */
+    public static boolean hasProtectionBridge() {
+        synchronized (LOCK) {
+            return protectionRegistered;
+        }
+    }
+
     private static void requireClientOpen() {
         if (clientFrozen) {
             throw new IllegalStateException("Client compat provider registration is already closed");

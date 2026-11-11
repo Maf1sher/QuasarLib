@@ -17,6 +17,7 @@ import mafisher.quasar.effect.EffectScope;
 import mafisher.quasar.effect.audio.EffectAudioService;
 import mafisher.quasar.effect.block.BlockChange;
 import mafisher.quasar.effect.block.BlockProtectionContext;
+import mafisher.quasar.effect.block.BlockProtectionService;
 import mafisher.quasar.effect.persistence.BlockJournal;
 import mafisher.quasar.effect.persistence.EffectCapabilities;
 import net.minecraft.core.BlockPos;
@@ -358,7 +359,13 @@ public final class GameplayEffectContext {
         return this.blockJournal;
     }
 
-    private boolean allowsBlockChange(BlockChange change, BlockState currentState) {
+    /** Whether any native or compat protection must be consulted for this session. */
+    boolean hasBlockProtection() {
+        return BlockProtectionService.hasProtections() || CompatRegistry.hasProtectionBridge();
+    }
+
+    /** Queries the active protection bridge, including the registered native fallback. */
+    boolean allowsBlockChange(BlockChange change, BlockState currentState) {
         return CompatRegistry.protection().allows(new BlockProtectionContext(
             this.level,
             change,

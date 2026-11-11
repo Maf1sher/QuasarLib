@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -13,7 +14,9 @@ import static org.mockito.Mockito.when;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import mafisher.quasar.effect.EffectBounds;
 import mafisher.quasar.effect.EffectPoint;
+import mafisher.quasar.effect.block.BlockChange;
 import mafisher.quasar.effect.block.BlockProtectionService;
 import mafisher.quasar.effect.persistence.BlockJournal;
 import net.minecraft.resources.ResourceLocation;
@@ -116,6 +119,30 @@ class EffectBulkBlockEditorTest {
         assertEquals(1, editor.progress().clearedBlocks());
         assertFalse(editor.clearedStates().isEmpty());
         verify(this.chunk).setUnsaved(true);
+        editor.close(false);
+    }
+
+    @Test
+    void consultsContextProtectionBeforeTheWholeSectionFastPath() {
+        when(this.context.hasBlockProtection()).thenReturn(true);
+        when(this.context.allowsBlockChange(any(BlockChange.class), any(BlockState.class))).thenReturn(false);
+        EffectBulkBlockEditor editor = EffectBulkBlockEditor.create(
+            this.context,
+            new EffectBulkBlockEditor.Spec(
+                EffectBlockVolume.box(new EffectBounds(0.0, 0.0, 0.0, 16.0, 16.0, 16.0)),
+                Blocks.AIR.defaultBlockState(),
+                true,
+                EffectBulkBlockEditor.SyncPolicy.MANUAL,
+                0.0,
+                true
+            )
+        );
+
+        editor.tick();
+
+        assertEquals(Blocks.STONE.defaultBlockState(), this.section.getBlockState(8, 8, 8));
+        assertEquals(Blocks.DIRT.defaultBlockState(), this.section.getBlockState(0, 0, 0));
+        assertEquals(0, editor.progress().clearedBlocks());
         editor.close(false);
     }
 

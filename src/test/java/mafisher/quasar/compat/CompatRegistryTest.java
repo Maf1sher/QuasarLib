@@ -31,6 +31,7 @@ class CompatRegistryTest {
         assertEquals(FogPolicy.RESPECT, environment.fogPolicy());
         assertFalse(environment.physicsAvailable());
         assertFalse(environment.protectionAvailable());
+        assertFalse(CompatRegistry.hasProtectionBridge());
         assertTrue(environment.activeProviders().isEmpty());
         assertTrue(environment.screenCompositionAllowed());
     }
@@ -222,6 +223,7 @@ class CompatRegistryTest {
             }
         });
 
+        assertTrue(CompatRegistry.hasProtectionBridge());
         assertTrue(CompatRegistry.environment(256.0).protectionAvailable());
         assertFalse(CompatRegistry.protection().allows(mock(BlockProtectionContext.class)));
     }

@@ -12,8 +12,6 @@ import java.util.PriorityQueue;
 import java.util.Set;
 import mafisher.quasar.effect.EffectBounds;
 import mafisher.quasar.effect.block.BlockChange;
-import mafisher.quasar.effect.block.BlockProtectionContext;
-import mafisher.quasar.effect.block.BlockProtectionService;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -520,7 +518,7 @@ public final class EffectBulkBlockEditor {
         }
 
         boolean fullyInside = this.isFullyInside(key);
-        boolean protectedWorld = BlockProtectionService.hasProtections();
+        boolean protectedWorld = this.context.hasBlockProtection();
         boolean atWorldFloor = key.sectionY() <= this.level.getMinSection();
         boolean fastFullSection = fullyInside
             && !atWorldFloor
@@ -655,14 +653,10 @@ public final class EffectBulkBlockEditor {
 
     private boolean allows(int x, int y, int z, BlockState current) {
         BlockPos position = new BlockPos(x, y, z);
-        return BlockProtectionService.allows(new BlockProtectionContext(
-            this.level,
+        return this.context.allowsBlockChange(
             new BlockChange(position, this.spec.replacement(), false),
-            current,
-            this.context.spec().typeId(),
-            this.context.sessionId(),
-            this.context.spec().ownerId()
-        ));
+            current
+        );
     }
 
     private void removeBlockEntities(LevelChunk chunk, LevelChunkSection section, SectionKey key) {
