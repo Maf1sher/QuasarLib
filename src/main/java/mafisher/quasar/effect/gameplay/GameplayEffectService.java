@@ -22,6 +22,7 @@ import mafisher.quasar.effect.persistence.BlockRollbackService;
 import mafisher.quasar.effect.persistence.EffectDescriptor;
 import mafisher.quasar.effect.persistence.EffectCapabilities;
 import mafisher.quasar.effect.persistence.EffectKind;
+import mafisher.quasar.effect.persistence.EffectPersistence;
 import mafisher.quasar.effect.persistence.EffectPersistenceOptions;
 import mafisher.quasar.effect.persistence.EffectPersistenceService;
 import net.minecraft.server.level.ServerLevel;
@@ -561,8 +562,20 @@ public final class GameplayEffectService {
         if (!force && journal.sectionCount() > 0 && level.getGameTime() % 20L != 0L) {
             return;
         }
-        journal.consumeDirty();
-        EffectPersistenceService.recordJournal(level, session.id, journal);
+        if (session.descriptor.persistence() != EffectPersistence.RESUMABLE) {
+            journal.consumeDirty();
+            return;
+        }
+        if (EffectPersistenceService.recordJournal(level, session.id, journal)) {
+            journal.consumeDirty();
+            session.journalPersistenceFailed = false;
+        } else if (!session.journalPersistenceFailed) {
+            session.journalPersistenceFailed = true;
+            LOGGER.warn(
+                "Block journal for {} was not persisted; it stays dirty and will retry",
+                session.id
+            );
+        }
     }
 
     private static boolean destructivePolicyAllows(
@@ -916,6 +929,7 @@ public final class GameplayEffectService {
         private final long startGameTime;
         private final long ownerGraceUntil;
         private boolean ownerSeen;
+        private boolean journalPersistenceFailed;
         private EffectDescriptor descriptor;
 
         private ActiveSession(

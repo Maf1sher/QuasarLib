@@ -156,9 +156,18 @@ class EffectSavedDataTest {
     void ignoresJournalsForUnknownDescriptors() {
         EffectSavedData data = new EffectSavedData();
 
-        data.putJournal(UUID.randomUUID(), journal());
+        assertFalse(data.putJournal(UUID.randomUUID(), journal()));
 
         assertTrue(data.journalIds().isEmpty());
+    }
+
+    @Test
+    void putJournalReportsWhenItIsNotStored() {
+        CompoundTag source = new CompoundTag();
+        source.putInt("schema_version", 99);
+        EffectSavedData data = EffectSavedData.load(source, null);
+
+        assertFalse(data.putJournal(UUID.randomUUID(), journal()));
     }
 
     private static BlockJournal journal() {

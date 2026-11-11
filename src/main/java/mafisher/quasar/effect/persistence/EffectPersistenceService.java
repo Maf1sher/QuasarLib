@@ -55,13 +55,14 @@ public final class EffectPersistenceService {
         return store == null ? null : store.journal(instanceId);
     }
 
-    /** Replaces the in-memory journal; the full NBT is serialized only when the level saves. */
-    public static void recordJournal(ServerLevel level, UUID instanceId, BlockJournal journal) {
+    /**
+     * Replaces the in-memory journal; the full NBT is serialized only when the level saves.
+     * Returns {@code false} when no store accepted the journal, so callers can retry later.
+     */
+    public static boolean recordJournal(ServerLevel level, UUID instanceId, BlockJournal journal) {
         Objects.requireNonNull(instanceId, "instanceId");
         Objects.requireNonNull(journal, "journal");
         EffectSavedData store = storeOrNull(level);
-        if (store != null) {
-            store.putJournal(instanceId, journal);
-        }
+        return store != null && store.putJournal(instanceId, journal);
     }
 }

@@ -118,13 +118,14 @@ public final class EffectHitbox {
                 || !this.hitCooldowns.canHit(target.getUUID(), effectAgeTicks, this.rehitDelayTicks)) {
                 continue;
             }
-            this.hitCooldowns.recordHit(target.getUUID(), effectAgeTicks);
             examined++;
             if (this.outcome == EffectHitboxOutcome.REMOVE) {
                 if (remove(level, target, damageSource)) {
+                    this.hitCooldowns.recordHit(target.getUUID(), effectAgeTicks);
                     damaged++;
                 }
             } else if (target.hurt(damageSource, this.damage)) {
+                this.hitCooldowns.recordHit(target.getUUID(), effectAgeTicks);
                 damaged++;
             }
             if (examined >= targetLimit) {

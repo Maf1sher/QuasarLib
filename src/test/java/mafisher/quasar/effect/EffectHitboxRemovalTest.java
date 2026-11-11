@@ -20,6 +20,28 @@ import org.junit.jupiter.api.Test;
 
 class EffectHitboxRemovalTest {
     @Test
+    void doesNotConsumeTheCooldownWhenRemovalFails() {
+        ServerLevel level = mock(ServerLevel.class);
+        DamageSource source = mock(DamageSource.class);
+        when(level.isClientSide()).thenReturn(false);
+
+        LivingEntity mob = living(new AABB(-0.5, -0.5, -0.5, 0.5, 0.5, 0.5));
+        when(mob.isRemoved()).thenReturn(false, true);
+        when(level.getEntitiesOfClass(eq(LivingEntity.class), any(AABB.class)))
+            .thenReturn(List.of(mob));
+
+        EffectHitbox hitbox = EffectHitbox.removal(
+            new EffectDamageShape.Sphere(new EffectPoint(0.0, 0.0, 0.0), 2.0), 8
+        );
+        EffectHitResult first = hitbox.applyDetailed(level, 0, null, source, target -> true, 8);
+        EffectHitResult second = hitbox.applyDetailed(level, 0, null, source, target -> true, 8);
+
+        assertEquals(0, first.damaged());
+        assertEquals(1, second.damaged());
+        verify(mob, org.mockito.Mockito.times(2)).discard();
+    }
+
+    @Test
     void removesMobsAndKillsPlayersInsideTheHorizon() {
         ServerLevel level = mock(ServerLevel.class);
         DamageSources sources = mock(DamageSources.class);

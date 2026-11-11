@@ -215,14 +215,19 @@ public final class EffectSavedData extends SavedData {
         return this.journals.get(instanceId);
     }
 
-    public void putJournal(UUID instanceId, BlockJournal journal) {
+    /**
+     * Stores one block journal. Returns {@code false} when the store does not accept writes, so a
+     * caller can keep its dirty marker until a later attempt actually persists progress.
+     */
+    public boolean putJournal(UUID instanceId, BlockJournal journal) {
         Objects.requireNonNull(instanceId, "instanceId");
         Objects.requireNonNull(journal, "journal");
         if (this.newerSchema || !this.descriptors.containsKey(instanceId)) {
-            return;
+            return false;
         }
         this.journals.put(instanceId, journal);
         this.setDirty();
+        return true;
     }
 
     public void removeJournal(UUID instanceId) {

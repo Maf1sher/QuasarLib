@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -49,6 +50,7 @@ import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class GameplayPersistenceTest {
     private static final ResourceLocation TYPE = ResourceLocation.fromNamespaceAndPath("quasar_lib", "test_gameplay");
@@ -234,6 +236,26 @@ class GameplayPersistenceTest {
         verify(this.level).setBlockAndUpdate(FIRST, this.oldState);
         assertFalse(this.store.contains(handle.sessionId()));
         assertNull(this.store.journal(handle.sessionId()));
+    }
+
+    @Test
+    void keepsTheJournalDirtyWhenTheStoreRejectsTheWrite() {
+        EffectSavedData rejecting = mock(EffectSavedData.class);
+        DimensionDataStorage storage = mock(DimensionDataStorage.class);
+        when(this.level.getDataStorage()).thenReturn(storage);
+        when(storage.computeIfAbsent(any(SavedData.Factory.class), eq(EffectSavedData.FILE_ID)))
+            .thenReturn(rejecting);
+        when(rejecting.putJournal(any(), any())).thenReturn(false);
+
+        GameplayEffectSpec spec = destroyerSpec(4, 20);
+        GameplayEffectHandle handle = startDestroyer(
+            spec, new QueueController(new BlockChange(FIRST, this.newState))
+        );
+        GameplayEffectService.tick(this.level);
+
+        ArgumentCaptor<BlockJournal> captor = ArgumentCaptor.forClass(BlockJournal.class);
+        verify(rejecting, atLeastOnce()).putJournal(eq(handle.sessionId()), captor.capture());
+        assertTrue(captor.getValue().isDirty());
     }
 
     @Test
