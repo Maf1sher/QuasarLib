@@ -163,11 +163,19 @@ final class PendingBlockChanges {
                 continue;
             }
 
-            boolean recordedPerBlock = journal != null
-                && queued.journalMode() == BlockJournalMode.PER_BLOCK
-                && journal.record(level, change, currentState);
-            if (journal != null && queued.journalMode() == BlockJournalMode.SECTION) {
-                this.recordSection(level, journal, change.position());
+            boolean recorded = journal == null;
+            boolean recordedPerBlock = false;
+            if (journal != null) {
+                if (queued.journalMode() == BlockJournalMode.PER_BLOCK) {
+                    recordedPerBlock = journal.record(level, change, currentState);
+                    recorded = recordedPerBlock;
+                } else {
+                    recorded = this.recordSection(level, journal, change.position());
+                }
+                if (!recorded && !journal.isTruncated()) {
+                    vetoed++;
+                    continue;
+                }
             }
             try {
                 boolean changed = change.updateNeighbors()

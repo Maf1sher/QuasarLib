@@ -3,7 +3,6 @@ package mafisher.quasar.effect.persistence;
 import io.netty.buffer.Unpooled;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -14,7 +13,6 @@ import mafisher.quasar.effect.gameplay.TerrainEditService;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtUtils;
@@ -23,11 +21,13 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.TicketType;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
-import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.chunk.PalettedContainer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -105,13 +105,18 @@ public final class BlockJournal {
         }
 
         CompoundTag blockEntity = null;
-        BlockEntity existing = level.getBlockEntity(change.position());
-        if (existing != null) {
-            try {
+        try {
+            BlockEntity existing = level.getBlockEntity(change.position());
+            if (existing != null) {
                 blockEntity = existing.saveWithFullMetadata(level.registryAccess());
-            } catch (RuntimeException exception) {
-                LOGGER.warn("Could not capture a block entity for the block journal", exception);
             }
+        } catch (RuntimeException exception) {
+            LOGGER.warn(
+                "Could not capture the block entity at {}; refusing the unjournaled write",
+                change.position(),
+                exception
+            );
+            return false;
         }
 
         this.entries.add(new Entry(
@@ -168,6 +173,9 @@ public final class BlockJournal {
 
         byte[] data = writeSection(section);
         List<CompoundTag> blockEntities = captureBlockEntities(level, chunk, sectionY);
+        if (blockEntities == null) {
+            return false;
+        }
         this.sections.add(new SectionEntry(
             chunk.getPos(),
             sectionY,
@@ -448,6 +456,10 @@ public final class BlockJournal {
         }
     }
 
+    /**
+     * Captures every block entity in one section. Returns {@code null} when any entry cannot be
+     * captured, so the caller can refuse the edit instead of recording an incomplete rollback.
+     */
     private static List<CompoundTag> captureBlockEntities(
         ServerLevel level,
         LevelChunk chunk,
@@ -463,7 +475,11 @@ public final class BlockJournal {
                 tag.putLong(POSITION_KEY, blockEntity.getBlockPos().asLong());
                 tags.add(tag);
             } catch (RuntimeException exception) {
-                LOGGER.warn("Could not capture a block entity for a section snapshot", exception);
+                LOGGER.warn(
+                    "Could not capture a block entity for a section snapshot; refusing the section edit",
+                    exception
+                );
+                return null;
             }
         }
         return tags;
@@ -493,11 +509,21 @@ public final class BlockJournal {
             return false;
         }
 
+        LevelChunkSection live = target[index];
+        if (live == null) {
+            logRollbackFailure("Could not find the live section {}", entry.pos());
+            return false;
+        }
         LevelChunkSection restored;
         FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.wrappedBuffer(entry.data()));
         try {
             restored = new LevelChunkSection(
-                level.registryAccess().registryOrThrow(Registries.BIOME)
+                new PalettedContainer<>(
+                    Block.BLOCK_STATE_REGISTRY,
+                    Blocks.AIR.defaultBlockState(),
+                    PalettedContainer.Strategy.SECTION_STATES
+                ),
+                live.getBiomes()
             );
             restored.read(buffer);
             restored.recalcBlockCounts();
@@ -507,14 +533,60 @@ public final class BlockJournal {
         } finally {
             buffer.release();
         }
+        int baseX = entry.pos().x << 4;
+        int baseY = entry.sectionY() << 4;
+        int baseZ = entry.pos().z << 4;
+        for (int localY = 0; localY < 16; localY++) {
+            for (int localZ = 0; localZ < 16; localZ++) {
+                for (int localX = 0; localX < 16; localX++) {
+                    BlockState restoredState = restored.getBlockState(localX, localY, localZ);
+                    if (live.getBlockState(localX, localY, localZ).equals(restoredState)) {
+                        continue;
+                    }
+                    BlockPos position = new BlockPos(baseX + localX, baseY + localY, baseZ + localZ);
+                    try {
+                        if (!level.setBlock(position, restoredState, Block.UPDATE_ALL)
+                            && !restoredState.equals(level.getBlockState(position))) {
+                            logRollbackFailure(
+                                "Could not restore the block at {} during section rollback",
+                                position
+                            );
+                            return false;
+                        }
+                    } catch (RuntimeException exception) {
+                        logRollbackFailure(
+                            "Could not restore the block at {} during section rollback",
+                            position,
+                            exception
+                        );
+                        return false;
+                    }
+                }
+            }
+        }
 
+        restoreSectionBlockEntities(level, chunk, entry);
+        chunk.setUnsaved(true);
+        // setBlock updated heightmaps and light; the deferred pass still batches the client resend.
+        TerrainEditService.scheduleRelightAndSync(level, entry.pos());
+        return true;
+    }
+
+    private void restoreSectionBlockEntities(ServerLevel level, LevelChunk chunk, SectionEntry entry) {
+        Set<BlockPos> restoredPositions = new HashSet<>();
+        for (CompoundTag tag : entry.blockEntities()) {
+            if (tag.contains(POSITION_KEY)) {
+                restoredPositions.add(BlockPos.of(tag.getLong(POSITION_KEY)));
+            }
+        }
         for (BlockEntity existing : new ArrayList<>(chunk.getBlockEntities().values())) {
-            if (SectionPos.blockToSectionCoord(existing.getBlockPos().getY()) == entry.sectionY()) {
+            if (SectionPos.blockToSectionCoord(existing.getBlockPos().getY()) != entry.sectionY()) {
+                continue;
+            }
+            if (!restoredPositions.contains(existing.getBlockPos())) {
                 chunk.removeBlockEntity(existing.getBlockPos());
             }
         }
-        target[index] = restored;
-        chunk.setUnsaved(true);
         for (CompoundTag tag : entry.blockEntities()) {
             try {
                 BlockPos position = BlockPos.of(tag.getLong(POSITION_KEY));
@@ -528,10 +600,6 @@ public final class BlockJournal {
                 LOGGER.warn("Could not restore a section block entity at {}", entry.pos(), exception);
             }
         }
-        Heightmap.primeHeightmaps(chunk, EnumSet.allOf(Heightmap.Types.class));
-        chunk.initializeLightSources();
-        TerrainEditService.scheduleRelightAndSync(level, entry.pos());
-        return true;
     }
 
     private static void restoreBlockEntity(ServerLevel level, Entry entry) {

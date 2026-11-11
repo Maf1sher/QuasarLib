@@ -233,10 +233,16 @@ public final class TerrainEditService {
         }
 
         int synced = 0;
-        while (synced < SYNC_CHUNKS_PER_TICK && !state.syncQueue.isEmpty()) {
-            ChunkPos chunk = state.syncQueue.iterator().next();
-            state.syncQueue.remove(chunk);
-            markForSync(level, chunk);
+        int syncScanned = 0;
+        Iterator<ChunkPos> syncs = state.syncQueue.iterator();
+        while (syncs.hasNext() && synced < SYNC_CHUNKS_PER_TICK && syncScanned < 64) {
+            syncScanned++;
+            ChunkPos chunk = syncs.next();
+            if (!markForSync(level, chunk)) {
+                // Keep an unloaded chunk queued; it may become available next tick.
+                continue;
+            }
+            syncs.remove();
             synced++;
         }
 
@@ -263,6 +269,7 @@ public final class TerrainEditService {
             && state.priorityRelightQueue.isEmpty()
             && state.syncAfterRelight.isEmpty()
             && state.syncQueue.isEmpty()
+            && state.failedRelights.isEmpty()
             && state.pendingTicketRelease.isEmpty()
             && state.tickets.isEmpty()
             && state.heldTickets == 0) {
@@ -311,26 +318,44 @@ public final class TerrainEditService {
             level.getChunkSource().getLightEngine().propagateLightSources(chunk);
             levelChunk.setUnsaved(true);
         } catch (RuntimeException exception) {
-            LOGGER.warn("Could not relight bulk-edited chunk {}", chunk, exception);
+            if (state.failedRelights.add(chunk)) {
+                LOGGER.warn("Could not relight bulk-edited chunk {}; it stays queued", chunk, exception);
+            }
+            // Leave syncAfterRelight untouched so no client receives a chunk with stale light.
+            return false;
         }
+        state.failedRelights.remove(chunk);
         if (state.syncAfterRelight.remove(chunk)) {
             state.syncQueue.add(chunk);
         }
         return true;
     }
 
-    private static void markForSync(ServerLevel level, ChunkPos chunk) {
+    private static boolean markForSync(ServerLevel level, ChunkPos chunk) {
         LevelChunk levelChunk = level.getChunkSource().getChunkNow(chunk.x, chunk.z);
         if (levelChunk == null) {
-            return;
+            return false;
         }
         for (ServerPlayer player : level.getChunkSource().chunkMap.getPlayers(chunk, false)) {
             player.connection.chunkSender.markChunkPendingToSend(levelChunk);
         }
+        return true;
     }
 
     private static LevelState state(ServerLevel level) {
         return STATES.computeIfAbsent(level, ignored -> new LevelState());
+    }
+
+    /** Test-facing count of queued relight and client-sync work. */
+    static int pendingWorkCount(ServerLevel level) {
+        LevelState state = STATES.get(level);
+        if (state == null) {
+            return 0;
+        }
+        return state.relightQueue.size()
+            + state.priorityRelightQueue.size()
+            + state.syncQueue.size()
+            + state.syncAfterRelight.size();
     }
 
     private static final class LevelState {
@@ -340,6 +365,7 @@ public final class TerrainEditService {
         private final Set<ChunkPos> priorityRelightQueue = new LinkedHashSet<>();
         private final Set<ChunkPos> syncAfterRelight = new LinkedHashSet<>();
         private final Set<ChunkPos> syncQueue = new LinkedHashSet<>();
+        private final Set<ChunkPos> failedRelights = new LinkedHashSet<>();
         private final Map<ChunkPos, Integer> pendingTicketRelease = new java.util.HashMap<>();
         private final Map<ChunkPos, Integer> tickets = new java.util.HashMap<>();
     }

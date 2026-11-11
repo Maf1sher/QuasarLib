@@ -22,6 +22,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
@@ -244,6 +245,27 @@ class PendingBlockChangesTest {
 
         assertEquals(0, result.applied());
         assertEquals(0, journal.size());
+    }
+
+    @Test
+    void vetoesAChangeWhenTheJournalCannotCaptureItsBlockEntity() {
+        PendingBlockChanges pending = new PendingBlockChanges(4);
+        BlockJournal journal = new BlockJournal();
+        BlockChange change = change(0);
+        BlockEntity blockEntity = mock(BlockEntity.class);
+        when(this.level.getBlockEntity(change.position())).thenReturn(blockEntity);
+        when(blockEntity.saveWithFullMetadata(any())).thenThrow(new RuntimeException("capture failed"));
+        pending.enqueue(change);
+
+        PendingBlockChanges.ApplyResult result = pending.apply(
+            this.level, 1, (queued, currentState) -> true, journal
+        );
+
+        assertEquals(1, result.processed());
+        assertEquals(0, result.applied());
+        assertEquals(1, result.vetoed());
+        assertEquals(0, journal.size());
+        verify(this.level, never()).setBlockAndUpdate(any(), any());
     }
 
     @Test

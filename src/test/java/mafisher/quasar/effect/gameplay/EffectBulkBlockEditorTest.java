@@ -22,6 +22,7 @@ import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.block.BlockChange;
 import mafisher.quasar.effect.block.BlockProtectionService;
 import mafisher.quasar.effect.persistence.BlockJournal;
+import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerLevel;
@@ -30,6 +31,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelHeightAccessor;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
@@ -279,6 +281,128 @@ class EffectBulkBlockEditorTest {
 
         assertTrue(this.sections[0].hasOnlyAir());
         assertEquals(2, editor.progress().clearedBlocks());
+        editor.close(false);
+    }
+
+    @Test
+    void doesNotClearASectionWhenItsBlockEntitiesCannotBeCaptured() {
+        BlockPos blockEntityPos = new BlockPos(8, 8, 8);
+        BlockEntity blockEntity = mock(BlockEntity.class);
+        when(this.chunk.getBlockEntities()).thenReturn(Map.of(blockEntityPos, blockEntity));
+        when(blockEntity.getBlockPos()).thenReturn(blockEntityPos);
+        when(blockEntity.saveWithFullMetadata(any())).thenThrow(new RuntimeException("capture failed"));
+        EffectBulkBlockEditor editor = EffectBulkBlockEditor.create(
+            this.context,
+            new EffectBulkBlockEditor.Spec(
+                EffectBlockVolume.box(new EffectBounds(0.0, 0.0, 0.0, 16.0, 16.0, 16.0)),
+                Blocks.AIR.defaultBlockState(),
+                true,
+                EffectBulkBlockEditor.SyncPolicy.MANUAL,
+                0.0,
+                true
+            )
+        );
+
+        editor.tick();
+
+        assertEquals(Blocks.STONE.defaultBlockState(), this.section.getBlockState(8, 8, 8));
+        assertEquals(0, editor.progress().clearedBlocks());
+        assertEquals(0, this.journal.sectionCount());
+        editor.close(false);
+    }
+
+    @Test
+    void removesGhostBlockEntitiesEvenWhenRemovalIsDisabled() {
+        BlockPos blockEntityPos = new BlockPos(8, 8, 8);
+        BlockEntity blockEntity = mock(BlockEntity.class);
+        when(this.chunk.getBlockEntities()).thenReturn(Map.of(blockEntityPos, blockEntity));
+        when(blockEntity.getBlockPos()).thenReturn(blockEntityPos);
+        when(this.chunk.getBlockState(blockEntityPos)).thenReturn(Blocks.AIR.defaultBlockState());
+        EffectBulkBlockEditor editor = EffectBulkBlockEditor.create(
+            this.context,
+            new EffectBulkBlockEditor.Spec(
+                EffectBlockVolume.box(new EffectBounds(0.0, 0.0, 0.0, 16.0, 16.0, 16.0)),
+                Blocks.AIR.defaultBlockState(),
+                false,
+                EffectBulkBlockEditor.SyncPolicy.MANUAL,
+                0.0,
+                false
+            )
+        );
+
+        editor.tick();
+
+        verify(this.chunk).removeBlockEntity(blockEntityPos);
+        editor.close(false);
+    }
+
+    @Test
+    void notifiesNeighborsForChangedBoundaryBlocks() {
+        EffectBulkBlockEditor editor = EffectBulkBlockEditor.create(
+            this.context,
+            new EffectBulkBlockEditor.Spec(
+                EffectBlockVolume.box(new EffectBounds(7.0, 7.0, 7.0, 10.0, 10.0, 10.0)),
+                Blocks.AIR.defaultBlockState(),
+                false,
+                EffectBulkBlockEditor.SyncPolicy.MANUAL,
+                0.0,
+                false
+            )
+        );
+
+        editor.tick();
+
+        verify(this.level).updateNeighborsAt(
+            new BlockPos(8, 8, 8), Blocks.STONE
+        );
+        editor.close(false);
+    }
+
+    @Test
+    void notifiesPoiRemovalForAClearedPoiBlock() {
+        this.section.setBlockState(8, 8, 8, Blocks.COMPOSTER.defaultBlockState(), false);
+        EffectBulkBlockEditor editor = EffectBulkBlockEditor.create(
+            this.context,
+            new EffectBulkBlockEditor.Spec(
+                EffectBlockVolume.box(new EffectBounds(7.0, 7.0, 7.0, 10.0, 10.0, 10.0)),
+                Blocks.AIR.defaultBlockState(),
+                false,
+                EffectBulkBlockEditor.SyncPolicy.MANUAL,
+                0.0,
+                false
+            )
+        );
+
+        editor.tick();
+
+        verify(this.level).onBlockStateChange(
+            new BlockPos(8, 8, 8),
+            Blocks.COMPOSTER.defaultBlockState(),
+            Blocks.AIR.defaultBlockState()
+        );
+        editor.close(false);
+    }
+
+    @Test
+    void usesSetBlockForNonAirBulkReplacement() {
+        when(this.level.setBlock(any(), any(), anyInt())).thenReturn(true);
+        EffectBulkBlockEditor editor = EffectBulkBlockEditor.create(
+            this.context,
+            new EffectBulkBlockEditor.Spec(
+                EffectBlockVolume.box(new EffectBounds(7.0, 7.0, 7.0, 10.0, 10.0, 10.0)),
+                Blocks.DIRT.defaultBlockState(),
+                false,
+                EffectBulkBlockEditor.SyncPolicy.MANUAL,
+                0.0,
+                false
+            )
+        );
+
+        editor.tick();
+
+        verify(this.level).setBlock(
+            new BlockPos(8, 8, 8), Blocks.DIRT.defaultBlockState(), Block.UPDATE_ALL
+        );
         editor.close(false);
     }
 

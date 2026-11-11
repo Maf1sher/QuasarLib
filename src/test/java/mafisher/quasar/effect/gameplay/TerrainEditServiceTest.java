@@ -1,5 +1,6 @@
 package mafisher.quasar.effect.gameplay;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -14,6 +15,7 @@ import mafisher.quasar.QuasarConfig;
 import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.chunk.LevelChunk;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -60,6 +62,33 @@ class TerrainEditServiceTest {
         TerrainEditService.tick(this.level);
 
         assertTrue(TerrainEditService.tryAcquireTickets(this.level, chunks(3_072, 1_025)));
+    }
+
+    @Test
+    void keepsAnUnloadedSyncQueuedUntilTheChunkLoads() {
+        ChunkPos chunk = new ChunkPos(3, 4);
+        when(this.chunkSource.getChunkNow(3, 4)).thenReturn(null);
+        TerrainEditService.requestSync(this.level, chunk, false);
+
+        assertEquals(1, TerrainEditService.pendingWorkCount(this.level));
+
+        TerrainEditService.tick(this.level);
+
+        assertEquals(1, TerrainEditService.pendingWorkCount(this.level));
+    }
+
+    @Test
+    void keepsAFailedRelightQueued() {
+        ChunkPos chunk = new ChunkPos(5, 6);
+        LevelChunk levelChunk = mock(LevelChunk.class);
+        when(this.chunkSource.getChunkNow(5, 6)).thenReturn(levelChunk);
+        when(levelChunk.getHighestSectionPosition()).thenThrow(new RuntimeException("relight failed"));
+        TerrainEditService.queuePriorityRelight(this.level, chunk);
+        TerrainEditService.requestSync(this.level, chunk, true);
+
+        TerrainEditService.tick(this.level);
+
+        assertEquals(3, TerrainEditService.pendingWorkCount(this.level));
     }
 
     @Test

@@ -15,12 +15,15 @@ import static org.mockito.Mockito.when;
 
 import mafisher.quasar.effect.block.BlockChange;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
@@ -57,6 +60,50 @@ class BlockJournalTest {
 
         assertEquals(0, journal.size());
         assertTrue(journal.consumeDirty());
+    }
+
+    @Test
+    void refusesToRecordWhenTheBlockEntityCannotBeCaptured() {
+        BlockEntity blockEntity = mock(BlockEntity.class);
+        when(this.level.getBlockEntity(POSITION)).thenReturn(blockEntity);
+        when(blockEntity.saveWithFullMetadata(any())).thenThrow(new RuntimeException("capture failed"));
+        BlockJournal journal = new BlockJournal();
+
+        assertFalse(journal.record(
+            this.level,
+            new BlockChange(POSITION, Blocks.AIR.defaultBlockState()),
+            Blocks.STONE.defaultBlockState()
+        ));
+
+        assertEquals(0, journal.size());
+        assertFalse(journal.isTruncated());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void refusesToSnapshotASectionWhenABlockEntityCannotBeCaptured() {
+        ChunkPos chunkPos = new ChunkPos(2, -3);
+        BlockPos blockEntityPos = new BlockPos(33, 66, -45);
+        LevelChunk chunk = mock(LevelChunk.class);
+        BlockEntity blockEntity = mock(BlockEntity.class);
+        when(chunk.getPos()).thenReturn(chunkPos);
+        when(chunk.getBlockEntities()).thenReturn(java.util.Map.of(blockEntityPos, blockEntity));
+        when(blockEntity.getBlockPos()).thenReturn(blockEntityPos);
+        when(blockEntity.saveWithFullMetadata(any())).thenThrow(new RuntimeException("capture failed"));
+        PalettedContainer<BlockState> states = new PalettedContainer<>(
+            Block.BLOCK_STATE_REGISTRY,
+            Blocks.AIR.defaultBlockState(),
+            PalettedContainer.Strategy.SECTION_STATES
+        );
+        LevelChunkSection section = new LevelChunkSection(
+            states, mock(PalettedContainerRO.class)
+        );
+        BlockJournal journal = new BlockJournal();
+
+        assertFalse(journal.recordSection(this.level, chunk, 4, section));
+
+        assertEquals(0, journal.sectionCount());
+        assertFalse(journal.isTruncated());
     }
 
     @Test
@@ -99,6 +146,142 @@ class BlockJournalTest {
         BlockJournal loaded = BlockJournal.load(journal.save());
         assertEquals(1, loaded.sectionCount());
         assertEquals(1, loaded.size());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void sectionRollbackReplaysChangedBlocksThroughSetBlock() {
+        ChunkPos chunkPos = new ChunkPos(2, -3);
+        LevelChunk chunk = mock(LevelChunk.class);
+        when(chunk.getPos()).thenReturn(chunkPos);
+        when(chunk.getBlockEntities()).thenReturn(java.util.Map.of());
+        PalettedContainer<BlockState> snapshotStates = new PalettedContainer<>(
+            Block.BLOCK_STATE_REGISTRY,
+            Blocks.AIR.defaultBlockState(),
+            PalettedContainer.Strategy.SECTION_STATES
+        );
+        snapshotStates.set(1, 2, 3, Blocks.STONE.defaultBlockState());
+        LevelChunkSection snapshot = new LevelChunkSection(
+            snapshotStates, mock(PalettedContainerRO.class)
+        );
+        BlockJournal journal = new BlockJournal();
+        assertTrue(journal.recordSection(this.level, chunk, 4, snapshot));
+
+        PalettedContainer<BlockState> liveStates = new PalettedContainer<>(
+            Block.BLOCK_STATE_REGISTRY,
+            Blocks.AIR.defaultBlockState(),
+            PalettedContainer.Strategy.SECTION_STATES
+        );
+        LevelChunkSection live = sectionWithMockedBiomes(liveStates);
+        when(chunk.getSections()).thenReturn(new LevelChunkSection[]{live});
+        ServerChunkCache chunkSource = mock(ServerChunkCache.class);
+        when(chunkSource.getChunkNow(chunkPos.x, chunkPos.z)).thenReturn(chunk);
+        when(this.level.getChunkSource()).thenReturn(chunkSource);
+        when(this.level.getSectionIndexFromSectionY(4)).thenReturn(0);
+        when(this.level.setBlock(any(), any(), org.mockito.ArgumentMatchers.anyInt())).thenReturn(true);
+
+        journal.beginRollback();
+        BlockJournal.RollbackStep step = journal.rollbackNext(this.level, 4_096);
+
+        assertTrue(step.complete());
+        verify(this.level).setBlock(
+            new BlockPos(33, 66, -45),
+            Blocks.STONE.defaultBlockState(),
+            Block.UPDATE_ALL
+        );
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void sectionRollbackRestoresBlockEntityContents() {
+        ChunkPos chunkPos = new ChunkPos(2, -3);
+        BlockPos chestPos = new BlockPos(33, 66, -45);
+        LevelChunk chunk = mock(LevelChunk.class);
+        BlockEntity blockEntity = mock(BlockEntity.class);
+        CompoundTag saved = new CompoundTag();
+        saved.putString("id", "minecraft:chest");
+        when(chunk.getPos()).thenReturn(chunkPos);
+        when(chunk.getBlockEntities()).thenReturn(java.util.Map.of(chestPos, blockEntity));
+        when(blockEntity.getBlockPos()).thenReturn(chestPos);
+        when(blockEntity.saveWithFullMetadata(any())).thenReturn(saved);
+        PalettedContainer<BlockState> snapshotStates = new PalettedContainer<>(
+            Block.BLOCK_STATE_REGISTRY,
+            Blocks.AIR.defaultBlockState(),
+            PalettedContainer.Strategy.SECTION_STATES
+        );
+        snapshotStates.set(1, 2, 3, Blocks.CHEST.defaultBlockState());
+        LevelChunkSection snapshot = new LevelChunkSection(
+            snapshotStates, mock(PalettedContainerRO.class)
+        );
+        BlockJournal journal = new BlockJournal();
+        assertTrue(journal.recordSection(this.level, chunk, 4, snapshot));
+
+        PalettedContainer<BlockState> liveStates = new PalettedContainer<>(
+            Block.BLOCK_STATE_REGISTRY,
+            Blocks.AIR.defaultBlockState(),
+            PalettedContainer.Strategy.SECTION_STATES
+        );
+        LevelChunkSection live = sectionWithMockedBiomes(liveStates);
+        when(chunk.getSections()).thenReturn(new LevelChunkSection[]{live});
+        when(chunk.getBlockEntity(eq(chestPos), eq(LevelChunk.EntityCreationType.IMMEDIATE)))
+            .thenReturn(blockEntity);
+        ServerChunkCache chunkSource = mock(ServerChunkCache.class);
+        when(chunkSource.getChunkNow(chunkPos.x, chunkPos.z)).thenReturn(chunk);
+        when(this.level.getChunkSource()).thenReturn(chunkSource);
+        when(this.level.getSectionIndexFromSectionY(4)).thenReturn(0);
+        when(this.level.setBlock(any(), any(), org.mockito.ArgumentMatchers.anyInt())).thenReturn(true);
+
+        journal.beginRollback();
+        BlockJournal.RollbackStep step = journal.rollbackNext(this.level, 4_096);
+
+        assertTrue(step.complete());
+        verify(blockEntity).loadWithComponents(any(), any());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void keepsSectionRollbackPendingWhenAWriteFails() {
+        ChunkPos chunkPos = new ChunkPos(2, -3);
+        LevelChunk chunk = mock(LevelChunk.class);
+        when(chunk.getPos()).thenReturn(chunkPos);
+        when(chunk.getBlockEntities()).thenReturn(java.util.Map.of());
+        PalettedContainer<BlockState> snapshotStates = new PalettedContainer<>(
+            Block.BLOCK_STATE_REGISTRY,
+            Blocks.AIR.defaultBlockState(),
+            PalettedContainer.Strategy.SECTION_STATES
+        );
+        snapshotStates.set(1, 2, 3, Blocks.STONE.defaultBlockState());
+        LevelChunkSection snapshot = new LevelChunkSection(
+            snapshotStates, mock(PalettedContainerRO.class)
+        );
+        BlockJournal journal = new BlockJournal();
+        assertTrue(journal.recordSection(this.level, chunk, 4, snapshot));
+
+        PalettedContainer<BlockState> liveStates = new PalettedContainer<>(
+            Block.BLOCK_STATE_REGISTRY,
+            Blocks.AIR.defaultBlockState(),
+            PalettedContainer.Strategy.SECTION_STATES
+        );
+        LevelChunkSection live = sectionWithMockedBiomes(liveStates);
+        when(chunk.getSections()).thenReturn(new LevelChunkSection[]{live});
+        ServerChunkCache chunkSource = mock(ServerChunkCache.class);
+        when(chunkSource.getChunkNow(chunkPos.x, chunkPos.z)).thenReturn(chunk);
+        when(this.level.getChunkSource()).thenReturn(chunkSource);
+        when(this.level.getSectionIndexFromSectionY(4)).thenReturn(0);
+        when(this.level.setBlock(any(), any(), org.mockito.ArgumentMatchers.anyInt())).thenReturn(false);
+        when(this.level.getBlockState(any())).thenReturn(Blocks.AIR.defaultBlockState());
+
+        journal.beginRollback();
+        BlockJournal.RollbackStep failed = journal.rollbackNext(this.level, 4_096);
+
+        assertFalse(failed.complete());
+        assertEquals(1, failed.failed());
+        assertEquals(0, failed.advanced());
+
+        when(this.level.setBlock(any(), any(), org.mockito.ArgumentMatchers.anyInt())).thenReturn(true);
+        BlockJournal.RollbackStep retried = journal.rollbackNext(this.level, 4_096);
+
+        assertTrue(retried.complete());
     }
 
     @Test
@@ -522,6 +705,13 @@ class BlockJournalTest {
         tag.put("entries", new net.minecraft.nbt.ListTag());
 
         assertEquals(0, BlockJournal.load(tag).size());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static LevelChunkSection sectionWithMockedBiomes(PalettedContainer<BlockState> states) {
+        PalettedContainerRO<Holder<Biome>> biomes = mock(PalettedContainerRO.class);
+        when(biomes.recreate()).thenReturn(mock(PalettedContainer.class));
+        return new LevelChunkSection(states, biomes);
     }
 
     private BlockJournal journalWithEntry() {

@@ -3,6 +3,7 @@ package mafisher.quasar.effect.gameplay;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -10,6 +11,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.PriorityQueue;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
 import mafisher.quasar.effect.EffectBounds;
 import mafisher.quasar.effect.block.BlockChange;
 import net.minecraft.core.BlockPos;
@@ -20,6 +22,7 @@ import net.minecraft.nbt.NbtUtils;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
+import net.minecraft.world.entity.ai.village.poi.PoiTypes;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.LevelHeightAccessor;
 import net.minecraft.world.level.block.Block;
@@ -53,6 +56,7 @@ public final class EffectBulkBlockEditor {
     private static final int MAX_STALLED_TICKS = 200;
     /** Minimum normalized front advance before a column is revealed again. */
     private static final double REVEAL_STEP = 0.15;
+    private static final int[] NEIGHBOR_OFFSETS = {-1, 1, -16, 16, -256, 256};
     private static final Set<Block> INDESTRUCTIBLE = Set.of(
         Blocks.BEDROCK,
         Blocks.BARRIER,
@@ -558,61 +562,94 @@ public final class EffectBulkBlockEditor {
     }
 
     private void editSection(LevelChunk chunk, LevelChunkSection section, SectionKey key) {
-        boolean fullyInside = this.isFullyInside(key);
-        boolean protectedWorld = this.context.hasBlockProtection();
-        boolean atWorldFloor = key.sectionY() <= this.level.getMinSection();
-        boolean fastFullSection = fullyInside
-            && !atWorldFloor
-            && this.spec.replacement().isAir()
-            && !protectedWorld
-            && !section.maybeHas(state -> INDESTRUCTIBLE.contains(state.getBlock()));
-
-        int cleared;
-        int vetoed;
-        if (fastFullSection) {
-            cleared = this.countClearable(section);
-            if (cleared == 0) {
-                return;
-            }
-            this.recordSnapshot(chunk, section, key);
-            this.clearWholeSection(chunk, section, key);
-            vetoed = 0;
-        } else {
-            int[] counts = this.clearByBlock(
-                chunk,
-                section,
-                key,
-                fullyInside,
-                protectedWorld,
-                () -> this.recordSnapshot(chunk, section, key)
-            );
-            cleared = counts[0];
-            vetoed = counts[1];
-        }
-
-        if (cleared == 0 && vetoed == 0) {
+        BlockState[] previousStates = new BlockState[SECTION_BLOCKS];
+        SectionEdit edit = this.applySectionEdit(chunk, section, key, previousStates);
+        if (edit == null || (edit.cleared() == 0 && edit.vetoed() == 0)) {
             return;
         }
-        this.context.recordBulkSection(cleared, vetoed);
-        this.clearedBlocks += cleared;
-        if (cleared == 0) {
+        this.context.recordBulkSection(edit.cleared(), edit.vetoed());
+        this.clearedBlocks += edit.cleared();
+        if (edit.cleared() == 0) {
             return;
         }
 
-        if (this.spec.removeBlockEntities()) {
-            if (fastFullSection) {
+        if (this.spec.removeBlockEntities() && this.spec.replacement().isAir()) {
+            if (edit.fullSection()) {
                 removeAllBlockEntities(chunk, key.sectionY());
             } else {
                 removeBlockEntities(chunk, section, key);
             }
         }
-        this.markChunkEdited(chunk, key, fastFullSection || section.hasOnlyAir());
+        this.notifySectionChanges(chunk, edit.current(), key, previousStates);
+        this.markChunkEdited(chunk, key, edit.current().hasOnlyAir());
     }
 
-    private void recordSnapshot(LevelChunk chunk, LevelChunkSection section, SectionKey key) {
-        if (this.spec.journal()) {
-            this.context.blockJournal().recordSection(this.level, chunk, key.sectionY(), section);
+    private SectionEdit applySectionEdit(
+        LevelChunk chunk,
+        LevelChunkSection section,
+        SectionKey key,
+        BlockState[] previousStates
+    ) {
+        boolean protectedWorld = this.context.hasBlockProtection();
+        if (this.canClearWholeSection(section, key, protectedWorld)) {
+            return this.clearWholeSection(
+                chunk, section, key, previousStates
+            );
         }
+        int[] counts = this.clearByBlock(
+            chunk,
+            section,
+            key,
+            this.isFullyInside(key),
+            protectedWorld,
+            previousStates,
+            () -> this.recordSnapshot(chunk, section, key)
+        );
+        return new SectionEdit(counts[0], counts[1], section, false);
+    }
+
+    private boolean canClearWholeSection(
+        LevelChunkSection section,
+        SectionKey key,
+        boolean protectedWorld
+    ) {
+        return this.isFullyInside(key)
+            && key.sectionY() > this.level.getMinSection()
+            && this.spec.replacement().isAir()
+            && !protectedWorld
+            && !section.maybeHas(state -> INDESTRUCTIBLE.contains(state.getBlock()));
+    }
+
+    private SectionEdit clearWholeSection(
+        LevelChunk chunk,
+        LevelChunkSection section,
+        SectionKey key,
+        BlockState[] previousStates
+    ) {
+        int cleared = this.countClearable(section);
+        if (cleared == 0 || !this.recordSnapshot(chunk, section, key)) {
+            return null;
+        }
+        for (int index = 0; index < SECTION_BLOCKS; index++) {
+            BlockState state = section.getBlockState(
+                index & 15, (index >> 4) & 15, (index >> 8) & 15
+            );
+            if (!state.equals(this.spec.replacement())) {
+                previousStates[index] = state;
+            }
+        }
+        return new SectionEdit(cleared, 0, this.replaceWholeSection(chunk, section, key), true);
+    }
+
+    private boolean recordSnapshot(LevelChunk chunk, LevelChunkSection section, SectionKey key) {
+        if (!this.spec.journal()) {
+            return true;
+        }
+        boolean recorded = this.context.blockJournal().recordSection(
+            this.level, chunk, key.sectionY(), section
+        );
+        // A full journal keeps applying edits without rollback; an unreadable block entity does not.
+        return recorded || this.context.blockJournal().isTruncated();
     }
 
     /** Counts blocks a whole-section replacement would clear without touching the world. */
@@ -631,7 +668,11 @@ public final class EffectBulkBlockEditor {
      * Replaces a fully covered section with one air-filled section in one operation. This keeps
      * large author scales practical without writing 4096 block states on the server thread.
      */
-    private void clearWholeSection(LevelChunk chunk, LevelChunkSection section, SectionKey key) {
+    private LevelChunkSection replaceWholeSection(
+        LevelChunk chunk,
+        LevelChunkSection section,
+        SectionKey key
+    ) {
         int sectionArrayIndex = this.level.getSectionIndexFromSectionY(key.sectionY());
         PalettedContainer<BlockState> states = new PalettedContainer<>(
             Block.BLOCK_STATE_REGISTRY,
@@ -640,6 +681,28 @@ public final class EffectBulkBlockEditor {
         );
         LevelChunkSection replacement = new LevelChunkSection(states, section.getBiomes());
         chunk.getSections()[sectionArrayIndex] = replacement;
+        return replacement;
+    }
+
+    private boolean shouldSkipBlock(
+        BlockState current,
+        int worldX,
+        int worldY,
+        int worldZ,
+        boolean fullyInside
+    ) {
+        if (worldY <= this.level.getMinBuildHeight()) {
+            // Keep the bottom layer so a large carve never opens a see-through void floor.
+            return true;
+        }
+        if (!fullyInside && !this.spec.volume().contains(
+            worldX + 0.5, worldY + 0.5, worldZ + 0.5
+        )) {
+            return true;
+        }
+        return current.isAir()
+            || current.equals(this.spec.replacement())
+            || INDESTRUCTIBLE.contains(current.getBlock());
     }
 
     private int[] clearByBlock(
@@ -648,11 +711,13 @@ public final class EffectBulkBlockEditor {
         SectionKey key,
         boolean fullyInside,
         boolean protectedWorld,
-        Runnable beforeFirstWrite
+        BlockState[] previousStates,
+        BooleanSupplier beforeFirstWrite
     ) {
         int cleared = 0;
-        int vetoed = 0;
+        int[] vetoed = {0};
         boolean snapshotRecorded = false;
+        boolean useWorldWrite = !this.spec.replacement().isAir();
         int baseX = key.sectionX() << 4;
         int baseY = key.sectionY() << 4;
         int baseZ = key.sectionZ() << 4;
@@ -664,34 +729,126 @@ public final class EffectBulkBlockEditor {
             int worldX = baseX + localX;
             int worldY = baseY + localY;
             int worldZ = baseZ + localZ;
-            if (worldY <= this.level.getMinBuildHeight()) {
-                // Keep the bottom layer so a large carve never opens a see-through void floor.
-                continue;
-            }
-            if (!fullyInside && !this.spec.volume().contains(
-                worldX + 0.5, worldY + 0.5, worldZ + 0.5
-            )) {
-                continue;
-            }
             BlockState current = section.getBlockState(localX, localY, localZ);
-            if (current.isAir()
-                || current.equals(this.spec.replacement())
-                || INDESTRUCTIBLE.contains(current.getBlock())) {
+            if (this.shouldSkipBlock(current, worldX, worldY, worldZ, fullyInside)) {
                 continue;
             }
             if (protectedWorld && !this.allows(worldX, worldY, worldZ, current)) {
-                vetoed++;
+                vetoed[0]++;
                 continue;
             }
-            if (!snapshotRecorded) {
-                beforeFirstWrite.run();
-                snapshotRecorded = true;
+            if (!snapshotRecorded && !beforeFirstWrite.getAsBoolean()) {
+                return new int[]{cleared, vetoed[0]};
             }
+            snapshotRecorded = true;
             this.addClearedState(current);
-            section.setBlockState(localX, localY, localZ, this.spec.replacement(), false);
+            if (useWorldWrite && !this.replaceThroughWorld(worldX, worldY, worldZ, vetoed)) {
+                continue;
+            }
+            if (!useWorldWrite) {
+                section.setBlockState(localX, localY, localZ, this.spec.replacement(), false);
+            }
+            previousStates[index] = current;
             cleared++;
         }
-        return new int[]{cleared, vetoed};
+        return new int[]{cleared, vetoed[0]};
+    }
+
+    private boolean replaceThroughWorld(int worldX, int worldY, int worldZ, int[] vetoed) {
+        BlockPos position = new BlockPos(worldX, worldY, worldZ);
+        try {
+            if (this.level.setBlock(position, this.spec.replacement(), Block.UPDATE_ALL)) {
+                return true;
+            }
+            if (this.spec.replacement().equals(this.level.getBlockState(position))) {
+                return false;
+            }
+        } catch (RuntimeException exception) {
+            LOGGER.warn("Could not replace the block at {} during a bulk edit", position, exception);
+        }
+        vetoed[0]++;
+        return false;
+    }
+
+    /**
+     * Replays the world-facing side effects that a palette fast path skips: stale block entities,
+     * POI registration, and neighbor notifications for changes that touch an unchanged block.
+     */
+    private void notifySectionChanges(
+        LevelChunk chunk,
+        LevelChunkSection current,
+        SectionKey key,
+        BlockState[] previousStates
+    ) {
+        removeGhostBlockEntities(chunk, key.sectionY());
+        Set<BlockState> poiStates = new HashSet<>();
+        current.getStates().count((state, count) -> {
+            if (PoiTypes.forState(state).isPresent()) {
+                poiStates.add(state);
+            }
+        });
+        for (BlockState previous : previousStates) {
+            if (previous != null && PoiTypes.forState(previous).isPresent()) {
+                poiStates.add(previous);
+            }
+        }
+
+        int baseX = key.sectionX() << 4;
+        int baseY = key.sectionY() << 4;
+        int baseZ = key.sectionZ() << 4;
+        for (int index = 0; index < SECTION_BLOCKS; index++) {
+            BlockState previous = previousStates[index];
+            if (previous == null) {
+                continue;
+            }
+            int localX = index & 15;
+            int localY = (index >> 4) & 15;
+            int localZ = (index >> 8) & 15;
+            BlockPos position = new BlockPos(baseX + localX, baseY + localY, baseZ + localZ);
+            BlockState updated = current.getBlockState(localX, localY, localZ);
+            if (poiStates.contains(previous) || poiStates.contains(updated)) {
+                this.level.onBlockStateChange(position, previous, updated);
+            }
+            if (hasUnchangedNeighbor(previousStates, localX, localY, localZ)) {
+                this.level.updateNeighborsAt(position, previous.getBlock());
+            }
+        }
+    }
+
+    private static boolean hasUnchangedNeighbor(
+        BlockState[] previousStates,
+        int localX,
+        int localY,
+        int localZ
+    ) {
+        if (localX == 0 || localX == 15) {
+            return true;
+        }
+        if (localY == 0 || localY == 15) {
+            return true;
+        }
+        if (localZ == 0 || localZ == 15) {
+            return true;
+        }
+        int index = localX | (localY << 4) | (localZ << 8);
+        for (int offset : NEIGHBOR_OFFSETS) {
+            if (previousStates[index + offset] == null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void removeGhostBlockEntities(LevelChunk chunk, int sectionY) {
+        for (BlockEntity blockEntity : new ArrayList<>(chunk.getBlockEntities().values())) {
+            BlockPos position = blockEntity.getBlockPos();
+            if (SectionPos.blockToSectionCoord(position.getY()) != sectionY) {
+                continue;
+            }
+            if (!chunk.getBlockState(position).hasBlockEntity()) {
+                chunk.removeBlockEntity(position);
+            }
+        }
     }
 
     private void addClearedState(BlockState state) {
@@ -997,6 +1154,14 @@ public final class EffectBulkBlockEditor {
             chunks.add(new ChunkPos(key.sectionX(), key.sectionZ()));
         }
         return chunks;
+    }
+
+    private record SectionEdit(
+        int cleared,
+        int vetoed,
+        LevelChunkSection current,
+        boolean fullSection
+    ) {
     }
 
     private record SectionEntry(
