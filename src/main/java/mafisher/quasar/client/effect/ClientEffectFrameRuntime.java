@@ -2,6 +2,7 @@ package mafisher.quasar.client.effect;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Consumer;
 import mafisher.quasar.compat.CompatRegistry;
 import mafisher.quasar.compat.RegisterCompatProvidersEvent;
 import mafisher.quasar.compat.RenderEnvironment;
@@ -29,6 +30,9 @@ import net.neoforged.neoforge.common.NeoForge;
  */
 final class ClientEffectFrameRuntime {
     private static final Object INIT_LOCK = new Object();
+    private static final Consumer<Runnable> DEFAULT_RELOAD_DISPATCHER = task -> Minecraft.getInstance().execute(task);
+    /** Package-private seam so reload dispatch can be verified without a live client. */
+    static volatile Consumer<Runnable> reloadDispatcher = DEFAULT_RELOAD_DISPATCHER;
     private static volatile ClientVisualEffectManager manager;
     private static volatile ClientScreenCompositor screenCompositor;
 
@@ -200,6 +204,10 @@ final class ClientEffectFrameRuntime {
     }
 
     static void onResourceReload(ResourceManager resourceManager) {
+        reloadDispatcher.accept(() -> applyResourceReload(resourceManager));
+    }
+
+    private static void applyResourceReload(ResourceManager resourceManager) {
         ClientVisualEffectManager current = manager;
         if (current != null) {
             current.onResourceReload(resourceManager);
