@@ -88,6 +88,7 @@ public final class BlockRollbackService {
                 effectId,
                 exception
             );
+            journal.releaseLoadTickets(level);
             tasks.remove(effectId);
             return remaining;
         }
@@ -103,6 +104,8 @@ public final class BlockRollbackService {
                 step.restored(),
                 step.conflicts()
             );
+        } else if (step.waiting() > 0) {
+            LOGGER.debug("Block rollback for {} is waiting for a chunk load; it will retry", effectId);
         } else if (step.failed() > 0) {
             LOGGER.debug("Block rollback for {} did not advance; it will retry", effectId);
         }
@@ -112,7 +115,12 @@ public final class BlockRollbackService {
     /** Drops in-memory tasks for a level; journals remain in save data for the next load. */
     public static void clear(ServerLevel level) {
         Objects.requireNonNull(level, "level");
-        TASKS.remove(level);
+        Map<UUID, BlockJournal> tasks = TASKS.remove(level);
+        if (tasks != null) {
+            for (BlockJournal journal : tasks.values()) {
+                journal.releaseLoadTickets(level);
+            }
+        }
     }
 
     public static int activeCount(ServerLevel level) {

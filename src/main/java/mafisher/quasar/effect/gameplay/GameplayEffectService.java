@@ -449,7 +449,10 @@ public final class GameplayEffectService {
         TerrainEditService.beginTick(level);
         GameplayState state = STATE.peek(level);
         Map<UUID, ActiveSession> sessions = state == null ? null : state.sessions;
-        int remainingBlockChanges = blockChangeBudget;
+        int rollbackReserve = rollbackReserve(
+            blockChangeBudget, BlockRollbackService.activeCount(level)
+        );
+        int remainingBlockChanges = blockChangeBudget - rollbackReserve;
         if (sessions != null && !sessions.isEmpty()) {
             for (ActiveSession session : new ArrayList<>(sessions.values())) {
                 if (sessions.containsKey(session.id)) {
@@ -457,10 +460,21 @@ public final class GameplayEffectService {
                 }
             }
         }
-        BlockRollbackService.tick(level, remainingBlockChanges);
+        BlockRollbackService.tick(level, remainingBlockChanges + rollbackReserve);
         TerrainEditService.tick(level);
         drainPending(level);
         cleanupIfEmpty(level, state);
+    }
+
+    /**
+     * Reserves a small share of the block budget for pending rollbacks so live sessions cannot
+     * starve them forever when they consume the whole level tick allowance.
+     */
+    static int rollbackReserve(int blockChangeBudget, int activeRollbacks) {
+        if (blockChangeBudget <= 0 || activeRollbacks <= 0) {
+            return 0;
+        }
+        return Math.max(1, blockChangeBudget / 4);
     }
 
     private static int tickSession(ServerLevel level, ActiveSession session, int remainingBlockChanges) {

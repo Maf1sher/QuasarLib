@@ -2,6 +2,7 @@ package mafisher.quasar.effect.persistence;
 
 import io.netty.buffer.Unpooled;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
@@ -20,6 +21,7 @@ import net.minecraft.nbt.NbtUtils;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.TicketType;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -32,8 +34,8 @@ import org.slf4j.LoggerFactory;
 /**
  * Engine-managed journal of applied block changes for one gameplay effect. Entries are recorded
  * before the world write, rolled back in reverse order, and persisted with the level effect store.
- * Rollback advances its cursors only after a successful restore; invalid or newer journals fail
- * closed instead of replaying restored snapshots.
+ * Rollback loads chunks through tickets, advances its cursors only after a successful restore, and
+ * fails closed on invalid or newer journals instead of replaying restored snapshots.
  */
 public final class BlockJournal {
     static final int SCHEMA_VERSION = 1;
@@ -42,10 +44,14 @@ public final class BlockJournal {
     private static final int SECTION_BLOCK_COST = 4_096;
     private static final String POSITION_KEY = "quasar_pos";
     private static final String SCHEMA_KEY = "journal_schema";
+    private static final TicketType<ChunkPos> ROLLBACK_TICKET = TicketType.create(
+        "quasar_block_rollback", Comparator.comparingLong(ChunkPos::toLong)
+    );
 
     private final List<Entry> entries = new ArrayList<>();
     private final List<SectionEntry> sections = new ArrayList<>();
     private final Set<Long> recordedSections = new HashSet<>();
+    private final Set<ChunkPos> loadTickets = new HashSet<>();
     private final int maxEntriesOverride;
     private final int maxSectionsOverride;
     private int cursor;
@@ -54,6 +60,7 @@ public final class BlockJournal {
     private boolean truncated;
     private boolean dirty;
     private boolean failureLogged;
+    private boolean loadWaitLogged;
 
     public BlockJournal() {
         this(-1, -1);
@@ -244,24 +251,45 @@ public final class BlockJournal {
         if (!this.rollbackPending) {
             this.beginRollback();
         }
+        if (maxChanges == 0) {
+            boolean complete = this.cursor == 0 && this.sectionCursor == 0;
+            if (complete) {
+                releaseLoadTickets(level);
+            }
+            return new RollbackStep(0, 0, 0, 0, 0, complete, 0);
+        }
 
+        releaseTicketsExceptCurrentCursor(level);
         int processed = 0;
         int advanced = 0;
         int restored = 0;
         int conflicts = 0;
         while (this.sectionCursor > 0) {
             SectionEntry entry = this.sections.get(this.sectionCursor - 1);
-            int cost = SECTION_BLOCK_COST;
+            // A section restore is one bulk operation. Charging the full block count could exceed
+            // a small block budget and stall rollback forever, so one section always fits a tick.
+            int cost = sectionCost(maxChanges);
             if (processed + cost > maxChanges) {
                 if (processed == 0) {
-                    return new RollbackStep(0, 0, 0, 0, 0, false);
+                    return new RollbackStep(0, 0, 0, 0, 0, false, 0);
                 }
                 break;
+            }
+            LevelChunk chunk;
+            try {
+                chunk = level.getChunkSource().getChunkNow(entry.pos().x, entry.pos().z);
+            } catch (RuntimeException exception) {
+                logRollbackFailure("Could not inspect a chunk for section rollback at {}", entry.pos(), exception);
+                return failedStep(processed, advanced, restored, conflicts);
+            }
+            if (chunk == null) {
+                requestChunkLoad(level, entry.pos());
+                return waitingStep(processed, advanced, restored, conflicts);
             }
             processed += cost;
             boolean sectionRestored;
             try {
-                sectionRestored = restoreSection(level, entry);
+                sectionRestored = restoreSection(level, chunk, entry);
             } catch (RuntimeException exception) {
                 logRollbackFailure("Could not restore a section snapshot at {}", entry.pos(), exception);
                 return failedStep(processed, advanced, restored, conflicts);
@@ -276,16 +304,18 @@ public final class BlockJournal {
         }
         while (processed < maxChanges && this.cursor > 0) {
             Entry entry = this.entries.get(this.cursor - 1);
-            processed++;
-
+            boolean chunkLoaded;
             try {
-                if (!level.hasChunkAt(entry.position)) {
-                    level.getChunkAt(entry.position);
-                }
+                chunkLoaded = level.hasChunkAt(entry.position);
             } catch (RuntimeException exception) {
-                logRollbackFailure("Could not load a chunk for block rollback at {}", entry.position, exception);
+                logRollbackFailure("Could not inspect a chunk for block rollback at {}", entry.position, exception);
                 return failedStep(processed, advanced, restored, conflicts);
             }
+            if (!chunkLoaded) {
+                requestChunkLoad(level, new ChunkPos(entry.position));
+                return waitingStep(processed, advanced, restored, conflicts);
+            }
+            processed++;
 
             BlockState currentState;
             try {
@@ -320,12 +350,81 @@ public final class BlockJournal {
 
         this.dirty = this.dirty || advanced > 0;
         boolean complete = this.cursor == 0 && this.sectionCursor == 0;
-        return new RollbackStep(processed, advanced, restored, conflicts, 0, complete);
+        if (complete) {
+            releaseLoadTickets(level);
+        }
+        return new RollbackStep(processed, advanced, restored, conflicts, 0, complete, 0);
+    }
+
+    /** One section still fits any positive block budget; a zero budget does no work. */
+    static int sectionCost(int maxChanges) {
+        return Math.min(SECTION_BLOCK_COST, Math.max(1, maxChanges));
     }
 
     private RollbackStep failedStep(int processed, int advanced, int restored, int conflicts) {
         this.dirty = this.dirty || advanced > 0;
-        return new RollbackStep(processed, advanced, restored, conflicts, 1, false);
+        return new RollbackStep(processed, advanced, restored, conflicts, 1, false, 0);
+    }
+
+    private RollbackStep waitingStep(int processed, int advanced, int restored, int conflicts) {
+        this.dirty = this.dirty || advanced > 0;
+        return new RollbackStep(processed, advanced, restored, conflicts, 0, false, 1);
+    }
+
+    private void requestChunkLoad(ServerLevel level, ChunkPos chunk) {
+        if (!this.loadTickets.add(chunk)) {
+            return;
+        }
+        try {
+            level.getChunkSource().addRegionTicket(ROLLBACK_TICKET, chunk, 0, chunk);
+        } catch (RuntimeException exception) {
+            this.loadTickets.remove(chunk);
+            LOGGER.warn("Could not request a chunk load for block rollback at {}", chunk, exception);
+            return;
+        }
+        if (!this.loadWaitLogged) {
+            this.loadWaitLogged = true;
+            LOGGER.warn("Block rollback is waiting for chunk {} to load", chunk);
+        }
+    }
+
+    private void releaseTicketsExceptCurrentCursor(ServerLevel level) {
+        ChunkPos keep = currentCursorChunk();
+        if (this.loadTickets.isEmpty()) {
+            return;
+        }
+        for (ChunkPos chunk : new ArrayList<>(this.loadTickets)) {
+            if (!chunk.equals(keep)) {
+                releaseChunkLoad(level, chunk);
+            }
+        }
+    }
+
+    private ChunkPos currentCursorChunk() {
+        if (this.sectionCursor > 0) {
+            return this.sections.get(this.sectionCursor - 1).pos();
+        }
+        if (this.cursor > 0) {
+            return new ChunkPos(this.entries.get(this.cursor - 1).position);
+        }
+        return null;
+    }
+
+    /** Releases tickets held while rollback waited for chunk loads. */
+    void releaseLoadTickets(ServerLevel level) {
+        for (ChunkPos chunk : new ArrayList<>(this.loadTickets)) {
+            releaseChunkLoad(level, chunk);
+        }
+        this.loadWaitLogged = false;
+    }
+
+    private void releaseChunkLoad(ServerLevel level, ChunkPos chunk) {
+        this.loadTickets.remove(chunk);
+        try {
+            level.getChunkSource().removeRegionTicket(ROLLBACK_TICKET, chunk, 0, chunk);
+        } catch (RuntimeException exception) {
+            LOGGER.debug("Could not release a rollback chunk ticket for {}", chunk, exception);
+        }
     }
 
     private void logRollbackFailure(String message, Object... arguments) {
@@ -384,14 +483,7 @@ public final class BlockJournal {
         }
     }
 
-    private boolean restoreSection(ServerLevel level, SectionEntry entry) {
-        LevelChunk chunk;
-        try {
-            chunk = level.getChunk(entry.pos().x, entry.pos().z);
-        } catch (RuntimeException exception) {
-            logRollbackFailure("Could not load a chunk for section rollback at {}", entry.pos(), exception);
-            return false;
-        }
+    private boolean restoreSection(ServerLevel level, LevelChunk chunk, SectionEntry entry) {
         int index = level.getSectionIndexFromSectionY(entry.sectionY());
         LevelChunkSection[] target = chunk.getSections();
         if (index < 0 || index >= target.length) {
@@ -617,15 +709,27 @@ public final class BlockJournal {
         }
     }
 
-    /** One budgeted rollback step; {@code advanced} retires work and {@code failed} asks for a retry. */
+    /**
+     * One budgeted rollback step; {@code advanced} retires work, {@code failed} asks for a retry,
+     * and {@code waiting} reports a chunk load that has not finished yet.
+     */
     record RollbackStep(
         int processed,
         int advanced,
         int restored,
         int conflicts,
         int failed,
-        boolean complete
+        boolean complete,
+        int waiting
     ) {
+        RollbackStep {
+            if (processed < 0 || advanced < 0 || restored < 0) {
+                throw new IllegalArgumentException("Invalid block rollback step");
+            }
+            if (conflicts < 0 || failed < 0 || waiting < 0) {
+                throw new IllegalArgumentException("Invalid block rollback step");
+            }
+        }
     }
 
     private record SectionEntry(

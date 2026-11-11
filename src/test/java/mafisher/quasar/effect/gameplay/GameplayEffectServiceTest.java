@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
@@ -142,6 +143,27 @@ class GameplayEffectServiceTest {
     }
 
     @Test
+    void runsContextCleanupWhenOnEndThrows() {
+        AtomicBoolean cleaned = new AtomicBoolean();
+        GameplayEffectHandle handle = start(
+            OWNER, OwnerPolicy.CONTINUE, new ThrowingEndController(cleaned)
+        );
+
+        GameplayEffectService.stop(this.level, handle, GameplayEffectEndReason.CANCELLED);
+
+        assertTrue(cleaned.get());
+        assertEquals(0, GameplayEffectService.activeCount(this.level));
+    }
+
+    @Test
+    void reservesPartOfTheBlockBudgetForRollback() {
+        assertEquals(0, GameplayEffectService.rollbackReserve(0, 1));
+        assertEquals(0, GameplayEffectService.rollbackReserve(8, 0));
+        assertEquals(1, GameplayEffectService.rollbackReserve(1, 1));
+        assertEquals(2, GameplayEffectService.rollbackReserve(8, 1));
+    }
+
+    @Test
     void continuePolicyKeepsTheSessionAfterOwnerLoss() {
         start(OWNER, OwnerPolicy.CONTINUE, new RecordingController());
         when(this.level.getEntity(OWNER)).thenReturn(null);
@@ -175,7 +197,7 @@ class GameplayEffectServiceTest {
         assertEquals(GameplayEffectEndReason.SERVER_STOPPING, controller.endReason);
     }
 
-    private GameplayEffectHandle start(UUID owner, OwnerPolicy policy, RecordingController controller) {
+    private GameplayEffectHandle start(UUID owner, OwnerPolicy policy, GameplayEffectController controller) {
         return GameplayEffectService.start(this.level, spec(owner, policy), controller);
     }
 
@@ -189,6 +211,28 @@ class GameplayEffectServiceTest {
             new EffectTickBudget(0, 0, 0),
             policy
         );
+    }
+
+    private static final class ThrowingEndController implements GameplayEffectController {
+        private final AtomicBoolean cleaned;
+
+        private ThrowingEndController(AtomicBoolean cleaned) {
+            this.cleaned = cleaned;
+        }
+
+        @Override
+        public void onStart(GameplayEffectContext context) {
+            context.onClose(() -> this.cleaned.set(true));
+        }
+
+        @Override
+        public void onTick(GameplayEffectContext context) {
+        }
+
+        @Override
+        public void onEnd(GameplayEffectContext context, GameplayEffectEndReason reason) {
+            throw new RuntimeException("onEnd failure");
+        }
     }
 
     private static final class RecordingController implements GameplayEffectController {

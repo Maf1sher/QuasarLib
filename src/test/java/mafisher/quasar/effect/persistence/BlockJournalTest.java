@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -15,6 +16,7 @@ import static org.mockito.Mockito.when;
 import mafisher.quasar.effect.block.BlockChange;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Block;
@@ -167,21 +169,32 @@ class BlockJournalTest {
     }
 
     @Test
-    void loadsUnloadedChunksBeforeRollback() {
+    void requestsAChunkTicketInsteadOfLoadingAnUnloadedChunk() {
         BlockJournal journal = new BlockJournal();
         BlockPos position = new BlockPos(6, 64, 7);
+        ChunkPos chunk = new ChunkPos(position);
         BlockState newState = Blocks.AIR.defaultBlockState();
+        ServerChunkCache chunkSource = mock(ServerChunkCache.class);
+        when(this.level.getChunkSource()).thenReturn(chunkSource);
+        when(this.level.hasChunkAt(position)).thenReturn(false);
         journal.record(this.level, new BlockChange(position, newState), Blocks.STONE.defaultBlockState());
         journal.beginRollback();
-        when(this.level.hasChunkAt(position)).thenReturn(false);
-        when(this.level.getChunkAt(position)).thenReturn(
-            mock(net.minecraft.world.level.chunk.LevelChunk.class)
-        );
+
+        BlockJournal.RollbackStep step = journal.rollbackNext(this.level, 1);
+
+        assertEquals(0, step.processed());
+        assertEquals(1, step.waiting());
+        assertFalse(step.complete());
+        verify(chunkSource).addRegionTicket(any(), eq(chunk), eq(0), eq(chunk));
+        verify(this.level, never()).getChunkAt(any());
+
+        when(this.level.hasChunkAt(position)).thenReturn(true);
         when(this.level.getBlockState(position)).thenReturn(newState);
+        step = journal.rollbackNext(this.level, 1);
 
-        journal.rollbackNext(this.level, 1);
-
-        verify(this.level).getChunkAt(position);
+        assertTrue(step.complete());
+        verify(this.level).setBlockAndUpdate(position, Blocks.STONE.defaultBlockState());
+        verify(chunkSource).removeRegionTicket(any(), eq(chunk), eq(0), eq(chunk));
     }
 
     @Test
@@ -189,13 +202,12 @@ class BlockJournalTest {
         BlockJournal journal = journalWithEntry();
         journal.beginRollback();
         when(this.level.hasChunkAt(POSITION)).thenReturn(false);
-        when(this.level.getChunkAt(POSITION)).thenThrow(new RuntimeException("unloaded"));
 
         BlockJournal.RollbackStep step = journal.rollbackNext(this.level, 1);
 
-        assertEquals(1, step.processed());
+        assertEquals(0, step.processed());
         assertEquals(0, step.advanced());
-        assertEquals(1, step.failed());
+        assertEquals(1, step.waiting());
         assertFalse(step.complete());
         verify(this.level, never()).setBlockAndUpdate(any(), any());
 
@@ -274,9 +286,10 @@ class BlockJournalTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void keepsTheSectionPendingWhenTheChunkCannotLoad() {
+    void keepsTheSectionPendingUntilItsChunkLoads() {
+        ChunkPos chunkPos = new ChunkPos(2, -3);
         LevelChunk chunk = mock(LevelChunk.class);
-        when(chunk.getPos()).thenReturn(new ChunkPos(2, -3));
+        when(chunk.getPos()).thenReturn(chunkPos);
         when(chunk.getBlockEntities()).thenReturn(java.util.Map.of());
         PalettedContainer<BlockState> states = new PalettedContainer<>(
             Block.BLOCK_STATE_REGISTRY,
@@ -286,23 +299,36 @@ class BlockJournalTest {
         LevelChunkSection section = new LevelChunkSection(
             states, mock(PalettedContainerRO.class)
         );
+        ServerChunkCache chunkSource = mock(ServerChunkCache.class);
+        when(this.level.getChunkSource()).thenReturn(chunkSource);
 
         BlockJournal journal = new BlockJournal();
         assertTrue(journal.recordSection(this.level, chunk, 4, section));
         journal.beginRollback();
-        when(this.level.getChunk(2, -3)).thenThrow(new RuntimeException("unloaded"));
+        when(chunkSource.getChunkNow(chunkPos.x, chunkPos.z)).thenReturn(null);
 
-        BlockJournal.RollbackStep step = journal.rollbackNext(this.level, 4_096);
+        BlockJournal.RollbackStep step = journal.rollbackNext(this.level, 1);
 
-        assertEquals(4_096, step.processed());
-        assertEquals(0, step.advanced());
+        assertEquals(0, step.processed());
+        assertEquals(1, step.waiting());
+        assertFalse(step.complete());
+        verify(chunkSource).addRegionTicket(any(), eq(chunkPos), eq(0), eq(chunkPos));
+
+        when(chunkSource.getChunkNow(chunkPos.x, chunkPos.z)).thenReturn(chunk);
+        when(chunk.getSections()).thenReturn(new LevelChunkSection[0]);
+        step = journal.rollbackNext(this.level, 1);
+
+        assertFalse(step.complete());
+        assertEquals(1, step.processed());
         assertEquals(1, step.failed());
-        assertFalse(step.complete());
+    }
 
-        step = journal.rollbackNext(this.level, 4_096);
-
-        assertFalse(step.complete());
-        verify(this.level, times(2)).getChunk(2, -3);
+    @Test
+    void chargesOneSectionWithinABudgetBelowTheSectionCost() {
+        assertEquals(1, BlockJournal.sectionCost(1));
+        assertEquals(100, BlockJournal.sectionCost(100));
+        assertEquals(4_096, BlockJournal.sectionCost(4_096));
+        assertEquals(4_096, BlockJournal.sectionCost(16_384));
     }
 
     @Test
