@@ -320,7 +320,7 @@ final class ClientEffectDebris {
                     x = position.x;
                     y = position.y;
                     z = position.z;
-                    scale *= (float)(0.35 + 0.65 * (1.0 - progress));
+                    scale *= (float)infallScale(progress);
                 } else {
                     x = piece.position().x + piece.velocity().x * age;
                     y = piece.position().y + piece.velocity().y * age
@@ -365,6 +365,18 @@ final class ClientEffectDebris {
             }
         }
         buffers.endBatch(DEBRIS_RENDER_TYPE);
+    }
+
+    /**
+     * Keeps a piece block-sized for most of the fall, then shrinks it in the last stretch so it
+     * reads as a whole block entering the core instead of a shard that erodes over the whole trip.
+     */
+    private static double infallScale(double progress) {
+        double tail = 1.0 - Math.max(0.0, Math.min(1.0, progress));
+        if (tail >= 0.20) {
+            return 1.0;
+        }
+        return 0.15 + 0.85 * (tail / 0.20);
     }
 
     private static void emitCube(

@@ -125,7 +125,8 @@ public record EffectDebrisSpec(
     }
 
     /**
-     * A curved field burst: pieces start in {@code spawn} and spiral into the attractor horizon.
+     * A curved field burst: pieces start in {@code spawn} and fall into the attractor horizon.
+     * With {@code attractor.swirl() == 0} every piece travels in a straight radial line.
      * The server emits a few of these per second instead of one payload per destroyed block.
      */
     public static EffectDebrisSpec infallField(

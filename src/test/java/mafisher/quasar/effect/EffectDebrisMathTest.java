@@ -20,6 +20,27 @@ class EffectDebrisMathTest {
     }
 
     @Test
+    void straightFallStaysOnTheRadialLine() {
+        EffectDebrisAttractor attractor = new EffectDebrisAttractor(
+            new Vec3(1.0, 2.0, 3.0), new Vec3(0.0, 1.0, 0.0), 2.0, 1.35, 0.0
+        );
+        Vec3 start = new Vec3(11.0, 7.0, 1.0);
+        Vec3 radial = start.subtract(attractor.center()).normalize();
+
+        double previous = Double.MAX_VALUE;
+        for (int step = 0; step <= 20; step++) {
+            Vec3 position = EffectDebrisMath.infallPosition(
+                start, attractor, step / 20.0
+            );
+            Vec3 offset = position.subtract(attractor.center());
+            assertTrue(offset.normalize().dot(radial) > 1.0 - 1.0E-9, "step " + step);
+            assertTrue(offset.length() <= previous + 1.0E-9, "step " + step);
+            previous = offset.length();
+        }
+        assertEquals(2.0, previous, 1.0E-9);
+    }
+
+    @Test
     void rotationPreservesLengthAndMovestangentially() {
         Vec3 rotated = EffectDebrisMath.rotate(
             new Vec3(1.0, 0.0, 0.0), new Vec3(0.0, 1.0, 0.0), Math.PI / 2.0

@@ -10,9 +10,11 @@ record ContentBlackHoleGameplaySettings(
     int maxForceTargets,
     int tearRaysPerTick,
     int maxConsumeTargets,
-    int debrisPiecesPerBurst,
-    int surfaceBurstsPerTick,
-    int debrisLifetimeTicks,
+    int tearDebrisBurstsPerTick,
+    int tearDebrisPieces,
+    double debrisFallSpeed,
+    int debrisMaxLifetimeTicks,
+    float debrisPieceScale,
     boolean affectsCreativePlayers,
     float craterRadiusFactor,
     boolean craterJournal
@@ -26,9 +28,11 @@ record ContentBlackHoleGameplaySettings(
         128,
         64,
         64,
-        32,
-        2,
-        64,
+        6,
+        8,
+        1.0,
+        120,
+        8.0F,
         true,
         12.0F,
         true
@@ -45,9 +49,13 @@ record ContentBlackHoleGameplaySettings(
             || maxForceTargets < 1 || maxForceTargets > 4_096
             || tearRaysPerTick < 0 || tearRaysPerTick > 512
             || maxConsumeTargets < 1 || maxConsumeTargets > 4_096
-            || debrisPiecesPerBurst < 1 || debrisPiecesPerBurst > 64
-            || surfaceBurstsPerTick < 1 || surfaceBurstsPerTick > 32
-            || debrisLifetimeTicks < 1 || debrisLifetimeTicks > 200
+            || tearDebrisBurstsPerTick < 0 || tearDebrisBurstsPerTick > 16
+            || tearDebrisPieces < 1 || tearDebrisPieces > 64
+            || !Double.isFinite(debrisFallSpeed) || debrisFallSpeed < 0.1
+            || debrisFallSpeed > 4.0
+            || debrisMaxLifetimeTicks < 10 || debrisMaxLifetimeTicks > 200
+            || !Float.isFinite(debrisPieceScale) || debrisPieceScale < 1.0F
+            || debrisPieceScale > 8.0F
             || !Float.isFinite(craterRadiusFactor) || craterRadiusFactor < 1.0F
             || craterRadiusFactor > 32.0F) {
             throw new IllegalArgumentException("Invalid content black-hole gameplay settings");

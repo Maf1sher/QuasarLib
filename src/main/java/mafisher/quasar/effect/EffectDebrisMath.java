@@ -10,7 +10,9 @@ public final class EffectDebrisMath {
 
     /**
      * Returns the position of a piece at {@code progress} in {@code [0, 1]}. The piece starts at
-     * {@code start}, spirals around the attractor axis, and reaches the horizon at the end.
+     * {@code start}, follows the configured radial pull, and reaches the horizon at the end.
+     * With a zero swirl the path is a straight line to the attractor centre; positive or negative
+     * swirl adds turns around the axis.
      */
     public static Vec3 infallPosition(Vec3 start, EffectDebrisAttractor attractor, double progress) {
         Objects.requireNonNull(start, "start");
@@ -23,6 +25,9 @@ public final class EffectDebrisMath {
         }
         double eased = Math.pow(t, attractor.radialPull());
         double radius = startRadius + (attractor.horizonRadius() - startRadius) * eased;
+        if (attractor.swirl() == 0.0) {
+            return attractor.center().add(offset.scale(radius / startRadius));
+        }
         double angle = Math.PI * 2.0 * attractor.swirl() * t;
         Vec3 rotated = rotate(offset, attractor.axis(), angle);
         return attractor.center().add(rotated.scale(radius / startRadius));

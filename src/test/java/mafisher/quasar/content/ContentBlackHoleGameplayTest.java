@@ -1,12 +1,11 @@
 package mafisher.quasar.content;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectBudgets;
-import mafisher.quasar.effect.EffectDebrisSpawn;
+import mafisher.quasar.effect.EffectDebrisAttractor;
 import mafisher.quasar.effect.VisualEffectSpec;
 import mafisher.quasar.effect.gameplay.GameplayEffectSpec;
 import net.minecraft.resources.ResourceLocation;
@@ -50,47 +49,32 @@ class ContentBlackHoleGameplayTest {
     }
 
     @Test
-    void groundFrontProjectsAnElevatedCoreOntoTheSurface() {
-        assertEquals(72.0, ContentBlackHoleGameplayController.groundFrontRadius(
-            72.0, 72.0, 72.0, 64.0, 64.0
-        ), 1.0E-6);
-        double elevated = Math.sqrt(72.0 * 72.0 - 30.0 * 30.0);
-        assertEquals(elevated, ContentBlackHoleGameplayController.groundFrontRadius(
-            72.0, 72.0, 72.0, 94.0, 64.0
-        ), 1.0E-6);
-        assertEquals(elevated, ContentBlackHoleGameplayController.groundFrontRadius(
-            72.0, 72.0, 72.0, 34.0, 64.0
-        ), 1.0E-6);
-        assertEquals(0.0, ContentBlackHoleGameplayController.groundFrontRadius(
-            30.0, 72.0, 72.0, 200.0, 64.0
-        ), 1.0E-6);
-    }
-
-    @Test
     void tearSettingsAreValidated() {
         ContentBlackHoleGameplaySettings settings = ContentBlackHoleGameplaySettings.DEFAULT;
         assertEquals(64, settings.tearRaysPerTick());
+        assertEquals(6, settings.tearDebrisBurstsPerTick());
+        assertEquals(8, settings.tearDebrisPieces());
     }
 
     @Test
-    void debrisDiskRadiiStayOrderedAtTheOpeningBeat() {
-        ContentBlackHoleGameplaySettings settings = ContentBlackHoleGameplaySettings.DEFAULT;
-        for (float scale : new float[]{2.0F, 5.0F, 6.0F, 12.0F, 64.0F}) {
-            double coreRadius = settings.coreRadius(scale);
-            double craterRadius = settings.craterRadius(scale);
-            double inflowRadius = Math.min(
-                1_024.0, Math.max(coreRadius, settings.attractionRadius(scale) * 0.9)
-            );
-            double groundRadius = Math.min(inflowRadius, craterRadius);
-            double innerRadius = ContentBlackHoleGameplayController.debrisDiskInnerRadius(
-                coreRadius, groundRadius
-            );
+    void debrisAttractorFallsStraightIntoTheCore() {
+        EffectDebrisAttractor attractor = ContentBlackHoleDebris.attractor(
+            new Vec3(10.0, 64.0, -20.0), new Vec3(0.0, 1.0, 0.0), 6.0
+        );
 
-            assertTrue(innerRadius <= groundRadius, "scale " + scale);
-            assertDoesNotThrow(() -> new EffectDebrisSpawn.Disk(
-                new Vec3(0.0, 64.0, 0.0), innerRadius, groundRadius, 5.0
-            ));
-        }
+        assertEquals(0.0, attractor.swirl(), 0.0);
+        assertEquals(ContentBlackHoleDebris.RADIAL_PULL, attractor.radialPull(), 0.0);
+        assertEquals(6.0, attractor.horizonRadius(), 0.0);
+    }
+
+    @Test
+    void debrisLifetimeKeepsTheFallReadable() {
+        assertEquals(64, ContentBlackHoleDebris.lifetimeTicks(64.0, 1.0, 120));
+        assertEquals(ContentBlackHoleDebris.MIN_LIFETIME_TICKS,
+            ContentBlackHoleDebris.lifetimeTicks(1.0, 1.0, 120));
+        assertEquals(120, ContentBlackHoleDebris.lifetimeTicks(1_000.0, 1.0, 120));
+        assertEquals(ContentBlackHoleDebris.MIN_LIFETIME_TICKS,
+            ContentBlackHoleDebris.lifetimeTicks(-5.0, 1.0, 120));
     }
 
     @Test

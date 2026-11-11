@@ -4,15 +4,16 @@ import java.util.Objects;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * Optional curved motion for client-only debris. Pieces spiral inward around {@code axis} and
- * disappear when they reach {@code horizonRadius}. The field is pure math and deterministic from
- * the burst seed and piece origin.
+ * Optional curved motion for client-only debris. Pieces fall inward around {@code axis} and
+ * disappear when they reach {@code horizonRadius}. A zero {@code swirl} gives a straight radial
+ * fall; non-zero values add turns. The field is pure math and deterministic from the burst seed
+ * and piece origin.
  *
  * @param center attractor center in world space
  * @param axis normalized swirl axis; the black hole uses the disk normal
  * @param horizonRadius radius at which a piece disappears
  * @param radialPull radial easing exponent; 1 is linear, larger values fall later
- * @param swirl full turns around the axis over one piece lifetime
+ * @param swirl full turns around the axis over one piece lifetime; zero is a straight fall
  */
 public record EffectDebrisAttractor(
     Vec3 center,
