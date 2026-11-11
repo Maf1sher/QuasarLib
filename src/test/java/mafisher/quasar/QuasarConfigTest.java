@@ -4,9 +4,17 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class QuasarConfigTest {
+    @BeforeEach
+    @AfterEach
+    void unloadConfig() {
+        TestConfig.unload();
+    }
+
     @Test
     void enablesDestructiveEffectsByDefault() {
         assertTrue(QuasarConfig.DESTRUCTIVE_EFFECTS_ENABLED.getDefault());
@@ -18,8 +26,8 @@ class QuasarConfigTest {
     }
 
     @Test
-    void fallsBackToTheDefaultBeforeTheConfigLoads() {
-        assertTrue(QuasarConfig.destructiveEffectsEnabled());
+    void failsClosedBeforeTheConfigLoads() {
+        assertFalse(QuasarConfig.destructiveEffectsEnabled());
     }
 
     @Test

@@ -131,12 +131,15 @@ public final class QuasarConfig {
     private QuasarConfig() {
     }
 
-    /** Whether destructive gameplay effects may start or resume on this server. */
+    /**
+     * Whether destructive gameplay effects may start or resume on this server. Fails closed
+     * before the config is loaded so an unavailable config cannot enable destruction.
+     */
     public static boolean destructiveEffectsEnabled() {
         try {
             return DESTRUCTIVE_EFFECTS_ENABLED.get();
         } catch (IllegalStateException notLoaded) {
-            return DESTRUCTIVE_EFFECTS_ENABLED.getDefault();
+            return false;
         }
     }
 

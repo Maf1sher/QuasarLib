@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import mafisher.quasar.TestConfig;
 import mafisher.quasar.effect.gameplay.EffectPhase;
 import mafisher.quasar.effect.gameplay.EffectPhasePlan;
 import mafisher.quasar.effect.gameplay.EffectTickBudget;
@@ -50,6 +51,7 @@ class GameplayProtectionTest {
 
     @BeforeEach
     void setUp() {
+        TestConfig.loadDefaults();
         BlockProtectionService.clearForTesting();
         this.level = mock(ServerLevel.class);
         this.state = mock(BlockState.class);
@@ -67,6 +69,7 @@ class GameplayProtectionTest {
     void tearDown() {
         GameplayEffectService.stopAll(this.level, GameplayEffectEndReason.CANCELLED);
         BlockProtectionService.clearForTesting();
+        TestConfig.unload();
     }
 
     @Test

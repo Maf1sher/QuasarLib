@@ -13,6 +13,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.UUID;
+import mafisher.quasar.TestConfig;
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectPriority;
@@ -66,6 +67,7 @@ class EffectRestoreServiceTest {
 
     @BeforeEach
     void setUp() {
+        TestConfig.loadDefaults();
         this.level = mock(ServerLevel.class);
         DimensionDataStorage storage = mock(DimensionDataStorage.class);
         this.store = new EffectSavedData();
@@ -85,6 +87,7 @@ class EffectRestoreServiceTest {
         VisualEffectService.clear(this.level);
         SegmentedVisualEffectService.stopAll(this.level);
         BlockRollbackService.clearForTesting();
+        TestConfig.unload();
     }
 
     @Test

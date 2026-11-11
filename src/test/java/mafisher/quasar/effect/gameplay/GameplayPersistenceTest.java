@@ -15,6 +15,7 @@ import static org.mockito.Mockito.when;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+import mafisher.quasar.TestConfig;
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectPriority;
@@ -61,6 +62,7 @@ class GameplayPersistenceTest {
 
     @BeforeEach
     void setUp() {
+        TestConfig.loadDefaults();
         this.level = mock(ServerLevel.class);
         DimensionDataStorage storage = mock(DimensionDataStorage.class);
         this.store = new EffectSavedData();
@@ -88,6 +90,7 @@ class GameplayPersistenceTest {
     void tearDown() {
         GameplayEffectService.stopAll(this.level, GameplayEffectEndReason.CANCELLED);
         BlockRollbackService.clear(this.level);
+        TestConfig.unload();
     }
 
     @Test
