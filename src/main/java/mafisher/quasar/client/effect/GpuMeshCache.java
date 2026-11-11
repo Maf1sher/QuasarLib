@@ -11,6 +11,7 @@ import com.mojang.blaze3d.vertex.VertexFormat;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.ShaderInstance;
 import org.joml.Matrix4f;
@@ -64,23 +65,37 @@ final class GpuMeshCache implements AutoCloseable {
     }
 
     private static GpuMesh upload(EffectMesh mesh, GpuMeshKey key) {
+        return upload(mesh, key, ByteBufferBuilder::new);
+    }
+
+    static GpuMesh upload(EffectMesh mesh, GpuMeshKey key, ByteBufferAllocator allocator) {
+        Objects.requireNonNull(mesh, "mesh");
+        Objects.requireNonNull(key, "key");
+        Objects.requireNonNull(allocator, "allocator");
         VertexFormat format = key.format();
         int capacity = Math.max(1_024, mesh.vertexCount() * format.getVertexSize());
-        ByteBufferBuilder bytes = new ByteBufferBuilder(capacity);
-        BufferBuilder builder = new BufferBuilder(bytes, key.mode(), format);
-        PoseStack poseStack = new PoseStack();
-        mesh.emit(builder, poseStack.last(), key.red(), key.green(), key.blue(), key.alpha(),
-            key.overlay(), key.light());
-        MeshData data = builder.buildOrThrow();
-        VertexBuffer buffer = new VertexBuffer(VertexBuffer.Usage.STATIC);
-        try {
-            buffer.bind();
-            buffer.upload(data);
-        } catch (RuntimeException exception) {
-            buffer.close();
-            throw exception;
+        try (ByteBufferBuilder bytes = allocator.create(capacity)) {
+            BufferBuilder builder = new BufferBuilder(bytes, key.mode(), format);
+            PoseStack poseStack = new PoseStack();
+            mesh.emit(builder, poseStack.last(), key.red(), key.green(), key.blue(), key.alpha(),
+                key.overlay(), key.light());
+            try (MeshData data = builder.buildOrThrow()) {
+                VertexBuffer buffer = new VertexBuffer(VertexBuffer.Usage.STATIC);
+                try {
+                    buffer.bind();
+                    buffer.upload(data);
+                } catch (RuntimeException | Error exception) {
+                    buffer.close();
+                    throw exception;
+                }
+                return new GpuMesh(buffer, mesh.vertexCount());
+            }
         }
-        return new GpuMesh(buffer, mesh.vertexCount());
+    }
+
+    @FunctionalInterface
+    interface ByteBufferAllocator {
+        ByteBufferBuilder create(int capacity);
     }
 
     private void trim() {
@@ -100,7 +115,7 @@ final class GpuMeshCache implements AutoCloseable {
         this.meshes.clear();
     }
 
-    private record GpuMeshKey(
+    record GpuMeshKey(
         VertexFormat format,
         VertexFormat.Mode mode,
         EffectMesh mesh,
