@@ -116,24 +116,6 @@ public final class VisualEffectService {
         UUID instanceId,
         long startGameTime
     ) {
-        Vec3 position = spec.position();
-        StartVisualEffectPayload payload = new StartVisualEffectPayload(
-            spec.effectId(),
-            instanceId,
-            level.dimension().location(),
-            position.x,
-            position.y,
-            position.z,
-            spec.yaw(),
-            spec.pitch(),
-            spec.roll(),
-            spec.scale(),
-            spec.durationTicks(),
-            startGameTime,
-            level.getGameTime(),
-            spec.seed(),
-            segmentLink
-        );
         EffectDescriptor descriptor = segmentLink == null ? new EffectDescriptor(
             instanceId,
             EffectKind.VISUAL,
@@ -150,7 +132,43 @@ public final class VisualEffectService {
             options.ownerSessionId(),
             descriptorState(options, spec)
         ) : null;
-        ActiveEffect active = new ActiveEffect(payload, spec.audience(), spec.transform(), descriptor,
+        return activate(level, spec, instanceId, startGameTime, segmentLink, descriptor, true);
+    }
+
+    /**
+     * Adds one visual to the level, enforces the soft budget, announces it to its audience, and
+     * records or starts its side effects. Start and restore differ only in descriptor ownership and
+     * whether a new persistence record is written.
+     */
+    private static VisualEffectHandle activate(
+        ServerLevel level,
+        VisualEffectSpec spec,
+        UUID instanceId,
+        long startGameTime,
+        SegmentLink segmentLink,
+        EffectDescriptor descriptor,
+        boolean recordStart
+    ) {
+        EffectTransform transform = spec.transform();
+        Vec3 position = spec.position();
+        StartVisualEffectPayload payload = new StartVisualEffectPayload(
+            spec.effectId(),
+            instanceId,
+            level.dimension().location(),
+            position.x,
+            position.y,
+            position.z,
+            transform.yaw(),
+            transform.pitch(),
+            transform.roll(),
+            spec.scale(),
+            spec.durationTicks(),
+            startGameTime,
+            level.getGameTime(),
+            spec.seed(),
+            segmentLink
+        );
+        ActiveEffect active = new ActiveEffect(payload, spec.audience(), transform, descriptor,
             spec.priority());
         Map<UUID, ActiveEffect> effects = activeEffects(level);
         effects.put(instanceId, active);
@@ -165,7 +183,7 @@ public final class VisualEffectService {
         for (ServerPlayer player : audience.values()) {
             sendStart(level, player, active);
         }
-        if (descriptor != null) {
+        if (recordStart && descriptor != null) {
             EffectPersistenceService.recordStart(level, descriptor);
         }
         if (segmentLink == null) {
@@ -269,40 +287,7 @@ public final class VisualEffectService {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(spec, "spec");
         Objects.requireNonNull(instanceId, "instanceId");
-        Map<UUID, ActiveEffect> effects = activeEffects(level);
-        EffectTransform transform = spec.transform();
-        StartVisualEffectPayload payload = new StartVisualEffectPayload(
-            spec.effectId(),
-            instanceId,
-            level.dimension().location(),
-            transform.position().x(),
-            transform.position().y(),
-            transform.position().z(),
-            transform.yaw(),
-            transform.pitch(),
-            transform.roll(),
-            spec.scale(),
-            spec.durationTicks(),
-            startGameTime,
-            level.getGameTime(),
-            spec.seed(),
-            null
-        );
-        ActiveEffect active = new ActiveEffect(payload, spec.audience(), transform, descriptor, spec.priority());
-        effects.put(instanceId, active);
-        if (!enforceBudget(level, effects, instanceId)) {
-            if (effects.isEmpty()) {
-                STATE.remove(level);
-            }
-            return new VisualEffectHandle(instanceId);
-        }
-        Map<UUID, ServerPlayer> audience = new LinkedHashMap<>();
-        collectAudience(level, active, null, audience);
-        for (ServerPlayer player : audience.values()) {
-            sendStart(level, player, active);
-        }
-        startAudio(level, instanceId, spec, startGameTime);
-        return new VisualEffectHandle(instanceId);
+        return activate(level, spec, instanceId, startGameTime, null, descriptor, false);
     }
 
     /** Restores one legacy coordinator-linked visual without recording a standalone descriptor. */
@@ -327,42 +312,7 @@ public final class VisualEffectService {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(spec, "spec");
         Objects.requireNonNull(instanceId, "instanceId");
-        Map<UUID, ActiveEffect> effects = activeEffects(level);
-        EffectTransform transform = spec.transform();
-        StartVisualEffectPayload payload = new StartVisualEffectPayload(
-            spec.effectId(),
-            instanceId,
-            level.dimension().location(),
-            transform.position().x(),
-            transform.position().y(),
-            transform.position().z(),
-            transform.yaw(),
-            transform.pitch(),
-            transform.roll(),
-            spec.scale(),
-            spec.durationTicks(),
-            startGameTime,
-            level.getGameTime(),
-            spec.seed(),
-            link
-        );
-        ActiveEffect active = new ActiveEffect(payload, spec.audience(), transform, descriptor, spec.priority());
-        effects.put(instanceId, active);
-        if (!enforceBudget(level, effects, instanceId)) {
-            if (effects.isEmpty()) {
-                STATE.remove(level);
-            }
-            return new VisualEffectHandle(instanceId);
-        }
-        Map<UUID, ServerPlayer> audience = new LinkedHashMap<>();
-        collectAudience(level, active, null, audience);
-        for (ServerPlayer player : audience.values()) {
-            sendStart(level, player, active);
-        }
-        if (link == null) {
-            startAudio(level, instanceId, spec, startGameTime);
-        }
-        return new VisualEffectHandle(instanceId);
+        return activate(level, spec, instanceId, startGameTime, link, descriptor, false);
     }
 
     /** Updates the world transform of an active visual and sends it to its current observers. */

@@ -1,0 +1,127 @@
+package mafisher.quasar.effect;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.when;
+
+import java.util.List;
+import java.util.UUID;
+import mafisher.quasar.effect.network.StartVisualEffectPayload;
+import mafisher.quasar.effect.persistence.EffectCapabilities;
+import mafisher.quasar.effect.persistence.EffectDescriptor;
+import mafisher.quasar.effect.persistence.EffectKind;
+import mafisher.quasar.effect.persistence.EffectPersistence;
+import mafisher.quasar.effect.persistence.EffectPersistenceOptions;
+import mafisher.quasar.effect.persistence.EffectPersistenceService;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
+
+class VisualEffectStartRestoreTest {
+    private static final ResourceLocation EFFECT_ID =
+        ResourceLocation.fromNamespaceAndPath("quasar_lib", "start_restore_test");
+    private static final UUID INSTANCE_ID =
+        UUID.fromString("00000000-0000-0000-0000-000000000034");
+    private static final long START_TIME = 40L;
+
+    private ServerLevel level;
+    private long gameTime;
+
+    @BeforeEach
+    void setUp() {
+        this.level = mock(ServerLevel.class);
+        when(this.level.isClientSide()).thenReturn(false);
+        when(this.level.dimension()).thenReturn(Level.OVERWORLD);
+        when(this.level.players()).thenReturn(List.of());
+        when(this.level.getGameTime()).thenAnswer(ignored -> this.gameTime);
+        this.gameTime = 50L;
+    }
+
+    @AfterEach
+    void tearDown() {
+        VisualEffectService.clear(this.level);
+    }
+
+    @Test
+    void startAndRestoreBuildTheSameStartPayload() {
+        StartVisualEffectPayload started = payloadAfterStart();
+
+        VisualEffectService.clear(this.level);
+        when(this.level.players()).thenReturn(List.of());
+        VisualEffectService.restore(this.level, spec(), INSTANCE_ID, START_TIME, descriptor());
+
+        assertEquals(started, payloadForPlayer());
+    }
+
+    @Test
+    void restoreDoesNotRecordANewStartDescriptor() {
+        try (MockedStatic<EffectPersistenceService> persistence =
+                 mockStatic(EffectPersistenceService.class)) {
+            VisualEffectService.restore(this.level, spec(), INSTANCE_ID, START_TIME, descriptor());
+
+            persistence.verifyNoInteractions();
+        }
+    }
+
+    private StartVisualEffectPayload payloadAfterStart() {
+        VisualEffectService.startWithId(
+            this.level, spec(), INSTANCE_ID, START_TIME, EffectPersistenceOptions.DEFAULT
+        );
+        return payloadForPlayer();
+    }
+
+    private StartVisualEffectPayload payloadForPlayer() {
+        ServerPlayer player = mock(ServerPlayer.class);
+        when(player.getUUID()).thenReturn(
+            UUID.fromString("00000000-0000-0000-0000-000000000002")
+        );
+        when(player.level()).thenReturn(this.level);
+        when(player.position()).thenReturn(new Vec3(1.0, 2.0, 3.0));
+        when(this.level.players()).thenReturn(List.of(player));
+        List<StartVisualEffectPayload> payloads =
+            VisualEffectService.resumePayloads(this.level, player);
+        assertEquals(1, payloads.size());
+        return payloads.getFirst();
+    }
+
+    private static VisualEffectSpec spec() {
+        return new VisualEffectSpec(
+            EFFECT_ID,
+            new Vec3(1.0, 2.0, 3.0),
+            10.0F,
+            20.0F,
+            30.0F,
+            2.0F,
+            200,
+            7L,
+            EffectAudience.nearby(32.0)
+        );
+    }
+
+    private static EffectDescriptor descriptor() {
+        return new EffectDescriptor(
+            INSTANCE_ID,
+            EffectKind.VISUAL,
+            EFFECT_ID,
+            Level.OVERWORLD.location(),
+            spec().transform(),
+            spec().scale(),
+            spec().seed(),
+            START_TIME,
+            spec().durationTicks(),
+            spec().audience(),
+            EffectCapabilities.NONE,
+            EffectPersistence.RESUMABLE,
+            null,
+            new CompoundTag()
+        );
+    }
+}
