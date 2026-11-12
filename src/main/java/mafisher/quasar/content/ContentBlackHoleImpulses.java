@@ -15,7 +15,7 @@ import net.minecraft.world.phys.Vec3;
  */
 final class ContentBlackHoleImpulses {
     private static final double SHAKE_RADIUS = 512.0;
-    private static final int MAX_TRACKED = 64;
+    static final int MAX_TRACKED = 64;
     private static final Milestone[] MILESTONES = {
         new Milestone(ContentBlackHoleCinematics.IGNITION, Beat.IGNITION),
         new Milestone(ContentBlackHoleCinematics.IGNITION + 0.010F, Beat.SHOCKWAVE),
