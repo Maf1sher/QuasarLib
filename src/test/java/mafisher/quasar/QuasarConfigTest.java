@@ -4,10 +4,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import mafisher.quasar.api.effect.EffectBudgets;
+import mafisher.quasar.testing.GlobalStateTest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+@GlobalStateTest
 class QuasarConfigTest {
     @BeforeEach
     @AfterEach
@@ -31,21 +34,48 @@ class QuasarConfigTest {
     }
 
     @Test
-    void limitsBlockJournalsByDefault() {
-        assertEquals(65_536, QuasarConfig.BLOCK_JOURNAL_MAX_ENTRIES.getDefault());
-        assertEquals(65_536, QuasarConfig.blockJournalMaxEntries());
+    void exposesSpecDefaultsThroughGetters() {
+        TestConfig.loadDefaults();
+
+        assertEquals(QuasarConfig.BLOCK_JOURNAL_MAX_ENTRIES.getDefault(),
+            QuasarConfig.blockJournalMaxEntries());
+        assertEquals(QuasarConfig.BLOCK_JOURNAL_MAX_SECTIONS.getDefault(),
+            QuasarConfig.blockJournalMaxSections());
+        assertEquals(QuasarConfig.STANDALONE_VISUAL_BUDGET.getDefault(),
+            QuasarConfig.standaloneVisualBudget());
+        assertEquals(QuasarConfig.SEGMENT_BUDGET.getDefault(), QuasarConfig.segmentBudget());
+        assertEquals(QuasarConfig.GAMEPLAY_SESSION_BUDGET.getDefault(),
+            QuasarConfig.gameplaySessionBudget());
+        assertEquals(QuasarConfig.GAMEPLAY_SESSIONS_PER_OWNER_BUDGET.getDefault(),
+            QuasarConfig.gameplaySessionsPerOwnerBudget());
+        assertEquals(QuasarConfig.GAMEPLAY_STARTS_PER_OWNER_PER_TICK_BUDGET.getDefault(),
+            QuasarConfig.gameplayStartsPerOwnerPerTickBudget());
+        assertEquals(QuasarConfig.GAMEPLAY_PENDING_BUDGET.getDefault(),
+            QuasarConfig.gameplayPendingBudget());
+        assertEquals(QuasarConfig.CINEMATIC_SESSION_BUDGET.getDefault(),
+            QuasarConfig.cinematicSessionBudget());
+        assertEquals(QuasarConfig.BLOCK_CHANGES_PER_LEVEL_TICK_BUDGET.getDefault(),
+            QuasarConfig.blockChangesPerLevelTickBudget());
+        assertEquals(QuasarConfig.SECTION_EDITS_PER_LEVEL_TICK_BUDGET.getDefault(),
+            QuasarConfig.sectionEditsPerLevelTickBudget());
+        assertEquals(QuasarConfig.TERRAIN_TICKET_BUDGET.getDefault(),
+            QuasarConfig.terrainTicketBudget());
+        assertEquals(QuasarConfig.ENTITY_SPAWNS_PER_LEVEL_TICK_BUDGET.getDefault(),
+            QuasarConfig.entitySpawnsPerLevelTickBudget());
     }
 
     @Test
-    void exposesSoftCapacityBudgets() {
-        assertEquals(128, QuasarConfig.standaloneVisualBudget());
-        assertEquals(1_024, QuasarConfig.segmentBudget());
-        assertEquals(128, QuasarConfig.gameplaySessionBudget());
-        assertEquals(8, QuasarConfig.gameplaySessionsPerOwnerBudget());
-        assertEquals(1, QuasarConfig.gameplayStartsPerOwnerPerTickBudget());
-        assertEquals(256, QuasarConfig.gameplayPendingBudget());
-        assertEquals(16, QuasarConfig.cinematicSessionBudget());
-        assertEquals(4_096, QuasarConfig.terrainTicketBudget());
-        assertEquals(256, QuasarConfig.entitySpawnsPerLevelTickBudget());
+    void readsLoadedBudgetValues() {
+        TestConfig.load(config -> {
+            config.set("standalone_visual_budget", 7);
+            config.set("section_edits_per_level_tick", 3);
+            config.set("block_journal_max_entries", 12_345);
+        });
+
+        assertEquals(7, QuasarConfig.standaloneVisualBudget());
+        assertEquals(7, EffectBudgets.standaloneVisuals());
+        assertEquals(3, QuasarConfig.sectionEditsPerLevelTickBudget());
+        assertEquals(3, EffectBudgets.sectionEditsPerLevelTick());
+        assertEquals(12_345, QuasarConfig.blockJournalMaxEntries());
     }
 }

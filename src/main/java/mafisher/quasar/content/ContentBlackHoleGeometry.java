@@ -8,6 +8,10 @@ final class ContentBlackHoleGeometry {
     static final int VARIANT_AMBER = 0;
     static final int VARIANT_GOLD = 1;
     static final int VARIANT_NEON = 2;
+    /** Traversal floor; LOD may not starve the disk/shadow march below this. */
+    static final int MIN_STEPS = 64;
+    /** Cosmetic trim applied per LOD level. */
+    static final int LOD_STEP_REDUCTION = 16;
     private static final int VARIANT_SHIFT = 60;
     private static final long SEED_PAYLOAD_MASK = 0x0FFF_FFFF_FFFF_FFFFL;
 
@@ -76,7 +80,7 @@ final class ContentBlackHoleGeometry {
             case 2 -> 160;
             default -> 192;
         };
-        return Math.max(64, base - Math.max(0, lodLevel) * 16);
+        return Math.max(MIN_STEPS, base - Math.max(0, lodLevel) * LOD_STEP_REDUCTION);
     }
 
     /** Immutable orthonormal disk frame. */

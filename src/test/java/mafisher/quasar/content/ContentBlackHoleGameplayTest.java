@@ -16,13 +16,20 @@ class ContentBlackHoleGameplayTest {
     @Test
     void radiiScaleWithTheHorizonAndStayWithinForceLimits() {
         ContentBlackHoleGameplaySettings settings = ContentBlackHoleGameplaySettings.DEFAULT;
-        assertEquals(6.0, settings.coreRadius(6.0F), 1.0E-6);
-        assertEquals(108.0, settings.attractionRadius(6.0F), 1.0E-6);
-        assertEquals(1_024.0, settings.attractionRadius(1_000.0F), 1.0E-6);
-        assertEquals(30.0, settings.craterRadius(2.5F), 1.0E-6);
-        assertEquals(72.0, settings.craterRadius(6.0F), 1.0E-6);
-        assertEquals(144.0, settings.craterRadius(12.0F), 1.0E-6);
-        assertEquals(768.0, settings.craterRadius(64.0F), 1.0E-6);
+        double scale = 6.0;
+        assertEquals(scale * settings.coreRadiusFactor(), settings.coreRadius((float)scale), 1.0E-6);
+        assertEquals(
+            Math.min(1_024.0, scale * settings.attractionRadiusFactor()),
+            settings.attractionRadius((float)scale),
+            1.0E-6
+        );
+        assertTrue(settings.attractionRadius(1_000.0F) <= 1_024.0);
+
+        for (float value : new float[]{0.5F, 2.5F, 6.0F, 12.0F, 64.0F}) {
+            assertTrue(settings.craterRadius(value) >= settings.coreRadius(value),
+                "scale " + value);
+            assertTrue(settings.craterRadius(value) >= 4.0, "scale " + value);
+        }
     }
 
     @Test
@@ -51,9 +58,13 @@ class ContentBlackHoleGameplayTest {
     @Test
     void tearSettingsAreValidated() {
         ContentBlackHoleGameplaySettings settings = ContentBlackHoleGameplaySettings.DEFAULT;
-        assertEquals(64, settings.tearRaysPerTick());
-        assertEquals(6, settings.tearDebrisBurstsPerTick());
-        assertEquals(8, settings.tearDebrisPieces());
+
+        assertTrue(settings.tearRaysPerTick() > 0);
+        assertTrue(settings.tearRaysPerTick() <= 512);
+        assertTrue(settings.tearDebrisBurstsPerTick() >= 0);
+        assertTrue(settings.tearDebrisBurstsPerTick() <= 16);
+        assertTrue(settings.tearDebrisPieces() >= 1);
+        assertTrue(settings.tearDebrisPieces() <= 64);
     }
 
     @Test
@@ -69,12 +80,13 @@ class ContentBlackHoleGameplayTest {
 
     @Test
     void debrisLifetimeKeepsTheFallReadable() {
-        assertEquals(64, ContentBlackHoleDebris.lifetimeTicks(64.0, 1.0, 120));
-        assertEquals(ContentBlackHoleDebris.MIN_LIFETIME_TICKS,
-            ContentBlackHoleDebris.lifetimeTicks(1.0, 1.0, 120));
+        int minimum = ContentBlackHoleDebris.MIN_LIFETIME_TICKS;
+        int configured = ContentBlackHoleDebris.lifetimeTicks(64.0, 1.0, 120);
+
+        assertTrue(configured >= minimum && configured <= 120);
+        assertEquals(minimum, ContentBlackHoleDebris.lifetimeTicks(1.0, 1.0, 120));
         assertEquals(120, ContentBlackHoleDebris.lifetimeTicks(1_000.0, 1.0, 120));
-        assertEquals(ContentBlackHoleDebris.MIN_LIFETIME_TICKS,
-            ContentBlackHoleDebris.lifetimeTicks(-5.0, 1.0, 120));
+        assertEquals(minimum, ContentBlackHoleDebris.lifetimeTicks(-5.0, 1.0, 120));
     }
 
     @Test

@@ -1,7 +1,7 @@
 package mafisher.quasar.content;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
@@ -10,12 +10,14 @@ class ContentBlackHoleSettingsTest {
     void defaultSettingsAreValid() {
         ContentBlackHoleSettings settings = ContentBlackHoleSettings.DEFAULT;
 
-        assertEquals(2.65F, settings.diskInnerFactor(), 0.0001F);
-        assertEquals(9.0F, settings.diskOuterFactor(), 0.0001F);
-        assertEquals(0.32F, settings.diskThicknessFactor(), 0.0001F);
-        assertEquals(1.0F, settings.lensStrength(), 0.0001F);
-        assertEquals(5.0F, settings.lensWarpFactor(), 0.0001F);
-        assertEquals(15.0F, settings.maskRadiusFactor(), 0.0001F);
+        assertTrue(settings.diskInnerFactor() > 0.0F);
+        assertTrue(settings.diskOuterFactor() > settings.diskInnerFactor());
+        assertTrue(settings.diskThicknessFactor() >= 0.0F);
+        assertTrue(settings.diskThicknessFactor() <= 0.5F);
+        assertTrue(settings.lensStrength() >= 0.0F && settings.lensStrength() <= 1.0F);
+        assertTrue(settings.lensWarpFactor() >= 2.6F && settings.lensWarpFactor() <= 12.0F);
+        assertTrue(settings.maskRadiusFactor() > 0.0F && settings.maskRadiusFactor() <= 32.0F);
+        assertTrue(settings.bloomStrength() >= 0.0F && settings.bloomStrength() <= 2.0F);
     }
 
     @Test

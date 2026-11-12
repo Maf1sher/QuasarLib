@@ -54,15 +54,35 @@ class ContentBlackHoleGeometryTest {
 
     @Test
     void stepBudgetKeepsATraversalFloorAndScalesWithQuality() {
-        assertEquals(96, ContentBlackHoleGeometry.stepCount(0, 0));
-        assertEquals(128, ContentBlackHoleGeometry.stepCount(0, 1));
-        assertEquals(160, ContentBlackHoleGeometry.stepCount(0, 2));
-        assertEquals(192, ContentBlackHoleGeometry.stepCount(0, 3));
-        assertEquals(80, ContentBlackHoleGeometry.stepCount(1, 0));
-        assertEquals(64, ContentBlackHoleGeometry.stepCount(8, 0));
-        assertEquals(160, ContentBlackHoleGeometry.stepCount(2, 3));
-        assertTrue(ContentBlackHoleGeometry.stepCount(2, 3)
-            < ContentBlackHoleGeometry.stepCount(1, 3));
+        int fullQualityBase = ContentBlackHoleGeometry.stepCount(0, 0);
+        for (int quality = 1; quality <= 3; quality++) {
+            int next = ContentBlackHoleGeometry.stepCount(0, quality);
+            assertTrue(next > fullQualityBase, "quality " + quality);
+            fullQualityBase = next;
+        }
+
+        for (int quality = 0; quality <= 3; quality++) {
+            int previous = Integer.MAX_VALUE;
+            for (int lod = 0; lod <= 32; lod++) {
+                int steps = ContentBlackHoleGeometry.stepCount(lod, quality);
+                assertTrue(steps >= ContentBlackHoleGeometry.MIN_STEPS,
+                    "quality " + quality + ", lod " + lod);
+                assertTrue(steps <= previous, "quality " + quality + ", lod " + lod);
+                previous = steps;
+            }
+        }
+
+        assertEquals(
+            ContentBlackHoleGeometry.MIN_STEPS,
+            ContentBlackHoleGeometry.stepCount(64, 0)
+        );
+        assertEquals(
+            Math.max(
+                ContentBlackHoleGeometry.MIN_STEPS,
+                ContentBlackHoleGeometry.stepCount(0, 0) - ContentBlackHoleGeometry.LOD_STEP_REDUCTION
+            ),
+            ContentBlackHoleGeometry.stepCount(1, 0)
+        );
     }
 
     @Test

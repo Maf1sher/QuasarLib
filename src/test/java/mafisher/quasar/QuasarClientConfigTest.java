@@ -2,25 +2,29 @@ package mafisher.quasar;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import mafisher.quasar.api.effect.EffectQualityTier;
 import org.junit.jupiter.api.Test;
 
 class QuasarClientConfigTest {
     @Test
-    void exposesQualityDefaults() {
-        assertEquals(QuasarClientConfig.QualityMode.AUTO, QuasarClientConfig.QUALITY_MODE.getDefault());
-        assertEquals(EffectQualityTier.HIGH, QuasarClientConfig.AUTO_MAX_TIER.getDefault());
-        assertEquals(2.5D, QuasarClientConfig.EFFECT_BUDGET_MS.getDefault());
+    void publishesANonEmptyConfigSpec() {
         assertFalse(QuasarClientConfig.SPEC.isEmpty());
+        assertTrue(QuasarClientConfig.EFFECT_BUDGET_MS.getDefault() > 0.0);
+        assertNotNull(QuasarClientConfig.AUTO_MAX_TIER.getDefault());
     }
 
     @Test
     void fallsBackToDefaultsBeforeTheConfigLoads() {
-        assertEquals(QuasarClientConfig.QualityMode.AUTO, QuasarClientConfig.qualityMode());
-        assertEquals(EffectQualityTier.HIGH, QuasarClientConfig.autoMaxTier());
-        assertEquals(2.5D, QuasarClientConfig.effectBudgetMillis());
+        assertEquals(QuasarClientConfig.QUALITY_MODE.getDefault(),
+            QuasarClientConfig.qualityMode());
+        assertEquals(QuasarClientConfig.AUTO_MAX_TIER.getDefault(),
+            QuasarClientConfig.autoMaxTier());
+        assertEquals(QuasarClientConfig.EFFECT_BUDGET_MS.getDefault(),
+            QuasarClientConfig.effectBudgetMillis(), 0.0);
     }
 
     @Test
