@@ -11,6 +11,7 @@ import mafisher.quasar.effect.runtime.LevelEffectRuntime;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Server-thread facade for client-scheduled effect audio. State belongs to the per-level
@@ -122,6 +123,8 @@ public final class EffectAudioService {
         return runtime == null ? 0 : runtime.audio().activeCount();
     }
 
+    /** Returns the active plan, or {@code null} when the level has no runtime or the plan is unknown. */
+    @Nullable
     public static EffectAudioPlan planOrNull(ServerLevel level, UUID effectId) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(effectId, "effectId");

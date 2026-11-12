@@ -11,6 +11,7 @@ import mafisher.quasar.effect.runtime.EffectRuntimeRegistry;
 import mafisher.quasar.effect.runtime.GameplayEffectRuntime;
 import mafisher.quasar.effect.runtime.LevelEffectRuntime;
 import net.minecraft.server.level.ServerLevel;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Server-thread facade for active gameplay effect sessions. Session state lives in the per-level
@@ -71,7 +72,12 @@ public final class GameplayEffectService {
         );
     }
 
-    /** Scope of one active session, used to reattach persisted child visuals after restore. */
+    /**
+     * Scope of one active session, used to reattach persisted child visuals after restore.
+     *
+     * @return the live scope, or {@code null} when the session is unknown or the level has no runtime
+     */
+    @Nullable
     public static EffectScope scope(ServerLevel level, GameplayEffectHandle handle) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(handle, "handle");
