@@ -597,7 +597,7 @@ public final class EffectBulkBlockEditor {
                 chunk, section, key, previousStates
             );
         }
-        int[] counts = this.clearByBlock(
+        return this.clearByBlock(
             chunk,
             section,
             key,
@@ -606,7 +606,6 @@ public final class EffectBulkBlockEditor {
             previousStates,
             () -> this.recordSnapshot(chunk, section, key)
         );
-        return new SectionEdit(counts[0], counts[1], section, false);
     }
 
     private boolean canClearWholeSection(
@@ -628,8 +627,11 @@ public final class EffectBulkBlockEditor {
         BlockState[] previousStates
     ) {
         int cleared = this.countClearable(section);
-        if (cleared == 0 || !this.recordSnapshot(chunk, section, key)) {
+        if (cleared == 0) {
             return null;
+        }
+        if (!this.recordSnapshot(chunk, section, key)) {
+            return new SectionEdit(0, cleared, section, false);
         }
         for (int index = 0; index < SECTION_BLOCKS; index++) {
             BlockState state = section.getBlockState(
@@ -706,7 +708,7 @@ public final class EffectBulkBlockEditor {
             || INDESTRUCTIBLE.contains(current.getBlock());
     }
 
-    private int[] clearByBlock(
+    private SectionEdit clearByBlock(
         LevelChunk chunk,
         LevelChunkSection section,
         SectionKey key,
@@ -739,7 +741,7 @@ public final class EffectBulkBlockEditor {
                 continue;
             }
             if (!snapshotRecorded && !beforeFirstWrite.getAsBoolean()) {
-                return new int[]{cleared, vetoed[0]};
+                return new SectionEdit(cleared, this.countClearable(section), section, false);
             }
             snapshotRecorded = true;
             this.addClearedState(current);
@@ -752,7 +754,7 @@ public final class EffectBulkBlockEditor {
             previousStates[index] = current;
             cleared++;
         }
-        return new int[]{cleared, vetoed[0]};
+        return new SectionEdit(cleared, vetoed[0], section, false);
     }
 
     private boolean replaceThroughWorld(int worldX, int worldY, int worldZ, int[] vetoed) {

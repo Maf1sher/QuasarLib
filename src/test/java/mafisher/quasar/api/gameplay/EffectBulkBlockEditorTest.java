@@ -47,7 +47,9 @@ import net.minecraft.world.level.chunk.PalettedContainerRO;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import mafisher.quasar.testing.GlobalStateTest;
 
+@GlobalStateTest
 class EffectBulkBlockEditorTest {
     private ServerLevel level;
     private ServerChunkCache chunkSource;
@@ -160,6 +162,35 @@ class EffectBulkBlockEditorTest {
         assertEquals(Blocks.STONE.defaultBlockState(), this.section.getBlockState(8, 8, 8));
         assertEquals(Blocks.DIRT.defaultBlockState(), this.section.getBlockState(0, 0, 0));
         assertEquals(0, editor.progress().clearedBlocks());
+        assertEquals(0, this.journal.sectionCount());
+        editor.close(false);
+    }
+
+    @Test
+    void countsAVetoedSectionWhenItsSnapshotCannotBeRecorded() {
+        BlockPos blockEntityPos = new BlockPos(1, 1, 1);
+        BlockEntity blockEntity = mock(BlockEntity.class);
+        when(this.chunk.getBlockEntities()).thenReturn(Map.of(blockEntityPos, blockEntity));
+        when(blockEntity.getBlockPos()).thenReturn(blockEntityPos);
+        when(blockEntity.saveWithFullMetadata(any())).thenThrow(new RuntimeException("capture failed"));
+        EffectBulkBlockEditor editor = EffectBulkBlockEditor.create(
+            this.context,
+            new EffectBulkBlockEditor.Spec(
+                EffectBlockVolume.box(new EffectBounds(0.0, 0.0, 0.0, 15.5, 15.5, 15.5)),
+                Blocks.AIR.defaultBlockState(),
+                true,
+                EffectBulkBlockEditor.SyncPolicy.MANUAL,
+                0.0,
+                true
+            )
+        );
+
+        editor.tick();
+
+        verify(this.context).recordBulkSection(0, 2);
+        assertEquals(0, editor.progress().clearedBlocks());
+        assertEquals(1, editor.progress().completedSections());
+        assertTrue(editor.progress().finished());
         assertEquals(0, this.journal.sectionCount());
         editor.close(false);
     }
