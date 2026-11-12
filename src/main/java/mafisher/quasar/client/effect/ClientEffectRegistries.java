@@ -4,6 +4,8 @@ import mafisher.quasar.api.client.RegisterScreenEffectOperationsEvent;
 import mafisher.quasar.api.client.RegisterVisualEffectRenderersEvent;
 import mafisher.quasar.api.compat.CompatRegistry;
 import mafisher.quasar.api.compat.RegisterCompatProvidersEvent;
+import mafisher.quasar.client.effect.render.VisualEffectRendererRegistry;
+import mafisher.quasar.client.effect.screen.ScreenEffectOperationRegistry;
 import net.neoforged.neoforge.common.NeoForge;
 
 /**

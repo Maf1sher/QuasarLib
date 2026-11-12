@@ -9,6 +9,8 @@ import java.util.Objects;
 import mafisher.quasar.api.client.EffectMesh;
 import mafisher.quasar.api.effect.EffectDebrisAttractor;
 import mafisher.quasar.api.effect.EffectDebrisSpawn;
+import mafisher.quasar.client.effect.frame.ClientEffectClock;
+import mafisher.quasar.client.effect.quality.ClientQualityController;
 import mafisher.quasar.effect.EffectDebrisMath;
 import mafisher.quasar.effect.network.EffectDebrisPayload;
 import net.minecraft.client.Minecraft;

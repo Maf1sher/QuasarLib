@@ -10,6 +10,6 @@ public final class ContentFixture {
     }
 
     public static Object engineReference() {
-        return mafisher.quasar.client.effect.EffectRenderTypes.class;
+        return mafisher.quasar.client.effect.render.EffectRenderTypes.class;
     }
 }

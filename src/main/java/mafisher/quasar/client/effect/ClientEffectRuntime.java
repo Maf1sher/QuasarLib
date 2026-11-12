@@ -3,6 +3,7 @@ package mafisher.quasar.client.effect;
 import mafisher.quasar.api.effect.EffectQualityTier;
 import mafisher.quasar.api.effect.StartVisualEffectPayload;
 import mafisher.quasar.api.scale.StartSegmentedVisualEffectPayload;
+import mafisher.quasar.client.effect.quality.ClientQualityController;
 import mafisher.quasar.effect.network.EffectAudioPlanPayload;
 import mafisher.quasar.effect.network.EffectAudioTriggerPayload;
 import mafisher.quasar.effect.network.EffectDebrisPayload;

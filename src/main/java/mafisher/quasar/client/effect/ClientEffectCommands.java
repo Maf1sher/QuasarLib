@@ -5,6 +5,7 @@ import java.util.stream.Collectors;
 import mafisher.quasar.QuasarLib;
 import mafisher.quasar.api.compat.CompatRegistry;
 import mafisher.quasar.api.compat.RenderEnvironment;
+import mafisher.quasar.client.effect.quality.ClientFarPlane;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;

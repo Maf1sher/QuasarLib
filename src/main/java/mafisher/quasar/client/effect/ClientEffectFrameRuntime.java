@@ -8,6 +8,15 @@ import mafisher.quasar.api.compat.CompatRegistry;
 import mafisher.quasar.api.compat.RenderEnvironment;
 import mafisher.quasar.api.effect.StartVisualEffectPayload;
 import mafisher.quasar.api.scale.StartSegmentedVisualEffectPayload;
+import mafisher.quasar.client.effect.audio.ClientEffectAudio;
+import mafisher.quasar.client.effect.frame.ClientEffectClock;
+import mafisher.quasar.client.effect.frame.CompatFrameEnvironment;
+import mafisher.quasar.client.effect.quality.ClientFarPlane;
+import mafisher.quasar.client.effect.quality.ClientQualityController;
+import mafisher.quasar.client.effect.render.ClientVisualEffectManager;
+import mafisher.quasar.client.effect.render.ScreenEffectBatch;
+import mafisher.quasar.client.effect.screen.ClientScreenCompositor;
+import mafisher.quasar.client.effect.screen.ScreenFlashRenderer;
 import mafisher.quasar.effect.network.EffectAudioPlanPayload;
 import mafisher.quasar.effect.network.EffectAudioTriggerPayload;
 import mafisher.quasar.effect.network.EffectDebrisPayload;
@@ -123,7 +132,7 @@ final class ClientEffectFrameRuntime {
     }
 
     static void effectAudioPlan(EffectAudioPlanPayload payload) {
-        ClientEffectAudio.accept(payload);
+        ClientEffectAudio.accept(payload, ClientEffectFrameRuntime::effectOrigin);
     }
 
     static void stopEffectAudio(StopEffectAudioPayload payload) {

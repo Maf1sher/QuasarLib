@@ -1,7 +1,7 @@
 package mafisher.quasar.api.client;
 
 import java.util.Objects;
-import mafisher.quasar.client.effect.EffectRenderTypes;
+import mafisher.quasar.client.effect.render.EffectRenderTypes;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.resources.ResourceLocation;
 

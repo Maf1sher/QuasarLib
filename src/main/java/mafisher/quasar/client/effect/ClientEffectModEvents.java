@@ -2,6 +2,7 @@ package mafisher.quasar.client.effect;
 
 import java.io.IOException;
 import mafisher.quasar.QuasarLib;
+import mafisher.quasar.client.effect.render.EffectShaders;
 import net.minecraft.client.Minecraft;
 import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
 import net.neoforged.api.distmarker.Dist;

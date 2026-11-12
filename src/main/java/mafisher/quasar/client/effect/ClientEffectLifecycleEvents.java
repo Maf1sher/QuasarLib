@@ -2,6 +2,7 @@ package mafisher.quasar.client.effect;
 
 import mafisher.quasar.QuasarLib;
 import mafisher.quasar.api.client.ClientEffectImpulses;
+import mafisher.quasar.client.effect.audio.ClientEffectAudio;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;

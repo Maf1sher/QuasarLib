@@ -95,8 +95,8 @@ class ContentBoundaryTest {
         );
 
         assertTrue(result.types().contains("mafisher.quasar.api.client.EffectMeshes"));
-        assertTrue(result.types().contains("mafisher.quasar.client.effect.EffectRenderTypes"));
-        assertTrue(isForbiddenContentReference("mafisher.quasar.client.effect.EffectRenderTypes"));
+        assertTrue(result.types().contains("mafisher.quasar.client.effect.render.EffectRenderTypes"));
+        assertTrue(isForbiddenContentReference("mafisher.quasar.client.effect.render.EffectRenderTypes"));
         assertFalse(isForbiddenContentReference("mafisher.quasar.api.client.EffectMeshes"));
     }
 
