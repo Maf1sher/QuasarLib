@@ -14,6 +14,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import mafisher.quasar.effect.EffectAudience;
+import mafisher.quasar.effect.EffectBudgetReport;
+import mafisher.quasar.effect.EffectBudgetService;
+import mafisher.quasar.effect.EffectPriority;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -45,6 +48,7 @@ class EffectAudioServiceTest {
     @AfterEach
     void tearDown() {
         EffectAudioService.clear(this.level);
+        EffectBudgetService.clear(this.level);
     }
 
     @Test
@@ -94,6 +98,76 @@ class EffectAudioServiceTest {
         assertEquals(EffectAudioService.MAX_ACTIVE_PLANS_PER_LEVEL, EffectAudioService.activeCount(this.level));
         assertNull(EffectAudioService.planOrNull(this.level, ids.getFirst()));
         assertNotNull(EffectAudioService.planOrNull(this.level, ids.getLast()));
+    }
+
+    @Test
+    void evictsTheLowestPriorityPlanBeforeOlderNormalPlans() {
+        UUID oldest = UUID.randomUUID();
+        UUID background = UUID.randomUUID();
+        EffectAudioService.start(
+            this.level, plan(oldest, 100, 0), EffectAudience.dimensionWide(), EffectPriority.NORMAL
+        );
+        EffectAudioService.start(
+            this.level, plan(background, 100, 0), EffectAudience.dimensionWide(), EffectPriority.BACKGROUND
+        );
+        for (int index = 2; index < EffectAudioService.MAX_ACTIVE_PLANS_PER_LEVEL; index++) {
+            EffectAudioService.start(
+                this.level, plan(UUID.randomUUID(), 100, 0), EffectAudience.dimensionWide(), EffectPriority.NORMAL
+            );
+        }
+
+        UUID critical = UUID.randomUUID();
+        EffectAudioService.start(
+            this.level, plan(critical, 100, 0), EffectAudience.dimensionWide(), EffectPriority.CRITICAL
+        );
+
+        assertEquals(EffectAudioService.MAX_ACTIVE_PLANS_PER_LEVEL, EffectAudioService.activeCount(this.level));
+        assertNull(EffectAudioService.planOrNull(this.level, background));
+        assertNotNull(EffectAudioService.planOrNull(this.level, oldest));
+        assertNotNull(EffectAudioService.planOrNull(this.level, critical));
+    }
+
+    @Test
+    void dropsAnIncomingPlanBelowEveryActivePriority() {
+        for (int index = 0; index < EffectAudioService.MAX_ACTIVE_PLANS_PER_LEVEL; index++) {
+            EffectAudioService.start(
+                this.level, plan(UUID.randomUUID(), 100, 0), EffectAudience.dimensionWide(),
+                EffectPriority.CRITICAL
+            );
+        }
+        UUID background = UUID.randomUUID();
+
+        EffectAudioService.start(
+            this.level, plan(background, 100, 0), EffectAudience.dimensionWide(), EffectPriority.BACKGROUND
+        );
+
+        assertEquals(EffectAudioService.MAX_ACTIVE_PLANS_PER_LEVEL, EffectAudioService.activeCount(this.level));
+        assertNull(EffectAudioService.planOrNull(this.level, background));
+        assertEquals(1L, EffectBudgetService.report(this.level).audioDrops());
+    }
+
+    @Test
+    void reportsAudioCapacityAndDegradation() {
+        EffectAudioService.start(
+            this.level, plan(UUID.randomUUID(), 100, 0), EffectAudience.dimensionWide(), EffectPriority.NORMAL
+        );
+
+        EffectBudgetReport report = EffectBudgetService.report(this.level);
+        assertEquals(1, report.audioPlans());
+        assertEquals(EffectAudioService.MAX_ACTIVE_PLANS_PER_LEVEL, report.audioPlanBudget());
+        assertEquals(0L, report.audioEvictions());
+
+        for (int index = 1; index < EffectAudioService.MAX_ACTIVE_PLANS_PER_LEVEL; index++) {
+            EffectAudioService.start(
+                this.level, plan(UUID.randomUUID(), 100, 0), EffectAudience.dimensionWide(),
+                EffectPriority.NORMAL
+            );
+        }
+        EffectAudioService.start(
+            this.level, plan(UUID.randomUUID(), 100, 0), EffectAudience.dimensionWide(), EffectPriority.HIGH
+        );
+
+        assertEquals(1L, EffectBudgetService.report(this.level).audioEvictions());
     }
 
     @Test

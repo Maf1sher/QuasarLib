@@ -5,15 +5,17 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.ToIntFunction;
+import mafisher.quasar.effect.audio.EffectAudioService;
 import mafisher.quasar.effect.cinematic.CinematicEffectService;
 import mafisher.quasar.effect.gameplay.GameplayEffectService;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectService;
 import net.minecraft.server.level.ServerLevel;
 
 /**
- * Per-level soft capacity accounting. Every service reports culls, deferrals, and dropped
- * spawns here so operators can inspect degradation from one place.
+ * Per-level soft capacity accounting. Every service reports culls, deferrals, dropped spawns,
+ * and audio evictions here so operators can inspect degradation from one place.
  */
+@SuppressWarnings("PMD.TooManyMethods")
 public final class EffectBudgetService {
     private static final LevelStateSlot<BudgetState> STATE = LevelStateSlot.create(BudgetState::new);
 
@@ -36,9 +38,13 @@ public final class EffectBudgetService {
             EffectBudgets.gameplayPending(),
             CinematicEffectService.activeCount(level),
             EffectBudgets.cinematicSessions(),
+            EffectAudioService.activeCount(level),
+            EffectAudioService.MAX_ACTIVE_PLANS_PER_LEVEL,
             counters == null ? 0L : counters.culledEffects,
             counters == null ? 0L : counters.deferredStarts,
-            counters == null ? 0L : counters.droppedEntitySpawns
+            counters == null ? 0L : counters.droppedEntitySpawns,
+            counters == null ? 0L : counters.audioEvictions,
+            counters == null ? 0L : counters.audioDrops
         );
     }
 
@@ -55,6 +61,16 @@ public final class EffectBudgetService {
     /** Records that one entity spawn was dropped by a soft spawn budget. */
     public static void recordDroppedEntitySpawn(ServerLevel level) {
         counters(level).droppedEntitySpawns++;
+    }
+
+    /** Records that one active audio plan was evicted by the priority-aware plan cap. */
+    public static void recordAudioEviction(ServerLevel level) {
+        counters(level).audioEvictions++;
+    }
+
+    /** Records that a new audio plan was dropped because its priority was below every active plan. */
+    public static void recordAudioDrop(ServerLevel level) {
+        counters(level).audioDrops++;
     }
 
     /**
@@ -151,6 +167,8 @@ public final class EffectBudgetService {
         private long culledEffects;
         private long deferredStarts;
         private long droppedEntitySpawns;
+        private long audioEvictions;
+        private long audioDrops;
         private long spawnTick = Long.MIN_VALUE;
         private int spawnsThisTick;
     }

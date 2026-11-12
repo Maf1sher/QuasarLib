@@ -1,6 +1,7 @@
 package mafisher.quasar.effect.network;
 
 import io.netty.buffer.ByteBuf;
+import mafisher.quasar.effect.EffectLimits;
 import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectTimeline;
 import mafisher.quasar.effect.EffectTransform;
@@ -49,13 +50,14 @@ public record StartSegmentedVisualEffectPayload(
     );
 
     public StartSegmentedVisualEffectPayload {
-        Objects.requireNonNull(effectId, "effectId");
+        EffectPayloadLimits.requireIdentifier(effectId, "Effect ID");
         Objects.requireNonNull(coordinatorId, "coordinatorId");
-        Objects.requireNonNull(dimensionId, "dimensionId");
+        EffectPayloadLimits.requireIdentifier(dimensionId, "Payload dimension");
         Objects.requireNonNull(heights, "heights");
         if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)
             || !Float.isFinite(yaw) || !Float.isFinite(pitch) || !Float.isFinite(roll)
-            || !Float.isFinite(segmentScale) || segmentScale <= 0.0F || segmentScale > 128.0F
+            || !Float.isFinite(segmentScale) || segmentScale <= 0.0F
+            || segmentScale > EffectLimits.MAX_SCALE
             || !EffectTimeline.isValidDuration(durationTicks)) {
             throw new IllegalArgumentException("Invalid segmented visual effect payload");
         }

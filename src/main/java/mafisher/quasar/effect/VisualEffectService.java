@@ -4,7 +4,6 @@ import mafisher.quasar.effect.audio.EffectAudioPlan;
 import mafisher.quasar.effect.audio.EffectAudioService;
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
 import mafisher.quasar.effect.network.StopVisualEffectPayload;
-import mafisher.quasar.effect.network.UpdateVisualEffectPayload;
 import mafisher.quasar.effect.persistence.EffectAudioNbt;
 import mafisher.quasar.effect.persistence.EffectDescriptor;
 import mafisher.quasar.effect.persistence.EffectKind;
@@ -304,7 +303,10 @@ public final class VisualEffectService {
         return activate(level, spec, instanceId, startGameTime, link, descriptor, false);
     }
 
-    /** Updates the world transform of an active visual and sends it to its current observers. */
+    /**
+     * Updates the world transform of an active visual. The change is applied immediately and
+     * delivered to trackers in the next per-tick transform batch.
+     */
     public static void update(ServerLevel level, VisualEffectHandle handle, EffectTransform transform) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(handle, "handle");
@@ -319,10 +321,9 @@ public final class VisualEffectService {
             active.setDescriptor(active.descriptor().withTransform(transform));
             EffectPersistenceService.recordUpdate(level, active.descriptor());
         }
-        UpdateVisualEffectPayload payload = UpdateVisualEffectPayload.of(
-            active.payload().instanceId(), level.dimension().location(), transform, level.getGameTime()
+        EffectTransformBatchService.queueVisual(
+            level, active.payload().instanceId(), transform, active.trackingPlayers()
         );
-        sendToTrackingPlayers(level, active.trackingPlayers(), payload);
     }
 
     /**
@@ -506,6 +507,7 @@ public final class VisualEffectService {
     public static void clear(ServerLevel level) {
         Objects.requireNonNull(level, "level");
         STATE.remove(level);
+        EffectTransformBatchService.clear(level);
         EffectAudioService.clear(level);
         EffectBudgetService.clear(level);
     }
@@ -529,7 +531,7 @@ public final class VisualEffectService {
             spec.durationTicks(),
             spec.audio()
         );
-        EffectAudioService.start(level, plan, spec.audience());
+        EffectAudioService.start(level, plan, spec.audience(), spec.priority());
     }
 
     private static SpatialGrid<ServerPlayer> buildPlayerIndex(List<ServerPlayer> players) {

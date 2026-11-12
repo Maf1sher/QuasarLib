@@ -625,7 +625,9 @@ public final class GameplayEffectService {
                 session.spec.phases().totalDurationTicks(),
                 session.spec.audio()
             );
-            EffectAudioService.start(level, plan, EffectAudience.dimensionWide());
+            EffectAudioService.start(
+                level, plan, EffectAudience.dimensionWide(), session.spec.priority()
+            );
         }
         session.context.markAudioStarted();
         session.context.flushAudioTriggers();

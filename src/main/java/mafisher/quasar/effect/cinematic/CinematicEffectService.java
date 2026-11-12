@@ -168,7 +168,9 @@ public final class CinematicEffectService {
             state(level).sessions.put(sessionId, session);
             EffectPersistenceService.recordStart(level, descriptor);
             if (session.audioPlan != null) {
-                EffectAudioService.start(level, session.audioPlan, EffectAudience.dimensionWide());
+                EffectAudioService.start(
+                    level, session.audioPlan, EffectAudience.dimensionWide(), session.timeline.priority()
+                );
             }
         }
         return new CinematicEffectHandle(sessionId);

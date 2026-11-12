@@ -2,6 +2,7 @@ package mafisher.quasar.effect.network;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.netty.buffer.ByteBuf;
@@ -41,6 +42,53 @@ class StartVisualEffectPayloadTest {
         assertEquals(1, decoded.segmentLink().row());
         assertEquals(1, decoded.segmentLink().column());
         assertEquals(1, decoded.segmentLink().layer());
+    }
+
+    @Test
+    void rejectsScaleAboveTheDocumentedMaximum() {
+        assertThrows(IllegalArgumentException.class, () -> new StartVisualEffectPayload(
+            EFFECT_ID, UUID.randomUUID(), DIMENSION, 0.0, 64.0, 0.0,
+            0.0F, 0.0F, 0.0F, 129.0F, 200, 100L, 42L
+        ));
+    }
+
+    @Test
+    void rejectsAnOversizedIdentifier() {
+        ResourceLocation oversized = ResourceLocation.fromNamespaceAndPath(
+            "a".repeat(128), "b".repeat(128)
+        );
+
+        assertThrows(IllegalArgumentException.class, () -> new StartVisualEffectPayload(
+            oversized, UUID.randomUUID(), DIMENSION, 0.0, 64.0, 0.0,
+            0.0F, 0.0F, 0.0F, 1.0F, 200, 100L, 42L
+        ));
+    }
+
+    @Test
+    void staysWithinTheDocumentedEncodedByteCapWithWidestIdentifiers() {
+        ResourceLocation widest = ResourceLocation.fromNamespaceAndPath(
+            "a".repeat(128), "b".repeat(127)
+        );
+        StartVisualEffectPayload payload = new StartVisualEffectPayload(
+            widest,
+            UUID.randomUUID(),
+            widest,
+            1.0,
+            64.0,
+            2.0,
+            0.0F,
+            0.0F,
+            0.0F,
+            128.0F,
+            200,
+            100L,
+            140L,
+            42L,
+            new SegmentLink(UUID.randomUUID(), 127, new SegmentGridLayout(8, 8, 2, 8.0, 4.0))
+        );
+
+        assertTrue(encodedSize(payload) <= EffectPayloadLimits.MAX_VISUAL_START_BYTES,
+            "visual start encoded to " + encodedSize(payload) + " bytes");
     }
 
     @Test

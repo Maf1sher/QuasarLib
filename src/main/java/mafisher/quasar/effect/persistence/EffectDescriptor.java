@@ -3,6 +3,7 @@ package mafisher.quasar.effect.persistence;
 import java.util.Objects;
 import java.util.UUID;
 import mafisher.quasar.effect.EffectAudience;
+import mafisher.quasar.effect.EffectLimits;
 import mafisher.quasar.effect.EffectTimeline;
 import mafisher.quasar.effect.EffectTransform;
 import net.minecraft.nbt.CompoundTag;
@@ -186,7 +187,7 @@ public final class EffectDescriptor {
             Objects.requireNonNull(audience, "audience");
             Objects.requireNonNull(capabilities, "capabilities");
             Objects.requireNonNull(persistence, "persistence");
-            if (!Float.isFinite(scale) || scale <= 0.0F || scale > 128.0F) {
+            if (!Float.isFinite(scale) || scale <= 0.0F || scale > EffectLimits.MAX_SCALE) {
                 throw new IllegalArgumentException("Effect descriptor scale must be between 0 and 128");
             }
             if (!EffectTimeline.isValidDuration(durationTicks)) {

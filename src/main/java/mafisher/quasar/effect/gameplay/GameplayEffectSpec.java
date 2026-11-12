@@ -2,6 +2,7 @@ package mafisher.quasar.effect.gameplay;
 
 import java.util.Objects;
 import java.util.UUID;
+import mafisher.quasar.effect.EffectLimits;
 import mafisher.quasar.effect.EffectPriority;
 import mafisher.quasar.effect.audio.EffectAudioSpec;
 import net.minecraft.resources.ResourceLocation;
@@ -31,7 +32,7 @@ public record GameplayEffectSpec(
         if (!Double.isFinite(anchor.x) || !Double.isFinite(anchor.y) || !Double.isFinite(anchor.z)) {
             throw new IllegalArgumentException("Gameplay effect anchor must be finite");
         }
-        if (!Float.isFinite(scale) || scale <= 0.0F || scale > 128.0F) {
+        if (!Float.isFinite(scale) || scale <= 0.0F || scale > EffectLimits.MAX_SCALE) {
             throw new IllegalArgumentException("Gameplay effect scale must be finite and between 0 and 128");
         }
         audio.requireFitsWithin(phases.totalDurationTicks());

@@ -9,6 +9,7 @@ import mafisher.quasar.compat.RenderEnvironment;
 import mafisher.quasar.effect.network.EffectAudioPlanPayload;
 import mafisher.quasar.effect.network.EffectAudioTriggerPayload;
 import mafisher.quasar.effect.network.EffectDebrisPayload;
+import mafisher.quasar.effect.network.EffectTransformBatchPayload;
 import mafisher.quasar.effect.network.ResumeEffectsPayload;
 import mafisher.quasar.effect.network.StartSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
@@ -87,6 +88,37 @@ final class ClientEffectFrameRuntime {
 
     static void update(UpdateVisualEffectPayload payload) {
         manager().update(payload);
+    }
+
+    static void updateBatch(EffectTransformBatchPayload payload) {
+        ClientVisualEffectManager current = manager();
+        for (EffectTransformBatchPayload.Entry update : payload.updates()) {
+            if (update.segmented()) {
+                current.updateSegmented(new UpdateSegmentedVisualEffectPayload(
+                    update.instanceId(),
+                    payload.dimensionId(),
+                    update.x(),
+                    update.y(),
+                    update.z(),
+                    update.yaw(),
+                    update.pitch(),
+                    update.roll(),
+                    payload.updateGameTime()
+                ));
+            } else {
+                current.update(new UpdateVisualEffectPayload(
+                    update.instanceId(),
+                    payload.dimensionId(),
+                    update.x(),
+                    update.y(),
+                    update.z(),
+                    update.yaw(),
+                    update.pitch(),
+                    update.roll(),
+                    payload.updateGameTime()
+                ));
+            }
+        }
     }
 
     static void startSegmented(StartSegmentedVisualEffectPayload payload) {

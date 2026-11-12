@@ -10,6 +10,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import mafisher.quasar.effect.EffectAudience;
+import mafisher.quasar.effect.EffectBudgetService;
+import mafisher.quasar.effect.EffectPriority;
 import mafisher.quasar.effect.EffectTimeline;
 import mafisher.quasar.effect.LevelStateSlot;
 import mafisher.quasar.effect.network.EffectAudioPlanPayload;
@@ -27,7 +29,10 @@ import org.slf4j.LoggerFactory;
  * effect persists its {@link EffectAudioSpec} and rebuilds the plan on restore.
  */
 public final class EffectAudioService {
-    /** Provisional safety cap; exceeding it mutes the oldest plan instead of rejecting the new effect. */
+    /**
+     * Soft per-level cap. At capacity the lowest-priority plan is evicted; an incoming plan below
+     * every active priority is dropped instead of displacing a more important one.
+     */
     public static final int MAX_ACTIVE_PLANS_PER_LEVEL = 128;
     /** Runtime trigger events accepted per plan per server tick. */
     public static final int MAX_TRIGGER_EVENTS_PER_TICK_PER_PLAN = 16;
@@ -39,11 +44,22 @@ public final class EffectAudioService {
     private EffectAudioService() {
     }
 
-    /** Starts or replaces one effect's audio plan and sends it to the current audience. */
+    /** Starts or replaces one effect's audio plan with default priority. */
     public static void start(ServerLevel level, EffectAudioPlan plan, EffectAudience audience) {
+        start(level, plan, audience, EffectPriority.NORMAL);
+    }
+
+    /** Starts or replaces one effect's audio plan and sends it to the current audience. */
+    public static void start(
+        ServerLevel level,
+        EffectAudioPlan plan,
+        EffectAudience audience,
+        EffectPriority priority
+    ) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(plan, "plan");
         Objects.requireNonNull(audience, "audience");
+        Objects.requireNonNull(priority, "priority");
         if (level.isClientSide()) {
             throw new IllegalStateException("Effect audio is server-authoritative");
         }
@@ -64,16 +80,35 @@ public final class EffectAudioService {
             return;
         }
         while (plans.size() >= MAX_ACTIVE_PLANS_PER_LEVEL) {
-            UUID oldest = plans.keySet().iterator().next();
-            ActiveAudio evicted = plans.remove(oldest);
-            if (evicted != null) {
-                LOGGER.warn("Evicting effect audio plan {} in {}: active plan cap reached",
-                    oldest, level.dimension().location());
-                evicted.stop(level);
+            UUID victim = EffectBudgetService.lowestPriority(
+                plans, active -> active.priority.weight(), null
+            );
+            ActiveAudio evicted = victim == null ? null : plans.get(victim);
+            if (evicted == null) {
+                break;
             }
+            if (priority.weight() < evicted.priority.weight()) {
+                EffectBudgetService.recordAudioDrop(level);
+                LOGGER.warn(
+                    "Dropping effect audio plan {} in {}: its priority {} is below every active plan",
+                    plan.effectId(),
+                    level.dimension().location(),
+                    priority
+                );
+                return;
+            }
+            plans.remove(victim);
+            EffectBudgetService.recordAudioEviction(level);
+            LOGGER.warn(
+                "Evicting effect audio plan {} in {}: active plan cap reached and priority {} is lowest",
+                victim,
+                level.dimension().location(),
+                evicted.priority
+            );
+            evicted.stop(level);
         }
 
-        ActiveAudio active = new ActiveAudio(plan, audience);
+        ActiveAudio active = new ActiveAudio(plan, audience, priority);
         plans.put(plan.effectId(), active);
         active.syncAudience(level);
     }
@@ -256,12 +291,14 @@ public final class EffectAudioService {
     private static final class ActiveAudio {
         private final EffectAudioPlan plan;
         private final EffectAudience audience;
+        private final EffectPriority priority;
         private final Set<UUID> recipients = new LinkedHashSet<>();
         private int triggersThisTick;
 
-        private ActiveAudio(EffectAudioPlan plan, EffectAudience audience) {
+        private ActiveAudio(EffectAudioPlan plan, EffectAudience audience, EffectPriority priority) {
             this.plan = plan;
             this.audience = audience;
+            this.priority = priority;
         }
 
         private boolean audienceContains(ServerLevel level, ServerPlayer player) {

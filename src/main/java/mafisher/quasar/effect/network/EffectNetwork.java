@@ -15,7 +15,7 @@ public final class EffectNetwork {
 
     @SubscribeEvent
     public static void registerPayloads(RegisterPayloadHandlersEvent event) {
-        var registrar = event.registrar("12");
+        var registrar = event.registrar("14");
         registrar.playToClient(ResumeEffectsPayload.TYPE, ResumeEffectsPayload.STREAM_CODEC,
             (payload, context) -> {
                 if (FMLEnvironment.dist == Dist.CLIENT) {
@@ -32,6 +32,12 @@ public final class EffectNetwork {
             (payload, context) -> {
                 if (FMLEnvironment.dist == Dist.CLIENT) {
                     context.enqueueWork(() -> ClientEffectRuntime.start(payload));
+                }
+            });
+        registrar.playToClient(EffectTransformBatchPayload.TYPE, EffectTransformBatchPayload.STREAM_CODEC,
+            (payload, context) -> {
+                if (FMLEnvironment.dist == Dist.CLIENT) {
+                    context.enqueueWork(() -> ClientEffectRuntime.updateBatch(payload));
                 }
             });
         registrar.playToClient(UpdateVisualEffectPayload.TYPE, UpdateVisualEffectPayload.STREAM_CODEC,

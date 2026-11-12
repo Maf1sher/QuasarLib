@@ -526,6 +526,7 @@ public final class EffectDebugCommands {
                     + ", gameplay " + report.gameplaySessions() + "/" + report.gameplaySessionBudget()
                     + " (pending " + report.pendingGameplaySessions() + "/" + report.gameplayPendingBudget() + ")"
                     + ", cinematics " + report.cinematicSessions() + "/" + report.cinematicSessionBudget()
+                    + ", audio " + report.audioPlans() + "/" + report.audioPlanBudget()
                     + ", over budget " + report.overBudget() + "."
             ),
             false
@@ -533,7 +534,9 @@ public final class EffectDebugCommands {
         source.sendSuccess(
             () -> Component.literal(
                 "Soft degradation: culled " + report.culledEffects() + ", deferred "
-                    + report.deferredStarts() + ", dropped spawns " + report.droppedEntitySpawns() + "."
+                    + report.deferredStarts() + ", dropped spawns " + report.droppedEntitySpawns()
+                    + ", audio evicted " + report.audioEvictions()
+                    + ", audio dropped " + report.audioDrops() + "."
             ),
             false
         );

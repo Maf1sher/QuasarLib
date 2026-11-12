@@ -24,7 +24,7 @@ public record VisualEffectSpec(
         }
         if (!Double.isFinite(position.x) || !Double.isFinite(position.y) || !Double.isFinite(position.z)
             || !Float.isFinite(yaw) || !Float.isFinite(pitch) || !Float.isFinite(roll)
-            || !Float.isFinite(scale) || scale <= 0.0F || scale > 128.0F
+            || !Float.isFinite(scale) || scale <= 0.0F || scale > EffectLimits.MAX_SCALE
             || !EffectTimeline.isValidDuration(durationTicks)) {
             throw new IllegalArgumentException("Invalid visual effect parameters");
         }

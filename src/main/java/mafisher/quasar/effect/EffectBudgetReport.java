@@ -16,9 +16,13 @@ public record EffectBudgetReport(
     int gameplayPendingBudget,
     int cinematicSessions,
     int cinematicSessionBudget,
+    int audioPlans,
+    int audioPlanBudget,
     long culledEffects,
     long deferredStarts,
-    long droppedEntitySpawns
+    long droppedEntitySpawns,
+    long audioEvictions,
+    long audioDrops
 ) {
     public boolean overBudget() {
         return this.standaloneVisuals > this.standaloneVisualBudget

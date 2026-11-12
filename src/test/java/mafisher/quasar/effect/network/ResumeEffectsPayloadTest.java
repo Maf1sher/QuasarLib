@@ -5,8 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import mafisher.quasar.effect.scale.SegmentHeightProfile;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 
@@ -72,6 +74,26 @@ class ResumeEffectsPayloadTest {
 
         assertThrows(IllegalArgumentException.class,
             () -> new ResumeEffectsPayload(DIMENSION, List.of(), List.of(entry)));
+    }
+
+    @Test
+    void rejectsAResumePayloadAboveTheEncodedByteCap() {
+        List<StartSegmentedVisualEffectPayload> segmented = new ArrayList<>();
+        double[] heights = new double[128];
+        for (int index = 0; index < heights.length; index++) {
+            heights[index] = 64.0 + index;
+        }
+        SegmentHeightProfile profile = SegmentHeightProfile.of(16, 8, heights);
+        for (int index = 0; index < 900; index++) {
+            segmented.add(new StartSegmentedVisualEffectPayload(
+                EFFECT, UUID.randomUUID(), DIMENSION, 0.0, 64.0, 0.0,
+                0.0F, 0.0F, 0.0F, 1.0F, 16, 8, 8.0, 200, 0L, 0L, 1L,
+                1, 0.0, profile
+            ));
+        }
+
+        assertThrows(IllegalArgumentException.class,
+            () -> new ResumeEffectsPayload(DIMENSION, List.of(), segmented));
     }
 
     @Test

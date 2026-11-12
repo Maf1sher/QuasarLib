@@ -4,6 +4,7 @@ import mafisher.quasar.effect.EffectQualityTier;
 import mafisher.quasar.effect.network.EffectAudioPlanPayload;
 import mafisher.quasar.effect.network.EffectAudioTriggerPayload;
 import mafisher.quasar.effect.network.EffectDebrisPayload;
+import mafisher.quasar.effect.network.EffectTransformBatchPayload;
 import mafisher.quasar.effect.network.ResumeEffectsPayload;
 import mafisher.quasar.effect.network.StartSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.StartVisualEffectPayload;
@@ -36,6 +37,10 @@ public final class ClientEffectRuntime {
 
     public static void update(UpdateVisualEffectPayload payload) {
         ClientEffectFrameRuntime.update(payload);
+    }
+
+    public static void updateBatch(EffectTransformBatchPayload payload) {
+        ClientEffectFrameRuntime.updateBatch(payload);
     }
 
     public static void startSegmented(StartSegmentedVisualEffectPayload payload) {

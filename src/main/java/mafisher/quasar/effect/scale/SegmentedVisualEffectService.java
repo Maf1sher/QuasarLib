@@ -14,13 +14,13 @@ import mafisher.quasar.effect.EffectBudgets;
 import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectTimeline;
 import mafisher.quasar.effect.EffectTransform;
+import mafisher.quasar.effect.EffectTransformBatchService;
 import mafisher.quasar.effect.LevelStateSlot;
 import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.audio.EffectAudioPlan;
 import mafisher.quasar.effect.audio.EffectAudioService;
 import mafisher.quasar.effect.network.StartSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.StopSegmentedVisualEffectPayload;
-import mafisher.quasar.effect.network.UpdateSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.persistence.EffectDescriptor;
 import mafisher.quasar.effect.persistence.EffectKind;
 import mafisher.quasar.effect.persistence.EffectPersistenceOptions;
@@ -257,7 +257,10 @@ public final class SegmentedVisualEffectService {
         return new SegmentedVisualEffectHandle(coordinatorId);
     }
 
-    /** Moves the root transform and sends one aggregated update per tracking player. Unknown handles are no-ops. */
+    /**
+     * Moves the root transform. The change is applied immediately and delivered to trackers in
+     * the next per-tick transform batch. Unknown handles are no-ops.
+     */
     public static void update(ServerLevel level, SegmentedVisualEffectHandle handle, EffectTransform transform) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(handle, "handle");
@@ -272,12 +275,8 @@ public final class SegmentedVisualEffectService {
             activeEffect.descriptor = activeEffect.descriptor.withTransform(transform);
             EffectPersistenceService.recordUpdate(level, activeEffect.descriptor);
         }
-        VisualEffectService.sendToTrackingPlayers(
-            level,
-            activeEffect.trackingPlayers,
-            UpdateSegmentedVisualEffectPayload.of(
-                handle.coordinatorId(), level.dimension().location(), transform, level.getGameTime()
-            )
+        EffectTransformBatchService.queueSegmented(
+            level, handle.coordinatorId(), transform, activeEffect.trackingPlayers
         );
     }
 
@@ -500,7 +499,7 @@ public final class SegmentedVisualEffectService {
             spec.durationTicks(),
             spec.audio()
         );
-        EffectAudioService.start(level, plan, spec.audience());
+        EffectAudioService.start(level, plan, spec.audience(), spec.priority());
     }
 
     private static void collectAudience(

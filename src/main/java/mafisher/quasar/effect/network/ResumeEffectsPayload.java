@@ -19,6 +19,7 @@ public record ResumeEffectsPayload(
 ) implements CustomPacketPayload {
     public static final int MAX_EFFECTS = 128;
     public static final int MAX_SEGMENTED_EFFECTS = SegmentedEffectLimits.MAX_SEGMENTS_PER_LEVEL;
+    public static final int MAX_ENCODED_BYTES = EffectPayloadLimits.MAX_RESUME_BYTES;
     public static final Type<ResumeEffectsPayload> TYPE = new Type<>(
         ResourceLocation.fromNamespaceAndPath("quasar_lib", "resume_effects")
     );
@@ -29,7 +30,7 @@ public record ResumeEffectsPayload(
     );
 
     public ResumeEffectsPayload {
-        Objects.requireNonNull(dimensionId, "dimensionId");
+        EffectPayloadLimits.requireIdentifier(dimensionId, "Payload dimension");
         Objects.requireNonNull(effects, "effects");
         Objects.requireNonNull(segmentedEffects, "segmentedEffects");
         if (effects.size() > MAX_EFFECTS) {
@@ -53,6 +54,21 @@ public record ResumeEffectsPayload(
             if (!effect.dimensionId().equals(dimensionId)) {
                 throw new IllegalArgumentException("Segmented resume entries must match the payload dimension");
             }
+        }
+
+        int encodedBytes = EffectPayloadLimits.encodedSize(
+            ResourceLocation.STREAM_CODEC, dimensionId
+        ) + Integer.BYTES * 2;
+        for (StartVisualEffectPayload effect : effects) {
+            encodedBytes += EffectPayloadLimits.encodedSize(StartVisualEffectPayload.STREAM_CODEC, effect);
+        }
+        for (StartSegmentedVisualEffectPayload effect : segmentedEffects) {
+            encodedBytes += EffectPayloadLimits.encodedSize(StartSegmentedVisualEffectPayload.STREAM_CODEC, effect);
+        }
+        if (encodedBytes > MAX_ENCODED_BYTES) {
+            throw new IllegalArgumentException(
+                "A resume payload must encode to at most " + MAX_ENCODED_BYTES + " bytes"
+            );
         }
     }
 

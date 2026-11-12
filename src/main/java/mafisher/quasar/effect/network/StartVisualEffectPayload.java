@@ -1,6 +1,7 @@
 package mafisher.quasar.effect.network;
 
 import io.netty.buffer.ByteBuf;
+import mafisher.quasar.effect.EffectLimits;
 import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectTimeline;
 import mafisher.quasar.effect.EffectTransform;
@@ -47,12 +48,12 @@ public record StartVisualEffectPayload(
     );
 
     public StartVisualEffectPayload {
-        Objects.requireNonNull(effectId, "effectId");
+        EffectPayloadLimits.requireIdentifier(effectId, "Effect ID");
         Objects.requireNonNull(instanceId, "instanceId");
-        Objects.requireNonNull(dimensionId, "dimensionId");
+        EffectPayloadLimits.requireIdentifier(dimensionId, "Payload dimension");
         if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)
             || !Float.isFinite(yaw) || !Float.isFinite(pitch) || !Float.isFinite(roll)
-            || !Float.isFinite(scale) || scale <= 0.0F
+            || !Float.isFinite(scale) || scale <= 0.0F || scale > EffectLimits.MAX_SCALE
             || !EffectTimeline.isValidDuration(durationTicks)) {
             throw new IllegalArgumentException("Invalid visual effect payload");
         }

@@ -24,6 +24,7 @@ public final class EffectTickHandler {
             GameplayEffectService.tick(serverLevel);
             CinematicEffectService.tick(serverLevel);
             EffectAudioService.tick(serverLevel);
+            EffectTransformBatchService.flush(serverLevel);
         }
     }
 }

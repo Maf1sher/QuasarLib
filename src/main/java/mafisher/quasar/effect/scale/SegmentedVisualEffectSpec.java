@@ -2,6 +2,7 @@ package mafisher.quasar.effect.scale;
 
 import java.util.Objects;
 import mafisher.quasar.effect.EffectAudience;
+import mafisher.quasar.effect.EffectLimits;
 import mafisher.quasar.effect.EffectPriority;
 import mafisher.quasar.effect.EffectTimeline;
 import mafisher.quasar.effect.VisualEffectSpec;
@@ -51,7 +52,8 @@ public record SegmentedVisualEffectSpec(
         new SegmentGridLayout(columns, rows, layers, spacing, layerSpacing);
         if (!Double.isFinite(center.x) || !Double.isFinite(center.y) || !Double.isFinite(center.z)
             || !Float.isFinite(yaw) || !Float.isFinite(pitch) || !Float.isFinite(roll)
-            || !Float.isFinite(segmentScale) || segmentScale <= 0.0F || segmentScale > 128.0F
+            || !Float.isFinite(segmentScale) || segmentScale <= 0.0F
+            || segmentScale > EffectLimits.MAX_SCALE
             || !EffectTimeline.isValidDuration(durationTicks)) {
             throw new IllegalArgumentException("Invalid segmented visual effect parameters");
         }

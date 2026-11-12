@@ -57,6 +57,25 @@ class StartSegmentedVisualEffectPayloadTest {
     }
 
     @Test
+    void staysWithinTheDocumentedEncodedByteCapWithWidestIdentifiers() {
+        ResourceLocation widest = ResourceLocation.fromNamespaceAndPath(
+            "a".repeat(128), "b".repeat(127)
+        );
+        double[] values = new double[128];
+        for (int index = 0; index < values.length; index++) {
+            values[index] = 64.0 + index;
+        }
+        StartSegmentedVisualEffectPayload payload = new StartSegmentedVisualEffectPayload(
+            widest, UUID.randomUUID(), widest, 1.0, 64.0, -3.0,
+            15.0F, 20.0F, 25.0F, 128.0F, 16, 8, 8.0, 200, 100L, 140L, 42L,
+            1, 0.0, SegmentHeightProfile.of(16, 8, values)
+        );
+
+        assertTrue(encodedSize(payload) <= EffectPayloadLimits.MAX_SEGMENTED_START_BYTES,
+            "segmented start encoded to " + encodedSize(payload) + " bytes");
+    }
+
+    @Test
     void rejectsMismatchedHeightProfiles() {
         SegmentHeightProfile heights = SegmentHeightProfile.of(2, 2, new double[] {64.0, 66.0, 68.0, 70.0});
 
