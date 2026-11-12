@@ -25,10 +25,10 @@ final class InstancedBatchBuilder {
         Comparator.comparingDouble(Instance::cameraDistanceSquared).reversed();
 
     private final int maxInstancesPerDraw;
-    private final double cameraX;
-    private final double cameraY;
-    private final double cameraZ;
     private final Map<BatchKey, Batch> batches = new LinkedHashMap<>();
+    private double cameraX;
+    private double cameraY;
+    private double cameraZ;
 
     InstancedBatchBuilder(int maxInstancesPerDraw) {
         this(maxInstancesPerDraw, 0.0, 0.0, 0.0);
@@ -38,17 +38,23 @@ final class InstancedBatchBuilder {
         if (maxInstancesPerDraw < 1) {
             throw new IllegalArgumentException("An instanced draw needs at least one slot");
         }
-        if (!Double.isFinite(cameraX) || !Double.isFinite(cameraY) || !Double.isFinite(cameraZ)) {
-            throw new IllegalArgumentException("Instanced batch camera position must be finite");
-        }
         this.maxInstancesPerDraw = maxInstancesPerDraw;
-        this.cameraX = cameraX;
-        this.cameraY = cameraY;
-        this.cameraZ = cameraZ;
+        this.reset(cameraX, cameraY, cameraZ);
     }
 
     int maxInstancesPerDraw() {
         return this.maxInstancesPerDraw;
+    }
+
+    /** Clears the previous frame and moves the sort origin to the new camera position. */
+    void reset(double cameraX, double cameraY, double cameraZ) {
+        if (!Double.isFinite(cameraX) || !Double.isFinite(cameraY) || !Double.isFinite(cameraZ)) {
+            throw new IllegalArgumentException("Instanced batch camera position must be finite");
+        }
+        this.cameraX = cameraX;
+        this.cameraY = cameraY;
+        this.cameraZ = cameraZ;
+        this.batches.clear();
     }
 
     boolean isEmpty() {
@@ -75,18 +81,24 @@ final class InstancedBatchBuilder {
     /** Returns ordered draws, each bounded by the configured instance limit. */
     List<InstancedDraw> draws() {
         List<InstancedDraw> draws = new ArrayList<>();
+        this.drawInto(draws);
+        return List.copyOf(draws);
+    }
+
+    /** Fills {@code output} with the ordered draws for one immediate render pass. */
+    void drawInto(List<InstancedDraw> output) {
+        Objects.requireNonNull(output, "output");
+        output.clear();
         for (Batch batch : this.batches.values()) {
             List<Instance> instances = batch.instances;
             if (batch.key.renderType().sortOnUpload() && instances.size() > 1) {
-                instances = new ArrayList<>(instances);
                 instances.sort(BACK_TO_FRONT);
             }
             for (int start = 0; start < instances.size(); start += this.maxInstancesPerDraw) {
                 int end = Math.min(start + this.maxInstancesPerDraw, instances.size());
-                draws.add(new InstancedDraw(batch.key, List.copyOf(instances.subList(start, end))));
+                output.add(new InstancedDraw(batch.key, instances.subList(start, end)));
             }
         }
-        return List.copyOf(draws);
     }
 
     /** Composes the cell world transform with the renderer's local transform. */
@@ -127,7 +139,6 @@ final class InstancedBatchBuilder {
     ) {
         Instance {
             Objects.requireNonNull(model, "model");
-            model = new Matrix4f(model);
             if (!Double.isFinite(cameraDistanceSquared) || cameraDistanceSquared < 0.0) {
                 throw new IllegalArgumentException("Invalid instance camera distance");
             }
@@ -156,7 +167,6 @@ final class InstancedBatchBuilder {
             if (instances.isEmpty()) {
                 throw new IllegalArgumentException("An instanced draw needs at least one instance");
             }
-            instances = List.copyOf(instances);
         }
     }
 

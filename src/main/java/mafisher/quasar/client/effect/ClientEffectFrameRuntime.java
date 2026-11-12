@@ -161,13 +161,15 @@ final class ClientEffectFrameRuntime {
         if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_BLOCK_ENTITIES) {
             ClientEffectDebris.render(event);
             ClientScreenCompositor compositor = screenCompositor;
-            if (compositor != null) {
-                compositor.captureOpaqueDepth(event);
+            ClientVisualEffectManager effectManager = manager;
+            if (compositor != null && effectManager != null) {
+                compositor.captureOpaqueDepth(event, effectManager);
             }
         } else if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) {
             ClientScreenCompositor compositor = screenCompositor;
-            if (compositor != null) {
-                compositor.captureForegroundDepth(event);
+            ClientVisualEffectManager effectManager = manager;
+            if (compositor != null && effectManager != null) {
+                compositor.captureForegroundDepth(event, effectManager);
             }
         } else if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_PARTICLES) {
             long start = System.nanoTime();
@@ -182,7 +184,7 @@ final class ClientEffectFrameRuntime {
                 ClientVisualEffectManager effectManager = manager();
                 ClientScreenCompositor compositor = screenCompositor;
                 if (compositor != null) {
-                    List<ScreenEffectBatch> batches = effectManager.screenEffects(event);
+                    List<ScreenEffectBatch> batches = effectManager.screenEffects(event, environment);
                     compositor.render(event, effectManager, batches, environment);
                 }
                 ScreenFlashRenderer.render(

@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.UUID;
 import mafisher.quasar.client.effect.EffectLod;
 import mafisher.quasar.client.effect.EffectRenderContext;
+import mafisher.quasar.client.effect.ScreenEffectInputs;
 import mafisher.quasar.client.effect.ScreenEffectMask;
 import mafisher.quasar.client.effect.ScreenEffectSettings;
 import mafisher.quasar.client.effect.VisualEffectInstance;
@@ -67,8 +68,11 @@ class ContentBlackHoleRendererTest {
     }
 
     @Test
-    void requestsFullResolutionComposition() {
-        assertEquals(1.0F, new ContentBlackHoleOperation().compositionScaleFloor(), 0.0001F);
+    void requestsFullResolutionCompositionAndBothOptionalCaptures() {
+        ContentBlackHoleOperation operation = new ContentBlackHoleOperation();
+
+        assertEquals(1.0F, operation.compositionScaleFloor(), 0.0001F);
+        assertSame(ScreenEffectInputs.ALL, operation.requiredInputs());
     }
 
     private static EffectRenderContext context() {

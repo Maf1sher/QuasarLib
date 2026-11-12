@@ -56,7 +56,20 @@ public final class ClientVisualEffectManager {
     private final GpuMeshCache meshCache = new GpuMeshCache();
     private final InstancedBatchRenderer instancedRenderer = new InstancedBatchRenderer(this.meshCache);
     private final CachedMeshRenderer cachedMeshRenderer = new CachedMeshRenderer(this.meshCache);
+    private final List<VisibleEffect> visibleEffects = new ArrayList<>();
+    private final List<ScreenEffectFrame> screenFrames = new ArrayList<>();
+    private final Set<RenderType> usedRenderTypes = new LinkedHashSet<>();
+    private final Set<String> passIds = new HashSet<>();
+    private final Matrix4f viewMatrix = new Matrix4f();
+    private final Matrix4f baseView = new Matrix4f();
+    private final List<InstancedBatchBuilder.InstancedDraw> instancedDraws = new ArrayList<>();
+    private final List<UUID> finishedEffects = new ArrayList<>();
+    private final FrameSnapshotCache frameCache = new FrameSnapshotCache();
+    private boolean screenEffectStateChanged;
     private RenderEnvironment frameEnvironment = RenderEnvironment.VANILLA;
+    private InstancedBatchBuilder instancedBatchBuilder;
+    private List<ScreenEffectBatch> screenBatches = List.of();
+    private int screenBatchTick = Integer.MIN_VALUE;
     private ClientLevel currentLevel;
 
     ClientVisualEffectManager(VisualEffectRendererRegistry rendererRegistry) {
@@ -64,6 +77,8 @@ public final class ClientVisualEffectManager {
     }
 
     void start(StartVisualEffectPayload payload) {
+        this.invalidateFrame();
+        this.screenEffectStateChanged = true;
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
         this.synchronizeLevel(level);
@@ -102,6 +117,8 @@ public final class ClientVisualEffectManager {
 
     /** Starts every cell of one segmented coordinator from one aggregated payload. */
     void startSegmented(StartSegmentedVisualEffectPayload payload) {
+        this.invalidateFrame();
+        this.screenEffectStateChanged = true;
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
         this.synchronizeLevel(level);
@@ -149,6 +166,8 @@ public final class ClientVisualEffectManager {
 
     /** Removes every cell of one segmented coordinator. */
     void stopSegmented(StopSegmentedVisualEffectPayload payload) {
+        this.invalidateFrame();
+        this.screenEffectStateChanged = true;
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
         this.synchronizeLevel(level);
@@ -159,6 +178,8 @@ public final class ClientVisualEffectManager {
     }
 
     void stop(StopVisualEffectPayload payload) {
+        this.invalidateFrame();
+        this.screenEffectStateChanged = true;
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
         this.synchronizeLevel(level);
@@ -186,6 +207,7 @@ public final class ClientVisualEffectManager {
     }
 
     void update(UpdateVisualEffectPayload payload) {
+        this.invalidateFrame();
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
         this.synchronizeLevel(level);
@@ -203,6 +225,7 @@ public final class ClientVisualEffectManager {
 
     /** Stores one aggregated coordinator update; segment transforms are derived only for visible cells. */
     void updateSegmented(UpdateSegmentedVisualEffectPayload payload) {
+        this.invalidateFrame();
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
         this.synchronizeLevel(level);
@@ -220,127 +243,126 @@ public final class ClientVisualEffectManager {
 
     void render(net.neoforged.neoforge.client.event.RenderLevelStageEvent event,
         RenderEnvironment environment) {
-        this.frameEnvironment = Objects.requireNonNull(environment, "environment");
-        Minecraft minecraft = Minecraft.getInstance();
-        ClientLevel level = minecraft.level;
-        this.synchronizeLevel(level);
-        if (level == null) {
-            return;
-        }
-        long gameTime = ClientEffectClock.estimate(level.getGameTime());
-        this.removeFinishedEffects(level, gameTime);
-        if (this.activeEffects.isEmpty()) {
+        this.ensureFrame(event, environment);
+        if (this.visibleEffects.isEmpty()) {
             return;
         }
 
+        Minecraft minecraft = Minecraft.getInstance();
         ClientQualityController.beginWorldGpu();
         try {
             Vec3 cameraPosition = event.getCamera().getPosition();
             PoseStack poseStack = event.getPoseStack();
             MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
-            Set<RenderType> usedRenderTypes = new LinkedHashSet<>();
-            InstancedBatchBuilder instancedBatches = new InstancedBatchBuilder(
-                this.instancedRenderer.maxInstancesPerDraw(),
-                cameraPosition.x, cameraPosition.y, cameraPosition.z
-            );
-            Matrix4f viewMatrix = new Matrix4f(RenderSystem.getModelViewMatrix());
+            InstancedBatchBuilder instancedBatches = this.instancedBatchBuilder(cameraPosition);
+            this.viewMatrix.set(RenderSystem.getModelViewMatrix());
             poseStack.pushPose();
             poseStack.translate(-cameraPosition.x, -cameraPosition.y, -cameraPosition.z);
-            Matrix4f baseView = new Matrix4f(RenderSystem.getModelViewMatrix()).mul(poseStack.last().pose());
+            this.baseView.set(RenderSystem.getModelViewMatrix()).mul(poseStack.last().pose());
             try {
-                this.forEachVisibleEffect(event, (effect, context, renderer) -> {
-                    if (renderer instanceof StaticMeshVisualEffectRenderer staticRenderer) {
-                        List<EffectStaticMeshPass> staticPasses = staticRenderer.staticMeshPasses(context);
-                        if (!staticPasses.isEmpty()) {
-                            EffectTransform staticTransform = context.transform();
-                            poseStack.pushPose();
-                            try {
-                                poseStack.translate(staticTransform.position().x(),
-                                    staticTransform.position().y(), staticTransform.position().z());
-                                EffectRenderTransform.applyRotation(poseStack, staticTransform.yaw(),
-                                    staticTransform.pitch(), staticTransform.roll());
-                                this.cachedMeshRenderer.draw(staticPasses, poseStack, viewMatrix,
-                                    RenderSystem.getProjectionMatrix());
-                            } finally {
-                                poseStack.popPose();
-                            }
-                        }
-                    }
-                    if (renderer instanceof InstancedVisualEffectRenderer instanced) {
-                        List<EffectInstancedPass> instancedPasses = instanced.instancedPasses(context);
-                        if (!instancedPasses.isEmpty()) {
-                            instancedBatches.add(context, instancedPasses);
-                            return;
-                        }
-                    }
-                    EffectTransform transform = context.transform();
-                    List<EffectRenderPass> renderPasses = List.copyOf(renderer.renderPasses(context));
-                    Set<String> passIds = new HashSet<>();
-                    for (EffectRenderPass renderPass : renderPasses) {
-                        if (!passIds.add(renderPass.id())) {
-                            throw new IllegalStateException("Duplicate render pass ID '" + renderPass.id()
-                                + "' for effect " + effect.effectId());
-                        }
-                    }
-                    poseStack.pushPose();
-                    try {
-                        poseStack.translate(transform.position().x(), transform.position().y(),
-                            transform.position().z());
-                        EffectRenderTransform.applyRotation(poseStack, transform.yaw(), transform.pitch(),
-                            transform.roll());
-                        for (EffectRenderPass renderPass : renderPasses) {
-                            usedRenderTypes.add(renderPass.renderType());
-                            renderer.render(context, renderPass, poseStack, buffers);
-                        }
-                    } finally {
-                        poseStack.popPose();
-                    }
-                });
+                this.usedRenderTypes.clear();
+                for (VisibleEffect visible : this.visibleEffects) {
+                    this.renderWorldPasses(visible, poseStack, buffers, instancedBatches);
+                }
             } finally {
                 poseStack.popPose();
-                for (RenderType renderType : usedRenderTypes) {
+                for (RenderType renderType : this.usedRenderTypes) {
                     buffers.endBatch(renderType);
                 }
             }
-            this.instancedRenderer.draw(instancedBatches.draws(), baseView, RenderSystem.getProjectionMatrix());
+            instancedBatches.drawInto(this.instancedDraws);
+            this.instancedRenderer.draw(this.instancedDraws, this.baseView,
+                RenderSystem.getProjectionMatrix());
         } finally {
             ClientQualityController.endWorldGpu();
         }
     }
 
-    List<ScreenEffectBatch> screenEffects(net.neoforged.neoforge.client.event.RenderLevelStageEvent event) {
-        Minecraft minecraft = Minecraft.getInstance();
-        ClientLevel level = minecraft.level;
-        this.synchronizeLevel(level);
-        if (level == null) {
-            return List.of();
+    private void renderWorldPasses(VisibleEffect visible, PoseStack poseStack,
+        MultiBufferSource.BufferSource buffers, InstancedBatchBuilder instancedBatches) {
+        VisualEffectRenderer renderer = visible.renderer();
+        EffectRenderContext context = visible.context();
+        if (renderer instanceof StaticMeshVisualEffectRenderer staticRenderer) {
+            List<EffectStaticMeshPass> staticPasses = staticRenderer.staticMeshPasses(context);
+            if (!staticPasses.isEmpty()) {
+                EffectTransform staticTransform = context.transform();
+                poseStack.pushPose();
+                try {
+                    poseStack.translate(staticTransform.position().x(),
+                        staticTransform.position().y(), staticTransform.position().z());
+                    EffectRenderTransform.applyRotation(poseStack, staticTransform.yaw(),
+                        staticTransform.pitch(), staticTransform.roll());
+                    this.cachedMeshRenderer.draw(staticPasses, poseStack, this.viewMatrix,
+                        RenderSystem.getProjectionMatrix());
+                } finally {
+                    poseStack.popPose();
+                }
+            }
         }
-
-        long gameTime = ClientEffectClock.estimate(level.getGameTime());
-        this.removeFinishedEffects(level, gameTime);
-        if (this.activeEffects.isEmpty()) {
-            return List.of();
-        }
-
-        List<ScreenEffectFrame> frames = new ArrayList<>();
-        this.forEachVisibleEffect(event, (effect, context, renderer) -> {
-            if (!(renderer instanceof ScreenEffectRenderer screenRenderer)) {
+        if (renderer instanceof InstancedVisualEffectRenderer instanced) {
+            List<EffectInstancedPass> instancedPasses = instanced.instancedPasses(context);
+            if (!instancedPasses.isEmpty()) {
+                instancedBatches.add(context, instancedPasses);
                 return;
             }
+        }
+        EffectTransform transform = context.transform();
+        List<EffectRenderPass> renderPasses = renderer.renderPasses(context);
+        this.passIds.clear();
+        for (EffectRenderPass renderPass : renderPasses) {
+            if (!this.passIds.add(renderPass.id())) {
+                throw new IllegalStateException("Duplicate render pass ID '" + renderPass.id()
+                    + "' for effect " + visible.effect().effectId());
+            }
+        }
+        poseStack.pushPose();
+        try {
+            poseStack.translate(transform.position().x(), transform.position().y(),
+                transform.position().z());
+            EffectRenderTransform.applyRotation(poseStack, transform.yaw(), transform.pitch(),
+                transform.roll());
+            for (EffectRenderPass renderPass : renderPasses) {
+                this.usedRenderTypes.add(renderPass.renderType());
+                renderer.render(context, renderPass, poseStack, buffers);
+            }
+        } finally {
+            poseStack.popPose();
+        }
+    }
+
+    List<ScreenEffectBatch> screenEffects(net.neoforged.neoforge.client.event.RenderLevelStageEvent event,
+        RenderEnvironment environment) {
+        this.ensureFrame(event, environment);
+        if (this.visibleEffects.isEmpty()) {
+            return List.of();
+        }
+        if (this.screenBatchTick == this.frameCache.tick()) {
+            return this.screenBatches;
+        }
+
+        this.screenFrames.clear();
+        for (VisibleEffect visible : this.visibleEffects) {
+            if (!(visible.renderer() instanceof ScreenEffectRenderer screenRenderer)) {
+                continue;
+            }
+            EffectRenderContext context = visible.context();
             ScreenEffectSettings settings = Objects.requireNonNull(screenRenderer.screenEffectSettings(context),
                 "screenEffectSettings");
             ScreenEffectMask mask = Objects.requireNonNull(screenRenderer.screenEffectMask(context),
                 "screenEffectMask");
             if (mask.strength() <= 0.0F) {
-                return;
+                continue;
             }
             RenderType maskRenderType = Objects.requireNonNull(
                 screenRenderer.screenMaskRenderType(context), "screenMaskRenderType");
-            SegmentLink link = effect.payload().segmentLink();
-            UUID ownerId = link == null ? effect.instanceId() : link.coordinatorId();
-            frames.add(new ScreenEffectFrame(ownerId, context, screenRenderer, settings, mask, maskRenderType));
-        });
-        return ScreenEffectBatch.group(frames);
+            SegmentLink link = visible.effect().payload().segmentLink();
+            UUID ownerId = link == null ? visible.effect().instanceId() : link.coordinatorId();
+            this.screenFrames.add(new ScreenEffectFrame(ownerId, context, screenRenderer, settings, mask,
+                maskRenderType));
+        }
+        this.screenBatches = ScreenEffectBatch.group(this.screenFrames);
+        this.screenBatchTick = this.frameCache.tick();
+        return this.screenBatches;
     }
 
     void renderScreenMask(net.neoforged.neoforge.client.event.RenderLevelStageEvent event, ScreenEffectBatch batch) {
@@ -393,17 +415,43 @@ public final class ClientVisualEffectManager {
         }
     }
 
-    private void forEachVisibleEffect(
+    private void ensureFrame(
         net.neoforged.neoforge.client.event.RenderLevelStageEvent event,
-        VisibleEffectConsumer consumer
+        RenderEnvironment environment
     ) {
+        this.frameEnvironment = Objects.requireNonNull(environment, "environment");
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
+        this.synchronizeLevel(level);
         if (level == null) {
+            this.visibleEffects.clear();
+            this.screenBatches = List.of();
+            this.screenBatchTick = Integer.MIN_VALUE;
+            return;
+        }
+
+        if (!this.frameCache.shouldBuild(event.getRenderTick())) {
             return;
         }
         long gameTime = ClientEffectClock.estimate(level.getGameTime());
+        this.removeFinishedEffects(level, gameTime);
+        this.visibleEffects.clear();
+        this.screenBatches = List.of();
+        this.screenBatchTick = Integer.MIN_VALUE;
+        if (this.activeEffects.isEmpty()) {
+            return;
+        }
         float partialTick = event.getPartialTick().getGameTimeDeltaPartialTick(false);
+        this.forEachVisibleEffect(event, gameTime, partialTick, (effect, context, renderer) ->
+            this.visibleEffects.add(new VisibleEffect(effect, context, renderer)));
+    }
+
+    private void forEachVisibleEffect(
+        net.neoforged.neoforge.client.event.RenderLevelStageEvent event,
+        long gameTime,
+        float partialTick,
+        VisibleEffectConsumer consumer
+    ) {
         AABB query = this.queryBox(event.getCamera().getPosition());
 
         this.spatialIndex.query(query, entry -> {
@@ -444,9 +492,8 @@ public final class ClientVisualEffectManager {
         if (renderer == null) {
             return;
         }
-        EffectRenderContext context = this.createRenderContext(effect, gameTime, partialTick);
         EffectQualityTier quality = ClientQualityController.tier();
-        context = context.withQuality(quality);
+        EffectRenderContext context = this.createRenderContext(effect, gameTime, partialTick, quality);
         double radius = this.instanceSpatialRadii.getOrDefault(instanceId, Double.POSITIVE_INFINITY);
         if (!this.isVisible(renderer, context, event, radius)) {
             return;
@@ -468,9 +515,8 @@ public final class ClientVisualEffectManager {
             return;
         }
         VisualEffectInstance effect = group.renderInstance(member);
-        EffectRenderContext context = this.createRenderContext(effect, gameTime, partialTick);
         EffectQualityTier quality = ClientQualityController.tier();
-        context = context.withQuality(quality);
+        EffectRenderContext context = this.createRenderContext(effect, gameTime, partialTick, quality);
         if (!this.isVisible(renderer, context, event, member.spatialRadius())) {
             return;
         }
@@ -643,15 +689,15 @@ public final class ClientVisualEffectManager {
 
     private void removeFinishedEffects(ClientLevel level, long gameTime) {
         ResourceLocation currentDimension = level.dimension().location();
-        List<UUID> finished = new ArrayList<>();
+        this.finishedEffects.clear();
         for (Map.Entry<UUID, VisualEffectInstance> entry : this.activeEffects.entrySet()) {
             StartVisualEffectPayload payload = entry.getValue().payload();
             if (!payload.dimensionId().equals(currentDimension)
                 || EffectTimeline.isFinished(gameTime, payload.startGameTime(), payload.durationTicks())) {
-                finished.add(entry.getKey());
+                this.finishedEffects.add(entry.getKey());
             }
         }
-        for (UUID instanceId : finished) {
+        for (UUID instanceId : this.finishedEffects) {
             this.removeInstance(instanceId);
         }
     }
@@ -717,6 +763,24 @@ public final class ClientVisualEffectManager {
         return null;
     }
 
+    /** Returns whether any active instance can contribute a screen mask this frame. */
+    boolean hasActiveScreenEffects() {
+        for (VisualEffectInstance instance : this.activeEffects.values()) {
+            VisualEffectRenderer renderer = this.rendererRegistry.find(instance.effectId()).orElse(null);
+            if (renderer instanceof ScreenEffectRenderer) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Consumes the one-frame conservative capture request raised by a start, stop, or resume. */
+    boolean consumeScreenEffectStateChange() {
+        boolean changed = this.screenEffectStateChanged;
+        this.screenEffectStateChanged = false;
+        return changed;
+    }
+
     /** Interpolated origin used by transform-following audio cues, or null when no visual exists. */
     Vec3 effectOrigin(UUID effectId) {
         ClientLevel level = this.currentLevel;
@@ -736,14 +800,36 @@ public final class ClientVisualEffectManager {
         return null;
     }
 
-    private EffectRenderContext createRenderContext(VisualEffectInstance effect, long gameTime, float partialTick) {
+    private EffectRenderContext createRenderContext(VisualEffectInstance effect, long gameTime, float partialTick,
+        EffectQualityTier quality) {
         StartVisualEffectPayload payload = effect.payload();
         EffectTransform transform = effect.interpolatedTransform(gameTime, partialTick);
         float age = (float)EffectTimeline.ageTicks(gameTime, partialTick, payload.startGameTime());
         float progress = EffectTimeline.progress(gameTime, partialTick, payload.startGameTime(),
             payload.durationTicks());
         return new EffectRenderContext(effect, transform, age, progress, partialTick,
-            EffectLod.FULL, EffectQualityTier.HIGH, this.frameEnvironment);
+            EffectLod.FULL, quality, this.frameEnvironment);
+    }
+
+    private InstancedBatchBuilder instancedBatchBuilder(Vec3 cameraPosition) {
+        int maxInstances = this.instancedRenderer.maxInstancesPerDraw();
+        if (this.instancedBatchBuilder == null
+            || this.instancedBatchBuilder.maxInstancesPerDraw() != maxInstances) {
+            this.instancedBatchBuilder = new InstancedBatchBuilder(
+                maxInstances, cameraPosition.x, cameraPosition.y, cameraPosition.z
+            );
+        } else {
+            this.instancedBatchBuilder.reset(cameraPosition.x, cameraPosition.y, cameraPosition.z);
+        }
+        return this.instancedBatchBuilder;
+    }
+
+    private void invalidateFrame() {
+        this.frameCache.invalidate();
+        this.screenBatchTick = Integer.MIN_VALUE;
+        this.visibleEffects.clear();
+        this.screenFrames.clear();
+        this.screenBatches = List.of();
     }
 
     void onLevelUnload(ClientLevel level) {
@@ -761,6 +847,7 @@ public final class ClientVisualEffectManager {
 
     void onResourceReload(ResourceManager resourceManager) {
         this.rendererRegistry.onResourceReload(resourceManager);
+        this.instancedRenderer.onResourceReload();
     }
 
     private void synchronizeLevel(ClientLevel level) {
@@ -771,6 +858,7 @@ public final class ClientVisualEffectManager {
     }
 
     private void clearState() {
+        this.invalidateFrame();
         ClientEffectClock.reset();
         this.activeEffects.clear();
         this.segmentedGroups.clear();
@@ -781,6 +869,15 @@ public final class ClientVisualEffectManager {
         this.unindexedGroups.clear();
         this.instancedRenderer.close();
         this.meshCache.close();
+    }
+
+    private record VisibleEffect(VisualEffectInstance effect, EffectRenderContext context,
+        VisualEffectRenderer renderer) {
+        private VisibleEffect {
+            Objects.requireNonNull(effect, "effect");
+            Objects.requireNonNull(context, "context");
+            Objects.requireNonNull(renderer, "renderer");
+        }
     }
 
     @FunctionalInterface

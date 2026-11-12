@@ -1,11 +1,17 @@
 package mafisher.quasar.content;
 
+import mafisher.quasar.client.effect.ScreenEffectInputs;
 import mafisher.quasar.client.effect.ScreenEffectOperationContext;
 import mafisher.quasar.client.effect.ScreenEffectOperationRenderer;
 import net.minecraft.client.renderer.ShaderInstance;
 
 /** Content-owned masked screen glow, built only on the public operation context. */
 final class ContentRuneGlowOperation implements ScreenEffectOperationRenderer {
+    @Override
+    public ScreenEffectInputs requiredInputs() {
+        return ScreenEffectInputs.NONE;
+    }
+
     @Override
     public void render(ScreenEffectOperationContext context) {
         ContentRuneGlowSettings settings = context.settings(ContentRuneGlowSettings.class);

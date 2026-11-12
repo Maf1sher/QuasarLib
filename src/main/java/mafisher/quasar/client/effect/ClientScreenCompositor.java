@@ -41,6 +41,7 @@ final class ClientScreenCompositor {
 
     private final ScreenEffectOperationRegistry operationRegistry;
     private final ScreenEffectScratchTargetPool scratchTargets = new ScreenEffectScratchTargetPool();
+    private final ShaderUniformCache uniformCache = new ShaderUniformCache();
     private final Set<ResourceLocation> failingOperations = new HashSet<>();
     private TextureTarget rawSceneTarget;
     private TextureTarget sceneColorTarget;
@@ -50,6 +51,9 @@ final class ClientScreenCompositor {
     private TextureTarget opaqueColorTarget;
     private TextureTarget foregroundDepthTarget;
     private ScreenEffectFogState fogState = ScreenEffectFogState.NONE;
+    private ScreenEffectInputs requiredInputs = ScreenEffectInputs.NONE;
+    private ScreenEffectInputs captureInputs = ScreenEffectInputs.ALL;
+    private ScreenEffectInputs frameCaptureInputs = ScreenEffectInputs.ALL;
     private boolean opaqueDepthCaptured;
     private boolean foregroundDepthCaptured;
     private boolean hadScreenEffects;
@@ -79,6 +83,8 @@ final class ClientScreenCompositor {
 
         if (batches.isEmpty()) {
             this.hadScreenEffects = false;
+            this.requiredInputs = ScreenEffectInputs.NONE;
+            this.captureInputs = ScreenEffectInputs.ALL;
             this.unavailableWidth = -1;
             this.unavailableHeight = -1;
             this.releaseTargetsSafely();
@@ -89,6 +95,7 @@ final class ClientScreenCompositor {
             this.unavailableHeight = -1;
         }
         this.hadScreenEffects = true;
+        this.updateCaptureInputs(batches);
 
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.level == null || manager == null) {
@@ -214,9 +221,13 @@ final class ClientScreenCompositor {
         this.warnedDegenerateCamera = false;
         this.failingOperations.clear();
         this.fogState = ScreenEffectFogState.NONE;
+        this.requiredInputs = ScreenEffectInputs.NONE;
+        this.captureInputs = ScreenEffectInputs.ALL;
+        this.frameCaptureInputs = ScreenEffectInputs.ALL;
         this.foregroundDepthCaptured = false;
         this.unavailableWidth = -1;
         this.unavailableHeight = -1;
+        this.uniformCache.clear();
         this.releaseTargetsForLifecycle();
     }
 
@@ -225,9 +236,13 @@ final class ClientScreenCompositor {
         this.warnedDegenerateCamera = false;
         this.failingOperations.clear();
         this.fogState = ScreenEffectFogState.NONE;
+        this.requiredInputs = ScreenEffectInputs.NONE;
+        this.captureInputs = ScreenEffectInputs.ALL;
+        this.frameCaptureInputs = ScreenEffectInputs.ALL;
         this.foregroundDepthCaptured = false;
         this.unavailableWidth = -1;
         this.unavailableHeight = -1;
+        this.uniformCache.clear();
         this.releaseTargetsForLifecycle();
     }
 
@@ -274,7 +289,8 @@ final class ClientScreenCompositor {
             this.rawSceneTarget,
             destination,
             this.screenMaskTarget,
-            this.scratchTargets
+            this.scratchTargets,
+            this.uniformCache
         );
         renderer.render(context);
     }
@@ -301,6 +317,12 @@ final class ClientScreenCompositor {
         if (this.failingOperations.remove(operationId)) {
             LOGGER.info("Screen operation {} recovered.", operationId);
         }
+    }
+
+    private void updateCaptureInputs(List<ScreenEffectBatch> batches) {
+        ScreenEffectInputs next = this.operationRegistry.requiredInputs(batches);
+        this.captureInputs = ScreenEffectCapturePolicy.forNextFrame(this.requiredInputs, next);
+        this.requiredInputs = next;
     }
 
     private static ScreenEffectFogState captureFogState() {
@@ -422,7 +444,7 @@ final class ClientScreenCompositor {
      * should not hide a screen effect; the active fog/medium owns their visual
      * contribution instead.
      */
-    void captureOpaqueDepth(RenderLevelStageEvent event) {
+    void captureOpaqueDepth(RenderLevelStageEvent event, ClientVisualEffectManager manager) {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_BLOCK_ENTITIES) {
             return;
         }
@@ -430,9 +452,12 @@ final class ClientScreenCompositor {
         // calls FogRenderer.setupNoFog() before AFTER_LEVEL, which would make the
         // captured range inactive and silently disable every medium tint.
         this.fogState = captureFogState();
-        if (!this.hadScreenEffects) {
+        if (manager == null || !manager.hasActiveScreenEffects()) {
             return;
         }
+        boolean forceAll = manager.consumeScreenEffectStateChange();
+        this.captureInputs = forceAll ? ScreenEffectInputs.ALL : this.captureInputs;
+        this.frameCaptureInputs = this.captureInputs;
         Minecraft minecraft = Minecraft.getInstance();
         // Iris batches entity and block-entity geometry and flushes it only when the
         // translucent stage starts, which is after this copy. Flush the deferred source
@@ -453,13 +478,19 @@ final class ClientScreenCompositor {
         if (width <= 0 || height <= 0 || mainTarget.getDepthTextureId() <= 0) {
             return;
         }
+        // The pre-translucent depth copy is mandatory for mask visibility (D3), independent of the operation.
         this.opaqueDepthTarget = this.ensureTarget(this.opaqueDepthTarget, width, height, true);
         if (this.opaqueDepthTarget.getDepthTextureId() <= 0) {
             return;
         }
-        this.opaqueColorTarget = this.ensureTarget(this.opaqueColorTarget, width, height, false);
-        if (this.opaqueColorTarget.getColorTextureId() > 0) {
-            ScreenTargetBlit.color(mainTarget, this.opaqueColorTarget);
+        if (this.frameCaptureInputs.opaqueColor()) {
+            this.opaqueColorTarget = this.ensureTarget(this.opaqueColorTarget, width, height, false);
+            if (this.opaqueColorTarget.getColorTextureId() > 0) {
+                ScreenTargetBlit.color(mainTarget, this.opaqueColorTarget);
+            }
+        } else if (this.opaqueColorTarget != null) {
+            this.releaseTarget(this.opaqueColorTarget);
+            this.opaqueColorTarget = null;
         }
         ScreenTargetBlit.depth(mainTarget, this.opaqueDepthTarget);
         this.opaqueDepthCaptured = true;
@@ -471,12 +502,19 @@ final class ClientScreenCompositor {
      * still not hard-occlude the effect; the copy is only used to gate lens warps
      * and to tint the effect behind a translucent layer.
      */
-    void captureForegroundDepth(RenderLevelStageEvent event) {
+    void captureForegroundDepth(RenderLevelStageEvent event, ClientVisualEffectManager manager) {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) {
             return;
         }
         this.foregroundDepthCaptured = false;
-        if (!this.hadScreenEffects) {
+        if (manager == null || !manager.hasActiveScreenEffects()) {
+            return;
+        }
+        if (!this.frameCaptureInputs.foregroundDepth()) {
+            if (this.foregroundDepthTarget != null) {
+                this.releaseTarget(this.foregroundDepthTarget);
+                this.foregroundDepthTarget = null;
+            }
             return;
         }
         Minecraft minecraft = Minecraft.getInstance();

@@ -21,12 +21,16 @@ class EffectLodProfileTest {
         EffectLodProfile profile = EffectLodProfile.of(2.0, 8.0);
 
         assertEquals(3, profile.levelCount());
+        assertEquals(2.0, profile.threshold(0));
+        assertEquals(8.0, profile.threshold(1));
         assertEquals(0, profile.select(0.0));
         assertEquals(0, profile.select(2.0));
         assertEquals(1, profile.select(2.0001));
         assertEquals(1, profile.select(8.0));
         assertEquals(2, profile.select(8.0001));
         assertEquals(2, profile.select(1_000.0));
+        assertEquals(profile, EffectLodProfile.of(2.0, 8.0));
+        assertEquals(profile.hashCode(), EffectLodProfile.of(2.0, 8.0).hashCode());
     }
 
     @Test

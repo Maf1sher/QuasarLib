@@ -37,6 +37,17 @@ public record EffectRenderTypeOptions(
         Objects.requireNonNull(transparency, "transparency");
     }
 
+    /** Stable descriptor used in render-type names; never depends on object hashes. */
+    String cacheKey() {
+        return this.transparency.name()
+            + (this.depthTest ? "_depth" : "_nodepth")
+            + (this.writeColor ? "_color" : "_nocolor")
+            + (this.writeDepth ? "_write" : "_nowrite")
+            + (this.cull ? "_cull" : "_nocull")
+            + (this.lightmap ? "_lightmap" : "_nolightmap")
+            + (this.sort ? "_sort" : "_nosort");
+    }
+
     /** Blend mode applied by the render type. */
     public enum Transparency {
         /** No blending; fragments replace the destination. */

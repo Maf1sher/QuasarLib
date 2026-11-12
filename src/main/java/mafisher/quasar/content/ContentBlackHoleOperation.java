@@ -5,6 +5,7 @@ import mafisher.quasar.client.effect.ScreenEffectMedium;
 import mafisher.quasar.client.effect.ScreenEffectMediumPath;
 import mafisher.quasar.client.effect.ScreenEffectMediumState;
 import mafisher.quasar.client.effect.ScreenEffectOperationContext;
+import mafisher.quasar.client.effect.ScreenEffectInputs;
 import mafisher.quasar.client.effect.ScreenEffectOperationRenderer;
 import mafisher.quasar.compat.FogPolicy;
 import mafisher.quasar.effect.EffectQualityTier;
@@ -20,6 +21,11 @@ final class ContentBlackHoleOperation implements ScreenEffectOperationRenderer {
     @Override
     public float compositionScaleFloor() {
         return 1.0F;
+    }
+
+    @Override
+    public ScreenEffectInputs requiredInputs() {
+        return ScreenEffectInputs.ALL;
     }
 
     @Override

@@ -20,4 +20,13 @@ public interface ScreenEffectOperationRenderer {
     default float compositionScaleFloor() {
         return 0.0F;
     }
+
+    /**
+     * Declares the optional full-frame captures this operation samples. Unknown operations default to
+     * {@link ScreenEffectInputs#ALL} so a new consumer cannot silently lose an input; built-ins request only what they
+     * read.
+     */
+    default ScreenEffectInputs requiredInputs() {
+        return ScreenEffectInputs.ALL;
+    }
 }

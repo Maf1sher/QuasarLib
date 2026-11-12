@@ -46,13 +46,15 @@ public final class ScreenEffectOperationContext {
     private final RenderTarget destination;
     private final RenderTarget maskTarget;
     private final ScreenEffectScratchTargetPool scratchTargets;
+    private final ShaderUniformCache uniformCache;
 
     ScreenEffectOperationContext(ScreenEffectSettings settings, EffectRenderContext effect,
         ScreenEffectMask mask, ScreenEffectCameraState camera, EffectQualityTier quality,
         RenderEnvironment environment, ScreenEffectFogState fogState, ScreenEffectMediumState mediumState,
         ScreenEffectMediumPath mediumPath, RenderTarget opaqueColor, RenderTarget foregroundDepth,
         RenderTarget sourceColor, RenderTarget rawSceneColor,
-        RenderTarget destination, RenderTarget maskTarget, ScreenEffectScratchTargetPool scratchTargets) {
+        RenderTarget destination, RenderTarget maskTarget, ScreenEffectScratchTargetPool scratchTargets,
+        ShaderUniformCache uniformCache) {
         this.settings = Objects.requireNonNull(settings, "settings");
         this.effect = Objects.requireNonNull(effect, "effect");
         this.mask = Objects.requireNonNull(mask, "mask");
@@ -69,6 +71,7 @@ public final class ScreenEffectOperationContext {
         this.destination = Objects.requireNonNull(destination, "destination");
         this.maskTarget = Objects.requireNonNull(maskTarget, "maskTarget");
         this.scratchTargets = Objects.requireNonNull(scratchTargets, "scratchTargets");
+        this.uniformCache = Objects.requireNonNull(uniformCache, "uniformCache");
         if (sourceColor == destination) {
             throw new IllegalArgumentException("Source and destination targets must differ");
         }
@@ -333,9 +336,9 @@ public final class ScreenEffectOperationContext {
         ScreenTargetBlit.color(source, destination);
     }
 
-    private static AbstractUniform uniform(ShaderInstance shader, String name) {
+    private AbstractUniform uniform(ShaderInstance shader, String name) {
         Objects.requireNonNull(shader, "shader");
         Objects.requireNonNull(name, "name");
-        return Objects.requireNonNull(shader.getUniform(name), name + " uniform");
+        return Objects.requireNonNull(this.uniformCache.get(shader, name), name + " uniform");
     }
 }

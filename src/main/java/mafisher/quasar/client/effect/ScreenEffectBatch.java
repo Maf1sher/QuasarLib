@@ -20,7 +20,8 @@ record ScreenEffectBatch(
     ScreenEffectMask mask,
     EffectRenderContext operationContext,
     RenderType maskRenderType,
-    List<ScreenEffectFrame> frames
+    List<ScreenEffectFrame> frames,
+    double nearestCameraDistance
 ) {
     ScreenEffectBatch {
         Objects.requireNonNull(renderer, "renderer");
@@ -31,6 +32,9 @@ record ScreenEffectBatch(
         frames = List.copyOf(frames);
         if (frames.isEmpty()) {
             throw new IllegalArgumentException("A screen effect batch requires at least one frame");
+        }
+        if (!Double.isFinite(nearestCameraDistance) || nearestCameraDistance < 0.0) {
+            throw new IllegalArgumentException("Invalid screen-effect camera distance");
         }
     }
 
@@ -53,9 +57,17 @@ record ScreenEffectBatch(
         for (List<ScreenEffectFrame> group : grouped.values()) {
             ScreenEffectFrame first = group.getFirst();
             batches.add(new ScreenEffectBatch(first.renderer(), first.settings(), first.mask(),
-                first.context(), first.maskRenderType(), group));
+                first.context(), first.maskRenderType(), group, nearestCameraDistance(group)));
         }
         return List.copyOf(batches);
+    }
+
+    private static double nearestCameraDistance(List<ScreenEffectFrame> frames) {
+        double nearest = Double.POSITIVE_INFINITY;
+        for (ScreenEffectFrame frame : frames) {
+            nearest = Math.min(nearest, frame.context().lod().cameraDistance());
+        }
+        return nearest;
     }
 
     /**
@@ -74,14 +86,6 @@ record ScreenEffectBatch(
             .reversed()
             .thenComparing(batch -> batch.frames().getFirst().ownerId()));
         return List.copyOf(ordered);
-    }
-
-    private double nearestCameraDistance() {
-        double nearest = Double.POSITIVE_INFINITY;
-        for (ScreenEffectFrame frame : this.frames) {
-            nearest = Math.min(nearest, frame.context().lod().cameraDistance());
-        }
-        return nearest;
     }
 
     private record BatchKey(UUID ownerId, ScreenEffectRenderer renderer, ScreenEffectSettings settings,

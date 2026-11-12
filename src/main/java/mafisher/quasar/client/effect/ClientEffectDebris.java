@@ -38,6 +38,7 @@ final class ClientEffectDebris {
 
     private static final int FULLBRIGHT_LIGHT = 0x00F000F0;
     private static final EffectMesh CUBE = createCube();
+    private static final PoseStack POSE_STACK = new PoseStack();
     private static final RenderType DEBRIS_RENDER_TYPE =
         RenderType.entityCutoutNoCull(TextureAtlas.LOCATION_BLOCKS);
     private static final List<Burst> BURSTS = new ArrayList<>();
@@ -293,7 +294,11 @@ final class ClientEffectDebris {
         };
         Vec3 camera = event.getCamera().getPosition();
         Vector3f look = event.getCamera().getLookVector();
-        PoseStack poseStack = new PoseStack();
+        PoseStack poseStack = POSE_STACK;
+        while (!poseStack.clear()) {
+            poseStack.popPose();
+        }
+        poseStack.setIdentity();
         poseStack.translate(-camera.x, -camera.y, -camera.z);
         MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
         VertexConsumer consumer = buffers.getBuffer(DEBRIS_RENDER_TYPE);

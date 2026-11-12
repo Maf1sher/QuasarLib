@@ -43,6 +43,7 @@ class ContentBoundaryTest {
         "mafisher.quasar.client.effect.RegisterScreenEffectOperationsEvent",
         "mafisher.quasar.client.effect.RegisterVisualEffectRenderersEvent",
         "mafisher.quasar.client.effect.ScreenEffectFogState",
+        "mafisher.quasar.client.effect.ScreenEffectInputs",
         "mafisher.quasar.client.effect.ScreenEffectMask",
         "mafisher.quasar.client.effect.ScreenEffectMedium",
         "mafisher.quasar.client.effect.ScreenEffectMediumCrossing",

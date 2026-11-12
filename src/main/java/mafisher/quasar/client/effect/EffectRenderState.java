@@ -43,10 +43,27 @@ final class EffectRenderState {
 
     /** Forces a full viewport rectangle through the same Sodium-cache-safe path. */
     static void forceViewport(int x, int y, int width, int height) {
+        forceViewport(x, y, width, height, GlStateManager::_viewport);
+    }
+
+    /**
+     * Forces the viewport through two valid rectangles. At least one of the two calls differs from any cached
+     * viewport, so Sodium's duplicate suppression cannot leave a stale driver viewport. Both sizes stay positive;
+     * the temporary rectangle is clipped by the driver and is immediately replaced by the requested one.
+     */
+    static void forceViewport(int x, int y, int width, int height, ViewportSink sink) {
+        Objects.requireNonNull(sink, "sink");
         if (width <= 0 || height <= 0) {
             return;
         }
-        GlStateManager._viewport(x, y, width, 0);
-        GlStateManager._viewport(x, y, width, height);
+        int probeHeight = height == Integer.MAX_VALUE ? height - 1 : height + 1;
+        sink.viewport(x, y, width, probeHeight);
+        sink.viewport(x, y, width, height);
+    }
+
+    /** Test seam for the two viewport calls. */
+    @FunctionalInterface
+    interface ViewportSink {
+        void viewport(int x, int y, int width, int height);
     }
 }

@@ -3,6 +3,7 @@ package mafisher.quasar.client.effect;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.pipeline.TextureTarget;
 import java.util.Objects;
+import java.util.function.Consumer;
 import mafisher.quasar.effect.EffectQualityTier;
 import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.world.phys.Vec3;
@@ -19,15 +20,33 @@ final class BuiltInScreenEffectOperations {
 
     static void register(ScreenEffectOperationRegistry registry) {
         registry.register(ScreenEffectOperation.DIAGNOSTIC_MASK_PREVIEW,
-            BuiltInScreenEffectOperations::renderDiagnostic);
+            operation(ScreenEffectInputs.NONE, BuiltInScreenEffectOperations::renderDiagnostic));
         registry.register(ScreenEffectOperation.MASK_SCOPED_WAVE_DISTORTION,
-            BuiltInScreenEffectOperations::renderWaveDistortion);
+            operation(ScreenEffectInputs.NONE, BuiltInScreenEffectOperations::renderWaveDistortion));
         registry.register(ScreenEffectOperation.MASK_SCOPED_SCENE_BLUR,
-            BuiltInScreenEffectOperations::renderSceneBlur);
+            operation(ScreenEffectInputs.NONE, BuiltInScreenEffectOperations::renderSceneBlur));
         registry.register(ScreenEffectOperation.MASK_SCOPED_BLOOM,
-            BuiltInScreenEffectOperations::renderBloom);
+            operation(ScreenEffectInputs.NONE, BuiltInScreenEffectOperations::renderBloom));
+        // The lens uses DepthSampler from the mandatory mask depth, but never the optional color or foreground copy.
         registry.register(ScreenEffectOperation.MASK_SCOPED_BLACK_HOLE,
-            BuiltInScreenEffectOperations::renderBlackHole);
+            operation(ScreenEffectInputs.NONE, BuiltInScreenEffectOperations::renderBlackHole));
+    }
+
+    private static ScreenEffectOperationRenderer operation(ScreenEffectInputs inputs,
+        Consumer<ScreenEffectOperationContext> renderer) {
+        Objects.requireNonNull(inputs, "inputs");
+        Objects.requireNonNull(renderer, "renderer");
+        return new ScreenEffectOperationRenderer() {
+            @Override
+            public void render(ScreenEffectOperationContext context) {
+                renderer.accept(context);
+            }
+
+            @Override
+            public ScreenEffectInputs requiredInputs() {
+                return inputs;
+            }
+        };
     }
 
     private static void renderDiagnostic(ScreenEffectOperationContext context) {

@@ -83,12 +83,12 @@ final class EffectLodTracker {
     }
 
     private static boolean crossesUp(EffectLodProfile profile, int level, double gapInRadii) {
-        double boundary = profile.maximumGapInRadii().get(level);
+        double boundary = profile.threshold(level);
         return gapInRadii > boundary * (1.0 + HYSTERESIS_FRACTION);
     }
 
     private static boolean crossesDown(EffectLodProfile profile, int level, double gapInRadii) {
-        double boundary = profile.maximumGapInRadii().get(level - 1);
+        double boundary = profile.threshold(level - 1);
         if (boundary <= 0.0) {
             return gapInRadii <= 0.0;
         }

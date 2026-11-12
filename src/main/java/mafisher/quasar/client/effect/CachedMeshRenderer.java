@@ -19,6 +19,8 @@ final class CachedMeshRenderer {
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
 
     private final GpuMeshCache meshes;
+    private final Set<String> passIds = new HashSet<>();
+    private final Matrix4f modelView = new Matrix4f();
 
     CachedMeshRenderer(GpuMeshCache meshes) {
         this.meshes = meshes;
@@ -30,9 +32,9 @@ final class CachedMeshRenderer {
      * @param viewMatrix the render-thread view matrix, without the camera translation applied by the pose stack
      */
     void draw(List<EffectStaticMeshPass> passes, PoseStack poseStack, Matrix4f viewMatrix, Matrix4f projection) {
-        Set<String> ids = new HashSet<>();
+        this.passIds.clear();
         for (EffectStaticMeshPass pass : passes) {
-            if (!ids.add(pass.id())) {
+            if (!this.passIds.add(pass.id())) {
                 throw new IllegalStateException("Duplicate static mesh pass ID '" + pass.id() + "'");
             }
         }
@@ -59,11 +61,11 @@ final class CachedMeshRenderer {
                         LOGGER.warn("Static mesh pass {} has no active shader", pass.id());
                         continue;
                     }
-                    Matrix4f modelView = new Matrix4f(viewMatrix)
+                    this.modelView.set(viewMatrix)
                         .mul(poseStack.last().pose())
                         .mul(pass.localTransform());
                     mesh.bind();
-                    mesh.drawWithShader(modelView, projection, shader);
+                    mesh.drawWithShader(this.modelView, projection, shader);
                 } finally {
                     GpuMeshCache.GpuMesh.unbind();
                     renderType.clearRenderState();

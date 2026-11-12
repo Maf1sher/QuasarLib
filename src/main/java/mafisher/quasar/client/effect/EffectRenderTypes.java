@@ -75,6 +75,18 @@ final class EffectRenderTypes {
         return SHADER_TYPES.apply(new ShaderTypeKey(shader, texture, options, true));
     }
 
+    /** Stable render-type name used by the shader-type cache and diagnostics. */
+    static String renderTypeName(EffectShader shader, ResourceLocation texture,
+        EffectRenderTypeOptions options, boolean mask) {
+        Objects.requireNonNull(shader, "shader");
+        Objects.requireNonNull(texture, "texture");
+        Objects.requireNonNull(options, "options");
+        String shaderName = shader.id().toString().replace(':', '_').replace('/', '_');
+        String textureName = texture.toString().replace(':', '_').replace('/', '_');
+        return "quasar_shader_" + shaderName + "_" + textureName
+            + (mask ? "_mask" : "") + "_" + options.cacheKey();
+    }
+
     private static RenderType createShaderType(ShaderTypeKey key) {
         EffectRenderTypeOptions options = key.options();
         RenderType.CompositeState state = RenderType.CompositeState.builder()
@@ -163,10 +175,7 @@ final class EffectRenderTypes {
         }
 
         private String renderTypeName() {
-            String shaderName = this.shader.id().toString().replace(':', '_').replace('/', '_');
-            String textureName = this.texture.toString().replace(':', '_').replace('/', '_');
-            return "quasar_shader_" + shaderName + "_" + textureName
-                + (this.mask ? "_mask" : "") + "_" + Integer.toHexString(this.options.hashCode());
+            return EffectRenderTypes.renderTypeName(this.shader, this.texture, this.options, this.mask);
         }
     }
 }

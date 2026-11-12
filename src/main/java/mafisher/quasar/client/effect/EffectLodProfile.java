@@ -9,33 +9,52 @@ import java.util.Objects;
  * levels beyond the last threshold share the last index.
  *
  * <p>A renderer without a finite {@link VisualEffectRenderer#spatialRadius(EffectRenderContext)} always renders at
- * level {@code 0}. The default {@link #FULL} profile keeps existing renderers at full detail.
+ * level {@code 0}. The default {@link #FULL} profile keeps existing renderers at full detail.</p>
  */
-public record EffectLodProfile(List<Double> maximumGapInRadii) {
+public final class EffectLodProfile {
     /** Maximum number of thresholds; the last level is unbounded. */
     public static final int MAX_THRESHOLDS = 8;
 
     /** One level with no degradation. */
     public static final EffectLodProfile FULL = new EffectLodProfile(List.of());
 
-    public EffectLodProfile {
+    private final List<Double> maximumGapInRadii;
+    private final double[] thresholds;
+
+    /**
+     * Creates a profile from ordered thresholds.
+     *
+     * @param maximumGapInRadii strictly increasing, finite, non-negative gap bounds
+     */
+    public EffectLodProfile(List<Double> maximumGapInRadii) {
         Objects.requireNonNull(maximumGapInRadii, "maximumGapInRadii");
-        maximumGapInRadii = List.copyOf(maximumGapInRadii);
-        if (maximumGapInRadii.size() > MAX_THRESHOLDS) {
+        this.maximumGapInRadii = List.copyOf(maximumGapInRadii);
+        if (this.maximumGapInRadii.size() > MAX_THRESHOLDS) {
             throw new IllegalArgumentException(
                 "An effect LOD profile supports at most " + MAX_THRESHOLDS + " thresholds"
             );
         }
+        this.thresholds = new double[this.maximumGapInRadii.size()];
         double previous = -1.0;
-        for (Double value : maximumGapInRadii) {
+        for (int index = 0; index < this.maximumGapInRadii.size(); index++) {
+            Double value = this.maximumGapInRadii.get(index);
+            if (value == null) {
+                throw new NullPointerException("maximumGapInRadii[" + index + "]");
+            }
             double threshold = value;
             if (!Double.isFinite(threshold) || threshold < 0.0 || threshold <= previous) {
                 throw new IllegalArgumentException(
                     "Effect LOD thresholds must be finite, non-negative, and strictly increasing"
                 );
             }
+            this.thresholds[index] = threshold;
             previous = threshold;
         }
+    }
+
+    /** Returns the validated thresholds in ascending order. */
+    public List<Double> maximumGapInRadii() {
+        return this.maximumGapInRadii;
     }
 
     /** Builds a profile from ordered thresholds; an empty array returns {@link #FULL}. */
@@ -53,7 +72,12 @@ public record EffectLodProfile(List<Double> maximumGapInRadii) {
 
     /** Number of levels, including the unbounded final level. */
     public int levelCount() {
-        return this.maximumGapInRadii.size() + 1;
+        return this.thresholds.length + 1;
+    }
+
+    /** Returns one threshold without boxing it. */
+    double threshold(int index) {
+        return this.thresholds[index];
     }
 
     /**
@@ -64,11 +88,27 @@ public record EffectLodProfile(List<Double> maximumGapInRadii) {
         if (!Double.isFinite(gapInRadii) || gapInRadii < 0.0) {
             throw new IllegalArgumentException("Effect LOD gap must be finite and non-negative");
         }
-        for (int index = 0; index < this.maximumGapInRadii.size(); index++) {
-            if (gapInRadii <= this.maximumGapInRadii.get(index)) {
+        for (int index = 0; index < this.thresholds.length; index++) {
+            if (gapInRadii <= this.thresholds[index]) {
                 return index;
             }
         }
-        return this.maximumGapInRadii.size();
+        return this.thresholds.length;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+        return other instanceof EffectLodProfile profile
+            && this.maximumGapInRadii.equals(profile.maximumGapInRadii);
+    }
+
+    @Override
+    public int hashCode() {
+        return this.maximumGapInRadii.hashCode();
+    }
+
+    @Override
+    public String toString() {
+        return "EffectLodProfile" + this.maximumGapInRadii;
     }
 }

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import mafisher.quasar.client.effect.RegisterScreenEffectOperationsEvent;
 import mafisher.quasar.client.effect.ScreenEffectCameraState;
+import mafisher.quasar.client.effect.ScreenEffectInputs;
 import mafisher.quasar.client.effect.ScreenEffectOperation;
 import mafisher.quasar.client.effect.ScreenEffectOperationContext;
 import mafisher.quasar.client.effect.ScreenEffectOperationRenderer;
@@ -30,6 +31,7 @@ class PublicScreenCompositorApiVisibilityTest {
         assertNotNull(camera.modelViewMatrix());
         assertNotNull(ScreenEffectOperationContext.class);
         assertNotNull(ScreenEffectOperationRenderer.class);
+        assertNotNull(ScreenEffectInputs.ALL);
         assertNotNull(RegisterScreenEffectOperationsEvent.class);
     }
 }

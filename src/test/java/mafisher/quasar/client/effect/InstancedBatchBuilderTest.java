@@ -84,6 +84,30 @@ class InstancedBatchBuilderTest {
     }
 
     @Test
+    void resetClearsPreviousFrameAndMovesTheCamera() {
+        InstancedBatchBuilder builder = new InstancedBatchBuilder(8);
+        builder.add(context(1.0, 0.0, 0.0), List.of(pass("outer")));
+
+        builder.reset(10.0, 0.0, 0.0);
+
+        assertTrue(builder.isEmpty());
+        builder.add(context(1.0, 0.0, 0.0), List.of(pass("outer")));
+        assertEquals(81.0, builder.draws().getFirst().instances().getFirst().cameraDistanceSquared(), 0.0);
+    }
+
+    @Test
+    void drawIntoDoesNotAccumulateAcrossFrames() {
+        InstancedBatchBuilder builder = new InstancedBatchBuilder(8);
+        builder.add(context(1.0, 0.0, 0.0), List.of(pass("outer")));
+        List<InstancedBatchBuilder.InstancedDraw> output = new java.util.ArrayList<>();
+
+        builder.drawInto(output);
+        builder.drawInto(output);
+
+        assertEquals(1, output.size());
+    }
+
+    @Test
     void sortsTranslucentBatchesBackToFrontFromTheCamera() {
         InstancedBatchBuilder builder = new InstancedBatchBuilder(8);
         builder.add(context(1.0, 0.0, 0.0), List.of(pass("outer")));

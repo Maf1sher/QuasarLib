@@ -19,6 +19,7 @@ final class EffectQualityGovernor {
     private final EffectQualityTier maximum;
     private final long budgetNanos;
     private final long[] samples;
+    private final long[] sortedSamples;
     private final int evaluationInterval;
     private int sampleIndex;
     private int sampleCount;
@@ -44,6 +45,7 @@ final class EffectQualityGovernor {
         this.maximum = maximum;
         this.budgetNanos = budgetNanos;
         this.samples = new long[windowSize];
+        this.sortedSamples = new long[windowSize];
         this.evaluationInterval = evaluationInterval;
         this.tier = maximum;
     }
@@ -109,6 +111,7 @@ final class EffectQualityGovernor {
         this.lastP95Nanos = 0L;
         this.lastGpuNanos = -1L;
         Arrays.fill(this.samples, 0L);
+        Arrays.fill(this.sortedSamples, 0L);
     }
 
     private void evaluate() {
@@ -139,9 +142,9 @@ final class EffectQualityGovernor {
     }
 
     private long percentile95() {
-        long[] copy = Arrays.copyOf(this.samples, this.sampleCount);
-        Arrays.sort(copy);
-        int index = Math.max(0, (int)Math.ceil(copy.length * 0.95D) - 1);
-        return copy[index];
+        System.arraycopy(this.samples, 0, this.sortedSamples, 0, this.sampleCount);
+        Arrays.sort(this.sortedSamples, 0, this.sampleCount);
+        int index = Math.max(0, (int)Math.ceil(this.sampleCount * 0.95D) - 1);
+        return this.sortedSamples[index];
     }
 }

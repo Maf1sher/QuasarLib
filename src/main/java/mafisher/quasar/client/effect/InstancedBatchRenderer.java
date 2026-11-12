@@ -32,6 +32,8 @@ final class InstancedBatchRenderer implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
 
     private final GpuMeshCache meshes;
+    private final InstanceUniformLocationCache<ShaderInstance> uniformLocations =
+        new InstanceUniformLocationCache<>();
     private int maxInstancesPerDraw = -1;
     private int bufferCapacity = -1;
     private FloatBuffer matrices;
@@ -94,19 +96,20 @@ final class InstancedBatchRenderer implements AutoCloseable {
                 Minecraft.getInstance().getWindow());
             shader.apply();
 
-            int instancesLocation = GL20C.glGetUniformLocation(shader.getId(), "Instances[0]");
-            int colorsLocation = GL20C.glGetUniformLocation(shader.getId(), "InstanceColors[0]");
-            int dataLocation = GL20C.glGetUniformLocation(shader.getId(), "InstanceData[0]");
-            if (instancesLocation < 0 || colorsLocation < 0 || dataLocation < 0) {
+            InstanceUniformLocationCache.Locations locations = this.uniformLocations.get(
+                shader,
+                (instance, name) -> GL20C.glGetUniformLocation(instance.getId(), name)
+            );
+            if (!locations.isComplete()) {
                 LOGGER.warn("Instanced shader for pass {} is missing Instances/InstanceColors/InstanceData",
                     key.id());
                 return;
             }
 
             this.fillBuffers(instances);
-            RenderSystem.glUniformMatrix4(instancesLocation, false, this.matrices);
-            RenderSystem.glUniform4(colorsLocation, this.colors);
-            RenderSystem.glUniform4(dataLocation, this.data);
+            RenderSystem.glUniformMatrix4(locations.instances(), false, this.matrices);
+            RenderSystem.glUniform4(locations.colors(), this.colors);
+            RenderSystem.glUniform4(locations.data(), this.data);
 
             mesh.bind();
             RenderSystem.AutoStorageIndexBuffer indices = mesh.bindSequentialIndices();
@@ -163,8 +166,14 @@ final class InstancedBatchRenderer implements AutoCloseable {
         this.bufferCapacity = -1;
     }
 
+    /** Drops shader-keyed locations after a resource reload replaces programs. */
+    void onResourceReload() {
+        this.uniformLocations.clear();
+    }
+
     @Override
     public void close() {
         this.freeBuffers();
+        this.uniformLocations.clear();
     }
 }

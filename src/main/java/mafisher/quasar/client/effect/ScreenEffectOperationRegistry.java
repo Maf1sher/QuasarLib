@@ -1,6 +1,7 @@
 package mafisher.quasar.client.effect;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -43,6 +44,19 @@ final class ScreenEffectOperationRegistry {
             return Optional.ofNullable(current.get(operation.id()));
         }
         return Optional.ofNullable(this.operations.get(operation.id()));
+    }
+
+    /** Returns the union of optional captures required by every batch in the frame. */
+    ScreenEffectInputs requiredInputs(List<ScreenEffectBatch> batches) {
+        Objects.requireNonNull(batches, "batches");
+        ScreenEffectInputs inputs = ScreenEffectInputs.NONE;
+        for (ScreenEffectBatch batch : batches) {
+            ScreenEffectOperationRenderer renderer = find(batch.settings().operation()).orElse(null);
+            inputs = inputs.union(renderer == null
+                ? ScreenEffectInputs.ALL
+                : renderer.requiredInputs());
+        }
+        return inputs;
     }
 
     /** Makes the current registrations immutable and rejects any later registration. */
