@@ -3,9 +3,9 @@ package mafisher.quasar.api.effect;
 import mafisher.quasar.QuasarConfig;
 
 /**
- * Resolved server-side capacity budgets. Values come from the server config and fall back to
- * their defaults while the config is not loaded, so headless tests and dedicated servers see
- * deterministic budgets.
+ * Resolved server-side capacity budgets. Values come from the loaded server config and fall back
+ * to their defaults while the config is not loaded, so headless tests and dedicated servers see
+ * deterministic budgets. Cross-field limits are clamped to their effective values.
  *
  * <p>Budgets are soft quality thresholds. They never reject a start with an exception; see
  * {@link EffectPriority} and {@link EffectBudgetService}.

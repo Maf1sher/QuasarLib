@@ -43,36 +43,25 @@ public final class QuasarClientConfig {
     }
 
     public static QualityMode qualityMode() {
-        try {
-            return QUALITY_MODE.get();
-        } catch (IllegalStateException notLoaded) {
-            return QUALITY_MODE.getDefault();
-        }
+        return value(QUALITY_MODE);
     }
 
     public static EffectQualityTier autoMaxTier() {
-        try {
-            return AUTO_MAX_TIER.get();
-        } catch (IllegalStateException notLoaded) {
-            return AUTO_MAX_TIER.getDefault();
-        }
+        return value(AUTO_MAX_TIER);
     }
 
     public static double effectBudgetMillis() {
-        try {
-            return EFFECT_BUDGET_MS.get();
-        } catch (IllegalStateException notLoaded) {
-            return EFFECT_BUDGET_MS.getDefault();
-        }
+        return value(EFFECT_BUDGET_MS);
     }
 
     /** Whether cinematic camera shake and screen flashes are allowed. */
     public static boolean cinematicImpulses() {
-        try {
-            return CINEMATIC_IMPULSES.get();
-        } catch (IllegalStateException notLoaded) {
-            return CINEMATIC_IMPULSES.getDefault();
-        }
+        return value(CINEMATIC_IMPULSES);
+    }
+
+    /** {@link ModConfigSpec.ConfigValue#get()} is cached by NeoForge; only the unloaded fallback needs a check. */
+    private static <T> T value(ModConfigSpec.ConfigValue<T> config) {
+        return SPEC.isLoaded() ? config.get() : config.getDefault();
     }
 
     /** Configured quality mode. */

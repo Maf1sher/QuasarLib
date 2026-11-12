@@ -48,7 +48,7 @@ public final class TestConfig {
         QuasarConfig.ENTITY_SPAWNS_PER_LEVEL_TICK_BUDGET.clearCache();
     }
 
-    private static IConfigSpec.ILoadedConfig loadedConfig(CommentedConfig config) {
+    static IConfigSpec.ILoadedConfig loadedConfig(CommentedConfig config) {
         try {
             Class<?> type = Class.forName("net.neoforged.fml.config.LoadedConfig");
             Constructor<?> constructor = type.getDeclaredConstructor(

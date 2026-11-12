@@ -1,9 +1,19 @@
 package mafisher.quasar;
 
 import net.neoforged.neoforge.common.ModConfigSpec;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-/** Server-side configuration for destructive gameplay effects. */
+/**
+ * Server-side configuration for gameplay, terrain, and effect capacity budgets.
+ *
+ * <p>Values are read through {@link ModConfigSpec.ConfigValue#get()}, which already caches the
+ * loaded value and respects {@code worldRestart()} semantics. Before the config loads, getters
+ * return their defaults; destructive effects stay disabled until the config is available.</p>
+ */
 public final class QuasarConfig {
+    private static final Logger LOGGER = LoggerFactory.getLogger(QuasarConfig.class);
+    private static final int MIN_TERRAIN_TICKET_BUDGET = 1_024;
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
     static final ModConfigSpec.BooleanValue DESTRUCTIVE_EFFECTS_ENABLED = BUILDER
@@ -125,7 +135,7 @@ public final class QuasarConfig {
             "Requires a world restart."
         )
         .worldRestart()
-        .defineInRange("terrain_ticket_budget", 4_096, 1_024, 131_072);
+        .defineInRange("terrain_ticket_budget", 4_096, MIN_TERRAIN_TICKET_BUDGET, 131_072);
 
     static final ModConfigSpec.IntValue ENTITY_SPAWNS_PER_LEVEL_TICK_BUDGET = BUILDER
         .comment(
@@ -146,29 +156,17 @@ public final class QuasarConfig {
      * before the config is loaded so an unavailable config cannot enable destruction.
      */
     public static boolean destructiveEffectsEnabled() {
-        try {
-            return DESTRUCTIVE_EFFECTS_ENABLED.get();
-        } catch (IllegalStateException notLoaded) {
-            return false;
-        }
+        return SPEC.isLoaded() && DESTRUCTIVE_EFFECTS_ENABLED.get();
     }
 
     /** Maximum recorded block changes per effect before rollback is disabled. */
     public static int blockJournalMaxEntries() {
-        try {
-            return BLOCK_JOURNAL_MAX_ENTRIES.get();
-        } catch (IllegalStateException notLoaded) {
-            return BLOCK_JOURNAL_MAX_ENTRIES.getDefault();
-        }
+        return value(BLOCK_JOURNAL_MAX_ENTRIES);
     }
 
     /** Maximum recorded bulk section snapshots per effect before rollback is disabled. */
     public static int blockJournalMaxSections() {
-        try {
-            return BLOCK_JOURNAL_MAX_SECTIONS.get();
-        } catch (IllegalStateException notLoaded) {
-            return BLOCK_JOURNAL_MAX_SECTIONS.getDefault();
-        }
+        return value(BLOCK_JOURNAL_MAX_SECTIONS);
     }
 
     /** Soft per-level budget for standalone visuals. */
@@ -186,9 +184,9 @@ public final class QuasarConfig {
         return value(GAMEPLAY_SESSION_BUDGET);
     }
 
-    /** Soft per-owner budget for active gameplay sessions. */
+    /** Soft per-owner budget for active gameplay sessions; capped by the level budget. */
     public static int gameplaySessionsPerOwnerBudget() {
-        return value(GAMEPLAY_SESSIONS_PER_OWNER_BUDGET);
+        return Math.min(value(GAMEPLAY_SESSIONS_PER_OWNER_BUDGET), gameplaySessionBudget());
     }
 
     /** Immediate gameplay starts allowed per owner per tick. */
@@ -218,7 +216,7 @@ public final class QuasarConfig {
 
     /** Maximum chunk tickets held by bulk terrain edits across one level. */
     public static int terrainTicketBudget() {
-        return value(TERRAIN_TICKET_BUDGET);
+        return Math.max(value(TERRAIN_TICKET_BUDGET), MIN_TERRAIN_TICKET_BUDGET);
     }
 
     /** Maximum effect entity spawns applied per level tick. */
@@ -226,11 +224,30 @@ public final class QuasarConfig {
         return value(ENTITY_SPAWNS_PER_LEVEL_TICK_BUDGET);
     }
 
-    private static int value(ModConfigSpec.IntValue config) {
-        try {
-            return config.get();
-        } catch (IllegalStateException notLoaded) {
-            return config.getDefault();
+    /** Logs cross-field adjustments once per config load. */
+    static void validate() {
+        if (!SPEC.isLoaded()) {
+            return;
         }
+        int sessions = GAMEPLAY_SESSION_BUDGET.get();
+        int perOwner = GAMEPLAY_SESSIONS_PER_OWNER_BUDGET.get();
+        if (perOwner > sessions) {
+            LOGGER.warn(
+                "gameplay_sessions_per_owner_budget ({}) exceeds gameplay_session_budget ({}); using {} per owner",
+                perOwner, sessions, sessions
+            );
+        }
+        int tickets = TERRAIN_TICKET_BUDGET.get();
+        if (tickets < MIN_TERRAIN_TICKET_BUDGET) {
+            LOGGER.warn(
+                "terrain_ticket_budget ({}) is below one maximum bulk edit ({}); using {}",
+                tickets, MIN_TERRAIN_TICKET_BUDGET, MIN_TERRAIN_TICKET_BUDGET
+            );
+        }
+    }
+
+    /** {@link ModConfigSpec.ConfigValue#get()} is cached by NeoForge; only the unloaded fallback needs a check. */
+    private static int value(ModConfigSpec.IntValue config) {
+        return SPEC.isLoaded() ? config.get() : config.getDefault();
     }
 }

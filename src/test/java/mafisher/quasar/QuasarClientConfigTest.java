@@ -7,9 +7,17 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import mafisher.quasar.api.effect.EffectQualityTier;
+import mafisher.quasar.testing.GlobalStateTest;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+@GlobalStateTest
 class QuasarClientConfigTest {
+    @AfterEach
+    void unloadConfig() {
+        TestClientConfig.unload();
+    }
+
     @Test
     void publishesANonEmptyConfigSpec() {
         assertFalse(QuasarClientConfig.SPEC.isEmpty());
@@ -25,6 +33,21 @@ class QuasarClientConfigTest {
             QuasarClientConfig.autoMaxTier());
         assertEquals(QuasarClientConfig.EFFECT_BUDGET_MS.getDefault(),
             QuasarClientConfig.effectBudgetMillis(), 0.0);
+    }
+
+    @Test
+    void readsLoadedValues() {
+        TestClientConfig.load(config -> {
+            config.set("quality_mode", "LOW");
+            config.set("auto_max_tier", "MEDIUM");
+            config.set("effect_budget_ms", 5.0);
+            config.set("cinematic_impulses", false);
+        });
+
+        assertEquals(QuasarClientConfig.QualityMode.LOW, QuasarClientConfig.qualityMode());
+        assertEquals(EffectQualityTier.MEDIUM, QuasarClientConfig.autoMaxTier());
+        assertEquals(5.0, QuasarClientConfig.effectBudgetMillis(), 0.0);
+        assertFalse(QuasarClientConfig.cinematicImpulses());
     }
 
     @Test

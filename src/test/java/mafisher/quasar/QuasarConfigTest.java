@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import mafisher.quasar.api.effect.EffectBudgets;
+import mafisher.quasar.api.gameplay.EffectBulkBlockEditor;
 import mafisher.quasar.testing.GlobalStateTest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -77,5 +78,25 @@ class QuasarConfigTest {
         assertEquals(3, QuasarConfig.sectionEditsPerLevelTickBudget());
         assertEquals(3, EffectBudgets.sectionEditsPerLevelTick());
         assertEquals(12_345, QuasarConfig.blockJournalMaxEntries());
+    }
+
+    @Test
+    void clampsPerOwnerSessionsToTheLevelBudget() {
+        TestConfig.load(config -> {
+            config.set("gameplay_session_budget", 4);
+            config.set("gameplay_sessions_per_owner_budget", 10);
+        });
+
+        assertEquals(4, QuasarConfig.gameplaySessionBudget());
+        assertEquals(4, QuasarConfig.gameplaySessionsPerOwnerBudget());
+        assertEquals(4, EffectBudgets.gameplaySessionsPerOwner());
+    }
+
+    @Test
+    void terrainTicketBudgetCoversOneMaximumBulkEdit() {
+        assertTrue(QuasarConfig.TERRAIN_TICKET_BUDGET.getDefault() >= EffectBulkBlockEditor.maxTicketChunks());
+        TestConfig.loadDefaults();
+
+        assertTrue(QuasarConfig.terrainTicketBudget() >= EffectBulkBlockEditor.maxTicketChunks());
     }
 }
