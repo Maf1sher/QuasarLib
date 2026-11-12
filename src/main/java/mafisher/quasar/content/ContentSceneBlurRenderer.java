@@ -1,30 +1,29 @@
-package mafisher.quasar.client.effect;
+package mafisher.quasar.content;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 import java.util.List;
-import mafisher.quasar.QuasarLib;
 import mafisher.quasar.api.client.EffectMeshes;
 import mafisher.quasar.api.client.EffectRenderContext;
 import mafisher.quasar.api.client.EffectRenderPass;
 import mafisher.quasar.api.client.QuasarRenderTypes;
+import mafisher.quasar.api.client.SceneBlurSettings;
 import mafisher.quasar.api.client.ScreenEffectMask;
 import mafisher.quasar.api.client.ScreenEffectRenderer;
 import mafisher.quasar.api.client.ScreenEffectSettings;
-import mafisher.quasar.api.client.WaveDistortionSettings;
 import mafisher.quasar.api.effect.EffectTimeline;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.AABB;
 
-/** Standalone debug visual for validating mask-scoped screen-space wave distortion. */
-final class WaveDistortionRenderer implements ScreenEffectRenderer {
+/** Content-owned visual for validating mask-scoped scene blur. */
+final class ContentSceneBlurRenderer implements ScreenEffectRenderer {
     private static final ResourceLocation TEXTURE = ResourceLocation.fromNamespaceAndPath(
-        QuasarLib.MOD_ID, "textures/effect/rune_circle.png"
+        ContentBootstrap.NAMESPACE, "textures/effect/rune_circle.png"
     );
-    private static final String PASS_ID = "wave-distortion-test";
+    private static final String PASS_ID = "scene-blur-test";
     private static final RenderType WORLD_RENDER_TYPE = QuasarRenderTypes.worldVisual(TEXTURE);
     private static final RenderType SCREEN_MASK_RENDER_TYPE = QuasarRenderTypes.screenEffectMask(TEXTURE);
     private static final List<EffectRenderPass> RENDER_PASSES = List.of(
@@ -40,11 +39,11 @@ final class WaveDistortionRenderer implements ScreenEffectRenderer {
     public void render(EffectRenderContext context, EffectRenderPass pass, PoseStack poseStack,
         MultiBufferSource bufferSource) {
         if (!PASS_ID.equals(pass.id())) {
-            throw new IllegalArgumentException("Unknown wave-distortion render pass: " + pass.id());
+            throw new IllegalArgumentException("Unknown scene-blur render pass: " + pass.id());
         }
         float alpha = EffectTimeline.fadeEnvelope(context.progress(), 0.08F, 0.15F);
         renderCircle(poseStack, bufferSource.getBuffer(pass.renderType()), context.scale(),
-            context.ageTicks() * 0.035F, 0.35F, 0.78F, 1.0F, alpha);
+            context.ageTicks() * 0.035F, 0.30F, 0.72F, 1.0F, alpha);
     }
 
     @Override
@@ -63,12 +62,12 @@ final class WaveDistortionRenderer implements ScreenEffectRenderer {
 
     @Override
     public ScreenEffectSettings screenEffectSettings(EffectRenderContext context) {
-        return ScreenEffectSettings.waveDistortion(WaveDistortionSettings.DEBUG_DEFAULT);
+        return ScreenEffectSettings.sceneBlur(SceneBlurSettings.DEBUG_DEFAULT);
     }
 
     @Override
     public ScreenEffectMask screenEffectMask(EffectRenderContext context) {
-        return new ScreenEffectMask(0.25F, 0.8F, 1.0F, 0.9F);
+        return new ScreenEffectMask(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
     @Override

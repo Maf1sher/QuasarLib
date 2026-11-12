@@ -25,7 +25,8 @@ class ContentSoundsTest {
             .map(holder -> holder.getId())
             .collect(Collectors.toSet());
 
-        assertEquals(9, ids.size());
+        assertEquals(10, ids.size());
+        assertTrue(ids.contains(id("effect_test")));
         assertTrue(ids.contains(id("black_hole_drone")));
         assertTrue(ids.contains(id("black_hole_implosion")));
     }

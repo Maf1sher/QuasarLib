@@ -16,12 +16,12 @@ class CinematicTimelineResourceTest {
     @Test
     void shippedRuneRiseTimelineParses() throws Exception {
         try (InputStream stream = getClass().getResourceAsStream(
-            "/data/quasar_lib/quasar/cinematics/rune_rise.json"
+            "/data/quasar_content/quasar/cinematics/rune_rise.json"
         )) {
             JsonObject root = JsonParser.parseReader(new InputStreamReader(stream, StandardCharsets.UTF_8))
                 .getAsJsonObject();
             CinematicTimeline timeline = CinematicTimelineJson.parse(
-                ResourceLocation.fromNamespaceAndPath("quasar_lib", "rune_rise"),
+                ResourceLocation.fromNamespaceAndPath("quasar_content", "rune_rise"),
                 root
             );
 

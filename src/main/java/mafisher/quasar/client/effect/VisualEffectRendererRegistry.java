@@ -5,7 +5,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import mafisher.quasar.api.client.VisualEffectRenderer;
-import mafisher.quasar.effect.EffectVisualIds;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManager;
 
@@ -13,21 +12,8 @@ import net.minecraft.server.packs.resources.ResourceManager;
 final class VisualEffectRendererRegistry {
     private final Map<ResourceLocation, VisualEffectRenderer> renderers = new HashMap<>();
     private Map<ResourceLocation, VisualEffectRenderer> frozenRenderers;
-    private boolean builtInsRegistered;
 
     VisualEffectRendererRegistry() {
-    }
-
-    void registerBuiltIns() {
-        if (this.builtInsRegistered) {
-            return;
-        }
-        this.register(EffectVisualIds.DEBUG_RUNE_CIRCLE, new RuneCircleRenderer());
-        this.register(EffectVisualIds.DEBUG_WAVE_DISTORTION, new WaveDistortionRenderer());
-        this.register(EffectVisualIds.DEBUG_SCENE_BLUR, new SceneBlurRenderer());
-        this.register(EffectVisualIds.DEBUG_BLOOM, new BloomRenderer());
-        this.register(EffectVisualIds.DEBUG_BLACK_HOLE, new BlackHoleRenderer());
-        this.builtInsRegistered = true;
     }
 
     void register(ResourceLocation id, VisualEffectRenderer renderer) {

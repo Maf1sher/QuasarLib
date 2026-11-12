@@ -1,4 +1,4 @@
-package mafisher.quasar.client.effect;
+package mafisher.quasar.content;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -8,10 +8,10 @@ import mafisher.quasar.api.client.EffectMesh;
 import mafisher.quasar.api.client.EffectMeshes;
 import org.junit.jupiter.api.Test;
 
-class BlackHoleGeometryTest {
+class ContentBlackHoleMeshGeometryTest {
     @Test
     void cachesAUnitSphereForTheCoreAndScreenMask() {
-        EffectMesh sphere = BlackHoleGeometry.sphere();
+        EffectMesh sphere = ContentBlackHoleMeshGeometry.sphere();
         assertSame(EffectMeshes.unitSphere(), sphere);
         assertEquals(32 * 64 * 4, sphere.vertexCount());
 
@@ -29,18 +29,18 @@ class BlackHoleGeometryTest {
 
     @Test
     void cachesASmallerSphereForEachLevelOfDetail() {
-        assertSame(EffectMeshes.unitSphere(), BlackHoleGeometry.sphere(0));
-        assertEquals(16 * 32 * 4, BlackHoleGeometry.sphere(1).vertexCount());
-        assertEquals(8 * 16 * 4, BlackHoleGeometry.sphere(2).vertexCount());
-        assertSame(BlackHoleGeometry.sphere(2), BlackHoleGeometry.sphere(99));
-        assertSame(BlackHoleGeometry.sphere(0), BlackHoleGeometry.sphere(-1));
+        assertSame(EffectMeshes.unitSphere(), ContentBlackHoleMeshGeometry.sphere(0));
+        assertEquals(16 * 32 * 4, ContentBlackHoleMeshGeometry.sphere(1).vertexCount());
+        assertEquals(8 * 16 * 4, ContentBlackHoleMeshGeometry.sphere(2).vertexCount());
+        assertSame(ContentBlackHoleMeshGeometry.sphere(2), ContentBlackHoleMeshGeometry.sphere(99));
+        assertSame(ContentBlackHoleMeshGeometry.sphere(0), ContentBlackHoleMeshGeometry.sphere(-1));
     }
 
     @Test
     void cachesBothWarpedDiskLayersWithValidVertexAttributes() {
-        EffectMesh primary = BlackHoleGeometry.primaryDisk();
-        EffectMesh secondary = BlackHoleGeometry.secondaryDisk();
-        assertSame(primary, BlackHoleGeometry.primaryDisk());
+        EffectMesh primary = ContentBlackHoleMeshGeometry.primaryDisk();
+        EffectMesh secondary = ContentBlackHoleMeshGeometry.secondaryDisk();
+        assertSame(primary, ContentBlackHoleMeshGeometry.primaryDisk());
         assertEquals(6 * 64 * 2 * 4 + 64 * 2 * 4, primary.vertexCount());
         assertEquals(primary.vertexCount(), secondary.vertexCount());
 

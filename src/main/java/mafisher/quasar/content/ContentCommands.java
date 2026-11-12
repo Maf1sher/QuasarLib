@@ -21,6 +21,7 @@ import mafisher.quasar.api.gameplay.GameplayEffectSpec;
 import mafisher.quasar.api.gameplay.OwnerPolicy;
 import mafisher.quasar.api.persistence.EffectCapabilities;
 import mafisher.quasar.api.persistence.EffectPersistenceOptions;
+import mafisher.quasar.api.scale.SegmentedVisualEffectHandle;
 import mafisher.quasar.api.scale.SegmentedVisualEffectService;
 import mafisher.quasar.api.scale.SegmentedVisualEffectSpec;
 import net.minecraft.commands.CommandSourceStack;
@@ -57,72 +58,89 @@ final class ContentCommands {
 
     static void register(RegisterCommandsEvent event) {
         CommandDispatcher<CommandSourceStack> dispatcher = event.getDispatcher();
-        dispatcher.register(
-            Commands.literal("quasarcontent")
-                .requires(source -> source.hasPermission(2))
-                .then(Commands.literal("rune").executes(context -> startRune(context.getSource())))
-                .then(Commands.literal("segmented")
-                    .executes(context -> startSegmented(
-                        context.getSource(), DEFAULT_COLUMNS, DEFAULT_ROWS, DEFAULT_SPACING
-                    ))
-                    .then(Commands.argument("columns", IntegerArgumentType.integer(1, 128))
-                        .then(Commands.argument("rows", IntegerArgumentType.integer(1, 128))
+        LiteralArgumentBuilder<CommandSourceStack> root = Commands.literal("quasarcontent")
+            .requires(source -> source.hasPermission(2))
+            .then(Commands.literal("rune").executes(context -> startRune(context.getSource())))
+            .then(Commands.literal("segmented")
+                .executes(context -> startSegmented(
+                    context.getSource(), DEFAULT_COLUMNS, DEFAULT_ROWS, DEFAULT_SPACING
+                ))
+                .then(Commands.argument("columns", IntegerArgumentType.integer(1, 128))
+                    .then(Commands.argument("rows", IntegerArgumentType.integer(1, 128))
+                        .executes(context -> startSegmented(
+                            context.getSource(),
+                            IntegerArgumentType.getInteger(context, "columns"),
+                            IntegerArgumentType.getInteger(context, "rows"),
+                            DEFAULT_SPACING
+                        ))
+                        .then(Commands.argument("spacing", DoubleArgumentType.doubleArg(1.0, 512.0))
                             .executes(context -> startSegmented(
                                 context.getSource(),
                                 IntegerArgumentType.getInteger(context, "columns"),
                                 IntegerArgumentType.getInteger(context, "rows"),
-                                DEFAULT_SPACING
-                            ))
-                            .then(Commands.argument("spacing", DoubleArgumentType.doubleArg(1.0, 512.0))
-                                .executes(context -> startSegmented(
-                                    context.getSource(),
-                                    IntegerArgumentType.getInteger(context, "columns"),
-                                    IntegerArgumentType.getInteger(context, "rows"),
-                                    DoubleArgumentType.getDouble(context, "spacing")
-                                ))))))
-                .then(Commands.literal("segmented-stop-all")
-                    .executes(context -> stopSegmented(context.getSource())))
-                .then(Commands.literal("blackhole")
+                                DoubleArgumentType.getDouble(context, "spacing")
+                            ))))))
+            .then(Commands.literal("segmented-stop")
+                .executes(context -> stopSegmented(context.getSource())))
+            .then(Commands.literal("blackhole")
+                .executes(context -> startBlackHole(
+                    context.getSource(),
+                    BLACK_HOLE_DEFAULT_DISTANCE,
+                    BLACK_HOLE_DEFAULT_SCALE,
+                    ContentBlackHoleGeometry.VARIANT_AMBER,
+                    false
+                ))
+                .then(Commands.literal("visual")
                     .executes(context -> startBlackHole(
                         context.getSource(),
                         BLACK_HOLE_DEFAULT_DISTANCE,
                         BLACK_HOLE_DEFAULT_SCALE,
                         ContentBlackHoleGeometry.VARIANT_AMBER,
-                        false
+                        true
+                    )))
+                .then(blackHoleVariant("gold", ContentBlackHoleGeometry.VARIANT_GOLD))
+                .then(blackHoleVariant("neon", ContentBlackHoleGeometry.VARIANT_NEON))
+                .then(Commands.argument("distance", DoubleArgumentType.doubleArg(48.0, 512.0))
+                    .executes(context -> startBlackHole(
+                        context.getSource(),
+                        DoubleArgumentType.getDouble(context, "distance"),
+                        BLACK_HOLE_DEFAULT_SCALE,
+                        ContentBlackHoleGeometry.VARIANT_AMBER
                     ))
-                    .then(Commands.literal("visual")
-                        .executes(context -> startBlackHole(
-                            context.getSource(),
-                            BLACK_HOLE_DEFAULT_DISTANCE,
-                            BLACK_HOLE_DEFAULT_SCALE,
-                            ContentBlackHoleGeometry.VARIANT_AMBER,
-                            true
-                        )))
-                    .then(blackHoleVariant("gold", ContentBlackHoleGeometry.VARIANT_GOLD))
-                    .then(blackHoleVariant("neon", ContentBlackHoleGeometry.VARIANT_NEON))
-                    .then(Commands.argument("distance", DoubleArgumentType.doubleArg(48.0, 512.0))
+                    .then(Commands.argument("scale", DoubleArgumentType.doubleArg(2.0, 64.0))
                         .executes(context -> startBlackHole(
                             context.getSource(),
                             DoubleArgumentType.getDouble(context, "distance"),
-                            BLACK_HOLE_DEFAULT_SCALE,
+                            (float)DoubleArgumentType.getDouble(context, "scale"),
                             ContentBlackHoleGeometry.VARIANT_AMBER
-                        ))
-                        .then(Commands.argument("scale", DoubleArgumentType.doubleArg(2.0, 64.0))
-                            .executes(context -> startBlackHole(
-                                context.getSource(),
-                                DoubleArgumentType.getDouble(context, "distance"),
-                                (float)DoubleArgumentType.getDouble(context, "scale"),
-                                ContentBlackHoleGeometry.VARIANT_AMBER
-                            )))))
-                .then(Commands.literal("blackhole-stop")
-                    .executes(context -> stopBlackHoles(context.getSource())))
-        );
+                        )))))
+            .then(Commands.literal("blackhole-mesh")
+                .executes(context -> startBlackHoleMesh(
+                    context.getSource(), BLACK_HOLE_DEFAULT_DISTANCE, BLACK_HOLE_DEFAULT_SCALE
+                ))
+                .then(Commands.argument("distance", DoubleArgumentType.doubleArg(48.0, 512.0))
+                    .executes(context -> startBlackHoleMesh(
+                        context.getSource(),
+                        DoubleArgumentType.getDouble(context, "distance"),
+                        BLACK_HOLE_DEFAULT_SCALE
+                    ))
+                    .then(Commands.argument("scale", DoubleArgumentType.doubleArg(2.0, 64.0))
+                        .executes(context -> startBlackHoleMesh(
+                            context.getSource(),
+                            DoubleArgumentType.getDouble(context, "distance"),
+                            (float)DoubleArgumentType.getDouble(context, "scale")
+                        )))))
+            .then(Commands.literal("blackhole-stop")
+                .executes(context -> stopBlackHoles(context.getSource())));
+
+        ContentEffectCommands.register(root);
+        ContentCinematicCommands.register(root);
+        dispatcher.register(root);
     }
 
     private static int startRune(CommandSourceStack source) {
         ServerLevel level = source.getLevel();
-        Vec3 position = source.getPosition();
-        Vec3 effectPosition = new Vec3(position.x, position.y - 1.4, position.z);
+        Vec3 effectPosition = ContentCommandSupport.effectPosition(source);
         EffectAudioSpec audio = EffectAudioSpec.builder(DEBUG_LIFETIME_TICKS)
             .cue(EffectAudioCue.at(
                 0,
@@ -175,7 +193,8 @@ final class ContentCommands {
                 spacing,
                 level.getRandom().nextLong()
             );
-            SegmentedVisualEffectService.start(level, spec);
+            SegmentedVisualEffectHandle handle = SegmentedVisualEffectService.start(level, spec);
+            ContentCommandSessions.track(level, handle);
             source.sendSuccess(
                 () -> Component.literal(
                     "Started a " + spec.columns() + "x" + spec.rows() + " segmented content rune ("
@@ -283,6 +302,28 @@ final class ContentCommands {
         return 1;
     }
 
+    private static int startBlackHoleMesh(CommandSourceStack source, double distance, float scale) {
+        ServerLevel level = source.getLevel();
+        Vec3 origin = source.getPlayer() != null
+            ? source.getPlayer().getEyePosition()
+            : source.getPosition();
+        VisualEffectSpec visual = blackHoleMeshSpec(
+            origin,
+            source.getRotation().y,
+            source.getRotation().x,
+            distance,
+            scale,
+            ContentBlackHoleGeometry.VARIANT_AMBER,
+            level.getRandom().nextLong()
+        );
+        VisualEffectService.start(level, visual);
+        source.sendSuccess(
+            () -> Component.literal("Started the content mesh black-hole comparison."),
+            false
+        );
+        return 1;
+    }
+
     static GameplayEffectSpec blackHoleGameplaySpec(VisualEffectSpec visual) {
         int duration = visual.durationTicks();
         int form = Math.max(1, Math.round(ContentBlackHoleCinematics.INTRO_END * duration));
@@ -331,26 +372,55 @@ final class ContentCommands {
         int variant,
         long seed
     ) {
-        if (!Double.isFinite(distance) || distance < 1.0) {
+        return blackHoleSpec(ContentEffectIds.BLACK_HOLE,
+            new BlackHolePlacement(origin, viewYaw, viewPitch, distance, scale, variant, seed));
+    }
+
+    static VisualEffectSpec blackHoleMeshSpec(
+        Vec3 origin,
+        float viewYaw,
+        float viewPitch,
+        double distance,
+        float scale,
+        int variant,
+        long seed
+    ) {
+        return blackHoleSpec(ContentEffectIds.BLACK_HOLE_MESH,
+            new BlackHolePlacement(origin, viewYaw, viewPitch, distance, scale, variant, seed));
+    }
+
+    private static VisualEffectSpec blackHoleSpec(ResourceLocation effectId, BlackHolePlacement placement) {
+        if (!Double.isFinite(placement.distance()) || placement.distance() < 1.0) {
             throw new IllegalArgumentException("Black-hole distance must be finite and positive");
         }
-        if (!Float.isFinite(scale) || scale <= 0.0F) {
+        if (!Float.isFinite(placement.scale()) || placement.scale() <= 0.0F) {
             throw new IllegalArgumentException("Black-hole scale must be finite and positive");
         }
-        Vec3 look = Vec3.directionFromRotation(viewPitch, viewYaw);
-        Vec3 center = origin.add(look.scale(distance));
+        Vec3 look = Vec3.directionFromRotation(placement.viewPitch(), placement.viewYaw());
+        Vec3 center = placement.origin().add(look.scale(placement.distance()));
         EffectAudioSpec audio = ContentBlackHoleAudio.plan(center, BLACK_HOLE_LIFETIME_TICKS);
         return VisualEffectSpec.builder(
-            ContentEffectIds.BLACK_HOLE,
+            effectId,
             center,
             BLACK_HOLE_LIFETIME_TICKS,
-            ContentBlackHoleGeometry.withVariant(seed, variant),
+            ContentBlackHoleGeometry.withVariant(placement.seed(), placement.variant()),
             EffectAudience.dimensionWide()
         )
-            .rotation(viewYaw, BLACK_HOLE_DISK_PITCH, 0.0F)
-            .scale(scale)
+            .rotation(placement.viewYaw(), BLACK_HOLE_DISK_PITCH, 0.0F)
+            .scale(placement.scale())
             .audio(audio)
             .build();
+    }
+
+    private record BlackHolePlacement(
+        Vec3 origin,
+        float viewYaw,
+        float viewPitch,
+        double distance,
+        float scale,
+        int variant,
+        long seed
+    ) {
     }
 
     private static String blackHoleVariantName(int variant) {
@@ -362,9 +432,12 @@ final class ContentCommands {
     }
 
     private static int stopSegmented(CommandSourceStack source) {
-        int stopped = SegmentedVisualEffectService.stopAll(source.getLevel());
+        int stopped = ContentCommandSessions.stopSegmented(
+            source.getLevel(),
+            (level, handle) -> SegmentedVisualEffectService.stop(level, handle)
+        );
         source.sendSuccess(
-            () -> Component.literal("Stopped " + stopped + " segmented effect(s)."),
+            () -> Component.literal("Stopped " + stopped + " content segmented effect(s)."),
             false
         );
         return 1;

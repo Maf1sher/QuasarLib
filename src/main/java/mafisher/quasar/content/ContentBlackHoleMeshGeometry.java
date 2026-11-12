@@ -1,11 +1,11 @@
-package mafisher.quasar.client.effect;
+package mafisher.quasar.content;
 
 
 import mafisher.quasar.api.client.EffectMesh;
 import mafisher.quasar.api.client.EffectMeshes;
 
-/** Black-hole-specific local mesh templates built on the shared effect mesh representation. */
-final class BlackHoleGeometry {
+/** Content-owned black-hole mesh templates built on the shared effect mesh representation. */
+final class ContentBlackHoleMeshGeometry {
     private static final int DISK_ANGULAR_SEGMENTS = 64;
     private static final int DISK_RADIAL_SEGMENTS = 6;
     private static final float DISK_RADIUS = 1.25F;
@@ -23,7 +23,7 @@ final class BlackHoleGeometry {
         DISK_RADIUS * 0.54F, DISK_RADIUS * 0.94F, DISK_RADIUS,
         DISK_RADIUS * 0.06F, DISK_RADIUS * 0.055F, 0.44F);
 
-    private BlackHoleGeometry() {
+    private ContentBlackHoleMeshGeometry() {
     }
 
     static EffectMesh sphere() {

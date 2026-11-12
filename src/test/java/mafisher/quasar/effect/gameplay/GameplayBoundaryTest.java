@@ -12,8 +12,11 @@ import org.junit.jupiter.api.Test;
 
 /** Keeps the gameplay and block layers server-side and independent of the content layer. */
 class GameplayBoundaryTest {
-    private static final Path GAMEPLAY_ROOT = findSourceRoot().resolve("mafisher/quasar/effect/gameplay");
-    private static final Path BLOCK_ROOT = findSourceRoot().resolve("mafisher/quasar/effect/block");
+    private static final Path SOURCE_ROOT = Path.of(
+        System.getProperty("quasar.api.sourceRoot", "src/main/java")
+    );
+    private static final Path GAMEPLAY_ROOT = SOURCE_ROOT.resolve("mafisher/quasar/effect/gameplay");
+    private static final Path BLOCK_ROOT = SOURCE_ROOT.resolve("mafisher/quasar/effect/block");
 
     @Test
     void effectPackagesDoNotImportClientOrContent() throws IOException {
@@ -32,21 +35,5 @@ class GameplayBoundaryTest {
         }
 
         assertTrue(violations.isEmpty(), () -> "Server effects must stay server-side and content-free: " + violations);
-    }
-
-    private static Path findSourceRoot() {
-        Path current = Path.of(System.getProperty("user.dir")).toAbsolutePath();
-        while (current != null) {
-            Path direct = current.resolve("src/main/java");
-            if (Files.isDirectory(direct)) {
-                return direct;
-            }
-            Path nested = current.resolve("quasar-lib/src/main/java");
-            if (Files.isDirectory(nested)) {
-                return nested;
-            }
-            current = current.getParent();
-        }
-        throw new IllegalStateException("Could not locate src/main/java from " + Path.of("").toAbsolutePath());
     }
 }

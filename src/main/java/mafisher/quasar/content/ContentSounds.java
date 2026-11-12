@@ -13,6 +13,7 @@ final class ContentSounds {
         BuiltInRegistries.SOUND_EVENT, ContentBootstrap.NAMESPACE
     );
 
+    static final Supplier<SoundEvent> EFFECT_TEST = register("effect_test");
     static final Supplier<SoundEvent> BLACK_HOLE_DREAD = register("black_hole_dread");
     static final Supplier<SoundEvent> BLACK_HOLE_DRONE = register("black_hole_drone");
     static final Supplier<SoundEvent> BLACK_HOLE_IGNITION = register("black_hole_ignition");

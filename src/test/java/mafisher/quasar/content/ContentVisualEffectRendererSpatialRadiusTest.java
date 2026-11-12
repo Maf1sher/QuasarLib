@@ -1,4 +1,4 @@
-package mafisher.quasar.client.effect;
+package mafisher.quasar.content;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -14,8 +14,8 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.AABB;
 import org.junit.jupiter.api.Test;
 
-class VisualEffectRendererSpatialRadiusTest {
-    private static final ResourceLocation EFFECT_ID = ResourceLocation.fromNamespaceAndPath("quasar_lib", "test");
+class ContentVisualEffectRendererSpatialRadiusTest {
+    private static final ResourceLocation EFFECT_ID = ResourceLocation.fromNamespaceAndPath("quasar_content", "test");
     private static final ResourceLocation DIMENSION = ResourceLocation.fromNamespaceAndPath("minecraft", "overworld");
 
     @Test
@@ -28,13 +28,14 @@ class VisualEffectRendererSpatialRadiusTest {
     }
 
     @Test
-    void builtInsCoverTheirCullingBounds() {
+    void contentRenderersCoverTheirCullingBounds() {
         List<VisualEffectRenderer> renderers = List.of(
-            new RuneCircleRenderer(),
-            new WaveDistortionRenderer(),
-            new SceneBlurRenderer(),
-            new BloomRenderer(),
-            new BlackHoleRenderer()
+            new ContentRuneCircleRenderer(),
+            new ContentWaveDistortionRenderer(),
+            new ContentSceneBlurRenderer(),
+            new ContentBloomRenderer(),
+            new ContentBlackHoleRenderer(),
+            new ContentBlackHoleMeshRenderer()
         );
 
         for (VisualEffectRenderer renderer : renderers) {

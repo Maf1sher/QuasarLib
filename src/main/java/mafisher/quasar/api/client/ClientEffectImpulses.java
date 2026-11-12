@@ -3,6 +3,7 @@ package mafisher.quasar.api.client;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import mafisher.quasar.QuasarClientConfig;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;
 
@@ -32,6 +33,9 @@ public final class ClientEffectImpulses {
     /** Queues one camera-shake impulse, dropping the oldest when the cap is reached. */
     public static void cameraShake(CameraShakeImpulse impulse) {
         Objects.requireNonNull(impulse, "impulse");
+        if (!QuasarClientConfig.cinematicImpulses()) {
+            return;
+        }
         synchronized (LOCK) {
             if (SHAKES.size() >= MAX_SHAKE_IMPULSES) {
                 SHAKES.remove(0);
@@ -43,6 +47,9 @@ public final class ClientEffectImpulses {
     /** Queues one screen-flash impulse, dropping the oldest when the cap is reached. */
     public static void screenFlash(ScreenFlashImpulse impulse) {
         Objects.requireNonNull(impulse, "impulse");
+        if (!QuasarClientConfig.cinematicImpulses()) {
+            return;
+        }
         synchronized (LOCK) {
             if (FLASHES.size() >= MAX_FLASH_IMPULSES) {
                 FLASHES.remove(0);

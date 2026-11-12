@@ -20,26 +20,16 @@ class EffectRenderTypesTest {
     );
 
     @Test
-    void buildsAllBuiltInTypes() {
+    void buildsEngineOwnedTypes() {
         assertNotNull(EffectRenderTypes.visual(TEXTURE));
-        assertNotNull(EffectRenderTypes.debugVisual(TEXTURE));
-        assertNotNull(EffectRenderTypes.blackHoleCore(TEXTURE));
-        assertNotNull(EffectRenderTypes.blackHoleDisk(TEXTURE));
         assertNotNull(EffectRenderTypes.instancedWorld(TEXTURE));
         assertNotNull(EffectRenderTypes.screenMask(TEXTURE));
-        assertNotNull(EffectRenderTypes.blackHoleScreenMask(TEXTURE));
-        assertNotNull(EffectRenderTypes.entityUnsorted(TEXTURE));
     }
 
     @Test
-    void cachesBuiltInShaderTypes() {
-        assertSame(EffectRenderTypes.debugVisual(TEXTURE), EffectRenderTypes.debugVisual(TEXTURE));
-        assertSame(EffectRenderTypes.blackHoleCore(TEXTURE), EffectRenderTypes.blackHoleCore(TEXTURE));
-        assertSame(EffectRenderTypes.blackHoleDisk(TEXTURE), EffectRenderTypes.blackHoleDisk(TEXTURE));
+    void cachesEngineOwnedShaderTypes() {
         assertSame(EffectRenderTypes.instancedWorld(TEXTURE), EffectRenderTypes.instancedWorld(TEXTURE));
         assertSame(EffectRenderTypes.screenMask(TEXTURE), EffectRenderTypes.screenMask(TEXTURE));
-        assertSame(EffectRenderTypes.blackHoleScreenMask(TEXTURE),
-            EffectRenderTypes.blackHoleScreenMask(TEXTURE));
     }
 
     @Test

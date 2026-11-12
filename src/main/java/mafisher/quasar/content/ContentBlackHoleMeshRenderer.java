@@ -1,16 +1,17 @@
-package mafisher.quasar.client.effect;
+package mafisher.quasar.content;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 import java.util.List;
-import mafisher.quasar.QuasarLib;
 import mafisher.quasar.api.client.BlackHoleScreenSettings;
 import mafisher.quasar.api.client.EffectLodProfile;
 import mafisher.quasar.api.client.EffectMesh;
 import mafisher.quasar.api.client.EffectRenderContext;
 import mafisher.quasar.api.client.EffectRenderPass;
+import mafisher.quasar.api.client.EffectRenderTypeOptions;
 import mafisher.quasar.api.client.EffectStaticMeshPass;
+import mafisher.quasar.api.client.QuasarRenderTypes;
 import mafisher.quasar.api.client.ScreenEffectMask;
 import mafisher.quasar.api.client.ScreenEffectRenderer;
 import mafisher.quasar.api.client.ScreenEffectSettings;
@@ -27,14 +28,23 @@ import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.phys.AABB;
 import org.joml.Matrix4f;
 
-/** Debug renderer for a cinematic, three-dimensional black hole and its plasma flows. */
-final class BlackHoleRenderer implements ScreenEffectRenderer, StaticMeshVisualEffectRenderer {
+/** Content-owned, static-mesh black hole used as the mesh-renderer acceptance demo. */
+final class ContentBlackHoleMeshRenderer implements ScreenEffectRenderer, StaticMeshVisualEffectRenderer {
     private static final ResourceLocation TEXTURE = ResourceLocation.fromNamespaceAndPath(
-        QuasarLib.MOD_ID, "textures/effect/rune_circle.png"
+        ContentBootstrap.NAMESPACE, "textures/effect/rune_circle.png"
     );
-    private static final RenderType CORE_RENDER_TYPE = EffectRenderTypes.blackHoleCore(TEXTURE);
-    private static final RenderType DISK_RENDER_TYPE = EffectRenderTypes.blackHoleDisk(TEXTURE);
-    private static final RenderType SCREEN_MASK_RENDER_TYPE = EffectRenderTypes.blackHoleScreenMask(TEXTURE);
+    private static final EffectRenderTypeOptions DISK_OPTIONS = new EffectRenderTypeOptions(
+        EffectRenderTypeOptions.Transparency.TRANSLUCENT, true, true, false, false, true, true
+    );
+    private static final RenderType CORE_RENDER_TYPE = QuasarRenderTypes.worldVisual(
+        ContentShaders.BLACK_HOLE_MESH, TEXTURE, EffectRenderTypeOptions.WORLD_DEPTH_WRITING
+    );
+    private static final RenderType DISK_RENDER_TYPE = QuasarRenderTypes.worldVisual(
+        ContentShaders.BLACK_HOLE_MESH, TEXTURE, DISK_OPTIONS
+    );
+    private static final RenderType SCREEN_MASK_RENDER_TYPE = QuasarRenderTypes.screenEffectMask(
+        ContentShaders.BLACK_HOLE_MESH_MASK, TEXTURE, DISK_OPTIONS
+    );
     private static final String CORE_PASS = "core";
     private static final String DISK_PASS = "disk";
     private static final float CORE_RADIUS_FACTOR = 0.38F;
@@ -59,7 +69,7 @@ final class BlackHoleRenderer implements ScreenEffectRenderer, StaticMeshVisualE
         float radius = scale * CORE_RADIUS_FACTOR;
         Matrix4f localTransform = new Matrix4f().scale(radius, radius, radius);
         return List.of(new EffectStaticMeshPass(CORE_PASS, CORE_RENDER_TYPE,
-            BlackHoleGeometry.sphere(sphereLod), localTransform, 0.0F, 0.0F, 0.0F, 1.0F,
+            ContentBlackHoleMeshGeometry.sphere(sphereLod), localTransform, 0.0F, 0.0F, 0.0F, 1.0F,
             OverlayTexture.NO_OVERLAY, EffectStaticMeshPass.FULLBRIGHT_LIGHT));
     }
 
@@ -80,7 +90,7 @@ final class BlackHoleRenderer implements ScreenEffectRenderer, StaticMeshVisualE
         if (DISK_PASS.equals(pass.id())) {
             renderDisk(poseStack, bufferSource.getBuffer(DISK_RENDER_TYPE), context,
                 scale, EffectTimeline.fadeEnvelope(context.progress(), 0.08F, 0.12F),
-                BlackHoleLighting.emissionScale(daylightFactor(context)), shaderData);
+                ContentBlackHoleLighting.emissionScale(daylightFactor(context)), shaderData);
         } else {
             throw new IllegalArgumentException("Unknown black-hole render pass: " + pass.id());
         }
@@ -102,7 +112,7 @@ final class BlackHoleRenderer implements ScreenEffectRenderer, StaticMeshVisualE
 
     @Override
     public ScreenEffectSettings screenEffectSettings(EffectRenderContext context) {
-        BlackHoleScreenSettings adaptedSettings = BlackHoleLighting.screenSettings(
+        BlackHoleScreenSettings adaptedSettings = ContentBlackHoleLighting.screenSettings(
             SCREEN_SETTINGS, daylightFactor(context));
         return ScreenEffectSettings.blackHole(adaptedSettings);
     }
@@ -140,7 +150,7 @@ final class BlackHoleRenderer implements ScreenEffectRenderer, StaticMeshVisualE
         poseStack.pushPose();
         try {
             poseStack.scale(radius, radius, radius);
-            BlackHoleGeometry.sphere().emit(vertices, poseStack.last(), 1.0F, 1.0F, 1.0F, alpha,
+            ContentBlackHoleMeshGeometry.sphere().emit(vertices, poseStack.last(), 1.0F, 1.0F, 1.0F, alpha,
                 OverlayTexture.NO_OVERLAY, 0x00F000F0);
         } finally {
             poseStack.popPose();
@@ -149,10 +159,10 @@ final class BlackHoleRenderer implements ScreenEffectRenderer, StaticMeshVisualE
 
     private static void renderDisk(PoseStack poseStack, VertexConsumer vertices, EffectRenderContext context,
         float scale, float alpha, float emissionScale, int shaderData) {
-        renderAccretionLayer(poseStack, vertices, BlackHoleGeometry.primaryDisk(), scale,
+        renderAccretionLayer(poseStack, vertices, ContentBlackHoleMeshGeometry.primaryDisk(), scale,
             context.ageTicks() * 0.018F, alpha, emissionScale, shaderData);
         if (context.quality().atLeast(EffectQualityTier.MEDIUM)) {
-            renderAccretionLayer(poseStack, vertices, BlackHoleGeometry.secondaryDisk(), scale,
+            renderAccretionLayer(poseStack, vertices, ContentBlackHoleMeshGeometry.secondaryDisk(), scale,
                 -context.ageTicks() * 0.027F, alpha, emissionScale, shaderData);
         }
     }

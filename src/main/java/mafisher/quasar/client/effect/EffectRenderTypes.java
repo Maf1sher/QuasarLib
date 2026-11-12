@@ -22,15 +22,6 @@ public final class EffectRenderTypes {
     private static final Function<ResourceLocation, RenderType> VISUAL = Util.memoize(
         EffectRenderTypes::createVisual
     );
-    private static final Function<ResourceLocation, RenderType> ENTITY_UNSORTED = Util.memoize(
-        EffectRenderTypes::createEntity
-    );
-    private static final EffectRenderTypeOptions BLACK_HOLE_DISK_OPTIONS = new EffectRenderTypeOptions(
-        EffectRenderTypeOptions.Transparency.TRANSLUCENT, true, true, false, false, true, true
-    );
-    private static final EffectRenderTypeOptions BLACK_HOLE_MASK_OPTIONS = new EffectRenderTypeOptions(
-        EffectRenderTypeOptions.Transparency.TRANSLUCENT, true, true, false, false, true, true
-    );
 
     private EffectRenderTypes() {
     }
@@ -39,33 +30,12 @@ public final class EffectRenderTypes {
         return VISUAL.apply(texture);
     }
 
-    static RenderType debugVisual(ResourceLocation texture) {
-        return shaderWorld(EffectShaders.EFFECT_VISUAL, texture, EffectRenderTypeOptions.WORLD_DEFAULT);
-    }
-
-    static RenderType blackHoleCore(ResourceLocation texture) {
-        return shaderWorld(EffectShaders.BLACK_HOLE_VISUAL, texture,
-            EffectRenderTypeOptions.WORLD_DEPTH_WRITING);
-    }
-
-    static RenderType blackHoleDisk(ResourceLocation texture) {
-        return shaderWorld(EffectShaders.BLACK_HOLE_VISUAL, texture, BLACK_HOLE_DISK_OPTIONS);
-    }
-
     public static RenderType instancedWorld(ResourceLocation texture) {
         return shaderWorld(EffectShaders.INSTANCED_VISUAL, texture, EffectRenderTypeOptions.WORLD_DEFAULT);
     }
 
     public static RenderType screenMask(ResourceLocation texture) {
         return shaderMask(EffectShaders.SCREEN_MASK, texture, EffectRenderTypeOptions.MASK_DEFAULT);
-    }
-
-    static RenderType blackHoleScreenMask(ResourceLocation texture) {
-        return shaderMask(EffectShaders.BLACK_HOLE_SCREEN_MASK, texture, BLACK_HOLE_MASK_OPTIONS);
-    }
-
-    static RenderType entityUnsorted(ResourceLocation texture) {
-        return ENTITY_UNSORTED.apply(texture);
     }
 
     public static RenderType shaderWorld(EffectShader shader, ResourceLocation texture,
@@ -142,29 +112,6 @@ public final class EffectRenderTypes {
             2_097_152,
             true,
             true,
-            state
-        );
-    }
-
-    private static RenderType createEntity(ResourceLocation texture) {
-        RenderType.CompositeState state = RenderType.CompositeState.builder()
-            .setShaderState(RenderStateShard.RENDERTYPE_ENTITY_TRANSLUCENT_SHADER)
-            .setTextureState(new RenderStateShard.TextureStateShard(texture, false, true))
-            .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
-            .setDepthTestState(RenderStateShard.LEQUAL_DEPTH_TEST)
-            .setCullState(RenderStateShard.NO_CULL)
-            .setLightmapState(RenderStateShard.LIGHTMAP)
-            .setOverlayState(RenderStateShard.OVERLAY)
-            .setOutputState(RenderStateShard.MAIN_TARGET)
-            .setWriteMaskState(RenderStateShard.COLOR_WRITE)
-            .createCompositeState(true);
-        return RenderType.create(
-            "quasar_lib_translucent_entity_effect",
-            DefaultVertexFormat.NEW_ENTITY,
-            VertexFormat.Mode.QUADS,
-            256,
-            true,
-            false,
             state
         );
     }

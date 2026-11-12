@@ -12,7 +12,9 @@ import org.junit.jupiter.api.Test;
 
 /** Pins the common network path to types that exist on a dedicated server. */
 class ClientPayloadIsolationTest {
-    private static final Path MAIN_SOURCE_ROOT = findSourceRoot();
+    private static final Path MAIN_SOURCE_ROOT = Path.of(
+        System.getProperty("quasar.api.sourceRoot", "src/main/java")
+    );
     private static final String NETWORK_SOURCE = "mafisher/quasar/effect/network/EffectNetwork.java";
     private static final String FACADE_SOURCE = "mafisher/quasar/client/effect/ClientEffectRuntime.java";
 
@@ -83,19 +85,4 @@ class ClientPayloadIsolationTest {
             owner.getSimpleName() + "." + member + " references client-only frame runtime");
     }
 
-    private static Path findSourceRoot() {
-        Path current = Path.of(System.getProperty("user.dir")).toAbsolutePath();
-        while (current != null) {
-            Path direct = current.resolve("src/main/java");
-            if (Files.isDirectory(direct)) {
-                return direct;
-            }
-            Path nested = current.resolve("quasar-lib/src/main/java");
-            if (Files.isDirectory(nested)) {
-                return nested;
-            }
-            current = current.getParent();
-        }
-        throw new IllegalStateException("Could not locate src/main/java from " + Path.of("").toAbsolutePath());
-    }
 }

@@ -5,9 +5,9 @@ import net.minecraft.resources.ResourceLocation;
 import net.neoforged.bus.api.Event;
 
 /**
- * Fired once during client setup, after QuasarLib registers its built-in renderers and before the renderer registry is
- * frozen. Subscribe during mod construction, for example with {@code @EventBusSubscriber}, so the handler is present
- * before client setup runs.
+ * Fired once during client setup before the renderer registry is frozen. Every renderer is consumer-owned; subscribe
+ * during mod construction, for example with {@code @EventBusSubscriber}, so the handler is present before client setup
+ * runs.
  *
  * <p>Handlers run on the client setup thread. They must only call
  * {@link #register(ResourceLocation, VisualEffectRenderer)} and must not touch

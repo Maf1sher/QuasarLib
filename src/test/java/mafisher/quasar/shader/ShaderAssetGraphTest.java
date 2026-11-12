@@ -136,7 +136,7 @@ class ShaderAssetGraphTest {
     void sharedNoiseIsImportedByItsUsers() {
         Set<String> users = Set.of(
             "quasar_lib:shaders/core/effect_visual.fsh",
-            "quasar_lib:shaders/core/black_hole_visual.fsh",
+            "quasar_content:shaders/core/black_hole_mesh.fsh",
             "quasar_content:shaders/core/black_hole.fsh"
         );
         List<String> missing = new ArrayList<>();

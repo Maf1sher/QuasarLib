@@ -61,7 +61,6 @@ final class ClientEffectFrameRuntime {
                 NeoForge.EVENT_BUS.post(new RegisterScreenEffectOperationsEvent(operationRegistry::register));
                 operationRegistry.freeze();
                 VisualEffectRendererRegistry rendererRegistry = new VisualEffectRendererRegistry();
-                rendererRegistry.registerBuiltIns();
                 NeoForge.EVENT_BUS.post(new RegisterVisualEffectRenderersEvent(rendererRegistry::register));
                 rendererRegistry.freeze();
                 try {

@@ -2,12 +2,10 @@ package mafisher.quasar.client.effect;
 
 import java.io.IOException;
 import mafisher.quasar.QuasarLib;
-import mafisher.quasar.effect.entity.QuasarEffectEntities;
 import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.event.RegisterClientReloadListenersEvent;
 import net.neoforged.neoforge.client.event.RegisterShadersEvent;
 import org.jetbrains.annotations.ApiStatus;
@@ -16,11 +14,6 @@ import org.jetbrains.annotations.ApiStatus;
 @ApiStatus.Internal
 public final class ClientEffectModEvents {
     private ClientEffectModEvents() {
-    }
-
-    @SubscribeEvent
-    public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
-        event.registerEntityRenderer(QuasarEffectEntities.EFFECT_PROBE.get(), EffectProbeRenderer::new);
     }
 
     @SubscribeEvent

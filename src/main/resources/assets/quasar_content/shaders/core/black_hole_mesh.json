@@ -1,6 +1,6 @@
 {
   "vertex": "quasar_lib:effect_visual",
-  "fragment": "quasar_lib:black_hole_visual",
+  "fragment": "quasar_content:black_hole_mesh",
   "samplers": [
     { "name": "Sampler2" }
   ],

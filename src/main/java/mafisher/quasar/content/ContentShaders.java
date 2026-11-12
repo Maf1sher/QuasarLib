@@ -21,6 +21,12 @@ final class ContentShaders {
     static final EffectShader BLACK_HOLE_MASK = EffectShader.create(
         id("black_hole_mask"), DefaultVertexFormat.BLOCK
     );
+    static final EffectShader BLACK_HOLE_MESH = EffectShader.create(
+        id("black_hole_mesh"), DefaultVertexFormat.BLOCK
+    );
+    static final EffectShader BLACK_HOLE_MESH_MASK = EffectShader.create(
+        id("black_hole_mesh_mask"), DefaultVertexFormat.BLOCK
+    );
 
     private ContentShaders() {
     }

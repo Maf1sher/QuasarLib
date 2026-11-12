@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import mafisher.quasar.api.client.VisualEffectRenderer;
-import mafisher.quasar.effect.EffectVisualIds;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManager;
 import org.junit.jupiter.api.Test;
@@ -27,16 +26,13 @@ class VisualEffectRendererRegistryTest {
     }
 
     @Test
-    void registersAllBuiltIns() {
+    void startsWithoutEngineOwnedRenderers() {
         VisualEffectRendererRegistry registry = new VisualEffectRendererRegistry();
 
-        registry.registerBuiltIns();
-
-        assertTrue(registry.find(EffectVisualIds.DEBUG_RUNE_CIRCLE).isPresent());
-        assertTrue(registry.find(EffectVisualIds.DEBUG_WAVE_DISTORTION).isPresent());
-        assertTrue(registry.find(EffectVisualIds.DEBUG_SCENE_BLUR).isPresent());
-        assertTrue(registry.find(EffectVisualIds.DEBUG_BLOOM).isPresent());
-        assertTrue(registry.find(EffectVisualIds.DEBUG_BLACK_HOLE).isPresent());
+        assertTrue(registry.find(ResourceLocation.fromNamespaceAndPath("quasar_lib", "debug_rune_circle"))
+            .isEmpty());
+        assertTrue(registry.find(ResourceLocation.fromNamespaceAndPath("quasar_lib", "debug_black_hole"))
+            .isEmpty());
     }
 
     @Test

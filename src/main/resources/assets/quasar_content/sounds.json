@@ -1,4 +1,12 @@
 {
+  "effect_test": {
+    "sounds": [
+      {
+        "name": "minecraft:block.amethyst_block.chime",
+        "type": "event"
+      }
+    ]
+  },
   "black_hole_dread": {
     "sounds": [
       { "name": "quasar_content:black_hole/dread" }

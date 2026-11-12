@@ -1,17 +1,17 @@
-package mafisher.quasar.client.effect;
+package mafisher.quasar.content;
 
 
 import mafisher.quasar.api.client.BlackHoleScreenSettings;
 import mafisher.quasar.api.client.BloomSettings;
 
-/** Daylight compensation for black-hole emission and bloom, without weakening its lensing. */
-final class BlackHoleLighting {
+/** Content-owned daylight compensation for black-hole emission and bloom, without weakening its lensing. */
+final class ContentBlackHoleLighting {
     private static final float DAY_BLOOM_THRESHOLD = 0.50F;
     private static final float DAY_BLOOM_INTENSITY_SCALE = 0.35F;
     private static final float DAY_BLOOM_RADIUS_SCALE = 0.75F;
     private static final float DAY_EMISSION_SCALE = 0.55F;
 
-    private BlackHoleLighting() {
+    private ContentBlackHoleLighting() {
     }
 
     static float emissionScale(float daylight) {

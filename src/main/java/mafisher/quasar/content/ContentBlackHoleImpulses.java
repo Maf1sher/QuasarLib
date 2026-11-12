@@ -4,7 +4,6 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
-import mafisher.quasar.QuasarClientConfig;
 import mafisher.quasar.api.client.CameraShakeImpulse;
 import mafisher.quasar.api.client.ClientEffectImpulses;
 import mafisher.quasar.api.client.EffectRenderContext;
@@ -29,9 +28,6 @@ final class ContentBlackHoleImpulses {
     }
 
     static void tick(EffectRenderContext context) {
-        if (!QuasarClientConfig.cinematicImpulses()) {
-            return;
-        }
         UUID instanceId = context.effect().instanceId();
         float progress = context.progress();
         Tracker tracker = TRACKERS.get(instanceId);
