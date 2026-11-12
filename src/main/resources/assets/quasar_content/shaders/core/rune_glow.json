@@ -1,5 +1,5 @@
 {
-  "vertex": "quasar_content:rune_glow",
+  "vertex": "quasar_lib:screen_quad",
   "fragment": "quasar_content:rune_glow",
   "samplers": [
     { "name": "SceneSampler" },

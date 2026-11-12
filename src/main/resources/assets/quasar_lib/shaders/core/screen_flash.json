@@ -1,5 +1,5 @@
 {
-  "vertex": "quasar_lib:screen_flash",
+  "vertex": "quasar_lib:screen_quad",
   "fragment": "quasar_lib:screen_flash",
   "attributes": [
     "Position"

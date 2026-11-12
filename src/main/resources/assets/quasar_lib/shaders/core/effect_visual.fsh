@@ -1,6 +1,7 @@
 #version 150
 
 #moj_import <fog.glsl>
+#moj_import <quasar_lib:noise.glsl>
 
 uniform sampler2D Sampler0;
 
@@ -16,28 +17,11 @@ flat in vec2 effectData;
 
 out vec4 fragColor;
 
-float hash21(vec2 point) {
-    point = fract(point * vec2(123.34, 456.21));
-    point += dot(point, point + 34.345);
-    return fract(point.x * point.y);
-}
-
-float valueNoise(vec2 point) {
-    vec2 cell = floor(point);
-    vec2 local = fract(point);
-    local = local * local * (3.0 - 2.0 * local);
-    return mix(
-        mix(hash21(cell), hash21(cell + vec2(1.0, 0.0)), local.x),
-        mix(hash21(cell + vec2(0.0, 1.0)), hash21(cell + vec2(1.0, 1.0)), local.x),
-        local.y
-    );
-}
-
 void main() {
     float progress = clamp(effectData.x, 0.0, 1.0);
     float seed = clamp(effectData.y, 0.0, 1.0);
     vec2 noiseOffset = vec2(seed * 47.0 + progress * 73.0, seed * 83.0 - progress * 61.0);
-    float noise = valueNoise(texCoord0 * 28.0 + noiseOffset);
+    float noise = quasarValueNoise(texCoord0 * 28.0 + noiseOffset, 34.345);
 
     vec2 centeredUv = texCoord0 - vec2(0.5);
     float radius = length(centeredUv);

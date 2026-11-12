@@ -1,5 +1,5 @@
 {
-  "vertex": "quasar_lib:screen_composite",
+  "vertex": "quasar_lib:screen_quad",
   "fragment": "quasar_lib:screen_composite",
   "samplers": [
     { "name": "SceneSampler" },

@@ -1,6 +1,6 @@
 {
-  "vertex": "quasar_content:black_hole_mask",
-  "fragment": "quasar_content:black_hole_mask",
+  "vertex": "quasar_lib:screen_quad_mask",
+  "fragment": "quasar_lib:screen_mask",
   "samplers": [
     { "name": "Sampler0" }
   ],
@@ -8,9 +8,5 @@
     "Position",
     "Color",
     "UV0"
-  ],
-  "uniforms": [
-    { "name": "ModelViewMat", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
-    { "name": "ProjMat", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] }
   ]
 }

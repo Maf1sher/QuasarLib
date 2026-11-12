@@ -1,5 +1,5 @@
 {
-  "vertex": "quasar_lib:screen_present",
+  "vertex": "quasar_lib:screen_quad",
   "fragment": "quasar_lib:screen_present",
   "samplers": [
     { "name": "DiffuseSampler" }

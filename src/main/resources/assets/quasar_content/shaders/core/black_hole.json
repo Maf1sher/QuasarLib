@@ -1,5 +1,5 @@
 {
-  "vertex": "quasar_content:black_hole",
+  "vertex": "quasar_lib:screen_quad",
   "fragment": "quasar_content:black_hole",
   "samplers": [
     { "name": "SceneSampler" },

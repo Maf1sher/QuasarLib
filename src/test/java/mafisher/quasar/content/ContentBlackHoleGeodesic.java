@@ -5,15 +5,12 @@ import mafisher.quasar.api.client.ScreenEffectMediumPath;
 import org.joml.Vector3d;
 
 /**
- * Pure CPU mirror of the content black-hole null-geodesic integration. The shader
- * uses the same acceleration and step rules; this class exists so shadow,
- * deflection, disk-crossing, and close-range behaviour can be tested headlessly.
+ * Test-only CPU oracle for the content black-hole null-geodesic integration. The
+ * shared numeric constants are read from {@code black_hole_optics.glsl}; this
+ * class exists so shadow, deflection, disk-crossing, and close-range behaviour
+ * can be tested headlessly. It is not shipped and does not prove GLSL execution.
  */
 final class ContentBlackHoleGeodesic {
-    /** Critical impact parameter for a Schwarzschild photon: 3 * sqrt(3) / 2. */
-    static final double B_CRITICAL = 3.0 * Math.sqrt(3.0) / 2.0;
-    private static final double HORIZON_EPSILON = 1.02;
-
     private ContentBlackHoleGeodesic() {
     }
 
@@ -50,7 +47,8 @@ final class ContentBlackHoleGeodesic {
         Vector3d angularMomentum = new Vector3d(position).cross(velocity);
         double impact = angularMomentum.length();
         double h2 = impact * impact;
-        double escapeRadius = Math.max(48.0 * horizonRadius, position.length() * 1.25);
+        double escapeRadius = Math.max(BlackHoleOptics.ESCAPE_FACTOR * horizonRadius,
+            position.length() * BlackHoleOptics.ESCAPE_ORIGIN_FACTOR);
         double closestApproach = position.length();
         double closestRadius = position.length();
         double nearestEntry = 0.0;
@@ -67,7 +65,7 @@ final class ContentBlackHoleGeodesic {
                 closestRadius = radius;
                 nearestEntry = position.distance(cameraRelative);
             }
-            if (radius <= horizonRadius * HORIZON_EPSILON) {
+            if (radius <= horizonRadius * BlackHoleOptics.HORIZON_EPSILON) {
                 captured = true;
                 break;
             }
@@ -75,7 +73,8 @@ final class ContentBlackHoleGeodesic {
                 break;
             }
 
-            double dt = stepLength(radius, horizonRadius) / Math.max(velocity.length(), 0.25);
+            double dt = stepLength(radius, horizonRadius)
+                / Math.max(velocity.length(), BlackHoleOptics.STEP_SPEED_FLOOR);
             Vector3d a1 = acceleration(position, h2, horizonRadius);
             Vector3d v2 = new Vector3d(velocity).fma(0.5 * dt, a1);
             Vector3d p2 = new Vector3d(position).fma(0.5 * dt, velocity);
@@ -120,7 +119,7 @@ final class ContentBlackHoleGeodesic {
             steps = stepIndex + 1;
         }
 
-        if (position.length() <= horizonRadius * HORIZON_EPSILON) {
+        if (position.length() <= horizonRadius * BlackHoleOptics.HORIZON_EPSILON) {
             captured = true;
         }
         Vector3d outgoing = captured ? new Vector3d(velocity) : new Vector3d(velocity).normalize();
@@ -158,7 +157,8 @@ final class ContentBlackHoleGeodesic {
             normal.negate();
         }
         double incidence = clamp(Math.abs(straight.dot(normal)), 0.0, 1.0);
-        double eta = cameraSubmerged ? 1.333 : 1.0 / 1.333;
+        double eta = cameraSubmerged
+            ? BlackHoleOptics.WATER_IOR : 1.0 / BlackHoleOptics.WATER_IOR;
         Vector3d bent = refract(straight, normal, eta);
         if (bent.lengthSquared() < 1.0E-6) {
             // Total internal reflection from below the surface: the above-water
@@ -177,8 +177,9 @@ final class ContentBlackHoleGeodesic {
         double slopeZ = Math.cos(z * 0.58 - time * 1.5)
             + 0.6 * Math.cos(z * 1.29 + x * 0.37 + time * 0.9)
             + 0.35 * Math.cos(x * 1.90 - time * 2.1);
-        // Keep the synthetic ripples subtle; the shader uses the same 0.02 slope.
-        return new Vector3d(slopeX * 0.02, 1.0, slopeZ * 0.02).normalize();
+        // Keep the synthetic ripples subtle; the shared slope comes from the shader include.
+        return new Vector3d(slopeX * BlackHoleOptics.RIPPLE_SLOPE, 1.0,
+            slopeZ * BlackHoleOptics.RIPPLE_SLOPE).normalize();
     }
 
     /** Mirrors {@code fresnelWater} in {@code black_hole.fsh}. */
@@ -191,9 +192,11 @@ final class ContentBlackHoleGeodesic {
         }
         double cosT = Math.sqrt(1.0 - sinT2);
         double rs = (incidentIor * cosI - transmittedIor * cosT)
-            / Math.max(incidentIor * cosI + transmittedIor * cosT, 1.0E-9);
+            / Math.max(incidentIor * cosI + transmittedIor * cosT,
+                BlackHoleOptics.FRESNEL_FLOOR);
         double rp = (incidentIor * cosT - transmittedIor * cosI)
-            / Math.max(incidentIor * cosT + transmittedIor * cosI, 1.0E-9);
+            / Math.max(incidentIor * cosT + transmittedIor * cosI,
+                BlackHoleOptics.FRESNEL_FLOOR);
         return clamp(0.5 * (rs * rs + rp * rp), 0.0, 1.0);
     }
 
@@ -206,8 +209,8 @@ final class ContentBlackHoleGeodesic {
         if (ray.totalInternalReflection()) {
             return 0.0;
         }
-        double incidentIor = cameraSubmerged ? 1.333 : 1.0;
-        double transmittedIor = cameraSubmerged ? 1.0 : 1.333;
+        double incidentIor = cameraSubmerged ? BlackHoleOptics.WATER_IOR : 1.0;
+        double transmittedIor = cameraSubmerged ? 1.0 : BlackHoleOptics.WATER_IOR;
         return 1.0 - fresnelReflectance(ray.incidenceCosine(), incidentIor, transmittedIor);
     }
 
@@ -257,11 +260,15 @@ final class ContentBlackHoleGeodesic {
             : nearestDiskEntry;
     }
 
-    private static double stepLength(double radius, double horizonRadius) {
-        if (radius < 6.0 * horizonRadius) {
-            return clamp(0.045 * radius, 0.008 * horizonRadius, 0.20 * horizonRadius);
+    static double stepLength(double radius, double horizonRadius) {
+        if (radius < BlackHoleOptics.STEP_NEAR_LIMIT * horizonRadius) {
+            return clamp(BlackHoleOptics.STEP_NEAR_FACTOR * radius,
+                BlackHoleOptics.STEP_NEAR_MIN * horizonRadius,
+                BlackHoleOptics.STEP_NEAR_MAX * horizonRadius);
         }
-        return clamp(0.10 * radius, 0.02 * horizonRadius, 1.5 * horizonRadius);
+        return clamp(BlackHoleOptics.STEP_FAR_FACTOR * radius,
+            BlackHoleOptics.STEP_FAR_MIN * horizonRadius,
+            BlackHoleOptics.STEP_FAR_MAX * horizonRadius);
     }
 
     private static Vector3d acceleration(Vector3d position, double h2, double horizonRadius) {

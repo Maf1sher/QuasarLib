@@ -1,6 +1,6 @@
 {
-  "vertex": "quasar_content:rune_circle",
-  "fragment": "quasar_content:rune_circle",
+  "vertex": "quasar_lib:instanced_visual",
+  "fragment": "quasar_lib:effect_visual",
   "samplers": [
     { "name": "Sampler0" },
     { "name": "Sampler2" }

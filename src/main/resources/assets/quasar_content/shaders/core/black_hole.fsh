@@ -1,5 +1,8 @@
 #version 150
 
+#moj_import <quasar_lib:noise.glsl>
+#moj_import <quasar_content:black_hole_optics.glsl>
+
 uniform sampler2D SceneSampler;
 uniform sampler2D RawSceneSampler;
 uniform sampler2D OpaqueColorSampler;
@@ -78,45 +81,6 @@ const float PI = 3.14159265359;
 const float DISK_OPACITY = 2.4;
 const float DISK_BODY_OCCLUSION = 0.98;
 const float DISK_BODY_EMISSION = 0.20;
-const float B_CRITICAL = 2.59807621135;
-
-float hash13(vec3 point) {
-    point = fract(point * 0.1031);
-    point += dot(point, point.yzx + 33.33);
-    return fract((point.x + point.y) * point.z);
-}
-
-float valueNoise3(vec3 point) {
-    vec3 cell = floor(point);
-    vec3 local = fract(point);
-    local = local * local * (3.0 - 2.0 * local);
-    float n000 = hash13(cell);
-    float n100 = hash13(cell + vec3(1.0, 0.0, 0.0));
-    float n010 = hash13(cell + vec3(0.0, 1.0, 0.0));
-    float n110 = hash13(cell + vec3(1.0, 1.0, 0.0));
-    float n001 = hash13(cell + vec3(0.0, 0.0, 1.0));
-    float n101 = hash13(cell + vec3(1.0, 0.0, 1.0));
-    float n011 = hash13(cell + vec3(0.0, 1.0, 1.0));
-    float n111 = hash13(cell + vec3(1.0, 1.0, 1.0));
-    float nx00 = mix(n000, n100, local.x);
-    float nx10 = mix(n010, n110, local.x);
-    float nx01 = mix(n001, n101, local.x);
-    float nx11 = mix(n011, n111, local.x);
-    float nxy0 = mix(nx00, nx10, local.y);
-    float nxy1 = mix(nx01, nx11, local.y);
-    return mix(nxy0, nxy1, local.z);
-}
-
-float fbm3(vec3 point) {
-    float value = 0.0;
-    float amplitude = 0.5;
-    for (int octave = 0; octave < 4; octave++) {
-        value += amplitude * valueNoise3(point);
-        point = point * 2.03 + vec3(1.7, 9.2, 3.4);
-        amplitude *= 0.5;
-    }
-    return value;
-}
 
 vec3 rayDirection(vec2 uv) {
     vec2 ndc = uv * 2.0 - 1.0;
@@ -367,7 +331,7 @@ vec3 waterSurfaceNormal(vec3 holeRelative) {
         + 0.35 * cos(p.x * 1.90 - time * 2.1);
     // Keep the synthetic ripples subtle: they cannot match the vanilla water
     // animation, so a large tilt reads as a wobbling reflection.
-    return normalize(vec3(slopeX * 0.02, 1.0, slopeZ * 0.02));
+    return normalize(vec3(slopeX * BH_RIPPLE_SLOPE, 1.0, slopeZ * BH_RIPPLE_SLOPE));
 }
 
 /** Unpolarised Fresnel reflectance; approaches one at the critical angle. */
@@ -380,9 +344,9 @@ float fresnelWater(float cosIncidence, float incidentIor, float transmittedIor) 
     }
     float cosT = sqrt(1.0 - sinT2);
     float rs = (incidentIor * cosI - transmittedIor * cosT)
-        / max(incidentIor * cosI + transmittedIor * cosT, 0.0001);
+        / max(incidentIor * cosI + transmittedIor * cosT, BH_FRESNEL_FLOOR);
     float rp = (incidentIor * cosT - transmittedIor * cosI)
-        / max(incidentIor * cosT + transmittedIor * cosI, 0.0001);
+        / max(incidentIor * cosT + transmittedIor * cosI, BH_FRESNEL_FLOOR);
     return clamp(0.5 * (rs * rs + rp * rp), 0.0, 1.0);
 }
 
@@ -415,7 +379,7 @@ SceneRay refractAtWater(vec3 origin, vec3 direction) {
     }
     ray.normal = normal;
     ray.incidenceCosine = clamp(abs(dot(direction, normal)), 0.0, 1.0);
-    float eta = CameraSubmerged > 0.5 ? 1.333 : 1.0 / 1.333;
+    float eta = CameraSubmerged > 0.5 ? BH_WATER_IOR : 1.0 / BH_WATER_IOR;
     vec3 bent = refract(direction, normal, eta);
     ray.surfaceDistance = surfaceDistance;
     if (dot(bent, bent) < 0.000001) {
@@ -476,8 +440,8 @@ vec4 sampleDisk(vec3 point, vec3 cameraRelative) {
     vec2 ringPosition = vec2(cos(phi), sin(phi))
         * (radial / max(DiskOuterRadius, 0.001)) * 7.0;
     vec3 noisePosition = vec3(ringPosition * 1.7, AgeTicks * 0.012 + Seed * 31.0);
-    float coarse = fbm3(noisePosition * (1.0 + 0.6 * turbulenceScale));
-    float fine = fbm3(noisePosition * (2.6 + 0.9 * turbulenceScale) + vec3(11.0, 7.0, 3.0));
+    float coarse = quasarFbm3(noisePosition * (1.0 + 0.6 * turbulenceScale));
+    float fine = quasarFbm3(noisePosition * (2.6 + 0.9 * turbulenceScale) + vec3(11.0, 7.0, 3.0));
 
     float density = edge * (0.28 + 1.05 * coarse) * (0.55 + 0.65 * fine);
     float dust = smoothstep(0.34, 0.68, fine);
@@ -532,10 +496,12 @@ vec3 geodesicAcceleration(vec3 position, float h2, float horizonRadius) {
 }
 
 float geodesicStep(float radius, float horizonRadius) {
-    if (radius < 6.0 * horizonRadius) {
-        return clamp(0.045 * radius, 0.008 * horizonRadius, 0.20 * horizonRadius);
+    if (radius < BH_STEP_NEAR_LIMIT * horizonRadius) {
+        return clamp(BH_STEP_NEAR_FACTOR * radius, BH_STEP_NEAR_MIN * horizonRadius,
+            BH_STEP_NEAR_MAX * horizonRadius);
     }
-    return clamp(0.10 * radius, 0.02 * horizonRadius, 1.5 * horizonRadius);
+    return clamp(BH_STEP_FAR_FACTOR * radius, BH_STEP_FAR_MIN * horizonRadius,
+        BH_STEP_FAR_MAX * horizonRadius);
 }
 
 /**
@@ -628,7 +594,7 @@ vec4 renderBlackHole(vec2 uv) {
     float insideDisk = cameraInsideDisk(cameraRelative);
     // Check the horizon before any footprint or facing gate: inside the core the
     // whole frame must be dark regardless of the view direction.
-    if (length(cameraRelative) <= radius * 1.02) {
+    if (length(cameraRelative) <= radius * BH_HORIZON_EPSILON) {
         return EmissiveOnly > 0.5 ? vec4(0.0) : vec4(vec3(0.02, 0.01, 0.03), 0.0);
     }
     float lensRadius = max(LensRadius, radius * 3.0);
@@ -641,7 +607,7 @@ vec4 renderBlackHole(vec2 uv) {
     }
 
     float impact = length(cross(traceOrigin, traceDirection));
-    float shadowImpact = radius * B_CRITICAL;
+    float shadowImpact = radius * BH_B_CRITICAL;
     // The background lens fades out well before the disk shell. This keeps the
     // cinematic shadow and disk but stops the huge circular space-warp footprint.
     float warpOuter = clamp(LensWarpRadius, shadowImpact + 0.001, lensRadius);
@@ -660,8 +626,8 @@ vec4 renderBlackHole(vec2 uv) {
     vec3 position = traceOrigin + traceDirection * max(tEntry, 0.0);
     vec3 velocity = traceDirection;
     float h2 = dot(cross(traceOrigin, traceDirection), cross(traceOrigin, traceDirection));
-    float escapeRadius = max(max(DiskOuterRadius * 1.5, radius * 48.0),
-        length(traceOrigin) * 1.25);
+    float escapeRadius = max(max(DiskOuterRadius * 1.5, radius * BH_ESCAPE_FACTOR),
+        length(traceOrigin) * BH_ESCAPE_ORIGIN_FACTOR);
     float transmittance = 1.0;
     vec3 emission = vec3(0.0);
     bool captured = false;
@@ -685,7 +651,7 @@ vec4 renderBlackHole(vec2 uv) {
             closestHoleRadius = distanceToHole;
             closestEntry = length(position - traceOrigin);
         }
-        if (distanceToHole <= radius * 1.02) {
+        if (distanceToHole <= radius * BH_HORIZON_EPSILON) {
             captured = true;
             break;
         }
@@ -694,7 +660,7 @@ vec4 renderBlackHole(vec2 uv) {
         }
 
         float stepLength = geodesicStep(distanceToHole, radius)
-            / max(length(velocity), 0.25);
+            / max(length(velocity), BH_STEP_SPEED_FLOOR);
         // Midpoint integration keeps the photon orbit stable without four acceleration
         // evaluations per step.
         vec3 a1 = geodesicAcceleration(position, h2, radius);
@@ -931,7 +897,7 @@ void main() {
 
     vec3 cameraRelative = -BlackHoleOffset;
     float holeDistance = length(BlackHoleOffset);
-    bool insideHorizon = holeDistance <= max(BlackHoleRadius, 0.001) * 1.02;
+    bool insideHorizon = holeDistance <= max(BlackHoleRadius, 0.001) * BH_HORIZON_EPSILON;
     vec3 direction = rayDirection(texCoord);
     SceneRay ray = refractAtWater(cameraRelative, direction);
     vec4 effectColor = texture(EffectSampler, texCoord);
@@ -987,8 +953,8 @@ void main() {
     coverage *= 1.0 - smoothstep(lensRadius * 0.88, lensRadius * 1.04, impact);
     float diskScreenMask = diskScreenCoverage(traceOrigin, traceDirection);
     float coreMask = (1.0 - smoothstep(
-            max(BlackHoleRadius, 0.001) * B_CRITICAL * 1.05,
-            max(BlackHoleRadius, 0.001) * B_CRITICAL * 1.35,
+            max(BlackHoleRadius, 0.001) * BH_B_CRITICAL * 1.05,
+            max(BlackHoleRadius, 0.001) * BH_B_CRITICAL * 1.35,
             impact)) * frontFacing(direction);
     float opaqueMask = max(diskScreenMask, coreMask);
     bool footprint = insideLens || tEntry >= 0.0;
@@ -1000,8 +966,8 @@ void main() {
     // Physically motivated surface transmission instead of a fixed blue wash.
     float surfaceTransmittance = 1.0;
     if (ray.surfaceDistance > 0.0) {
-        float incidentIor = CameraSubmerged > 0.5 ? 1.333 : 1.0;
-        float transmittedIor = CameraSubmerged > 0.5 ? 1.0 : 1.333;
+        float incidentIor = CameraSubmerged > 0.5 ? BH_WATER_IOR : 1.0;
+        float transmittedIor = CameraSubmerged > 0.5 ? 1.0 : BH_WATER_IOR;
         surfaceTransmittance = 1.0 - fresnelWater(
             ray.incidenceCosine, incidentIor, transmittedIor);
     }

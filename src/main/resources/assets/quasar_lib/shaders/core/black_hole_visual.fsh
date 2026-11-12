@@ -1,6 +1,7 @@
 #version 150
 
 #moj_import <fog.glsl>
+#moj_import <quasar_lib:noise.glsl>
 
 uniform vec4 ColorModulator;
 uniform float FogStart;
@@ -13,21 +14,6 @@ in vec2 texCoord0;
 flat in vec2 effectData;
 
 out vec4 fragColor;
-
-float hash21(vec2 point) {
-    point = fract(point * vec2(123.34, 456.21));
-    point += dot(point, point + 45.32);
-    return fract(point.x * point.y);
-}
-
-float smoothNoise(vec2 point) {
-    vec2 cell = floor(point);
-    vec2 local = fract(point);
-    local = local * local * (3.0 - 2.0 * local);
-    float lower = mix(hash21(cell), hash21(cell + vec2(1.0, 0.0)), local.x);
-    float upper = mix(hash21(cell + vec2(0.0, 1.0)), hash21(cell + vec2(1.0, 1.0)), local.x);
-    return mix(lower, upper, local.y);
-}
 
 void main() {
     float progress = clamp(effectData.x, 0.0, 1.0);
@@ -44,10 +30,10 @@ void main() {
     float radius = length(centeredUv);
     float angle = atan(centeredUv.y, centeredUv.x);
     vec2 angularDirection = vec2(cos(angle), sin(angle));
-    float noiseA = smoothNoise(angularDirection * 4.0
-        + vec2(seed * 9.0 - progress * 4.0, radius * 15.0));
-    float noiseB = smoothNoise(angularDirection * 8.0
-        + vec2(radius * 11.0 + seed * 3.0, radius * 31.0 - progress * 3.0));
+    float noiseA = quasarValueNoise(angularDirection * 4.0
+        + vec2(seed * 9.0 - progress * 4.0, radius * 15.0), 45.32);
+    float noiseB = quasarValueNoise(angularDirection * 8.0
+        + vec2(radius * 11.0 + seed * 3.0, radius * 31.0 - progress * 3.0), 45.32);
     float density = noiseA * 0.62 + noiseB * 0.38;
     float spiral = 0.5 + 0.5 * sin(angle * 7.0 - radius * 42.0 + progress * 22.0
         + (noiseA - 0.5) * 4.0);

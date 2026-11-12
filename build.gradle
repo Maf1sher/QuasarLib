@@ -34,12 +34,28 @@ repositories {
     }
 }
 
+def shadercNativesClassifier = {
+    def os = System.getProperty('os.name').toLowerCase(Locale.ROOT)
+    def arch = System.getProperty('os.arch').toLowerCase(Locale.ROOT)
+    if (os.contains('win')) {
+        return 'natives-windows'
+    }
+    if (os.contains('mac')) {
+        return arch.contains('aarch64') ? 'natives-macos-arm64' : 'natives-macos'
+    }
+    return arch.contains('aarch64') ? 'natives-linux-arm64' : 'natives-linux'
+}
+
 dependencies {
     // JSpecify supplies @NullMarked/@Nullable for the public api packages. It is
     // compile-only: annotations have CLASS retention and are not needed at runtime.
     compileOnly 'org.jspecify:jspecify:1.0.0'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
     testImplementation 'org.mockito:mockito-core:5.14.2'
+    // Headless GLSL validation in tests; shaderc compiles the shipped shader
+    // sources without creating an OpenGL context or opening a window.
+    testImplementation 'org.lwjgl:lwjgl-shaderc:3.3.3'
+    testRuntimeOnly "org.lwjgl:lwjgl-shaderc:3.3.3:${shadercNativesClassifier()}"
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
     // Sodium is a required client dependency; keep the dev runs launchable. Sodium
     // declares @Mod(dist = CLIENT), so dedicated-server runs skip it.
@@ -54,6 +70,10 @@ tasks.named('test', Test).configure {
             layout.projectDirectory.dir('src/main/java').asFile.absolutePath
     systemProperty 'quasar.api.classesDir',
             layout.buildDirectory.dir('classes/java/main').get().asFile.absolutePath
+    // Shader discovery needs a real directory; the NeoForge test runtime presents
+    // classpath resources through a union filesystem that cannot be walked.
+    systemProperty 'quasar.shader.sourceRoot',
+            layout.projectDirectory.dir('src/main/resources').asFile.absolutePath
 }
 
 // Quality gate. The tasks always produce reports; scripts/quality.sh compares

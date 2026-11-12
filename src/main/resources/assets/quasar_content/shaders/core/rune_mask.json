@@ -1,6 +1,6 @@
 {
-  "vertex": "quasar_content:rune_mask",
-  "fragment": "quasar_content:rune_mask",
+  "vertex": "quasar_lib:screen_mask",
+  "fragment": "quasar_lib:screen_mask",
   "samplers": [
     { "name": "Sampler0" }
   ],

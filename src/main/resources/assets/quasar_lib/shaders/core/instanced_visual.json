@@ -1,6 +1,6 @@
 {
   "vertex": "quasar_lib:instanced_visual",
-  "fragment": "quasar_lib:instanced_visual",
+  "fragment": "quasar_lib:effect_visual",
   "samplers": [
     { "name": "Sampler0" },
     { "name": "Sampler2" }
