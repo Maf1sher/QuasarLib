@@ -43,7 +43,9 @@ import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import mafisher.quasar.testing.GlobalStateTest;
 
+@GlobalStateTest
 class SegmentedVisualEffectServiceTest {
     private static final ResourceLocation EFFECT_ID = ResourceLocation.fromNamespaceAndPath("quasar_lib", "test");
 
@@ -282,6 +284,41 @@ class SegmentedVisualEffectServiceTest {
 
         when(player.position()).thenReturn(new Vec3(14.0, 64.0, 0.0));
         assertTrue(SegmentedVisualEffectService.resumePayloads(this.level, player).isEmpty());
+    }
+
+    @Test
+    void segmentedAudioUsesTheGridAudiencePadding() {
+        EffectAudioSpec audio = EffectAudioSpec.builder(200)
+            .cue(EffectAudioCue.at(
+                0,
+                new Vec3(0.0, 64.0, 0.0),
+                ResourceLocation.withDefaultNamespace("test"),
+                SoundSource.MASTER,
+                1.0F,
+                1.0F,
+                EffectAudioAttenuation.distance(64.0F)
+            ))
+            .build();
+        SegmentedVisualEffectSpec nearbySpec = SegmentedVisualEffectSpec.builder(
+            EFFECT_ID, new Vec3(0.0, 64.0, 0.0), 200, 42L, EffectAudience.nearby(8.0)
+        )
+            .rotation(0.0F, 0.0F, 0.0F)
+            .segmentScale(4.0F)
+            .grid(2, 2)
+            .spacing(8.0)
+            .layers(1, 0.0)
+            .audio(audio)
+            .priority(EffectPriority.NORMAL)
+            .terrain(SegmentTerrainConform.NONE)
+            .build();
+        SegmentedVisualEffectService.start(this.level, nearbySpec);
+        ServerPlayer player = player(new Vec3(13.0, 64.0, 0.0));
+        when(this.level.players()).thenReturn(List.of(player));
+
+        assertEquals(1, EffectAudioService.resumePlans(this.level, player).size());
+
+        when(player.position()).thenReturn(new Vec3(14.0, 64.0, 0.0));
+        assertTrue(EffectAudioService.resumePlans(this.level, player).isEmpty());
     }
 
     @Test

@@ -55,9 +55,17 @@ public final class EffectAudioRuntime {
 
     /** Starts or replaces one effect's audio plan and sends it to the current audience. */
     public void start(EffectAudioPlan plan, EffectAudience audience, EffectPriority priority) {
+        start(plan, audience, priority, 0.0);
+    }
+
+    /** Starts a plan with extra audience padding for effects whose visuals extend past their center. */
+    void start(EffectAudioPlan plan, EffectAudience audience, EffectPriority priority, double audiencePadding) {
         Objects.requireNonNull(plan, "plan");
         Objects.requireNonNull(audience, "audience");
         Objects.requireNonNull(priority, "priority");
+        if (!Double.isFinite(audiencePadding) || audiencePadding < 0.0) {
+            throw new IllegalArgumentException("Audio audience padding must be finite and non-negative");
+        }
         if (this.level.isClientSide()) {
             throw new IllegalStateException("Effect audio is server-authoritative");
         }
@@ -101,7 +109,7 @@ public final class EffectAudioRuntime {
             evicted.stop(this.level, this.packets);
         }
 
-        ActiveAudio active = new ActiveAudio(plan, audience, priority);
+        ActiveAudio active = new ActiveAudio(plan, audience, priority, audiencePadding);
         this.plans.put(plan.effectId(), active);
         active.syncAudience(this.level, this.packets);
     }
@@ -240,17 +248,20 @@ public final class EffectAudioRuntime {
         private final EffectAudioPlan plan;
         private final EffectAudience audience;
         private final EffectPriority priority;
+        private final double audiencePadding;
         private final Set<UUID> recipients = new LinkedHashSet<>();
         private int triggersThisTick;
 
-        private ActiveAudio(EffectAudioPlan plan, EffectAudience audience, EffectPriority priority) {
+        private ActiveAudio(EffectAudioPlan plan, EffectAudience audience, EffectPriority priority,
+            double audiencePadding) {
             this.plan = plan;
             this.audience = audience;
             this.priority = priority;
+            this.audiencePadding = audiencePadding;
         }
 
         private boolean audienceContains(ServerLevel level, ServerPlayer player) {
-            return this.audience.includes(level, this.plan.center(), 0.0, player);
+            return this.audience.includes(level, this.plan.center(), this.audiencePadding, player);
         }
 
         private void syncAudience(ServerLevel level, EffectPacketSink packets) {
@@ -288,7 +299,7 @@ public final class EffectAudioRuntime {
 
         private static Map<UUID, ServerPlayer> collectAudience(ServerLevel level, ActiveAudio active) {
             Map<UUID, ServerPlayer> result = new LinkedHashMap<>();
-            active.audience.collect(level, active.plan.center(), 0.0, result);
+            active.audience.collect(level, active.plan.center(), active.audiencePadding, result);
             return result;
         }
     }

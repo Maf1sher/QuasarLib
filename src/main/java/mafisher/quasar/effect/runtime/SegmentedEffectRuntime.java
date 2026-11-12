@@ -179,7 +179,7 @@ public final class SegmentedEffectRuntime {
                 sendStart(activeEffect, player);
             }
             this.store.recordStart(descriptor);
-            startAudio(coordinatorId, spec, startGameTime);
+            startAudio(coordinatorId, spec, startGameTime, heights);
         } catch (RuntimeException | Error exception) {
             this.coordinators.remove(coordinatorId);
             sendStop(activeEffect);
@@ -392,7 +392,12 @@ public final class SegmentedEffectRuntime {
         }
     }
 
-    private void startAudio(UUID coordinatorId, SegmentedVisualEffectSpec spec, long startGameTime) {
+    private void startAudio(
+        UUID coordinatorId,
+        SegmentedVisualEffectSpec spec,
+        long startGameTime,
+        SegmentHeightProfile heights
+    ) {
         if (spec.audio().isEmpty()) {
             return;
         }
@@ -404,7 +409,9 @@ public final class SegmentedEffectRuntime {
             spec.durationTicks(),
             spec.audio()
         );
-        this.audio.start(plan, spec.audience(), spec.priority());
+        double heightDeviation = heights.maxAbsDeviation(spec.center().y);
+        double padding = spec.layout().halfDiagonal() + heightDeviation;
+        this.audio.start(plan, spec.audience(), spec.priority(), padding);
     }
 
     private void collectAudience(
