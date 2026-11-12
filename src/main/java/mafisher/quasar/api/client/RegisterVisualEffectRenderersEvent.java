@@ -5,11 +5,11 @@ import net.minecraft.resources.ResourceLocation;
 import net.neoforged.bus.api.Event;
 
 /**
- * Fired once during client setup before the renderer registry is frozen. Every renderer is consumer-owned; subscribe
- * during mod construction, for example with {@code @EventBusSubscriber}, so the handler is present before client setup
- * runs.
+ * Fired once when client loading completes, before the renderer registry is frozen. Every renderer is
+ * consumer-owned; subscribe during mod construction, for example with {@code @EventBusSubscriber}, so the
+ * handler is present before loading finishes.
  *
- * <p>Handlers run on the client setup thread. They must only call
+ * <p>Handlers run on the client load-complete thread. They must only call
  * {@link #register(ResourceLocation, VisualEffectRenderer)} and must not touch
  * the client world, GL state, or loaded resources.</p>
  */

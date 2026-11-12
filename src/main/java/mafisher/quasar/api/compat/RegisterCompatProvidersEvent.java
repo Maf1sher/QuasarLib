@@ -4,10 +4,10 @@ import java.util.Objects;
 import net.neoforged.bus.api.Event;
 
 /**
- * Fired once on the client before the first effect frame so consumers can
+ * Fired once when client loading completes, before the first effect frame, so consumers can
  * register optional capability providers.
  *
- * <p>Handlers run on the client setup/render thread and must only call the
+ * <p>Handlers run on the client load-complete thread and must only call the
  * {@code register*} methods. Registration closes after the event, and duplicate
  * provider IDs throw.</p>
  */

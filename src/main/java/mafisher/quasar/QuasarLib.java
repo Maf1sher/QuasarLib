@@ -4,6 +4,7 @@ import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
 
+/** Common mod entry point; registers the server and client config specs. */
 @Mod(QuasarLib.MOD_ID)
 public final class QuasarLib {
     public static final String MOD_ID = "quasar_lib";

@@ -61,7 +61,7 @@ final class EffectRenderState {
         sink.viewport(x, y, width, height);
     }
 
-    /** Test seam for the two viewport calls. */
+    /** Internal boundary around the viewport call; production passes {@code GlStateManager::_viewport}. */
     @FunctionalInterface
     interface ViewportSink {
         void viewport(int x, int y, int width, int height);

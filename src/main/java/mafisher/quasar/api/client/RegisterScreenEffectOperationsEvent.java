@@ -4,12 +4,12 @@ import java.util.Objects;
 import net.neoforged.bus.api.Event;
 
 /**
- * Fired once during client setup, after QuasarLib registers its built-in screen
+ * Fired once when client loading completes, after QuasarLib registers its built-in screen
  * operations and before the operation registry is frozen.
  *
  * <p>Subscribe during mod construction, for example with
  * {@code @EventBusSubscriber(bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)}.
- * Handlers run on the first client-use thread. They must only call
+ * Handlers run on the client load-complete thread. They must only call
  * {@link #register(ScreenEffectOperation, ScreenEffectOperationRenderer)} and
  * must not touch the client world, GL state, or loaded resources.</p>
  */
