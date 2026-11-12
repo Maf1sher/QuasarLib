@@ -6,8 +6,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 import mafisher.quasar.QuasarLib;
-import mafisher.quasar.effect.block.BlockProtectionContext;
 import net.minecraft.resources.ResourceLocation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,27 +17,30 @@ import org.slf4j.LoggerFactory;
  *
  * <p>Providers are registered during setup through
  * {@link RegisterCompatProvidersEvent} (client) and
- * {@link RegisterCompatBridgesEvent} (common), then frozen. Resolution is
- * deterministic: higher priority wins, duplicate IDs are rejected, and exactly
- * one horizon provider may be active. A missing or failing provider degrades
- * the affected capability instead of failing an effect.</p>
+ * {@link RegisterCompatBridgesEvent} (common), then frozen. Registration only
+ * mutates the registry under its lock; resolution snapshots the registry under
+ * the lock and invokes provider callbacks after releasing it. Resolution is
+ * deterministic: higher priority wins, a failing provider is skipped, duplicate
+ * IDs are rejected across every provider kind, and exactly one horizon provider
+ * may be active. A missing or failing provider degrades the affected capability
+ * instead of failing an effect.</p>
  */
 public final class CompatRegistry {
     private static final Logger LOGGER = LoggerFactory.getLogger(QuasarLib.MOD_ID);
     private static final Object LOCK = new Object();
     private static final double FALLBACK_DISTANCE = 256.0;
-    private static final Map<ResourceLocation, SceneDepthProvider> DEPTH_PROVIDERS = new LinkedHashMap<>();
-    private static final Map<ResourceLocation, ShaderPackProvider> SHADER_PACK_PROVIDERS = new LinkedHashMap<>();
-    private static HorizonProvider horizonProvider;
+    private static final Map<ResourceLocation, DepthEntry> DEPTH_PROVIDERS = new LinkedHashMap<>();
+    private static final Map<ResourceLocation, ShaderPackEntry> SHADER_PACK_PROVIDERS = new LinkedHashMap<>();
+    private static final AtomicBoolean LOGGED_DEPTH_FAILURE = new AtomicBoolean();
+    private static final AtomicBoolean LOGGED_HORIZON_FAILURE = new AtomicBoolean();
+    private static final AtomicBoolean LOGGED_SHADER_PACK_FAILURE = new AtomicBoolean();
+    private static HorizonEntry horizonProvider;
     private static PhysicsBridge physicsBridge = PhysicsBridge.vanilla();
     private static ProtectionBridge protectionBridge = ProtectionBridge.vanilla();
     private static boolean physicsRegistered;
     private static boolean protectionRegistered;
     private static boolean clientFrozen;
     private static boolean bridgesFrozen;
-    private static boolean loggedDepthFailure;
-    private static boolean loggedHorizonFailure;
-    private static boolean loggedShaderPackFailure;
 
     private CompatRegistry() {
     }
@@ -49,7 +52,7 @@ public final class CompatRegistry {
             requireClientOpen();
             ResourceLocation id = Objects.requireNonNull(provider.id(), "provider id");
             requireUnusedId(id);
-            DEPTH_PROVIDERS.put(id, provider);
+            DEPTH_PROVIDERS.put(id, new DepthEntry(id, provider));
         }
     }
 
@@ -63,13 +66,13 @@ public final class CompatRegistry {
         synchronized (LOCK) {
             requireClientOpen();
             ResourceLocation id = Objects.requireNonNull(provider.id(), "provider id");
-            requireUnusedId(id);
             if (horizonProvider != null) {
                 throw new IllegalStateException(
                     "A horizon provider is already registered: " + horizonProvider.id()
                 );
             }
-            horizonProvider = provider;
+            requireUnusedId(id);
+            horizonProvider = new HorizonEntry(id, provider);
         }
     }
 
@@ -80,7 +83,7 @@ public final class CompatRegistry {
             requireClientOpen();
             ResourceLocation id = Objects.requireNonNull(provider.id(), "provider id");
             requireUnusedId(id);
-            SHADER_PACK_PROVIDERS.put(id, provider);
+            SHADER_PACK_PROVIDERS.put(id, new ShaderPackEntry(id, provider));
         }
     }
 
@@ -94,7 +97,9 @@ public final class CompatRegistry {
                     "A physics bridge is already registered: " + physicsBridge.id()
                 );
             }
-            physicsBridge = bridge;
+            ResourceLocation id = Objects.requireNonNull(bridge.id(), "bridge id");
+            requireUnusedId(id);
+            physicsBridge = new GuardedPhysicsBridge(id, bridge);
             physicsRegistered = true;
         }
     }
@@ -109,7 +114,9 @@ public final class CompatRegistry {
                     "A protection bridge is already registered: " + protectionBridge.id()
                 );
             }
-            protectionBridge = new GuardedProtectionBridge(bridge);
+            ResourceLocation id = Objects.requireNonNull(bridge.id(), "bridge id");
+            requireUnusedId(id);
+            protectionBridge = new GuardedProtectionBridge(id, bridge);
             protectionRegistered = true;
         }
     }
@@ -134,76 +141,7 @@ public final class CompatRegistry {
      * @param vanillaFarPlane the vanilla far plane used when no horizon provider is active
      */
     public static RenderEnvironment environment(double vanillaFarPlane) {
-        synchronized (LOCK) {
-            double vanilla = sanitizeDistance(vanillaFarPlane);
-            double horizonDistance = vanilla;
-            double farPlane = vanilla;
-            boolean horizonProvided = false;
-            HorizonProvider horizon = horizonProvider;
-            if (horizon != null) {
-                try {
-                    horizonDistance = Math.max(vanilla, sanitizeDistance(horizon.horizonDistance()));
-                    farPlane = Math.max(vanilla, sanitizeDistance(horizon.farPlane()));
-                    horizonProvided = true;
-                } catch (RuntimeException exception) {
-                    if (!loggedHorizonFailure) {
-                        loggedHorizonFailure = true;
-                        LOGGER.warn("Horizon provider {} failed; using the vanilla far plane",
-                            horizon.id(), exception);
-                    }
-                }
-            }
-
-            SceneDepthSource depthSource = SceneDepthSource.MAIN_TARGET;
-            SceneDepthProvider depth = bestDepthProvider();
-            if (depth != null) {
-                try {
-                    if (depth.depthTarget() != null) {
-                        depthSource = depth.source();
-                    }
-                } catch (RuntimeException exception) {
-                    logDepthFailure(depth, exception);
-                }
-            }
-
-            ShaderPackState shaderPackState = ShaderPackState.INACTIVE;
-            ShaderPackProvider shaderPack = bestShaderPackProvider();
-            if (shaderPack != null) {
-                try {
-                    shaderPackState = shaderPack.state();
-                } catch (RuntimeException exception) {
-                    if (!loggedShaderPackFailure) {
-                        loggedShaderPackFailure = true;
-                        LOGGER.warn("Shaderpack provider {} failed; assuming no shaderpack",
-                            shaderPack.id(), exception);
-                    }
-                }
-            }
-
-            List<ResourceLocation> active = new ArrayList<>();
-            active.addAll(DEPTH_PROVIDERS.keySet());
-            if (horizon != null) {
-                active.add(horizon.id());
-            }
-            active.addAll(SHADER_PACK_PROVIDERS.keySet());
-            if (physicsBridge.available()) {
-                active.add(physicsBridge.id());
-            }
-            if (protectionBridge.available()) {
-                active.add(protectionBridge.id());
-            }
-            return new RenderEnvironment(
-                horizonDistance,
-                farPlane,
-                horizonProvided,
-                depthSource,
-                shaderPackState,
-                FogPolicy.RESPECT,
-                physicsBridge.available(),
-                protectionBridge.available(),
-                active
-            );
-        }
+        return resolveEnvironment(snapshot(), vanillaFarPlane);
     }
 
     /**
@@ -212,20 +150,8 @@ public final class CompatRegistry {
      */
     public static RenderTarget sceneDepthTarget(RenderTarget fallback) {
         Objects.requireNonNull(fallback, "fallback");
-        synchronized (LOCK) {
-            SceneDepthProvider depth = bestDepthProvider();
-            if (depth != null) {
-                try {
-                    RenderTarget target = depth.depthTarget();
-                    if (target != null) {
-                        return target;
-                    }
-                } catch (RuntimeException exception) {
-                    logDepthFailure(depth, exception);
-                }
-            }
-            return fallback;
-        }
+        DepthResolution depth = resolveDepth(snapshot().depthProviders());
+        return depth == null ? fallback : depth.target();
     }
 
     /** Returns the active physics bridge; the vanilla no-op bridge when absent. */
@@ -249,6 +175,143 @@ public final class CompatRegistry {
         }
     }
 
+    private static CompatSnapshot snapshot() {
+        synchronized (LOCK) {
+            return new CompatSnapshot(
+                List.copyOf(DEPTH_PROVIDERS.values()),
+                horizonProvider,
+                List.copyOf(SHADER_PACK_PROVIDERS.values()),
+                physicsBridge,
+                protectionBridge
+            );
+        }
+    }
+
+    private static RenderEnvironment resolveEnvironment(CompatSnapshot snapshot, double vanillaFarPlane) {
+        double vanilla = sanitizeDistance(vanillaFarPlane);
+        HorizonResolution horizon = resolveHorizon(snapshot.horizonProvider());
+        DepthResolution depth = resolveDepth(snapshot.depthProviders());
+        ShaderPackResolution shaderPack = resolveShaderPack(snapshot.shaderPackProviders());
+        boolean physicsAvailable = snapshot.physicsBridge().available();
+        boolean protectionAvailable = snapshot.protectionBridge().available();
+        List<ResourceLocation> active = activeProviders(
+            snapshot, depth, horizon, shaderPack, physicsAvailable, protectionAvailable);
+        return new RenderEnvironment(
+            horizon.provided() ? Math.max(vanilla, horizon.distance()) : vanilla,
+            horizon.provided() ? Math.max(vanilla, horizon.farPlane()) : vanilla,
+            horizon.provided(),
+            depth == null ? SceneDepthSource.MAIN_TARGET : depth.source(),
+            shaderPack == null ? ShaderPackState.INACTIVE : shaderPack.state(),
+            FogPolicy.RESPECT,
+            physicsAvailable,
+            protectionAvailable,
+            active
+        );
+    }
+
+    private static List<ResourceLocation> activeProviders(CompatSnapshot snapshot, DepthResolution depth,
+        HorizonResolution horizon, ShaderPackResolution shaderPack, boolean physicsAvailable,
+        boolean protectionAvailable) {
+        List<ResourceLocation> active = new ArrayList<>(5);
+        if (depth != null) {
+            active.add(depth.id());
+        }
+        if (horizon.provided()) {
+            active.add(horizon.id());
+        }
+        if (shaderPack != null && shaderPack.state() != ShaderPackState.INACTIVE) {
+            active.add(shaderPack.id());
+        }
+        if (physicsAvailable) {
+            active.add(snapshot.physicsBridge().id());
+        }
+        if (protectionAvailable) {
+            active.add(snapshot.protectionBridge().id());
+        }
+        return active;
+    }
+
+    private static HorizonResolution resolveHorizon(HorizonEntry entry) {
+        if (entry == null) {
+            return HorizonResolution.none();
+        }
+        try {
+            return new HorizonResolution(
+                true,
+                entry.id(),
+                sanitizeDistance(entry.provider().horizonDistance()),
+                sanitizeDistance(entry.provider().farPlane())
+            );
+        } catch (RuntimeException exception) {
+            logHorizonFailure(entry.id(), exception);
+            return HorizonResolution.none();
+        }
+    }
+
+    private static DepthResolution resolveDepth(List<DepthEntry> entries) {
+        List<Prioritized<DepthEntry>> candidates = prioritizeDepth(entries);
+        for (Prioritized<DepthEntry> candidate : candidates) {
+            DepthEntry entry = candidate.value();
+            try {
+                RenderTarget target = entry.provider().depthTarget();
+                if (target == null) {
+                    continue;
+                }
+                SceneDepthSource source = entry.provider().source();
+                if (source == null || source == SceneDepthSource.MAIN_TARGET) {
+                    continue;
+                }
+                return new DepthResolution(entry.id(), target, source);
+            } catch (RuntimeException exception) {
+                logDepthFailure(entry.id(), exception);
+            }
+        }
+        return null;
+    }
+
+    private static List<Prioritized<DepthEntry>> prioritizeDepth(List<DepthEntry> entries) {
+        List<Prioritized<DepthEntry>> candidates = new ArrayList<>(entries.size());
+        for (DepthEntry entry : entries) {
+            try {
+                candidates.add(new Prioritized<>(entry, entry.provider().priority()));
+            } catch (RuntimeException exception) {
+                logDepthFailure(entry.id(), exception);
+            }
+        }
+        candidates.sort((left, right) -> Integer.compare(right.priority(), left.priority()));
+        return candidates;
+    }
+
+    private static ShaderPackResolution resolveShaderPack(List<ShaderPackEntry> entries) {
+        List<Prioritized<ShaderPackEntry>> candidates = prioritizeShaderPack(entries);
+        for (Prioritized<ShaderPackEntry> candidate : candidates) {
+            ShaderPackEntry entry = candidate.value();
+            try {
+                ShaderPackState state = entry.provider().state();
+                if (state == null) {
+                    throw new IllegalStateException("Shaderpack provider returned a null state");
+                }
+                return new ShaderPackResolution(entry.id(), state);
+            } catch (RuntimeException exception) {
+                logShaderPackFailure(entry.id(), exception);
+            }
+        }
+        return null;
+    }
+
+    private static List<Prioritized<ShaderPackEntry>> prioritizeShaderPack(List<ShaderPackEntry> entries) {
+        List<Prioritized<ShaderPackEntry>> candidates = new ArrayList<>(entries.size());
+        for (ShaderPackEntry entry : entries) {
+            try {
+                candidates.add(new Prioritized<>(entry, entry.provider().priority()));
+            } catch (RuntimeException exception) {
+                logShaderPackFailure(entry.id(), exception);
+            }
+        }
+        candidates.sort((left, right) -> Integer.compare(right.priority(), left.priority()));
+        return candidates;
+    }
+
     private static void requireClientOpen() {
         if (clientFrozen) {
             throw new IllegalStateException("Client compat provider registration is already closed");
@@ -262,10 +325,23 @@ public final class CompatRegistry {
     }
 
     private static void requireUnusedId(ResourceLocation id) {
-        if (DEPTH_PROVIDERS.containsKey(id) || SHADER_PACK_PROVIDERS.containsKey(id)
-            || (horizonProvider != null && horizonProvider.id().equals(id))) {
+        if (id.equals(PhysicsBridge.VANILLA_ID) || id.equals(ProtectionBridge.VANILLA_ID)) {
+            throw new IllegalStateException("The compat fallback ID is reserved: " + id);
+        }
+        if (idInUse(id)) {
             throw new IllegalStateException("A compat provider with this ID is already registered: " + id);
         }
+    }
+
+    private static boolean idInUse(ResourceLocation id) {
+        if (DEPTH_PROVIDERS.containsKey(id) || SHADER_PACK_PROVIDERS.containsKey(id)) {
+            return true;
+        }
+        if (horizonProvider != null && horizonProvider.id().equals(id)) {
+            return true;
+        }
+        return (physicsRegistered && physicsBridge.id().equals(id))
+            || (protectionRegistered && protectionBridge.id().equals(id));
     }
 
     private static double sanitizeDistance(double value) {
@@ -275,31 +351,21 @@ public final class CompatRegistry {
         return Math.min(value, 1_000_000.0);
     }
 
-    private static SceneDepthProvider bestDepthProvider() {
-        SceneDepthProvider best = null;
-        for (SceneDepthProvider provider : DEPTH_PROVIDERS.values()) {
-            if (best == null || provider.priority() > best.priority()) {
-                best = provider;
-            }
+    private static void logDepthFailure(ResourceLocation id, RuntimeException exception) {
+        if (LOGGED_DEPTH_FAILURE.compareAndSet(false, true)) {
+            LOGGER.warn("Scene depth provider {} failed; skipping it", id, exception);
         }
-        return best;
     }
 
-    private static ShaderPackProvider bestShaderPackProvider() {
-        ShaderPackProvider best = null;
-        for (ShaderPackProvider provider : SHADER_PACK_PROVIDERS.values()) {
-            if (best == null || provider.priority() > best.priority()) {
-                best = provider;
-            }
+    private static void logHorizonFailure(ResourceLocation id, RuntimeException exception) {
+        if (LOGGED_HORIZON_FAILURE.compareAndSet(false, true)) {
+            LOGGER.warn("Horizon provider {} failed; using the vanilla far plane", id, exception);
         }
-        return best;
     }
 
-    private static void logDepthFailure(SceneDepthProvider provider, RuntimeException exception) {
-        if (!loggedDepthFailure) {
-            loggedDepthFailure = true;
-            LOGGER.warn("Scene depth provider {} failed; using the main target",
-                provider.id(), exception);
+    private static void logShaderPackFailure(ResourceLocation id, RuntimeException exception) {
+        if (LOGGED_SHADER_PACK_FAILURE.compareAndSet(false, true)) {
+            LOGGER.warn("Shaderpack provider {} failed; treating it as inactive", id, exception);
         }
     }
 
@@ -314,43 +380,38 @@ public final class CompatRegistry {
             protectionRegistered = false;
             clientFrozen = false;
             bridgesFrozen = false;
-            loggedDepthFailure = false;
-            loggedHorizonFailure = false;
-            loggedShaderPackFailure = false;
+            LOGGED_DEPTH_FAILURE.set(false);
+            LOGGED_HORIZON_FAILURE.set(false);
+            LOGGED_SHADER_PACK_FAILURE.set(false);
         }
     }
 
-    /** Wraps a bridge so a throwing provider denies the change and logs once. */
-    private static final class GuardedProtectionBridge implements ProtectionBridge {
-        private final ProtectionBridge delegate;
-        private boolean loggedFailure;
+    private record DepthEntry(ResourceLocation id, SceneDepthProvider provider) {
+    }
 
-        private GuardedProtectionBridge(ProtectionBridge delegate) {
-            this.delegate = delegate;
-        }
+    private record ShaderPackEntry(ResourceLocation id, ShaderPackProvider provider) {
+    }
 
-        @Override
-        public ResourceLocation id() {
-            return this.delegate.id();
-        }
+    private record HorizonEntry(ResourceLocation id, HorizonProvider provider) {
+    }
 
-        @Override
-        public boolean available() {
-            return this.delegate.available();
-        }
+    private record CompatSnapshot(List<DepthEntry> depthProviders, HorizonEntry horizonProvider,
+        List<ShaderPackEntry> shaderPackProviders, PhysicsBridge physicsBridge,
+        ProtectionBridge protectionBridge) {
+    }
 
-        @Override
-        public boolean allows(BlockProtectionContext context) {
-            try {
-                return this.delegate.allows(context);
-            } catch (RuntimeException exception) {
-                if (!this.loggedFailure) {
-                    this.loggedFailure = true;
-                    LOGGER.error("Protection bridge {} failed; denying block changes from it",
-                        this.delegate.id(), exception);
-                }
-                return false;
-            }
+    private record HorizonResolution(boolean provided, ResourceLocation id, double distance, double farPlane) {
+        private static HorizonResolution none() {
+            return new HorizonResolution(false, null, 0.0, 0.0);
         }
+    }
+
+    private record DepthResolution(ResourceLocation id, RenderTarget target, SceneDepthSource source) {
+    }
+
+    private record ShaderPackResolution(ResourceLocation id, ShaderPackState state) {
+    }
+
+    private record Prioritized<T>(T value, int priority) {
     }
 }
