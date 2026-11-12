@@ -32,6 +32,8 @@ import net.neoforged.neoforge.common.NeoForge;
 final class ClientEffectFrameRuntime {
     private static final Object INIT_LOCK = new Object();
     private static final Consumer<Runnable> DEFAULT_RELOAD_DISPATCHER = task -> Minecraft.getInstance().execute(task);
+    private static final CompatFrameEnvironment FRAME_ENVIRONMENT =
+        new CompatFrameEnvironment(CompatRegistry::environment);
     /** Package-private seam so reload dispatch can be verified without a live client. */
     static volatile Consumer<Runnable> reloadDispatcher = DEFAULT_RELOAD_DISPATCHER;
     private static volatile ClientVisualEffectManager manager;
@@ -169,13 +171,14 @@ final class ClientEffectFrameRuntime {
             }
         } else if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_PARTICLES) {
             long start = System.nanoTime();
-            RenderEnvironment environment = currentEnvironment();
-            manager().render(event, environment);
+            ClientVisualEffectManager effectManager = manager();
+            RenderEnvironment environment = FRAME_ENVIRONMENT.beginFrame(currentFarPlane());
+            effectManager.render(event, environment);
             ClientQualityController.recordWorldRender(System.nanoTime() - start);
         } else if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
             long start = System.nanoTime();
             try {
-                RenderEnvironment environment = currentEnvironment();
+                RenderEnvironment environment = FRAME_ENVIRONMENT.current(currentFarPlane());
                 ClientVisualEffectManager effectManager = manager();
                 ClientScreenCompositor compositor = screenCompositor;
                 if (compositor != null) {
@@ -187,17 +190,17 @@ final class ClientEffectFrameRuntime {
                     (float) event.getPartialTick().getGameTimeDeltaPartialTick(false)
                 );
             } finally {
+                FRAME_ENVIRONMENT.endFrame();
                 ClientQualityController.endFrameGpu();
             }
             ClientQualityController.recordLevelRender(System.nanoTime() - start);
         }
     }
 
-    /** Resolves the compatibility environment for the current frame. */
-    private static RenderEnvironment currentEnvironment() {
+    /** Resolves the far plane once so both client stages share the same frame environment. */
+    private static double currentFarPlane() {
         Minecraft minecraft = Minecraft.getInstance();
-        double farPlane = minecraft.gameRenderer == null ? 256.0 : minecraft.gameRenderer.getDepthFar();
-        return CompatRegistry.environment(farPlane);
+        return minecraft.gameRenderer == null ? 256.0 : minecraft.gameRenderer.getDepthFar();
     }
 
     static void onLevelUnload(ClientLevel level) {
@@ -210,6 +213,7 @@ final class ClientEffectFrameRuntime {
         ClientEffectAudio.clear();
         ClientEffectDebris.clear();
         ClientEffectImpulses.clear();
+        FRAME_ENVIRONMENT.endFrame();
         ScreenFlashRenderer.onResourceReload();
         ClientScreenCompositor compositor = screenCompositor;
         if (compositor != null) {
@@ -228,6 +232,7 @@ final class ClientEffectFrameRuntime {
         ClientEffectAudio.clear();
         ClientEffectDebris.clear();
         ClientEffectImpulses.clear();
+        FRAME_ENVIRONMENT.endFrame();
         ScreenFlashRenderer.onResourceReload();
         ClientScreenCompositor compositor = screenCompositor;
         if (compositor != null) {

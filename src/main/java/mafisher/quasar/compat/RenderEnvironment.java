@@ -7,9 +7,9 @@ import net.minecraft.resources.ResourceLocation;
 /**
  * Immutable per-frame view of the active compatibility stack.
  *
- * <p>Built once per frame by {@link CompatRegistry}; renderers and screen
- * operations read it through their contexts. A missing provider never fails an
- * effect: it only limits range, depth accuracy, or physics interaction.</p>
+ * <p>Resolved once per client frame through {@link CompatRegistry}; renderers and
+ * screen operations read it through their contexts. A missing provider never
+ * fails an effect: it only limits range, depth accuracy, or physics interaction.</p>
  */
 public record RenderEnvironment(
     double horizonDistance,
