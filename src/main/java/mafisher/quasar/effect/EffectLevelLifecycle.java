@@ -10,6 +10,7 @@ import mafisher.quasar.api.gameplay.GameplayEffectService;
 import mafisher.quasar.api.scale.SegmentedVisualEffectService;
 import mafisher.quasar.effect.gameplay.TerrainEditService;
 import mafisher.quasar.effect.persistence.BlockRollbackService;
+import mafisher.quasar.effect.runtime.EffectRuntimeRegistry;
 import net.minecraft.server.level.ServerLevel;
 import org.jetbrains.annotations.ApiStatus;
 
@@ -40,6 +41,7 @@ public final class EffectLevelLifecycle {
             EffectBudgetService.clear(level);
             BlockRollbackService.clear(level);
             TerrainEditService.clear(level);
+            EffectRuntimeRegistry.close(level);
         } finally {
             LevelStateSlot.clearLevel(level);
         }
@@ -48,6 +50,10 @@ public final class EffectLevelLifecycle {
     /** Drops stale level state before restore. */
     public static void reset(ServerLevel level) {
         Objects.requireNonNull(level, "level");
-        LevelStateSlot.clearLevel(level);
+        try {
+            EffectRuntimeRegistry.reset(level);
+        } finally {
+            LevelStateSlot.clearLevel(level);
+        }
     }
 }

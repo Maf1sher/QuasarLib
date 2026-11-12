@@ -1,11 +1,10 @@
 package mafisher.quasar.effect;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.mockStatic;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 import java.util.HashSet;
@@ -15,22 +14,25 @@ import java.util.UUID;
 import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.EffectTransform;
 import mafisher.quasar.effect.network.EffectTransformBatchPayload;
+import mafisher.quasar.effect.runtime.EffectRuntimeRegistry;
+import mafisher.quasar.effect.runtime.LevelEffectRuntime;
+import mafisher.quasar.effect.runtime.RecordingPacketSink;
+import mafisher.quasar.effect.runtime.TestEffectRuntime;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.players.PlayerList;
 import net.minecraft.world.level.Level;
-import net.neoforged.neoforge.network.PacketDistributor;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
-import org.mockito.MockedStatic;
 
 class EffectTransformBatchServiceTest {
     private ServerLevel level;
     private ServerPlayer player;
     private Set<UUID> tracking;
+    private RecordingPacketSink packets;
+    private LevelEffectRuntime runtime;
 
     @BeforeEach
     void setUp() {
@@ -51,11 +53,13 @@ class EffectTransformBatchServiceTest {
 
         this.tracking = new HashSet<>();
         this.tracking.add(this.player.getUUID());
+        this.packets = new RecordingPacketSink();
+        this.runtime = TestEffectRuntime.install(this.level, this.packets);
     }
 
     @AfterEach
     void tearDown() {
-        EffectTransformBatchService.clear(this.level);
+        TestEffectRuntime.uninstall(this.level);
     }
 
     @Test
@@ -64,19 +68,12 @@ class EffectTransformBatchServiceTest {
         EffectTransformBatchService.queueVisual(this.level, instanceId, transform(1.0), this.tracking);
         EffectTransformBatchService.queueVisual(this.level, instanceId, transform(2.0), this.tracking);
 
-        try (MockedStatic<PacketDistributor> packets = mockStatic(PacketDistributor.class)) {
-            EffectTransformBatchService.flush(this.level);
+        EffectTransformBatchService.flush(this.level);
 
-            ArgumentCaptor<EffectTransformBatchPayload> payloads =
-                ArgumentCaptor.forClass(EffectTransformBatchPayload.class);
-            packets.verify(
-                () -> PacketDistributor.sendToPlayer(eq(this.player), payloads.capture()),
-                times(1)
-            );
-            assertEquals(1, payloads.getValue().updates().size());
-            assertEquals(2.0, payloads.getValue().updates().getFirst().x());
-            assertEquals(120L, payloads.getValue().updateGameTime());
-        }
+        EffectTransformBatchPayload payload = soloPayload();
+        assertEquals(1, payload.updates().size());
+        assertEquals(2.0, payload.updates().getFirst().x());
+        assertEquals(120L, payload.updateGameTime());
     }
 
     @Test
@@ -84,19 +81,13 @@ class EffectTransformBatchServiceTest {
         EffectTransformBatchService.queueVisual(this.level, UUID.randomUUID(), transform(1.0), this.tracking);
         EffectTransformBatchService.queueSegmented(this.level, UUID.randomUUID(), transform(2.0), this.tracking);
 
-        try (MockedStatic<PacketDistributor> packets = mockStatic(PacketDistributor.class)) {
-            EffectTransformBatchService.flush(this.level);
+        EffectTransformBatchService.flush(this.level);
 
-            ArgumentCaptor<EffectTransformBatchPayload> payloads =
-                ArgumentCaptor.forClass(EffectTransformBatchPayload.class);
-            packets.verify(
-                () -> PacketDistributor.sendToPlayer(eq(this.player), payloads.capture()),
-                times(1)
-            );
-            assertEquals(2, payloads.getValue().updates().size());
-            assertEquals(1, payloads.getValue().updates().stream().filter(entry -> !entry.segmented()).count());
-            assertEquals(1, payloads.getValue().updates().stream().filter(EffectTransformBatchPayload.Entry::segmented).count());
-        }
+        EffectTransformBatchPayload payload = soloPayload();
+        assertEquals(2, payload.updates().size());
+        assertEquals(1, payload.updates().stream().filter(entry -> !entry.segmented()).count());
+        assertEquals(1, payload.updates().stream()
+            .filter(EffectTransformBatchPayload.Entry::segmented).count());
     }
 
     @Test
@@ -105,14 +96,9 @@ class EffectTransformBatchServiceTest {
             EffectTransformBatchService.queueVisual(this.level, UUID.randomUUID(), transform(index), this.tracking);
         }
 
-        try (MockedStatic<PacketDistributor> packets = mockStatic(PacketDistributor.class)) {
-            EffectTransformBatchService.flush(this.level);
+        EffectTransformBatchService.flush(this.level);
 
-            packets.verify(
-                () -> PacketDistributor.sendToPlayer(eq(this.player), any(EffectTransformBatchPayload.class)),
-                times(2)
-            );
-        }
+        assertEquals(2, this.packets.sent().size());
     }
 
     @Test
@@ -120,22 +106,56 @@ class EffectTransformBatchServiceTest {
         EffectTransformBatchService.queueVisual(this.level, UUID.randomUUID(), transform(1.0), this.tracking);
         this.tracking.clear();
 
-        try (MockedStatic<PacketDistributor> packets = mockStatic(PacketDistributor.class)) {
-            EffectTransformBatchService.flush(this.level);
+        EffectTransformBatchService.flush(this.level);
 
-            packets.verifyNoInteractions();
-        }
+        assertTrue(this.packets.sent().isEmpty());
     }
 
     @Test
     void sendsNothingWithoutTrackers() {
         EffectTransformBatchService.queueVisual(this.level, UUID.randomUUID(), transform(1.0), Set.of());
 
-        try (MockedStatic<PacketDistributor> packets = mockStatic(PacketDistributor.class)) {
-            EffectTransformBatchService.flush(this.level);
+        EffectTransformBatchService.flush(this.level);
 
-            packets.verifyNoInteractions();
-        }
+        assertTrue(this.packets.sent().isEmpty());
+    }
+
+    @Test
+    void emptyTrackingDoesNotCreateRuntime() {
+        TestEffectRuntime.uninstall(this.level);
+
+        EffectTransformBatchService.queueVisual(
+            this.level, UUID.randomUUID(), transform(1.0), Set.of()
+        );
+
+        assertNull(EffectRuntimeRegistry.peek(this.level));
+    }
+
+    @Test
+    void runtimeCloseDropsPendingTransforms() {
+        this.runtime.transforms().queueVisual(UUID.randomUUID(), transform(1.0), this.tracking);
+
+        this.runtime.close();
+        this.runtime.transforms().flush();
+
+        assertTrue(this.packets.sent().isEmpty());
+    }
+
+    @Test
+    void runtimeTickFlushesQueuedTransforms() {
+        this.runtime.transforms().queueVisual(UUID.randomUUID(), transform(3.0), this.tracking);
+
+        this.runtime.tick();
+
+        EffectTransformBatchPayload payload = soloPayload();
+        assertEquals(3.0, payload.updates().getFirst().x());
+    }
+
+    private EffectTransformBatchPayload soloPayload() {
+        List<RecordingPacketSink.SentPacket> sent = this.packets.sent();
+        assertEquals(1, sent.size());
+        assertSame(this.player, sent.getFirst().player());
+        return (EffectTransformBatchPayload) sent.getFirst().payload();
     }
 
     private static EffectTransform transform(double x) {

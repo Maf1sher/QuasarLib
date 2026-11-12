@@ -3,6 +3,7 @@ package mafisher.quasar.effect;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -44,6 +45,25 @@ class LevelStateSlotTest {
         assertNull(this.first.peek(this.level));
         assertNull(this.second.peek(this.level));
         assertFalse(LevelStateSlot.isTracked(this.level));
+    }
+
+    @Test
+    void levelAwareFactoryReceivesTheOwningLevel() {
+        LevelStateSlot<ServerLevel> slot = LevelStateSlot.create(level -> level);
+
+        assertSame(this.level, slot.get(this.level));
+    }
+
+    @Test
+    void setBindsAnExistingValueWithoutCallingTheFactory() {
+        LevelStateSlot<State> slot = LevelStateSlot.create(() -> {
+            throw new AssertionError("factory should not run");
+        });
+        State state = new State();
+
+        slot.set(this.level, state);
+
+        assertSame(state, slot.get(this.level));
     }
 
     @Test

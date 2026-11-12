@@ -6,6 +6,8 @@ import mafisher.quasar.api.cinematic.CinematicEffectService;
 import mafisher.quasar.api.effect.VisualEffectService;
 import mafisher.quasar.api.gameplay.GameplayEffectService;
 import mafisher.quasar.api.scale.SegmentedVisualEffectService;
+import mafisher.quasar.effect.runtime.EffectRuntimeRegistry;
+import mafisher.quasar.effect.runtime.LevelEffectRuntime;
 import net.minecraft.server.level.ServerLevel;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -27,7 +29,10 @@ public final class EffectTickHandler {
             GameplayEffectService.tick(serverLevel);
             CinematicEffectService.tick(serverLevel);
             EffectAudioService.tick(serverLevel);
-            EffectTransformBatchService.flush(serverLevel);
+            LevelEffectRuntime runtime = EffectRuntimeRegistry.peek(serverLevel);
+            if (runtime != null) {
+                runtime.tick();
+            }
         }
     }
 }

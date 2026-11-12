@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.WeakHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import net.minecraft.server.level.ServerLevel;
 import org.jetbrains.annotations.ApiStatus;
@@ -21,14 +22,20 @@ public final class LevelStateSlot<T> {
     private static final List<LevelStateSlot<?>> SLOTS = new CopyOnWriteArrayList<>();
 
     private final Map<ServerLevel, T> values = new WeakHashMap<>();
-    private final Supplier<T> factory;
+    private final Function<ServerLevel, T> factory;
 
-    private LevelStateSlot(Supplier<T> factory) {
+    private LevelStateSlot(Function<ServerLevel, T> factory) {
         this.factory = Objects.requireNonNull(factory, "factory");
     }
 
     /** Creates and registers a slot whose value is created lazily for each level. */
     public static <T> LevelStateSlot<T> create(Supplier<T> factory) {
+        Objects.requireNonNull(factory, "factory");
+        return create(ignored -> factory.get());
+    }
+
+    /** Creates and registers a slot whose value can depend on the owning level. */
+    public static <T> LevelStateSlot<T> create(Function<ServerLevel, T> factory) {
         LevelStateSlot<T> slot = new LevelStateSlot<>(factory);
         SLOTS.add(slot);
         return slot;
@@ -38,7 +45,15 @@ public final class LevelStateSlot<T> {
     public T get(ServerLevel level) {
         Objects.requireNonNull(level, "level");
         EffectThreading.requireServerThread(level);
-        return this.values.computeIfAbsent(level, ignored -> this.factory.get());
+        return this.values.computeIfAbsent(level, this.factory);
+    }
+
+    /** Binds an existing value for one level, replacing any previous value. */
+    public void set(ServerLevel level, T value) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(value, "value");
+        EffectThreading.requireServerThread(level);
+        this.values.put(level, value);
     }
 
     /** Returns the level's state without creating it. */
