@@ -20,7 +20,9 @@ import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import mafisher.quasar.testing.GlobalStateTest;
 
+@GlobalStateTest
 class VisualEffectServiceResumeTest {
     private static final ResourceLocation EFFECT_ID = ResourceLocation.fromNamespaceAndPath("quasar_lib", "resume_test");
 

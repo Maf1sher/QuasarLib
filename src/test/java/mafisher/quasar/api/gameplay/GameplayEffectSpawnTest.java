@@ -26,7 +26,9 @@ import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import mafisher.quasar.testing.GlobalStateTest;
 
+@GlobalStateTest
 class GameplayEffectSpawnTest {
     private ServerLevel level;
     private GameplayEffectContext context;

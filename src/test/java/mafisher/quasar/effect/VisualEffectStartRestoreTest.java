@@ -29,7 +29,9 @@ import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import mafisher.quasar.testing.GlobalStateTest;
 
+@GlobalStateTest
 class VisualEffectStartRestoreTest {
     private static final ResourceLocation EFFECT_ID =
         ResourceLocation.fromNamespaceAndPath("quasar_lib", "start_restore_test");

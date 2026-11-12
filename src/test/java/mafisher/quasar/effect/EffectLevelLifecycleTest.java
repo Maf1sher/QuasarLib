@@ -18,7 +18,9 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
+import mafisher.quasar.testing.GlobalStateTest;
 
+@GlobalStateTest
 class EffectLevelLifecycleTest {
     private static final ResourceLocation EFFECT_ID =
         ResourceLocation.fromNamespaceAndPath("quasar_lib", "lifecycle_test");

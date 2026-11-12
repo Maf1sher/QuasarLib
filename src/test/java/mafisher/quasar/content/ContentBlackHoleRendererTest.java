@@ -13,11 +13,13 @@ import mafisher.quasar.api.client.ScreenEffectInputs;
 import mafisher.quasar.api.client.ScreenEffectMask;
 import mafisher.quasar.api.client.ScreenEffectSettings;
 import mafisher.quasar.api.effect.StartVisualEffectPayload;
+import mafisher.quasar.testing.GlobalStateTest;
 import mafisher.quasar.testing.TestVisualEffects;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 
+@GlobalStateTest
 class ContentBlackHoleRendererTest {
     @Test
     void usesOnlyTheScreenOperationAndDepthMask() {

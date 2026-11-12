@@ -24,7 +24,9 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import mafisher.quasar.testing.GlobalStateTest;
 
+@GlobalStateTest
 class TerrainEditServiceTest {
     private ServerLevel level;
     private ServerChunkCache chunkSource;

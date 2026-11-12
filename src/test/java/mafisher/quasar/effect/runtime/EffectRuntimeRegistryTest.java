@@ -13,7 +13,9 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import mafisher.quasar.testing.GlobalStateTest;
 
+@GlobalStateTest
 class EffectRuntimeRegistryTest {
     private final ServerLevel level = mock(ServerLevel.class);
     private final ServerLevel other = mock(ServerLevel.class);

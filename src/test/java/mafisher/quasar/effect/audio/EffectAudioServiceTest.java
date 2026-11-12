@@ -32,7 +32,9 @@ import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import mafisher.quasar.testing.GlobalStateTest;
 
+@GlobalStateTest
 class EffectAudioServiceTest {
     private static final ResourceLocation DIMENSION = ResourceLocation.withDefaultNamespace("overworld");
     private static final ResourceLocation SOUND = ResourceLocation.withDefaultNamespace("test");

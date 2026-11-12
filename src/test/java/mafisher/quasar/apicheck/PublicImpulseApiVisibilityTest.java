@@ -10,8 +10,10 @@ import mafisher.quasar.api.client.ScreenFlashImpulse;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.junit.jupiter.api.Test;
+import mafisher.quasar.testing.GlobalStateTest;
 
 /** Compiles from outside the implementation package to pin the public impulse surface. */
+@GlobalStateTest
 class PublicImpulseApiVisibilityTest {
     @Test
     void exposesInverseMatricesAndImpulseEntryPoints() {

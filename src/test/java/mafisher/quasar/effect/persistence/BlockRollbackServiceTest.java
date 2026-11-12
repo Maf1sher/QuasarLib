@@ -23,7 +23,9 @@ import net.minecraft.world.level.block.state.BlockState;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import mafisher.quasar.testing.GlobalStateTest;
 
+@GlobalStateTest
 class BlockRollbackServiceTest {
     private static final UUID EFFECT = UUID.fromString("00000000-0000-0000-0000-000000000040");
     private static final BlockPos FIRST = new BlockPos(0, 64, 0);
