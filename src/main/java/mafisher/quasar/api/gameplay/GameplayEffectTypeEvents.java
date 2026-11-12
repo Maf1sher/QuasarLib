@@ -1,6 +1,7 @@
 package mafisher.quasar.api.gameplay;
 
 import mafisher.quasar.QuasarLib;
+import mafisher.quasar.effect.gameplay.GameplayEffectTypeRegistry;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
@@ -14,6 +15,12 @@ public final class GameplayEffectTypeEvents {
 
     @SubscribeEvent
     public static void onCommonSetup(FMLCommonSetupEvent event) {
-        event.enqueueWork(() -> NeoForge.EVENT_BUS.post(new RegisterGameplayEffectTypesEvent()));
+        event.enqueueWork(() -> {
+            try {
+                NeoForge.EVENT_BUS.post(new RegisterGameplayEffectTypesEvent());
+            } finally {
+                GameplayEffectTypeRegistry.freeze();
+            }
+        });
     }
 }

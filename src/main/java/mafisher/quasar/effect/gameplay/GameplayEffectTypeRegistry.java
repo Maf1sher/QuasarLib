@@ -15,6 +15,7 @@ import org.jetbrains.annotations.ApiStatus;
 public final class GameplayEffectTypeRegistry {
     private static final Map<ResourceLocation, Function<EffectDescriptor, GameplayEffectController>> FACTORIES =
         new LinkedHashMap<>();
+    private static boolean frozen;
 
     private GameplayEffectTypeRegistry() {
     }
@@ -25,9 +26,22 @@ public final class GameplayEffectTypeRegistry {
     ) {
         Objects.requireNonNull(typeId, "typeId");
         Objects.requireNonNull(factory, "factory");
+        if (frozen) {
+            throw new IllegalStateException("Gameplay effect type registration is already closed");
+        }
         if (FACTORIES.putIfAbsent(typeId, factory) != null) {
             throw new IllegalStateException("Gameplay effect type is already registered: " + typeId);
         }
+    }
+
+    /** Closes consumer registration after the common-setup event. */
+    public static void freeze() {
+        frozen = true;
+    }
+
+    static void clearForTesting() {
+        FACTORIES.clear();
+        frozen = false;
     }
 
     public static Optional<GameplayEffectController> create(EffectDescriptor descriptor) {
