@@ -22,7 +22,7 @@ public sealed interface EffectDamageShape permits EffectDamageShape.Box, EffectD
 
     record Sphere(EffectPoint center, double radius) implements EffectDamageShape {
         public Sphere {
-            requireFinite(center, "center");
+            Objects.requireNonNull(center, "center");
             requirePositive(radius, "radius");
         }
 
@@ -44,7 +44,7 @@ public sealed interface EffectDamageShape permits EffectDamageShape.Box, EffectD
     /** A vertical cylinder extending upward from its base position. */
     record Cylinder(EffectPoint base, double radius, double height) implements EffectDamageShape {
         public Cylinder {
-            requireFinite(base, "base");
+            Objects.requireNonNull(base, "base");
             requirePositive(radius, "radius");
             requirePositive(height, "height");
         }
@@ -72,8 +72,8 @@ public sealed interface EffectDamageShape permits EffectDamageShape.Box, EffectD
     /** A finite beam tested by closest distance from its segment to the target box. */
     record Beam(EffectPoint start, EffectPoint end, double radius) implements EffectDamageShape {
         public Beam {
-            requireFinite(start, "start");
-            requireFinite(end, "end");
+            Objects.requireNonNull(start, "start");
+            Objects.requireNonNull(end, "end");
             requirePositive(radius, "radius");
         }
 
@@ -193,10 +193,6 @@ public sealed interface EffectDamageShape permits EffectDamageShape.Box, EffectD
             }
         }
         return true;
-    }
-
-    private static void requireFinite(EffectPoint point, String name) {
-        Objects.requireNonNull(point, name);
     }
 
     private static void requirePositive(double value, String name) {

@@ -16,6 +16,11 @@ import org.joml.Vector3f;
 final class ContentBlackHoleOperation implements ScreenEffectOperationRenderer {
     private static final int LINEAR_FILTER = 0x2601;
     private static final float BLOOM_THRESHOLD = 0.65F;
+    /**
+     * The composition is already quality-scaled, so the raymarch pass renders at full composition
+     * resolution. Scaling it again compounds the reduction and turns the disk into a blocky smear.
+     */
+    private static final float RAYMARCH_SCALE = 1.0F;
 
     /** The full-screen lens/disk must not sample a downscaled scene. */
     @Override
@@ -35,9 +40,8 @@ final class ContentBlackHoleOperation implements ScreenEffectOperationRenderer {
             .orElseThrow(() -> new IllegalStateException("Content black-hole shader is not loaded"));
         bindCommonInputs(context, shader, settings);
 
-        float raymarchScale = raymarchScale(context.quality());
-        int beamWidth = Math.max(1, Math.round(context.destination().width * raymarchScale));
-        int beamHeight = Math.max(1, Math.round(context.destination().height * raymarchScale));
+        int beamWidth = Math.max(1, Math.round(context.destination().width * RAYMARCH_SCALE));
+        int beamHeight = Math.max(1, Math.round(context.destination().height * RAYMARCH_SCALE));
         TextureTarget beam = context.acquireScratchTarget(beamWidth, beamHeight);
         beam.setFilterMode(LINEAR_FILTER);
         int glowWidth = Math.max(1, beamWidth / 2);
@@ -76,13 +80,6 @@ final class ContentBlackHoleOperation implements ScreenEffectOperationRenderer {
             context.releaseScratchTarget(beam);
             context.releaseScratchTarget(glow);
         }
-    }
-
-    private static float raymarchScale(EffectQualityTier quality) {
-        // The composition is already quality-scaled. Scaling the raymarch again
-        // compounded the reduction (0.5 x 0.55 at LOW) and turned the disk and
-        // lens into blocky, upscaled smears.
-        return 1.0F;
     }
 
     private static void bindCommonInputs(ScreenEffectOperationContext context, ShaderInstance shader,

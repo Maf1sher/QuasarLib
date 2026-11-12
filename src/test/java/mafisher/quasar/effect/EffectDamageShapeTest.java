@@ -38,6 +38,13 @@ class EffectDamageShapeTest {
     }
 
     @Test
+    void pointsRejectNonFiniteCoordinates() {
+        assertThrows(IllegalArgumentException.class, () -> new EffectPoint(Double.NaN, 0.0, 0.0));
+        assertThrows(IllegalArgumentException.class,
+            () -> new EffectPoint(0.0, Double.POSITIVE_INFINITY, 0.0));
+    }
+
+    @Test
     void validatesShapeDimensions() {
         assertThrows(IllegalArgumentException.class,
             () -> new EffectDamageShape.Sphere(EffectPoint.ZERO, 0.0));
