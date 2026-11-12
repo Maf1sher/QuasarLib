@@ -104,14 +104,36 @@ public final class EffectSavedData extends SavedData {
                 continue;
             }
             try {
-                this.journals.put(instanceId, BlockJournal.load(entry));
+                BlockJournal journal = BlockJournal.load(entry);
+                if (journal.isTruncated()) {
+                    quarantineJournal(descriptor, entry, null);
+                    continue;
+                }
+                this.journals.put(instanceId, journal);
             } catch (RuntimeException exception) {
-                LOGGER.warn("Quarantining effect {} with an unreadable block journal", instanceId, exception);
-                CompoundTag raw = EffectDescriptorNbt.save(descriptor);
-                raw.put(QUARANTINED_JOURNAL_KEY, entry.copy());
-                this.quarantine.add(raw);
-                this.descriptors.remove(instanceId);
+                quarantineJournal(descriptor, entry, exception);
             }
+        }
+    }
+
+    private void quarantineJournal(EffectDescriptor descriptor, CompoundTag journalTag,
+        RuntimeException failure) {
+        CompoundTag raw;
+        try {
+            raw = EffectDescriptorNbt.save(descriptor);
+        } catch (RuntimeException exception) {
+            LOGGER.warn("Could not serialize quarantined effect {}", descriptor.instanceId(), exception);
+            return;
+        }
+        raw.put(QUARANTINED_JOURNAL_KEY, journalTag.copy());
+        this.quarantine.add(raw);
+        this.descriptors.remove(descriptor.instanceId());
+        if (failure == null) {
+            LOGGER.warn("Quarantining effect {} with an unsupported or truncated block journal",
+                descriptor.instanceId());
+        } else {
+            LOGGER.warn("Quarantining effect {} with an unreadable block journal",
+                descriptor.instanceId(), failure);
         }
     }
 

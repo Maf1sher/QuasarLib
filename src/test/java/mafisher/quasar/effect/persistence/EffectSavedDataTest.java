@@ -256,6 +256,35 @@ class EffectSavedDataTest {
         assertNull(data.journal(descriptor.instanceId()));
     }
 
+    @Test
+    void quarantinesUnsupportedJournalsInsteadOfDroppingThem() {
+        EffectDescriptor descriptor = descriptor(14L);
+        BlockJournal journal = journal();
+        journal.beginRollback();
+        CompoundTag journalTag = journal.save();
+        journalTag.putInt("journal_schema", BlockJournal.SCHEMA_VERSION + 1);
+        journalTag.putUUID("effect_id", descriptor.instanceId());
+
+        CompoundTag source = new CompoundTag();
+        source.putInt("schema_version", EffectSavedData.SCHEMA_VERSION);
+        ListTag effects = new ListTag();
+        effects.add(EffectDescriptorNbt.save(descriptor));
+        source.put("effects", effects);
+        ListTag journals = new ListTag();
+        journals.add(journalTag);
+        source.put("journals", journals);
+
+        EffectSavedData loaded = EffectSavedData.load(source, null);
+
+        assertFalse(loaded.contains(descriptor.instanceId()));
+        assertTrue(loaded.journalIds().isEmpty());
+        assertEquals(1, loaded.quarantineCount());
+        CompoundTag preserved = loaded.quarantineEntries().getCompound(0)
+            .getCompound("quarantined_journal");
+        assertEquals(BlockJournal.SCHEMA_VERSION + 1, preserved.getInt("journal_schema"));
+        assertEquals(1, preserved.getList("entries", Tag.TAG_COMPOUND).size());
+    }
+
     private static BlockJournal journal() {
         ServerLevel level = mock(ServerLevel.class);
         when(level.getBlockEntity(net.minecraft.core.BlockPos.ZERO)).thenReturn(null);
