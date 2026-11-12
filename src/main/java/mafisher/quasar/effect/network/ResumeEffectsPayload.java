@@ -3,7 +3,6 @@ package mafisher.quasar.effect.network;
 import io.netty.buffer.ByteBuf;
 import java.util.List;
 import java.util.Objects;
-import mafisher.quasar.effect.scale.SegmentedEffectLimits;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
@@ -18,7 +17,8 @@ public record ResumeEffectsPayload(
     List<StartSegmentedVisualEffectPayload> segmentedEffects
 ) implements CustomPacketPayload {
     public static final int MAX_EFFECTS = 128;
-    public static final int MAX_SEGMENTED_EFFECTS = SegmentedEffectLimits.MAX_SEGMENTS_PER_LEVEL;
+    /** Protocol cap on resume entries; independent from the configurable segment budget. */
+    public static final int MAX_SEGMENTED_EFFECTS = 1_024;
     public static final int MAX_ENCODED_BYTES = EffectPayloadLimits.MAX_RESUME_BYTES;
     public static final Type<ResumeEffectsPayload> TYPE = new Type<>(
         ResourceLocation.fromNamespaceAndPath("quasar_lib", "resume_effects")
