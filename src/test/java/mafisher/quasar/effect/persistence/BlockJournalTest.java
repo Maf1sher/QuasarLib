@@ -6,7 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -236,6 +238,96 @@ class BlockJournalTest {
 
         assertTrue(step.complete());
         verify(blockEntity).loadWithComponents(any(), any());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void keepsSectionRollbackPendingWhenABlockEntityRestoreFails() {
+        ChunkPos chunkPos = new ChunkPos(2, -3);
+        BlockPos chestPos = new BlockPos(33, 66, -45);
+        LevelChunk chunk = mock(LevelChunk.class);
+        BlockEntity blockEntity = mock(BlockEntity.class);
+        CompoundTag saved = new CompoundTag();
+        saved.putString("id", "minecraft:chest");
+        when(chunk.getPos()).thenReturn(chunkPos);
+        when(chunk.getBlockEntities()).thenReturn(java.util.Map.of(chestPos, blockEntity));
+        when(blockEntity.getBlockPos()).thenReturn(chestPos);
+        when(blockEntity.saveWithFullMetadata(any())).thenReturn(saved);
+        PalettedContainer<BlockState> snapshotStates = new PalettedContainer<>(
+            Block.BLOCK_STATE_REGISTRY,
+            Blocks.AIR.defaultBlockState(),
+            PalettedContainer.Strategy.SECTION_STATES
+        );
+        snapshotStates.set(1, 2, 3, Blocks.CHEST.defaultBlockState());
+        LevelChunkSection snapshot = new LevelChunkSection(
+            snapshotStates, mock(PalettedContainerRO.class)
+        );
+        BlockJournal journal = new BlockJournal();
+        assertTrue(journal.recordSection(this.level, chunk, 4, snapshot));
+
+        PalettedContainer<BlockState> liveStates = new PalettedContainer<>(
+            Block.BLOCK_STATE_REGISTRY,
+            Blocks.AIR.defaultBlockState(),
+            PalettedContainer.Strategy.SECTION_STATES
+        );
+        LevelChunkSection live = sectionWithMockedBiomes(liveStates);
+        when(chunk.getSections()).thenReturn(new LevelChunkSection[]{live});
+        when(chunk.getBlockEntity(eq(chestPos), eq(LevelChunk.EntityCreationType.IMMEDIATE)))
+            .thenReturn(blockEntity);
+        ServerChunkCache chunkSource = mock(ServerChunkCache.class);
+        when(chunkSource.getChunkNow(chunkPos.x, chunkPos.z)).thenReturn(chunk);
+        when(this.level.getChunkSource()).thenReturn(chunkSource);
+        when(this.level.getSectionIndexFromSectionY(4)).thenReturn(0);
+        when(this.level.setBlock(any(), any(), org.mockito.ArgumentMatchers.anyInt())).thenReturn(true);
+        doThrow(new RuntimeException("restore failed"))
+            .when(blockEntity).loadWithComponents(any(), any());
+
+        journal.beginRollback();
+        BlockJournal.RollbackStep failed = journal.rollbackNext(this.level, 4_096);
+
+        assertEquals(1, failed.failed());
+        assertEquals(0, failed.advanced());
+        assertFalse(failed.complete());
+
+        doNothing().when(blockEntity).loadWithComponents(any(), any());
+        BlockJournal.RollbackStep retried = journal.rollbackNext(this.level, 4_096);
+
+        assertTrue(retried.complete());
+        verify(blockEntity, times(2)).loadWithComponents(any(), any());
+    }
+
+    @Test
+    void keepsBlockRollbackPendingWhenItsBlockEntityRestoreFails() {
+        BlockPos position = new BlockPos(8, 64, 8);
+        BlockState oldState = Blocks.CHEST.defaultBlockState();
+        BlockState newState = Blocks.AIR.defaultBlockState();
+        BlockEntity capture = mock(BlockEntity.class);
+        BlockEntity restore = mock(BlockEntity.class);
+        CompoundTag saved = new CompoundTag();
+        saved.putString("id", "minecraft:chest");
+        when(capture.saveWithFullMetadata(any())).thenReturn(saved);
+        doThrow(new RuntimeException("restore failed"))
+            .when(restore).loadWithComponents(any(), any());
+        when(this.level.getBlockEntity(position)).thenReturn(capture);
+        BlockJournal journal = new BlockJournal();
+        assertTrue(journal.record(this.level, new BlockChange(position, newState), oldState));
+        when(this.level.getBlockEntity(position)).thenReturn(restore);
+        when(this.level.getBlockState(position)).thenReturn(newState);
+
+        journal.beginRollback();
+        BlockJournal.RollbackStep failed = journal.rollbackNext(this.level, 1);
+
+        assertEquals(1, failed.failed());
+        assertEquals(0, failed.advanced());
+        assertFalse(failed.complete());
+
+        doNothing().when(restore).loadWithComponents(any(), any());
+        when(this.level.getBlockState(position)).thenReturn(oldState);
+        BlockJournal.RollbackStep retried = journal.rollbackNext(this.level, 1);
+
+        assertTrue(retried.complete());
+        verify(this.level, times(1)).setBlockAndUpdate(position, oldState);
+        verify(restore, times(2)).loadWithComponents(any(), any());
     }
 
     @Test

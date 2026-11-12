@@ -334,7 +334,8 @@ public final class BlockJournal {
                 logRollbackFailure("Could not read a block for rollback at {}", entry.position, exception);
                 return failedStep(processed, advanced, restored, conflicts);
             }
-            if (!currentState.equals(entry.newState)) {
+            boolean alreadyRestored = currentState.equals(entry.oldState);
+            if (!currentState.equals(entry.newState) && !alreadyRestored) {
                 this.cursor--;
                 advanced++;
                 conflicts++;
@@ -342,20 +343,24 @@ public final class BlockJournal {
                 continue;
             }
 
-            try {
-                if (!level.setBlockAndUpdate(entry.position, entry.oldState)) {
-                    logRollbackFailure("Could not roll back the block at {}", entry.position);
+            if (!alreadyRestored) {
+                try {
+                    if (!level.setBlockAndUpdate(entry.position, entry.oldState)) {
+                        logRollbackFailure("Could not roll back the block at {}", entry.position);
+                        return failedStep(processed, advanced, restored, conflicts);
+                    }
+                } catch (RuntimeException exception) {
+                    logRollbackFailure("Could not roll back the block at {}", entry.position, exception);
                     return failedStep(processed, advanced, restored, conflicts);
                 }
-            } catch (RuntimeException exception) {
-                logRollbackFailure("Could not roll back the block at {}", entry.position, exception);
+            }
+            if (!restoreBlockEntity(level, entry)) {
                 return failedStep(processed, advanced, restored, conflicts);
             }
             this.cursor--;
             advanced++;
             restored++;
             this.failureLogged = false;
-            restoreBlockEntity(level, entry);
         }
 
         this.dirty = this.dirty || advanced > 0;
@@ -567,14 +572,16 @@ public final class BlockJournal {
             }
         }
 
-        restoreSectionBlockEntities(level, chunk, entry);
+        if (!restoreSectionBlockEntities(level, chunk, entry)) {
+            return false;
+        }
         chunk.setUnsaved(true);
         // setBlock updated heightmaps and light; the deferred pass still batches the client resend.
         TerrainEditService.scheduleRelightAndSync(level, entry.pos());
         return true;
     }
 
-    private void restoreSectionBlockEntities(ServerLevel level, LevelChunk chunk, SectionEntry entry) {
+    private boolean restoreSectionBlockEntities(ServerLevel level, LevelChunk chunk, SectionEntry entry) {
         Set<BlockPos> restoredPositions = new HashSet<>();
         for (CompoundTag tag : entry.blockEntities()) {
             if (tag.contains(POSITION_KEY)) {
@@ -595,27 +602,34 @@ public final class BlockJournal {
                 BlockEntity blockEntity = chunk.getBlockEntity(
                     position, LevelChunk.EntityCreationType.IMMEDIATE
                 );
-                if (blockEntity != null) {
-                    blockEntity.loadWithComponents(tag.copy(), level.registryAccess());
+                if (blockEntity == null) {
+                    LOGGER.warn("Could not find a section block entity to restore at {}", position);
+                    return false;
                 }
+                blockEntity.loadWithComponents(tag.copy(), level.registryAccess());
             } catch (RuntimeException exception) {
                 LOGGER.warn("Could not restore a section block entity at {}", entry.pos(), exception);
+                return false;
             }
         }
+        return true;
     }
 
-    private static void restoreBlockEntity(ServerLevel level, Entry entry) {
+    private static boolean restoreBlockEntity(ServerLevel level, Entry entry) {
         if (entry.blockEntity == null) {
-            return;
-        }
-        BlockEntity blockEntity = level.getBlockEntity(entry.position);
-        if (blockEntity == null) {
-            return;
+            return true;
         }
         try {
+            BlockEntity blockEntity = level.getBlockEntity(entry.position);
+            if (blockEntity == null) {
+                LOGGER.warn("Could not find a block entity to restore at {}", entry.position);
+                return false;
+            }
             blockEntity.loadWithComponents(entry.blockEntity.copy(), level.registryAccess());
+            return true;
         } catch (RuntimeException exception) {
             LOGGER.warn("Could not restore a block entity at {}", entry.position, exception);
+            return false;
         }
     }
 
