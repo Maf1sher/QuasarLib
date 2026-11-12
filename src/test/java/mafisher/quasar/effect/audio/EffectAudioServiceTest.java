@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
@@ -21,17 +20,18 @@ import mafisher.quasar.api.effect.EffectAudience;
 import mafisher.quasar.api.effect.EffectBudgetReport;
 import mafisher.quasar.api.effect.EffectPriority;
 import mafisher.quasar.effect.EffectBudgetService;
+import mafisher.quasar.effect.runtime.RecordingPacketSink;
+import mafisher.quasar.effect.runtime.TestBudgetSource;
+import mafisher.quasar.effect.runtime.TestEffectRuntime;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.neoforge.network.PacketDistributor;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.MockedStatic;
 
 class EffectAudioServiceTest {
     private static final ResourceLocation DIMENSION = ResourceLocation.withDefaultNamespace("overworld");
@@ -39,6 +39,7 @@ class EffectAudioServiceTest {
 
     private ServerLevel level;
     private long gameTime;
+    private RecordingPacketSink packets;
 
     @BeforeEach
     void setUp() {
@@ -47,12 +48,15 @@ class EffectAudioServiceTest {
         when(this.level.dimension()).thenReturn(Level.OVERWORLD);
         when(this.level.players()).thenReturn(List.of());
         when(this.level.getGameTime()).thenAnswer(ignored -> this.gameTime);
+        this.packets = new RecordingPacketSink();
+        TestEffectRuntime.install(this.level, this.packets, new TestBudgetSource());
     }
 
     @AfterEach
     void tearDown() {
         EffectAudioService.clear(this.level);
         EffectBudgetService.clear(this.level);
+        TestEffectRuntime.uninstall(this.level);
     }
 
     @Test
@@ -259,16 +263,14 @@ class EffectAudioServiceTest {
         ServerPlayer player = player(new Vec3(0.0, 64.0, 0.0));
         when(this.level.players()).thenReturn(List.of(player));
 
-        try (MockedStatic<PacketDistributor> packets = mockStatic(PacketDistributor.class)) {
-            EffectAudioService.start(this.level, plan(UUID.randomUUID(), 100, 10),
-                EffectAudience.dimensionWide());
-            packets.clearInvocations();
+        EffectAudioService.start(this.level, plan(UUID.randomUUID(), 100, 10),
+            EffectAudience.dimensionWide());
+        this.packets.clear();
 
-            assertEquals(1, EffectAudioService.resumePlans(this.level, player).size());
+        assertEquals(1, EffectAudioService.resumePlans(this.level, player).size());
 
-            EffectAudioService.tick(this.level);
-            packets.verifyNoInteractions();
-        }
+        EffectAudioService.tick(this.level);
+        assertTrue(this.packets.sent().isEmpty());
     }
 
     @Test

@@ -1,7 +1,6 @@
-package mafisher.quasar.effect;
+package mafisher.quasar.effect.runtime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -14,10 +13,6 @@ import java.util.UUID;
 import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.EffectTransform;
 import mafisher.quasar.effect.network.EffectTransformBatchPayload;
-import mafisher.quasar.effect.runtime.EffectRuntimeRegistry;
-import mafisher.quasar.effect.runtime.LevelEffectRuntime;
-import mafisher.quasar.effect.runtime.RecordingPacketSink;
-import mafisher.quasar.effect.runtime.TestEffectRuntime;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -27,7 +22,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-class EffectTransformBatchServiceTest {
+class TransformUpdatesTest {
     private ServerLevel level;
     private ServerPlayer player;
     private Set<UUID> tracking;
@@ -65,10 +60,10 @@ class EffectTransformBatchServiceTest {
     @Test
     void sendsOneBatchPerPlayerAndKeepsTheLatestTransform() {
         UUID instanceId = UUID.randomUUID();
-        EffectTransformBatchService.queueVisual(this.level, instanceId, transform(1.0), this.tracking);
-        EffectTransformBatchService.queueVisual(this.level, instanceId, transform(2.0), this.tracking);
+        this.runtime.transforms().queueVisual(instanceId, transform(1.0), this.tracking);
+        this.runtime.transforms().queueVisual(instanceId, transform(2.0), this.tracking);
 
-        EffectTransformBatchService.flush(this.level);
+        this.runtime.transforms().flush();
 
         EffectTransformBatchPayload payload = soloPayload();
         assertEquals(1, payload.updates().size());
@@ -78,10 +73,10 @@ class EffectTransformBatchServiceTest {
 
     @Test
     void mergesVisualAndSegmentedUpdatesIntoOnePayload() {
-        EffectTransformBatchService.queueVisual(this.level, UUID.randomUUID(), transform(1.0), this.tracking);
-        EffectTransformBatchService.queueSegmented(this.level, UUID.randomUUID(), transform(2.0), this.tracking);
+        this.runtime.transforms().queueVisual(UUID.randomUUID(), transform(1.0), this.tracking);
+        this.runtime.transforms().queueSegmented(UUID.randomUUID(), transform(2.0), this.tracking);
 
-        EffectTransformBatchService.flush(this.level);
+        this.runtime.transforms().flush();
 
         EffectTransformBatchPayload payload = soloPayload();
         assertEquals(2, payload.updates().size());
@@ -93,42 +88,33 @@ class EffectTransformBatchServiceTest {
     @Test
     void splitsBatchesAtThePerPayloadCap() {
         for (int index = 0; index < EffectTransformBatchPayload.MAX_UPDATES + 1; index++) {
-            EffectTransformBatchService.queueVisual(this.level, UUID.randomUUID(), transform(index), this.tracking);
+            this.runtime.transforms().queueVisual(
+                UUID.randomUUID(), transform(index), this.tracking
+            );
         }
 
-        EffectTransformBatchService.flush(this.level);
+        this.runtime.transforms().flush();
 
         assertEquals(2, this.packets.sent().size());
     }
 
     @Test
     void dropsUpdatesWhenTheTrackingSetWasClearedBeforeFlush() {
-        EffectTransformBatchService.queueVisual(this.level, UUID.randomUUID(), transform(1.0), this.tracking);
+        this.runtime.transforms().queueVisual(UUID.randomUUID(), transform(1.0), this.tracking);
         this.tracking.clear();
 
-        EffectTransformBatchService.flush(this.level);
+        this.runtime.transforms().flush();
 
         assertTrue(this.packets.sent().isEmpty());
     }
 
     @Test
     void sendsNothingWithoutTrackers() {
-        EffectTransformBatchService.queueVisual(this.level, UUID.randomUUID(), transform(1.0), Set.of());
+        this.runtime.transforms().queueVisual(UUID.randomUUID(), transform(1.0), Set.of());
 
-        EffectTransformBatchService.flush(this.level);
+        this.runtime.transforms().flush();
 
         assertTrue(this.packets.sent().isEmpty());
-    }
-
-    @Test
-    void emptyTrackingDoesNotCreateRuntime() {
-        TestEffectRuntime.uninstall(this.level);
-
-        EffectTransformBatchService.queueVisual(
-            this.level, UUID.randomUUID(), transform(1.0), Set.of()
-        );
-
-        assertNull(EffectRuntimeRegistry.peek(this.level));
     }
 
     @Test

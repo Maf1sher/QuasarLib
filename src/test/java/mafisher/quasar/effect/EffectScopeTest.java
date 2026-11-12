@@ -3,11 +3,7 @@ package mafisher.quasar.effect;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.mockStatic;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -22,7 +18,10 @@ import mafisher.quasar.api.effect.EffectTransform;
 import mafisher.quasar.api.effect.VisualEffectHandle;
 import mafisher.quasar.api.effect.VisualEffectService;
 import mafisher.quasar.api.effect.VisualEffectSpec;
-import mafisher.quasar.effect.persistence.EffectPersistenceService;
+import mafisher.quasar.effect.runtime.RecordingEffectStore;
+import mafisher.quasar.effect.runtime.RecordingPacketSink;
+import mafisher.quasar.effect.runtime.TestBudgetSource;
+import mafisher.quasar.effect.runtime.TestEffectRuntime;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
@@ -37,6 +36,8 @@ class EffectScopeTest {
 
     private ServerLevel level;
     private long gameTime;
+    private RecordingEffectStore store;
+    private TestBudgetSource budgets;
 
     @BeforeEach
     void setUp() {
@@ -45,6 +46,11 @@ class EffectScopeTest {
         when(this.level.dimension()).thenReturn(Level.OVERWORLD);
         when(this.level.players()).thenReturn(List.of());
         when(this.level.getGameTime()).thenAnswer(ignored -> this.gameTime);
+        this.store = new RecordingEffectStore();
+        this.budgets = new TestBudgetSource();
+        TestEffectRuntime.install(
+            this.level, this.store, new RecordingPacketSink(), this.budgets
+        );
     }
 
     @AfterEach
@@ -52,7 +58,7 @@ class EffectScopeTest {
         VisualEffectService.clear(this.level);
         EffectAudioService.clear(this.level);
         EffectBudgetService.clear(this.level);
-        VisualEffectService.resetBudgetForTesting();
+        TestEffectRuntime.uninstall(this.level);
     }
 
     @Test
@@ -71,7 +77,7 @@ class EffectScopeTest {
 
     @Test
     void prunesCulledVisualsFromTheLedger() {
-        VisualEffectService.overrideBudgetForTesting(1);
+        this.budgets.standaloneVisuals(1);
         try (EffectScope scope = new EffectScope(this.level)) {
             UUID backgroundId = scope.playVisual(spec(200, EffectPriority.BACKGROUND)).orElseThrow();
             UUID normalId = scope.playVisual(spec(200, EffectPriority.NORMAL)).orElseThrow();
@@ -87,7 +93,7 @@ class EffectScopeTest {
 
     @Test
     void doesNotTrackAVisualCulledAtStart() {
-        VisualEffectService.overrideBudgetForTesting(1);
+        this.budgets.standaloneVisuals(1);
         VisualEffectService.start(this.level, spec(200, EffectPriority.HIGH));
         try (EffectScope scope = new EffectScope(this.level)) {
             assertTrue(scope.playVisual(spec(200, EffectPriority.BACKGROUND)).isEmpty());
@@ -97,31 +103,21 @@ class EffectScopeTest {
 
     @Test
     void closeKeepsDescriptorsWhenThePolicySaysSo() {
-        try (var persistence = mockStatic(EffectPersistenceService.class)) {
-            try (EffectScope scope = new EffectScope(this.level)) {
-                scope.playVisual(spec(200, EffectPriority.NORMAL)).orElseThrow();
-                scope.close(EffectRemovalPolicy.KEEP_FOR_RESTORE);
-            }
-
-            persistence.verify(
-                () -> EffectPersistenceService.recordStop(any(), any()),
-                never()
-            );
+        try (EffectScope scope = new EffectScope(this.level)) {
+            scope.playVisual(spec(200, EffectPriority.NORMAL)).orElseThrow();
+            scope.close(EffectRemovalPolicy.KEEP_FOR_RESTORE);
         }
+
+        assertTrue(this.store.stops().isEmpty());
     }
 
     @Test
     void closeDeletesDescriptorsByDefault() {
-        try (var persistence = mockStatic(EffectPersistenceService.class)) {
-            try (EffectScope scope = new EffectScope(this.level)) {
-                scope.playVisual(spec(200, EffectPriority.NORMAL)).orElseThrow();
-            }
-
-            persistence.verify(
-                () -> EffectPersistenceService.recordStop(any(), any()),
-                times(1)
-            );
+        try (EffectScope scope = new EffectScope(this.level)) {
+            scope.playVisual(spec(200, EffectPriority.NORMAL)).orElseThrow();
         }
+
+        assertEquals(1, this.store.stops().size());
     }
 
     @Test

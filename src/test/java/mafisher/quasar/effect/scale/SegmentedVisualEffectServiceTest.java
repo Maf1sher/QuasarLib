@@ -30,6 +30,9 @@ import mafisher.quasar.api.scale.SegmentedVisualEffectService;
 import mafisher.quasar.api.scale.SegmentedVisualEffectSpec;
 import mafisher.quasar.api.scale.StartSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.EffectBudgetService;
+import mafisher.quasar.effect.runtime.RecordingPacketSink;
+import mafisher.quasar.effect.runtime.TestBudgetSource;
+import mafisher.quasar.effect.runtime.TestEffectRuntime;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -46,6 +49,7 @@ class SegmentedVisualEffectServiceTest {
 
     private ServerLevel level;
     private long gameTime;
+    private TestBudgetSource budgets;
 
     @BeforeEach
     void setUp() {
@@ -54,6 +58,8 @@ class SegmentedVisualEffectServiceTest {
         when(this.level.dimension()).thenReturn(Level.OVERWORLD);
         when(this.level.players()).thenReturn(List.of());
         when(this.level.getGameTime()).thenAnswer(ignored -> this.gameTime);
+        this.budgets = new TestBudgetSource();
+        TestEffectRuntime.install(this.level, new RecordingPacketSink(), this.budgets);
     }
 
     @AfterEach
@@ -61,7 +67,8 @@ class SegmentedVisualEffectServiceTest {
         SegmentedVisualEffectService.stopAll(this.level);
         VisualEffectService.clear(this.level);
         EffectAudioService.clear(this.level);
-        SegmentedVisualEffectService.resetBudgetForTesting();
+        EffectBudgetService.clear(this.level);
+        TestEffectRuntime.uninstall(this.level);
     }
 
     @Test
@@ -165,7 +172,7 @@ class SegmentedVisualEffectServiceTest {
 
     @Test
     void cullingTheOnlyCoordinatorKeepsTheNewcomerRegistered() {
-        SegmentedVisualEffectService.overrideBudgetForTesting(1);
+        this.budgets.segments(1);
         SegmentedVisualEffectHandle first = SegmentedVisualEffectService.start(this.level, spec(1, 1, 200));
         SegmentedVisualEffectHandle second = SegmentedVisualEffectService.start(this.level, spec(1, 1, 200));
 

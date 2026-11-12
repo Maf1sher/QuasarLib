@@ -1,4 +1,4 @@
-package mafisher.quasar.api.effect;
+package mafisher.quasar.effect.runtime;
 
 import java.util.ArrayList;
 import java.util.HashMap;

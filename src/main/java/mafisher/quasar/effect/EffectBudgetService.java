@@ -12,6 +12,9 @@ import mafisher.quasar.api.effect.EffectBudgets;
 import mafisher.quasar.api.effect.VisualEffectService;
 import mafisher.quasar.api.gameplay.GameplayEffectService;
 import mafisher.quasar.api.scale.SegmentedVisualEffectService;
+import mafisher.quasar.effect.runtime.EffectBudgetSource;
+import mafisher.quasar.effect.runtime.EffectRuntimeRegistry;
+import mafisher.quasar.effect.runtime.LevelEffectRuntime;
 import net.minecraft.server.level.ServerLevel;
 import org.jetbrains.annotations.ApiStatus;
 
@@ -32,17 +35,18 @@ public final class EffectBudgetService {
         Objects.requireNonNull(level, "level");
         BudgetState state = STATE.peek(level);
         Counters counters = state == null ? null : state.counters;
+        EffectBudgetSource budgets = budgetSource(level);
         return new EffectBudgetReport(
             VisualEffectService.activeCount(level),
-            EffectBudgets.standaloneVisuals(),
+            budgets == null ? EffectBudgets.standaloneVisuals() : budgets.standaloneVisuals(),
             SegmentedVisualEffectService.activeSegmentCount(level),
-            EffectBudgets.segments(),
+            budgets == null ? EffectBudgets.segments() : budgets.segments(),
             GameplayEffectService.activeCount(level),
-            EffectBudgets.gameplaySessions(),
+            budgets == null ? EffectBudgets.gameplaySessions() : budgets.gameplaySessions(),
             GameplayEffectService.pendingCount(level),
-            EffectBudgets.gameplayPending(),
+            budgets == null ? EffectBudgets.gameplayPending() : budgets.gameplayPending(),
             CinematicEffectService.activeCount(level),
-            EffectBudgets.cinematicSessions(),
+            budgets == null ? EffectBudgets.cinematicSessions() : budgets.cinematicSessions(),
             EffectAudioService.activeCount(level),
             EffectAudioService.MAX_ACTIVE_PLANS_PER_LEVEL,
             counters == null ? 0L : counters.culledEffects,
@@ -51,6 +55,11 @@ public final class EffectBudgetService {
             counters == null ? 0L : counters.audioEvictions,
             counters == null ? 0L : counters.audioDrops
         );
+    }
+
+    private static EffectBudgetSource budgetSource(ServerLevel level) {
+        LevelEffectRuntime runtime = EffectRuntimeRegistry.peek(level);
+        return runtime == null ? null : runtime.budgets();
     }
 
     /** Records that one active effect was culled because its level was over budget. */

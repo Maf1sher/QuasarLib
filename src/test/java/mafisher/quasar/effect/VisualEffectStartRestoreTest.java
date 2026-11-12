@@ -1,8 +1,8 @@
 package mafisher.quasar.effect;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -16,7 +16,10 @@ import mafisher.quasar.api.persistence.EffectDescriptor;
 import mafisher.quasar.api.persistence.EffectKind;
 import mafisher.quasar.api.persistence.EffectPersistence;
 import mafisher.quasar.api.persistence.EffectPersistenceOptions;
-import mafisher.quasar.effect.persistence.EffectPersistenceService;
+import mafisher.quasar.effect.runtime.RecordingEffectStore;
+import mafisher.quasar.effect.runtime.RecordingPacketSink;
+import mafisher.quasar.effect.runtime.TestBudgetSource;
+import mafisher.quasar.effect.runtime.TestEffectRuntime;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -26,7 +29,6 @@ import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.MockedStatic;
 
 class VisualEffectStartRestoreTest {
     private static final ResourceLocation EFFECT_ID =
@@ -37,6 +39,7 @@ class VisualEffectStartRestoreTest {
 
     private ServerLevel level;
     private long gameTime;
+    private RecordingEffectStore store;
 
     @BeforeEach
     void setUp() {
@@ -46,11 +49,16 @@ class VisualEffectStartRestoreTest {
         when(this.level.players()).thenReturn(List.of());
         when(this.level.getGameTime()).thenAnswer(ignored -> this.gameTime);
         this.gameTime = 50L;
+        this.store = new RecordingEffectStore();
+        TestEffectRuntime.install(
+            this.level, this.store, new RecordingPacketSink(), new TestBudgetSource()
+        );
     }
 
     @AfterEach
     void tearDown() {
         VisualEffectService.clear(this.level);
+        TestEffectRuntime.uninstall(this.level);
     }
 
     @Test
@@ -66,12 +74,9 @@ class VisualEffectStartRestoreTest {
 
     @Test
     void restoreDoesNotRecordANewStartDescriptor() {
-        try (MockedStatic<EffectPersistenceService> persistence =
-                 mockStatic(EffectPersistenceService.class)) {
-            VisualEffectService.restore(this.level, spec(), INSTANCE_ID, START_TIME, descriptor());
+        VisualEffectService.restore(this.level, spec(), INSTANCE_ID, START_TIME, descriptor());
 
-            persistence.verifyNoInteractions();
-        }
+        assertTrue(this.store.starts().isEmpty());
     }
 
     private StartVisualEffectPayload payloadAfterStart() {

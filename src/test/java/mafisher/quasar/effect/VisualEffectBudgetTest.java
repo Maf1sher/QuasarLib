@@ -23,6 +23,9 @@ import mafisher.quasar.api.effect.VisualEffectStartResult;
 import mafisher.quasar.api.persistence.EffectCapabilities;
 import mafisher.quasar.api.persistence.EffectPersistence;
 import mafisher.quasar.api.persistence.EffectPersistenceOptions;
+import mafisher.quasar.effect.runtime.RecordingPacketSink;
+import mafisher.quasar.effect.runtime.TestBudgetSource;
+import mafisher.quasar.effect.runtime.TestEffectRuntime;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -40,18 +43,23 @@ class VisualEffectBudgetTest {
 
     @BeforeEach
     void setUp() {
-        VisualEffectService.overrideBudgetForTesting(2);
         this.level = mock(ServerLevel.class);
         when(this.level.isClientSide()).thenReturn(false);
         when(this.level.dimension()).thenReturn(Level.OVERWORLD);
         when(this.level.players()).thenReturn(List.of());
         when(this.level.getGameTime()).thenReturn(0L);
+        TestEffectRuntime.install(
+            this.level,
+            new RecordingPacketSink(),
+            new TestBudgetSource().standaloneVisuals(2)
+        );
     }
 
     @AfterEach
     void tearDown() {
         VisualEffectService.clear(this.level);
-        VisualEffectService.resetBudgetForTesting();
+        EffectBudgetService.clear(this.level);
+        TestEffectRuntime.uninstall(this.level);
     }
 
     @Test
@@ -156,18 +164,20 @@ class VisualEffectBudgetTest {
 
     @Test
     void reportDoesNotCreateLevelState() {
-        EffectBudgetReport report = EffectBudgetService.report(this.level);
+        ServerLevel untouched = mock(ServerLevel.class);
+
+        EffectBudgetReport report = EffectBudgetService.report(untouched);
 
         assertEquals(0, report.standaloneVisuals());
         assertEquals(0L, report.culledEffects());
-        assertFalse(LevelStateSlot.isTracked(this.level));
+        assertFalse(LevelStateSlot.isTracked(untouched));
     }
 
     @Test
-    void reportUsesEffectiveConfiguredBudgets() {
+    void reportUsesTheRuntimeBudgetSource() {
         EffectBudgetReport report = EffectBudgetService.report(this.level);
 
-        assertEquals(EffectBudgets.standaloneVisuals(), report.standaloneVisualBudget());
+        assertEquals(2, report.standaloneVisualBudget());
         assertEquals(EffectBudgets.segments(), report.segmentBudget());
         assertEquals(EffectBudgets.gameplaySessions(), report.gameplaySessionBudget());
         assertEquals(EffectBudgets.cinematicSessions(), report.cinematicSessionBudget());

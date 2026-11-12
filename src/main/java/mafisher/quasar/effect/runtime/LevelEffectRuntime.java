@@ -6,8 +6,8 @@ import net.minecraft.server.level.ServerLevel;
 import org.jetbrains.annotations.ApiStatus;
 
 /**
- * Per-level effect runtime. It owns the service instances and all mutable state for one level;
- * the public static service classes are facades that resolve this runtime from the registry.
+ * Per-level effect runtime. It owns the migrated service instances and their mutable state; the
+ * public static service classes are facades that resolve this runtime from the registry.
  */
 @ApiStatus.Internal
 public final class LevelEffectRuntime {
@@ -16,6 +16,10 @@ public final class LevelEffectRuntime {
     private final EffectPacketSink packets;
     private final EffectBudgetSource budgets;
     private final TransformUpdates transforms;
+    private final EffectAudioRuntime audio;
+    private final VisualEffectRuntime visuals;
+    private final SegmentedEffectRuntime segmented;
+    private final CinematicEffectRuntime cinematics;
 
     /** Creates a runtime with the production persistence, networking, and budget seams. */
     public LevelEffectRuntime(ServerLevel level) {
@@ -39,6 +43,16 @@ public final class LevelEffectRuntime {
         this.packets = Objects.requireNonNull(packets, "packets");
         this.budgets = Objects.requireNonNull(budgets, "budgets");
         this.transforms = new TransformUpdates(this.level, this.packets);
+        this.audio = new EffectAudioRuntime(this.level, this.packets);
+        this.visuals = new VisualEffectRuntime(
+            this.level, this.store, this.packets, this.budgets, this.transforms, this.audio
+        );
+        this.segmented = new SegmentedEffectRuntime(
+            this.level, this.store, this.packets, this.budgets, this.transforms, this.audio
+        );
+        this.cinematics = new CinematicEffectRuntime(
+            this.level, this.store, this.budgets, this.visuals, this.segmented, this.audio
+        );
     }
 
     public ServerLevel level() {
@@ -61,18 +75,42 @@ public final class LevelEffectRuntime {
         return this.transforms;
     }
 
-    /** Runs the per-level effect ticks. Only transform batching is runtime-owned so far. */
+    public EffectAudioRuntime audio() {
+        return this.audio;
+    }
+
+    public VisualEffectRuntime visuals() {
+        return this.visuals;
+    }
+
+    public SegmentedEffectRuntime segmented() {
+        return this.segmented;
+    }
+
+    public CinematicEffectRuntime cinematics() {
+        return this.cinematics;
+    }
+
+    /** Flushes per-level transform batches; domain ticks run through their facades for now. */
     public void tick() {
         this.transforms.flush();
     }
 
     /** Stops and clears transient runtime state. */
     public void close() {
+        this.cinematics.clear();
+        this.visuals.clear();
+        this.segmented.clear();
+        this.audio.clear();
         this.transforms.clear();
     }
 
     /** Drops transient state without running service shutdown hooks. */
     public void discard() {
+        this.cinematics.clear();
+        this.visuals.clear();
+        this.segmented.clear();
+        this.audio.clear();
         this.transforms.clear();
     }
 }
