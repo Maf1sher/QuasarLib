@@ -9,7 +9,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectBudgetService;
 import mafisher.quasar.effect.EffectBudgets;
 import mafisher.quasar.effect.EffectPoint;
@@ -539,22 +538,11 @@ public final class SegmentedVisualEffectService {
         ActiveSegmentedEffect activeEffect,
         Map<UUID, ServerPlayer> audience
     ) {
-        if (!(activeEffect.spec.audience() instanceof EffectAudience.Nearby nearby)) {
-            for (ServerPlayer player : level.players()) {
-                audience.put(player.getUUID(), player);
-            }
-            return;
-        }
-
         EffectPoint position = activeEffect.transform.position();
+        Vec3 center = new Vec3(position.x(), position.y(), position.z());
         double heightDeviation = activeEffect.heights.maxAbsDeviation(position.y());
-        double radius = nearby.radius() + activeEffect.spec.layout().halfDiagonal() + heightDeviation;
-        double radiusSqr = radius * radius;
-        for (ServerPlayer player : level.players()) {
-            if (position.distanceToSqr(player.getX(), player.getY(), player.getZ()) <= radiusSqr) {
-                audience.put(player.getUUID(), player);
-            }
-        }
+        double padding = activeEffect.spec.layout().halfDiagonal() + heightDeviation;
+        activeEffect.spec.audience().collect(level, center, padding, audience);
     }
 
     private static void sendStart(

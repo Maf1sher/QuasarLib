@@ -605,25 +605,17 @@ public final class VisualEffectService {
         SpatialGrid<ServerPlayer> index,
         Map<UUID, ServerPlayer> audience
     ) {
-        if (!(active.audience() instanceof EffectAudience.Nearby nearby)) {
-            for (ServerPlayer player : level.players()) {
-                audience.put(player.getUUID(), player);
-            }
-            return;
-        }
-
         EffectPoint position = active.transform().position();
-        double radiusSqr = nearby.radius() * nearby.radius();
-        if (index != null) {
-            index.forEachNear(new Vec3(position.x(), position.y(), position.z()), nearby.radius(),
-                player -> audience.put(player.getUUID(), player));
+        Vec3 center = new Vec3(position.x(), position.y(), position.z());
+        if (active.audience() instanceof EffectAudience.Nearby nearby && index != null) {
+            index.forEachNear(center, nearby.radius(), player -> {
+                if (active.audience().includes(level, center, 0.0, player)) {
+                    audience.put(player.getUUID(), player);
+                }
+            });
             return;
         }
-        for (ServerPlayer player : level.players()) {
-            if (position.distanceToSqr(player.getX(), player.getY(), player.getZ()) <= radiusSqr) {
-                audience.put(player.getUUID(), player);
-            }
-        }
+        active.audience().collect(level, center, 0.0, audience);
     }
 
     private static void removeEmptyState(ServerLevel level, VisualState state) {

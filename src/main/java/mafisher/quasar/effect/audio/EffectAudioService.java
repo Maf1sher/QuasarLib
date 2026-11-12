@@ -265,13 +265,7 @@ public final class EffectAudioService {
         }
 
         private boolean audienceContains(ServerLevel level, ServerPlayer player) {
-            if (!(this.audience instanceof EffectAudience.Nearby nearby)) {
-                return player.level() == level;
-            }
-            if (player.level() != level) {
-                return false;
-            }
-            return this.plan.center().distanceToSqr(player.position()) <= nearby.radius() * nearby.radius();
+            return this.audience.includes(level, this.plan.center(), 0.0, player);
         }
 
         private void syncAudience(ServerLevel level) {
@@ -319,19 +313,7 @@ public final class EffectAudioService {
 
         private static Map<UUID, ServerPlayer> collectAudience(ServerLevel level, ActiveAudio active) {
             Map<UUID, ServerPlayer> result = new LinkedHashMap<>();
-            if (active.audience instanceof EffectAudience.Nearby nearby) {
-                Vec3 center = active.plan.center();
-                double radiusSqr = nearby.radius() * nearby.radius();
-                for (ServerPlayer player : level.players()) {
-                    if (center.distanceToSqr(player.position()) <= radiusSqr) {
-                        result.put(player.getUUID(), player);
-                    }
-                }
-            } else {
-                for (ServerPlayer player : level.players()) {
-                    result.put(player.getUUID(), player);
-                }
-            }
+            active.audience.collect(level, active.plan.center(), 0.0, result);
             return result;
         }
     }

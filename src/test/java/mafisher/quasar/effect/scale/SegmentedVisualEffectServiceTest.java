@@ -250,6 +250,32 @@ class SegmentedVisualEffectServiceTest {
     }
 
     @Test
+    void resumeExpandsTheAudienceByTheGridHalfDiagonal() {
+        SegmentedVisualEffectSpec nearbySpec = new SegmentedVisualEffectSpec(
+            EFFECT_ID,
+            new Vec3(0.0, 64.0, 0.0),
+            0.0F,
+            0.0F,
+            0.0F,
+            4.0F,
+            2,
+            2,
+            8.0,
+            200,
+            42L,
+            EffectAudience.nearby(8.0)
+        );
+        SegmentedVisualEffectService.start(this.level, nearbySpec);
+        ServerPlayer player = player(new Vec3(13.0, 64.0, 0.0));
+        when(this.level.players()).thenReturn(List.of(player));
+
+        assertEquals(1, SegmentedVisualEffectService.resumePayloads(this.level, player).size());
+
+        when(player.position()).thenReturn(new Vec3(14.0, 64.0, 0.0));
+        assertTrue(SegmentedVisualEffectService.resumePayloads(this.level, player).isEmpty());
+    }
+
+    @Test
     void samplesTerrainHeightsOnceAndSendsThemInTheAggregatedStart() {
         when(this.level.hasChunkAt(anyInt(), anyInt())).thenReturn(true);
         when(this.level.getHeight(eq(Heightmap.Types.WORLD_SURFACE), anyInt(), anyInt()))
