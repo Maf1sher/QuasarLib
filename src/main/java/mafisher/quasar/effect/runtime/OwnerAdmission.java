@@ -1,4 +1,4 @@
-package mafisher.quasar.api.gameplay;
+package mafisher.quasar.effect.runtime;
 
 import java.util.HashMap;
 import java.util.Map;

@@ -25,6 +25,41 @@ public final class TestBudgetSource implements EffectBudgetSource {
         return this;
     }
 
+    public TestBudgetSource gameplaySessions(int value) {
+        this.gameplaySessions = value;
+        return this;
+    }
+
+    public TestBudgetSource gameplaySessionsPerOwner(int value) {
+        this.gameplaySessionsPerOwner = value;
+        return this;
+    }
+
+    public TestBudgetSource gameplayStartsPerOwnerPerTick(int value) {
+        this.gameplayStartsPerOwnerPerTick = value;
+        return this;
+    }
+
+    public TestBudgetSource gameplayPending(int value) {
+        this.gameplayPending = value;
+        return this;
+    }
+
+    public TestBudgetSource blockChangesPerLevelTick(int value) {
+        this.blockChangesPerLevelTick = value;
+        return this;
+    }
+
+    public TestBudgetSource sectionEditsPerLevelTick(int value) {
+        this.sectionEditsPerLevelTick = value;
+        return this;
+    }
+
+    public TestBudgetSource entitySpawnsPerLevelTick(int value) {
+        this.entitySpawnsPerLevelTick = value;
+        return this;
+    }
+
     public TestBudgetSource cinematicSessions(int value) {
         this.cinematicSessions = value;
         return this;

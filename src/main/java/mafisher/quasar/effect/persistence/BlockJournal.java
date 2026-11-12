@@ -250,7 +250,7 @@ public final class BlockJournal {
      * Restores up to the budget. Cursors move only after a successful restore, so transient failures
      * keep the same entry pending for the next tick.
      */
-    RollbackStep rollbackNext(ServerLevel level, int maxChanges) {
+    public RollbackStep rollbackNext(ServerLevel level, int maxChanges) {
         Objects.requireNonNull(level, "level");
         if (maxChanges < 0) {
             throw new IllegalArgumentException("Rollback budget cannot be negative");
@@ -421,7 +421,7 @@ public final class BlockJournal {
     }
 
     /** Releases tickets held while rollback waited for chunk loads. */
-    void releaseLoadTickets(ServerLevel level) {
+    public void releaseLoadTickets(ServerLevel level) {
         for (ChunkPos chunk : new ArrayList<>(this.loadTickets)) {
             releaseChunkLoad(level, chunk);
         }
@@ -783,7 +783,7 @@ public final class BlockJournal {
      * One budgeted rollback step; {@code advanced} retires work, {@code failed} asks for a retry,
      * and {@code waiting} reports a chunk load that has not finished yet.
      */
-    record RollbackStep(
+    public record RollbackStep(
         int processed,
         int advanced,
         int restored,
@@ -792,7 +792,7 @@ public final class BlockJournal {
         boolean complete,
         int waiting
     ) {
-        RollbackStep {
+        public RollbackStep {
             if (processed < 0 || advanced < 0 || restored < 0) {
                 throw new IllegalArgumentException("Invalid block rollback step");
             }

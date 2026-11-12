@@ -32,6 +32,11 @@ import mafisher.quasar.api.persistence.EffectKind;
 import mafisher.quasar.api.persistence.EffectPersistence;
 import mafisher.quasar.api.persistence.EffectPersistenceOptions;
 import mafisher.quasar.effect.gameplay.GameplayEffectNbt;
+import mafisher.quasar.effect.runtime.LevelEffectRuntime;
+import mafisher.quasar.effect.runtime.RecordingEffectStore;
+import mafisher.quasar.effect.runtime.RecordingPacketSink;
+import mafisher.quasar.effect.runtime.TestBudgetSource;
+import mafisher.quasar.effect.runtime.TestEffectRuntime;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
@@ -52,6 +57,7 @@ class GameplayBlockOperationsTest {
     private static final BlockPos FOURTH = new BlockPos(3, 64, 0);
 
     private ServerLevel level;
+    private LevelEffectRuntime runtime;
     private BlockState state;
     private long gameTime;
 
@@ -67,11 +73,15 @@ class GameplayBlockOperationsTest {
         when(this.level.hasChunkAt(any())).thenReturn(true);
         when(this.level.getBlockState(any())).thenReturn(mock(BlockState.class));
         when(this.level.setBlockAndUpdate(any(), any())).thenReturn(true);
+        this.runtime = TestEffectRuntime.install(
+            this.level, new RecordingEffectStore(), new RecordingPacketSink(), new TestBudgetSource()
+        );
     }
 
     @AfterEach
     void tearDown() {
         GameplayEffectService.stopAll(this.level, GameplayEffectEndReason.CANCELLED);
+        TestEffectRuntime.uninstall(this.level);
         DestructiveEffectPolicies.clearForTesting();
     }
 
@@ -243,7 +253,7 @@ class GameplayBlockOperationsTest {
         start(first, new EffectTickBudget(0, 0, 0, 2), EffectCapabilities.destructiveCapability());
         start(second, new EffectTickBudget(0, 0, 0, 2), EffectCapabilities.destructiveCapability());
 
-        GameplayEffectService.tick(this.level, 3);
+        this.runtime.gameplay().tick(3);
 
         verify(this.level, times(3)).setBlockAndUpdate(any(), any());
         assertEquals(0, first.context.pendingBlockChanges());

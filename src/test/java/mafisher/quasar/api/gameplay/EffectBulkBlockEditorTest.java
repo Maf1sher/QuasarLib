@@ -25,6 +25,10 @@ import mafisher.quasar.api.gameplay.GameplayEffectSpec;
 import mafisher.quasar.effect.block.BlockProtectionService;
 import mafisher.quasar.effect.gameplay.TerrainEditService;
 import mafisher.quasar.effect.persistence.BlockJournal;
+import mafisher.quasar.effect.runtime.RecordingEffectStore;
+import mafisher.quasar.effect.runtime.RecordingPacketSink;
+import mafisher.quasar.effect.runtime.TestBudgetSource;
+import mafisher.quasar.effect.runtime.TestEffectRuntime;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerChunkCache;
@@ -100,11 +104,14 @@ class EffectBulkBlockEditorTest {
         when(this.context.tryAcquireSectionEdit()).thenReturn(true);
         this.journal = new BlockJournal();
         when(this.context.blockJournal()).thenReturn(this.journal);
+        TestEffectRuntime.install(
+            this.level, new RecordingEffectStore(), new RecordingPacketSink(), new TestBudgetSource()
+        );
     }
 
     @AfterEach
     void tearDown() {
-        TerrainEditService.clear(this.level);
+        TestEffectRuntime.uninstall(this.level);
     }
 
     @Test

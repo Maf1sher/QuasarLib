@@ -11,6 +11,10 @@ import static org.mockito.Mockito.when;
 
 import java.util.UUID;
 import mafisher.quasar.api.block.BlockChange;
+import mafisher.quasar.effect.runtime.RecordingEffectStore;
+import mafisher.quasar.effect.runtime.RecordingPacketSink;
+import mafisher.quasar.effect.runtime.TestBudgetSource;
+import mafisher.quasar.effect.runtime.TestEffectRuntime;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
@@ -31,18 +35,19 @@ class BlockRollbackServiceTest {
 
     @BeforeEach
     void setUp() {
-        BlockRollbackService.clearForTesting();
         this.level = mock(ServerLevel.class);
         this.air = Blocks.AIR.defaultBlockState();
         this.stone = Blocks.STONE.defaultBlockState();
         when(this.level.hasChunkAt(any())).thenReturn(true);
         when(this.level.setBlockAndUpdate(any(), any())).thenReturn(true);
+        TestEffectRuntime.install(
+            this.level, new RecordingEffectStore(), new RecordingPacketSink(), new TestBudgetSource()
+        );
     }
 
     @AfterEach
     void tearDown() {
-        BlockRollbackService.clear(this.level);
-        BlockRollbackService.clearForTesting();
+        TestEffectRuntime.uninstall(this.level);
     }
 
     @Test
@@ -133,6 +138,29 @@ class BlockRollbackServiceTest {
 
         assertEquals(0, BlockRollbackService.activeCount(this.level));
         verify(this.level, times(2)).setBlockAndUpdate(any(), any());
+    }
+
+    @Test
+    void keepsRollbackTasksPerLevel() {
+        ServerLevel other = mock(ServerLevel.class);
+        when(other.hasChunkAt(any())).thenReturn(true);
+        TestEffectRuntime.install(
+            other, new RecordingEffectStore(), new RecordingPacketSink(), new TestBudgetSource()
+        );
+        try {
+            assertTrue(BlockRollbackService.schedule(this.level, EFFECT, journal()));
+            assertTrue(BlockRollbackService.schedule(other, UUID.randomUUID(), journal()));
+
+            assertEquals(1, BlockRollbackService.activeCount(this.level));
+            assertEquals(1, BlockRollbackService.activeCount(other));
+
+            BlockRollbackService.clear(this.level);
+
+            assertEquals(0, BlockRollbackService.activeCount(this.level));
+            assertEquals(1, BlockRollbackService.activeCount(other));
+        } finally {
+            TestEffectRuntime.uninstall(other);
+        }
     }
 
     private BlockJournal journal() {

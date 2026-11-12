@@ -41,8 +41,12 @@ import mafisher.quasar.effect.gameplay.GameplayEffectNbt;
 import mafisher.quasar.effect.persistence.BlockJournal;
 import mafisher.quasar.effect.persistence.BlockRollbackService;
 import mafisher.quasar.effect.persistence.EffectDescriptorNbt;
-import mafisher.quasar.effect.persistence.EffectPersistenceService;
 import mafisher.quasar.effect.persistence.EffectSavedData;
+import mafisher.quasar.effect.runtime.GameplayEffectRuntime;
+import mafisher.quasar.effect.runtime.RecordingPacketSink;
+import mafisher.quasar.effect.runtime.SavedDataEffectStore;
+import mafisher.quasar.effect.runtime.TestBudgetSource;
+import mafisher.quasar.effect.runtime.TestEffectRuntime;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
@@ -95,12 +99,18 @@ class GameplayPersistenceTest {
         doReturn(this.store).when(storage).computeIfAbsent(
             any(SavedData.Factory.class), eq(EffectSavedData.FILE_ID)
         );
+        TestEffectRuntime.install(
+            this.level,
+            new SavedDataEffectStore(this.level),
+            new RecordingPacketSink(),
+            new TestBudgetSource()
+        );
     }
 
     @AfterEach
     void tearDown() {
         GameplayEffectService.stopAll(this.level, GameplayEffectEndReason.CANCELLED);
-        BlockRollbackService.clear(this.level);
+        TestEffectRuntime.uninstall(this.level);
         TestConfig.unload();
     }
 
@@ -172,11 +182,11 @@ class GameplayPersistenceTest {
         );
         assertEquals(1, GameplayEffectService.activeCount(this.level));
 
-        this.gameTime = GameplayEffectService.RESTORED_OWNER_GRACE_TICKS - 1L;
+        this.gameTime = GameplayEffectRuntime.RESTORED_OWNER_GRACE_TICKS - 1L;
         GameplayEffectService.tick(this.level);
         assertEquals(1, GameplayEffectService.activeCount(this.level));
 
-        this.gameTime = GameplayEffectService.RESTORED_OWNER_GRACE_TICKS;
+        this.gameTime = GameplayEffectRuntime.RESTORED_OWNER_GRACE_TICKS;
         GameplayEffectService.tick(this.level);
         assertEquals(0, GameplayEffectService.activeCount(this.level));
     }

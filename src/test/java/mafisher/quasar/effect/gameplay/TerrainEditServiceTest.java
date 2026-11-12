@@ -12,6 +12,11 @@ import static org.mockito.Mockito.when;
 import java.util.ArrayList;
 import java.util.List;
 import mafisher.quasar.QuasarConfig;
+import mafisher.quasar.effect.runtime.LevelEffectRuntime;
+import mafisher.quasar.effect.runtime.RecordingEffectStore;
+import mafisher.quasar.effect.runtime.RecordingPacketSink;
+import mafisher.quasar.effect.runtime.TestBudgetSource;
+import mafisher.quasar.effect.runtime.TestEffectRuntime;
 import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
@@ -23,17 +28,21 @@ import org.junit.jupiter.api.Test;
 class TerrainEditServiceTest {
     private ServerLevel level;
     private ServerChunkCache chunkSource;
+    private LevelEffectRuntime runtime;
 
     @BeforeEach
     void setUp() {
         this.level = mock(ServerLevel.class);
         this.chunkSource = mock(ServerChunkCache.class);
         when(this.level.getChunkSource()).thenReturn(this.chunkSource);
+        this.runtime = TestEffectRuntime.install(
+            this.level, new RecordingEffectStore(), new RecordingPacketSink(), new TestBudgetSource()
+        );
     }
 
     @AfterEach
     void tearDown() {
-        TerrainEditService.clear(this.level);
+        TestEffectRuntime.uninstall(this.level);
     }
 
     @Test
@@ -70,11 +79,11 @@ class TerrainEditServiceTest {
         when(this.chunkSource.getChunkNow(3, 4)).thenReturn(null);
         TerrainEditService.requestSync(this.level, chunk, false);
 
-        assertEquals(1, TerrainEditService.pendingWorkCount(this.level));
+        assertEquals(1, this.runtime.terrain().pendingWorkCount());
 
         TerrainEditService.tick(this.level);
 
-        assertEquals(1, TerrainEditService.pendingWorkCount(this.level));
+        assertEquals(1, this.runtime.terrain().pendingWorkCount());
     }
 
     @Test
@@ -88,7 +97,7 @@ class TerrainEditServiceTest {
 
         TerrainEditService.tick(this.level);
 
-        assertEquals(3, TerrainEditService.pendingWorkCount(this.level));
+        assertEquals(3, this.runtime.terrain().pendingWorkCount());
     }
 
     @Test

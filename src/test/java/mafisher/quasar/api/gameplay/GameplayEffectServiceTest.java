@@ -21,6 +21,10 @@ import mafisher.quasar.api.gameplay.GameplayEffectHandle;
 import mafisher.quasar.api.gameplay.GameplayEffectService;
 import mafisher.quasar.api.gameplay.GameplayEffectSpec;
 import mafisher.quasar.api.gameplay.OwnerPolicy;
+import mafisher.quasar.effect.runtime.RecordingEffectStore;
+import mafisher.quasar.effect.runtime.RecordingPacketSink;
+import mafisher.quasar.effect.runtime.TestBudgetSource;
+import mafisher.quasar.effect.runtime.TestEffectRuntime;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
@@ -34,20 +38,25 @@ class GameplayEffectServiceTest {
     private static final UUID OWNER = UUID.fromString("00000000-0000-0000-0000-000000000002");
 
     private ServerLevel level;
+    private TestBudgetSource budgets;
     private long gameTime;
 
     @BeforeEach
     void setUp() {
         this.level = mock(ServerLevel.class);
+        this.budgets = new TestBudgetSource();
         when(this.level.isClientSide()).thenReturn(false);
         when(this.level.dimension()).thenReturn(Level.OVERWORLD);
         when(this.level.getGameTime()).thenAnswer(ignored -> this.gameTime);
+        TestEffectRuntime.install(
+            this.level, new RecordingEffectStore(), new RecordingPacketSink(), this.budgets
+        );
     }
 
     @AfterEach
     void tearDown() {
         GameplayEffectService.stopAll(this.level, GameplayEffectEndReason.CANCELLED);
-        GameplayEffectService.resetBudgetForTesting();
+        TestEffectRuntime.uninstall(this.level);
     }
 
     @Test
@@ -104,7 +113,7 @@ class GameplayEffectServiceTest {
 
     @Test
     void defersWhenTheLevelBudgetIsFull() {
-        GameplayEffectService.overrideBudgetForTesting(1, 8, 8);
+        this.budgets.gameplaySessions(1).gameplaySessionsPerOwner(8).gameplayStartsPerOwnerPerTick(8);
         UUID otherOwner = UUID.fromString("00000000-0000-0000-0000-000000000003");
         GameplayEffectHandle first = start(
             OWNER, OwnerPolicy.CONTINUE, new RecordingController()

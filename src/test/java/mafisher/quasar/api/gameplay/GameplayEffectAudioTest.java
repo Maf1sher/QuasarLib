@@ -1,11 +1,8 @@
 package mafisher.quasar.api.gameplay;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.mockStatic;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -28,6 +25,10 @@ import mafisher.quasar.api.persistence.EffectKind;
 import mafisher.quasar.api.persistence.EffectPersistence;
 import mafisher.quasar.effect.gameplay.GameplayEffectNbt;
 import mafisher.quasar.effect.network.EffectAudioTriggerPayload;
+import mafisher.quasar.effect.runtime.RecordingEffectStore;
+import mafisher.quasar.effect.runtime.RecordingPacketSink;
+import mafisher.quasar.effect.runtime.TestBudgetSource;
+import mafisher.quasar.effect.runtime.TestEffectRuntime;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
@@ -37,32 +38,35 @@ import net.minecraft.server.players.PlayerList;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.neoforge.network.PacketDistributor;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.MockedStatic;
 
 class GameplayEffectAudioTest {
     private static final ResourceLocation TYPE_ID = ResourceLocation.fromNamespaceAndPath("quasar_lib", "audio_gameplay");
     private static final ResourceLocation SOUND = ResourceLocation.withDefaultNamespace("test");
 
     private ServerLevel level;
+    private RecordingPacketSink packets;
     private long gameTime;
 
     @BeforeEach
     void setUp() {
         this.level = mock(ServerLevel.class);
+        this.packets = new RecordingPacketSink();
         when(this.level.isClientSide()).thenReturn(false);
         when(this.level.dimension()).thenReturn(Level.OVERWORLD);
         when(this.level.players()).thenReturn(List.of());
         when(this.level.getGameTime()).thenAnswer(ignored -> this.gameTime);
+        TestEffectRuntime.install(
+            this.level, new RecordingEffectStore(), this.packets, new TestBudgetSource()
+        );
     }
 
     @AfterEach
     void tearDown() {
         GameplayEffectService.stopAll(this.level, GameplayEffectEndReason.CANCELLED);
-        EffectAudioService.clear(this.level);
+        TestEffectRuntime.uninstall(this.level);
     }
 
     @Test
@@ -96,17 +100,13 @@ class GameplayEffectAudioTest {
         when(playerList.getPlayer(player.getUUID())).thenReturn(player);
         when(this.level.getServer()).thenReturn(server);
 
-        try (MockedStatic<PacketDistributor> packets = mockStatic(PacketDistributor.class)) {
-            GameplayEffectHandle handle = GameplayEffectService.start(
-                this.level, triggeredSpec(), new TriggerController()
-            );
+        GameplayEffectHandle handle = GameplayEffectService.start(
+            this.level, triggeredSpec(), new TriggerController()
+        );
 
-            packets.verify(
-                () -> PacketDistributor.sendToPlayer(eq(player), any(EffectAudioTriggerPayload.class)),
-                times(1)
-            );
-            GameplayEffectService.stop(this.level, handle, GameplayEffectEndReason.CANCELLED);
-        }
+        assertTrue(this.packets.sent().stream()
+            .anyMatch(sent -> sent.payload() instanceof EffectAudioTriggerPayload));
+        GameplayEffectService.stop(this.level, handle, GameplayEffectEndReason.CANCELLED);
     }
 
     @Test

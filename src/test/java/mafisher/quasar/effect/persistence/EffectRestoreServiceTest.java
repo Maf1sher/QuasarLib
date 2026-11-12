@@ -43,6 +43,11 @@ import mafisher.quasar.effect.gameplay.GameplayEffectNbt;
 import mafisher.quasar.effect.persistence.BlockJournal;
 import mafisher.quasar.effect.persistence.BlockRollbackService;
 import mafisher.quasar.effect.persistence.EffectAudioNbt;
+import mafisher.quasar.effect.persistence.EffectSavedData;
+import mafisher.quasar.effect.runtime.RecordingPacketSink;
+import mafisher.quasar.effect.runtime.SavedDataEffectStore;
+import mafisher.quasar.effect.runtime.TestBudgetSource;
+import mafisher.quasar.effect.runtime.TestEffectRuntime;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -85,14 +90,18 @@ class EffectRestoreServiceTest {
         doReturn(this.store).when(this.storage).computeIfAbsent(
             any(SavedData.Factory.class), eq(EffectSavedData.FILE_ID)
         );
+        TestEffectRuntime.install(
+            this.level,
+            new SavedDataEffectStore(this.level),
+            new RecordingPacketSink(),
+            new TestBudgetSource()
+        );
         this.gameTime = 40L;
     }
 
     @AfterEach
     void tearDown() {
-        VisualEffectService.clear(this.level);
-        SegmentedVisualEffectService.stopAll(this.level);
-        BlockRollbackService.clearForTesting();
+        TestEffectRuntime.uninstall(this.level);
         TestConfig.unload();
     }
 

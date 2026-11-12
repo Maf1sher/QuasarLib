@@ -6,8 +6,8 @@ import net.minecraft.server.level.ServerLevel;
 import org.jetbrains.annotations.ApiStatus;
 
 /**
- * Composition root for per-level effect runtimes. Each runtime owns the migrated visual,
- * segmented, audio, and cinematic state; remaining service state moves in later stages.
+ * Composition root for per-level effect runtimes. Each runtime owns visual, segmented, audio,
+ * cinematic, gameplay, terrain, rollback, and restore state.
  */
 @ApiStatus.Internal
 public final class EffectRuntimeRegistry {

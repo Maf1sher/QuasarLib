@@ -13,6 +13,15 @@ import mafisher.quasar.api.effect.EffectAudience;
 import mafisher.quasar.api.effect.EffectPriority;
 import mafisher.quasar.api.effect.VisualEffectService;
 import mafisher.quasar.api.effect.VisualEffectSpec;
+import mafisher.quasar.api.gameplay.EffectPhase;
+import mafisher.quasar.api.gameplay.EffectPhasePlan;
+import mafisher.quasar.api.gameplay.EffectTickBudget;
+import mafisher.quasar.api.gameplay.GameplayEffectContext;
+import mafisher.quasar.api.gameplay.GameplayEffectController;
+import mafisher.quasar.api.gameplay.GameplayEffectService;
+import mafisher.quasar.api.gameplay.GameplayEffectSpec;
+import mafisher.quasar.api.gameplay.OwnerPolicy;
+import mafisher.quasar.effect.gameplay.TerrainEditService;
 import mafisher.quasar.api.scale.SegmentTerrainConform;
 import mafisher.quasar.api.scale.SegmentedVisualEffectService;
 import mafisher.quasar.api.scale.SegmentedVisualEffectSpec;
@@ -88,17 +97,42 @@ class EffectRuntimeCompositionTest {
                 .visual("ring", 0, visualSpec())
                 .build()
         );
+        GameplayEffectService.start(this.level, gameplaySpec(), new NoopController());
+        TerrainEditService.queueRelight(this.level, new net.minecraft.world.level.ChunkPos(1, 2));
 
         assertEquals(2, this.runtime.visuals().activeCount());
         assertEquals(1, this.runtime.segmented().activeCount());
         assertEquals(1, this.runtime.cinematics().activeCount());
+        assertEquals(1, this.runtime.gameplay().activeCount());
+        assertEquals(1, this.runtime.terrain().pendingWorkCount());
 
         this.runtime.close();
 
         assertEquals(0, this.runtime.visuals().activeCount());
         assertEquals(0, this.runtime.segmented().activeCount());
         assertEquals(0, this.runtime.cinematics().activeCount());
+        assertEquals(0, this.runtime.gameplay().activeCount());
+        assertEquals(0, this.runtime.terrain().pendingWorkCount());
         assertEquals(0, this.runtime.audio().activeCount());
+    }
+
+    @Test
+    void keepsGameplayAndTerrainStatePerLevel() {
+        GameplayEffectService.start(this.level, gameplaySpec(), new NoopController());
+        GameplayEffectService.start(this.other, gameplaySpec(), new NoopController());
+        TerrainEditService.queueRelight(this.level, new net.minecraft.world.level.ChunkPos(1, 2));
+        TerrainEditService.queueRelight(this.other, new net.minecraft.world.level.ChunkPos(1, 2));
+
+        assertEquals(1, this.runtime.gameplay().activeCount());
+        assertEquals(1, this.otherRuntime.gameplay().activeCount());
+        assertEquals(1, this.runtime.terrain().pendingWorkCount());
+        assertEquals(1, this.otherRuntime.terrain().pendingWorkCount());
+
+        this.runtime.close();
+
+        assertEquals(0, this.runtime.gameplay().activeCount());
+        assertEquals(1, this.otherRuntime.gameplay().activeCount());
+        assertEquals(1, this.otherRuntime.terrain().pendingWorkCount());
     }
 
     private static int otherRuntimeCount(ServerLevel other) {
@@ -137,5 +171,27 @@ class EffectRuntimeCompositionTest {
             .priority(EffectPriority.NORMAL)
             .terrain(SegmentTerrainConform.NONE)
             .build();
+    }
+
+    private static GameplayEffectSpec gameplaySpec() {
+        return new GameplayEffectSpec(
+            EFFECT_ID,
+            null,
+            Vec3.ZERO,
+            EffectPhasePlan.of(new EffectPhase("run", 100)),
+            7L,
+            new EffectTickBudget(0, 0, 0),
+            OwnerPolicy.CONTINUE
+        );
+    }
+
+    private static final class NoopController implements GameplayEffectController {
+        @Override
+        public void onStart(GameplayEffectContext context) {
+        }
+
+        @Override
+        public void onTick(GameplayEffectContext context) {
+        }
     }
 }

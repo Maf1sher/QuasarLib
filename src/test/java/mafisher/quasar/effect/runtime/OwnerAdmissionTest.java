@@ -1,4 +1,4 @@
-package mafisher.quasar.api.gameplay;
+package mafisher.quasar.effect.runtime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 

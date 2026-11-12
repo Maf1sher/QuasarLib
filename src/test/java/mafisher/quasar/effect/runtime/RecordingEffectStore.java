@@ -16,8 +16,13 @@ public final class RecordingEffectStore implements EffectStore {
     private final List<UUID> stops = new ArrayList<>();
 
     @Override
-    public EffectSavedData storeOrNull() {
-        return this.data;
+    public boolean isNewerSchema() {
+        return this.data.isNewerSchema();
+    }
+
+    @Override
+    public int schemaVersion() {
+        return this.data.schemaVersion();
     }
 
     @Override
@@ -48,6 +53,26 @@ public final class RecordingEffectStore implements EffectStore {
     }
 
     @Override
+    public boolean contains(UUID instanceId) {
+        return this.data.contains(instanceId);
+    }
+
+    @Override
+    public void remove(UUID instanceId) {
+        this.data.remove(instanceId);
+    }
+
+    @Override
+    public int removeOwnedBy(UUID ownerSessionId) {
+        return this.data.removeOwnedBy(ownerSessionId);
+    }
+
+    @Override
+    public void quarantine(UUID instanceId) {
+        this.data.quarantine(instanceId);
+    }
+
+    @Override
     public BlockJournal journalOrNull(UUID instanceId) {
         return this.data.journal(instanceId);
     }
@@ -55,6 +80,10 @@ public final class RecordingEffectStore implements EffectStore {
     @Override
     public boolean recordJournal(UUID instanceId, BlockJournal journal) {
         return this.data.putJournal(instanceId, journal);
+    }
+
+    public EffectSavedData data() {
+        return this.data;
     }
 
     public List<EffectDescriptor> starts() {
