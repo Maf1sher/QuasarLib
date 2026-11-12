@@ -6,6 +6,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import mafisher.quasar.effect.EffectTimeline;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
@@ -142,8 +143,10 @@ public final class EffectAudioSpec {
         private final List<EffectAudioTrigger> triggers = new ArrayList<>();
 
         private Builder(int durationTicks, EffectPhaseTiming phases) {
-            if (durationTicks < 1 || durationTicks > EffectAudioPlan.MAX_DURATION_TICKS) {
-                throw new IllegalArgumentException("Effect audio duration must be between 1 and 72000 ticks");
+            if (!EffectTimeline.isValidDuration(durationTicks)) {
+                throw new IllegalArgumentException(
+                    "Effect audio duration must be between 1 and " + EffectTimeline.MAX_DURATION_TICKS + " ticks"
+                );
             }
             this.durationTicks = durationTicks;
             this.phases = phases;

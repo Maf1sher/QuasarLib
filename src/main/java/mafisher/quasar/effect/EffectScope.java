@@ -136,11 +136,7 @@ public final class EffectScope implements AutoCloseable {
         Objects.requireNonNull(position, "position");
         Objects.requireNonNull(sound, "sound");
         Objects.requireNonNull(source, "source");
-        if (!Double.isFinite(position.x) || !Double.isFinite(position.y) || !Double.isFinite(position.z)
-            || !Float.isFinite(volume) || volume < 0.0F
-            || !Float.isFinite(pitch) || pitch <= 0.0F) {
-            throw new IllegalArgumentException("Invalid effect sound parameters");
-        }
+        EffectSoundValidation.requirePlayable(position, volume, pitch, "Invalid effect sound parameters");
         this.level.playSound(null, position.x, position.y, position.z, sound, source, volume, pitch);
     }
 

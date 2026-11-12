@@ -1,6 +1,10 @@
 package mafisher.quasar.effect;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
+import java.util.function.ToIntFunction;
 import mafisher.quasar.effect.cinematic.CinematicEffectService;
 import mafisher.quasar.effect.gameplay.GameplayEffectService;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectService;
@@ -51,6 +55,48 @@ public final class EffectBudgetService {
     /** Records that one entity spawn was dropped by a soft spawn budget. */
     public static void recordDroppedEntitySpawn(ServerLevel level) {
         counters(level).droppedEntitySpawns++;
+    }
+
+    /**
+     * Returns the lowest-priority key in insertion order, breaking ties by the first entry (oldest).
+     * {@code excludedId} lets a segmented newcomer stay out of its own cull scan.
+     */
+    public static <T> UUID lowestPriority(
+        Map<UUID, T> candidates,
+        ToIntFunction<? super T> weight,
+        UUID excludedId
+    ) {
+        Objects.requireNonNull(candidates, "candidates");
+        Objects.requireNonNull(weight, "weight");
+        UUID victim = null;
+        int lowest = Integer.MAX_VALUE;
+        for (Map.Entry<UUID, T> entry : candidates.entrySet()) {
+            if (entry.getKey().equals(excludedId)) {
+                continue;
+            }
+            int candidate = weight.applyAsInt(entry.getValue());
+            if (candidate < lowest) {
+                lowest = candidate;
+                victim = entry.getKey();
+            }
+        }
+        return victim;
+    }
+
+    /** Returns the lowest-priority element of a list, keeping the first element on ties. */
+    public static <T> T lowestPriority(List<T> candidates, ToIntFunction<? super T> weight) {
+        Objects.requireNonNull(candidates, "candidates");
+        Objects.requireNonNull(weight, "weight");
+        T victim = null;
+        int lowest = Integer.MAX_VALUE;
+        for (T candidate : candidates) {
+            int candidateWeight = weight.applyAsInt(candidate);
+            if (candidateWeight < lowest) {
+                lowest = candidateWeight;
+                victim = candidate;
+            }
+        }
+        return victim;
     }
 
     /** Whether one more entity spawn fits in the level's current tick without consuming a slot. */

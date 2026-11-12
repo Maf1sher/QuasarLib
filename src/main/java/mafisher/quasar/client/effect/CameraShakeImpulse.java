@@ -1,6 +1,7 @@
 package mafisher.quasar.client.effect;
 
 import java.util.Objects;
+import mafisher.quasar.effect.EffectTimeline;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;
 
@@ -27,7 +28,7 @@ public record CameraShakeImpulse(
     float frequencyHz,
     float maxAngleDegrees
 ) {
-    public static final int MAX_DURATION_TICKS = 72_000;
+    public static final int MAX_DURATION_TICKS = EffectTimeline.MAX_DURATION_TICKS;
     public static final float MIN_FREQUENCY_HZ = 0.1F;
     public static final float MAX_FREQUENCY_HZ = 10.0F;
     public static final float MAX_ANGLE_DEGREES = 30.0F;
@@ -47,7 +48,7 @@ public record CameraShakeImpulse(
         if (!Float.isFinite(intensity) || intensity < 0.0F || intensity > 1.0F) {
             throw new IllegalArgumentException("Camera shake intensity must be between 0 and 1");
         }
-        if (durationTicks < 1 || durationTicks > MAX_DURATION_TICKS) {
+        if (!EffectTimeline.isValidDuration(durationTicks)) {
             throw new IllegalArgumentException("Camera shake duration must be between 1 and "
                 + MAX_DURATION_TICKS + " ticks");
         }

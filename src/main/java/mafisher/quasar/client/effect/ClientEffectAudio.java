@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import mafisher.quasar.effect.EffectTimeline;
 import mafisher.quasar.effect.audio.EffectAudioAttenuation;
 import mafisher.quasar.effect.audio.EffectAudioCue;
 import mafisher.quasar.effect.audio.EffectAudioMotion;
@@ -118,7 +119,7 @@ public final class ClientEffectAudio {
 
     private static int ageTicks(ClientLevel level, EffectAudioPlan plan) {
         long serverGameTime = ClientEffectClock.estimate(level.getGameTime());
-        return (int)Math.min(Integer.MAX_VALUE, Math.max(0L, serverGameTime - plan.startGameTime()));
+        return EffectTimeline.ageTicks(serverGameTime, plan.startGameTime());
     }
 
     private static final class State {

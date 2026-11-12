@@ -1,6 +1,7 @@
 package mafisher.quasar.effect.cinematic;
 
 import java.util.Objects;
+import mafisher.quasar.effect.EffectSoundValidation;
 import mafisher.quasar.effect.VisualEffectSpec;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectSpec;
 import net.minecraft.sounds.SoundEvent;
@@ -34,11 +35,7 @@ public sealed interface CinematicCue
             Objects.requireNonNull(position, "position");
             Objects.requireNonNull(sound, "sound");
             Objects.requireNonNull(source, "source");
-            if (!Double.isFinite(position.x) || !Double.isFinite(position.y) || !Double.isFinite(position.z)
-                || !Float.isFinite(volume) || volume < 0.0F
-                || !Float.isFinite(pitch) || pitch <= 0.0F) {
-                throw new IllegalArgumentException("Invalid cinematic sound cue");
-            }
+            EffectSoundValidation.requirePlayable(position, volume, pitch, "Invalid cinematic sound cue");
         }
     }
 

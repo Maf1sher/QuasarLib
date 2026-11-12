@@ -13,6 +13,7 @@ import mafisher.quasar.effect.EffectBudgetService;
 import mafisher.quasar.effect.EffectBudgets;
 import mafisher.quasar.effect.EffectPriority;
 import mafisher.quasar.effect.EffectScope;
+import mafisher.quasar.effect.EffectTimeline;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.LevelStateSlot;
@@ -104,7 +105,9 @@ public final class CinematicEffectService {
         Objects.requireNonNull(timeline, "timeline");
         Objects.requireNonNull(sessionId, "sessionId");
         Objects.requireNonNull(descriptor, "descriptor");
-        return startInternal(level, timeline,
+        Vec3 anchor = CinematicEffectNbt.anchorOrNull(descriptor);
+        CinematicTimeline restoredTimeline = anchor == null ? timeline : timeline.anchored(anchor);
+        return startInternal(level, restoredTimeline,
             new Vec3(
                 descriptor.transform().position().x(),
                 descriptor.transform().position().y(),
@@ -180,10 +183,7 @@ public final class CinematicEffectService {
         EffectPersistenceOptions options
     ) {
         net.minecraft.nbt.CompoundTag state = options.state();
-        state.putBoolean("anchored", !anchor.equals(Vec3.ZERO));
-        state.putDouble("anchor_x", anchor.x);
-        state.putDouble("anchor_y", anchor.y);
-        state.putDouble("anchor_z", anchor.z);
+        CinematicEffectNbt.saveAnchor(state, anchor);
         return new EffectDescriptor(
             sessionId,
             EffectKind.CINEMATIC,
@@ -289,7 +289,9 @@ public final class CinematicEffectService {
         ActiveCinematic session = state == null ? null : state.sessions.get(handle.sessionId());
         return session != null
             && !session.closed
-            && level.getGameTime() - session.startGameTime < session.timeline.durationTicks();
+            && !EffectTimeline.isFinished(
+                level.getGameTime(), session.startGameTime, session.timeline.durationTicks()
+            );
     }
 
     static void overrideBudgetForTesting(int budget) {
@@ -316,26 +318,18 @@ public final class CinematicEffectService {
         Map<UUID, ActiveCinematic> sessions,
         EffectPriority newcomerPriority
     ) {
-        Map.Entry<UUID, ActiveCinematic> victim = null;
-        int lowest = Integer.MAX_VALUE;
-        for (Map.Entry<UUID, ActiveCinematic> entry : sessions.entrySet()) {
-            int weight = entry.getValue().timeline.priority().weight();
-            if (weight < lowest) {
-                lowest = weight;
-                victim = entry;
-            }
-        }
-        if (victim == null) {
+        UUID victimId = EffectBudgetService.lowestPriority(
+            sessions, session -> session.timeline.priority().weight(), null
+        );
+        if (victimId == null) {
             return true;
         }
-        if (newcomerPriority.weight() < lowest) {
+        ActiveCinematic victimSession = sessions.get(victimId);
+        if (newcomerPriority.weight() < victimSession.timeline.priority().weight()) {
             return false;
         }
-        UUID victimId = victim.getKey();
-        ActiveCinematic victimSession = sessions.remove(victimId);
-        if (victimSession != null) {
-            victimSession.close(level, true);
-        }
+        sessions.remove(victimId);
+        victimSession.close(level, true);
         EffectBudgetService.recordCull(level);
         LOGGER.info(
             "Closed cinematic {} in {} to admit a priority {} cinematic under the soft budget of {}",
@@ -391,8 +385,7 @@ public final class CinematicEffectService {
             if (this.closed) {
                 return;
             }
-            long rawAge = Math.max(0L, gameTime - this.startGameTime);
-            int age = (int)Math.min(Integer.MAX_VALUE, rawAge);
+            int age = EffectTimeline.ageTicks(gameTime, this.startGameTime);
             if (age >= this.timeline.durationTicks()) {
                 this.close(level, true);
                 return;
@@ -458,8 +451,7 @@ public final class CinematicEffectService {
                 return false;
             }
 
-            long rawAge = Math.max(0L, gameTime - this.startGameTime);
-            int age = (int)Math.min(Integer.MAX_VALUE, rawAge);
+            int age = EffectTimeline.ageTicks(gameTime, this.startGameTime);
             if (age >= this.timeline.durationTicks()) {
                 this.close(level, true);
                 return false;

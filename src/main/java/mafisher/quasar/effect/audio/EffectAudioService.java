@@ -10,6 +10,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import mafisher.quasar.effect.EffectAudience;
+import mafisher.quasar.effect.EffectTimeline;
 import mafisher.quasar.effect.LevelStateSlot;
 import mafisher.quasar.effect.network.EffectAudioPlanPayload;
 import mafisher.quasar.effect.network.EffectAudioTriggerPayload;
@@ -215,8 +216,7 @@ public final class EffectAudioService {
         List<EffectAudioPlan> result = new ArrayList<>();
         long gameTime = level.getGameTime();
         for (ActiveAudio active : state.plans.values()) {
-            int planAge = (int)Math.min(Integer.MAX_VALUE,
-                Math.max(0L, gameTime - active.plan.startGameTime()));
+            int planAge = EffectTimeline.ageTicks(gameTime, active.plan.startGameTime());
             boolean playable = active.plan.dimensionId().equals(level.dimension().location())
                 && planAge < active.plan.durationTicks()
                 && active.plan.hasPlayableCues(planAge, RESUME_GRACE_TICKS)
@@ -246,7 +246,7 @@ public final class EffectAudioService {
     }
 
     private static int ageTicks(ServerLevel level, EffectAudioPlan plan) {
-        return (int)Math.min(Integer.MAX_VALUE, Math.max(0L, level.getGameTime() - plan.startGameTime()));
+        return EffectTimeline.ageTicks(level.getGameTime(), plan.startGameTime());
     }
 
     private static final class AudioState {

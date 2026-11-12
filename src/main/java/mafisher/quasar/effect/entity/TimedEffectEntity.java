@@ -53,8 +53,10 @@ public abstract class TimedEffectEntity extends Entity {
         if (this.level().isClientSide) {
             throw new IllegalStateException("Effect entity state is server-authoritative");
         }
-        if (lifetimeTicks < 1 || lifetimeTicks > 72_000) {
-            throw new IllegalArgumentException("Effect entity lifetime must be between 1 and 72000 ticks");
+        if (!EffectTimeline.isValidDuration(lifetimeTicks)) {
+            throw new IllegalArgumentException(
+                "Effect entity lifetime must be between 1 and " + EffectTimeline.MAX_DURATION_TICKS + " ticks"
+            );
         }
         this.entityData.set(LIFETIME_TICKS, lifetimeTicks);
         this.entityData.set(START_GAME_TIME, this.level().getGameTime());
@@ -115,7 +117,7 @@ public abstract class TimedEffectEntity extends Entity {
     @Override
     protected void readAdditionalSaveData(CompoundTag compound) {
         int lifetime = compound.getInt("EffectLifetimeTicks");
-        if (lifetime >= 1 && lifetime <= 72_000) {
+        if (EffectTimeline.isValidDuration(lifetime)) {
             this.entityData.set(LIFETIME_TICKS, lifetime);
         }
         if (compound.contains("EffectState")) {

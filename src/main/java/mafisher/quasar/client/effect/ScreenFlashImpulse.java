@@ -1,6 +1,7 @@
 package mafisher.quasar.client.effect;
 
 import java.util.Objects;
+import mafisher.quasar.effect.EffectTimeline;
 import net.minecraft.world.phys.Vec3;
 
 /**
@@ -28,7 +29,7 @@ public record ScreenFlashImpulse(
     float green,
     float blue
 ) {
-    public static final int MAX_DURATION_TICKS = 72_000;
+    public static final int MAX_DURATION_TICKS = EffectTimeline.MAX_DURATION_TICKS;
 
     public ScreenFlashImpulse {
         Objects.requireNonNull(source, "source");
@@ -41,7 +42,7 @@ public record ScreenFlashImpulse(
         if (!Float.isFinite(intensity) || intensity < 0.0F || intensity > 1.0F) {
             throw new IllegalArgumentException("Screen flash intensity must be between 0 and 1");
         }
-        if (durationTicks < 1 || durationTicks > MAX_DURATION_TICKS) {
+        if (!EffectTimeline.isValidDuration(durationTicks)) {
             throw new IllegalArgumentException("Screen flash duration must be between 1 and "
                 + MAX_DURATION_TICKS + " ticks");
         }

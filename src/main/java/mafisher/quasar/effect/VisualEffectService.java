@@ -200,7 +200,9 @@ public final class VisualEffectService {
     private static boolean enforceBudget(ServerLevel level, Map<UUID, ActiveEffect> effects, UUID newcomerId) {
         int budget = budget();
         while (effects.size() > budget) {
-            UUID victim = lowestPriority(effects);
+            UUID victim = EffectBudgetService.lowestPriority(
+                effects, effect -> effect.priority().weight(), null
+            );
             if (victim == null) {
                 return effects.containsKey(newcomerId);
             }
@@ -218,19 +220,6 @@ public final class VisualEffectService {
             stop(level, new VisualEffectHandle(victim));
         }
         return effects.containsKey(newcomerId);
-    }
-
-    private static UUID lowestPriority(Map<UUID, ActiveEffect> effects) {
-        UUID victim = null;
-        int lowest = Integer.MAX_VALUE;
-        for (Map.Entry<UUID, ActiveEffect> entry : effects.entrySet()) {
-            int weight = entry.getValue().priority().weight();
-            if (weight < lowest) {
-                lowest = weight;
-                victim = entry.getKey();
-            }
-        }
-        return victim;
     }
 
     /** Whether one visual is currently active; culled or finished handles return {@code false}. */
@@ -443,7 +432,9 @@ public final class VisualEffectService {
         Iterator<Map.Entry<UUID, ActiveEffect>> iterator = effects.entrySet().iterator();
         while (iterator.hasNext()) {
             ActiveEffect active = iterator.next().getValue();
-            if (gameTime - active.payload().startGameTime() >= active.payload().durationTicks()) {
+            if (EffectTimeline.isFinished(
+                gameTime, active.payload().startGameTime(), active.payload().durationTicks()
+            )) {
                 sendStop(level, active);
                 iterator.remove();
                 EffectPersistenceService.recordStop(level, active.payload().instanceId());

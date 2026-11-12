@@ -14,6 +14,7 @@ import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectPoint;
+import mafisher.quasar.effect.EffectTimeline;
 import mafisher.quasar.effect.LevelStateSlot;
 import mafisher.quasar.effect.audio.EffectAudioPlan;
 import mafisher.quasar.effect.audio.EffectAudioService;
@@ -238,7 +239,7 @@ public final class GameplayEffectService {
             return null;
         }
 
-        int age = (int)Math.min(Integer.MAX_VALUE, Math.max(0L, level.getGameTime() - startGameTime));
+        int age = EffectTimeline.ageTicks(level.getGameTime(), startGameTime);
         if (age >= spec.phases().totalDurationTicks()) {
             EffectPersistenceService.recordStop(level, sessionId);
             return null;
@@ -283,10 +284,7 @@ public final class GameplayEffectService {
             return false;
         }
 
-        int age = (int)Math.min(
-            Integer.MAX_VALUE,
-            Math.max(0L, level.getGameTime() - pending.startGameTime)
-        );
+        int age = EffectTimeline.ageTicks(level.getGameTime(), pending.startGameTime);
         if (age >= pending.spec.phases().totalDurationTicks()) {
             EffectPersistenceService.recordStop(level, pending.id);
             return true;
@@ -728,7 +726,9 @@ public final class GameplayEffectService {
         List<PendingStart> queue = state(level).pendingStarts;
         queue.add(pending);
         while (queue.size() > EffectBudgets.gameplayPending()) {
-            PendingStart victim = lowestPriority(queue);
+            PendingStart victim = EffectBudgetService.lowestPriority(
+                queue, queued -> queued.spec.priority().weight()
+            );
             if (victim == null) {
                 break;
             }
@@ -744,19 +744,6 @@ public final class GameplayEffectService {
             }
         }
         return queue.contains(pending);
-    }
-
-    private static PendingStart lowestPriority(List<PendingStart> queue) {
-        PendingStart victim = null;
-        int lowest = Integer.MAX_VALUE;
-        for (PendingStart pending : queue) {
-            int weight = pending.spec.priority().weight();
-            if (weight < lowest) {
-                lowest = weight;
-                victim = pending;
-            }
-        }
-        return victim;
     }
 
     /** Admits queued starts in priority order once capacity frees up. */
@@ -777,7 +764,7 @@ public final class GameplayEffectService {
                 continue;
             }
             if (pending.restored) {
-                long age = Math.max(0L, level.getGameTime() - pending.startGameTime);
+                int age = EffectTimeline.ageTicks(level.getGameTime(), pending.startGameTime);
                 if (age >= pending.spec.phases().totalDurationTicks()) {
                     queue.remove(pending);
                     EffectPersistenceService.recordStop(level, pending.id);

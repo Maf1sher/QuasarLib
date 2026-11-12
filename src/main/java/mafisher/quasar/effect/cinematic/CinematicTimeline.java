@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Objects;
 import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectPriority;
+import mafisher.quasar.effect.EffectTimeline;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.VisualEffectSpec;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectSpec;
@@ -23,7 +24,7 @@ import net.minecraft.world.phys.Vec3;
  * to the timeline start; the service never re-executes a cue and never replays already-finished cues to late joiners.
  */
 public final class CinematicTimeline {
-    public static final int MAX_DURATION_TICKS = 72_000;
+    public static final int MAX_DURATION_TICKS = EffectTimeline.MAX_DURATION_TICKS;
     public static final int MAX_CUES = 512;
     public static final int MAX_SOUND_CUES = 128;
     public static final int MAX_TRACKS = 128;
@@ -227,7 +228,7 @@ public final class CinematicTimeline {
 
         private Builder(ResourceLocation id, int durationTicks, long seed) {
             this.id = Objects.requireNonNull(id, "id");
-            if (durationTicks < 1 || durationTicks > MAX_DURATION_TICKS) {
+            if (!EffectTimeline.isValidDuration(durationTicks)) {
                 throw new IllegalArgumentException(
                     "A cinematic timeline duration must be between 1 and " + MAX_DURATION_TICKS + " ticks"
                 );

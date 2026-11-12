@@ -25,7 +25,7 @@ public record VisualEffectSpec(
         if (!Double.isFinite(position.x) || !Double.isFinite(position.y) || !Double.isFinite(position.z)
             || !Float.isFinite(yaw) || !Float.isFinite(pitch) || !Float.isFinite(roll)
             || !Float.isFinite(scale) || scale <= 0.0F || scale > 128.0F
-            || durationTicks < 1 || durationTicks > 72_000) {
+            || !EffectTimeline.isValidDuration(durationTicks)) {
             throw new IllegalArgumentException("Invalid visual effect parameters");
         }
         audio.requireFitsWithin(durationTicks);

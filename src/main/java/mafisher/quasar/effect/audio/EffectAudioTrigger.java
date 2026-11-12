@@ -1,6 +1,7 @@
 package mafisher.quasar.effect.audio;
 
 import java.util.Objects;
+import mafisher.quasar.effect.EffectSoundValidation;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
@@ -33,11 +34,7 @@ public record EffectAudioTrigger(
         Objects.requireNonNull(soundId, "soundId");
         Objects.requireNonNull(source, "source");
         Objects.requireNonNull(attenuation, "attenuation");
-        if (!Double.isFinite(position.x) || !Double.isFinite(position.y) || !Double.isFinite(position.z)
-            || !Float.isFinite(volume) || volume < 0.0F
-            || !Float.isFinite(pitch) || pitch <= 0.0F) {
-            throw new IllegalArgumentException("Invalid effect audio trigger");
-        }
+        EffectSoundValidation.requirePlayable(position, volume, pitch, "Invalid effect audio trigger");
     }
 
     public EffectAudioTrigger(

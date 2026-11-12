@@ -23,6 +23,18 @@ class EffectTimelineTest {
     }
 
     @Test
+    void clampsWholeAgeAndValidatesTheSharedDurationRange() {
+        assertEquals(0, EffectTimeline.ageTicks(99L, 100L));
+        assertEquals(0, EffectTimeline.ageTicks(100L, 100L));
+        assertEquals(5, EffectTimeline.ageTicks(105L, 100L));
+        assertEquals(Integer.MAX_VALUE, EffectTimeline.ageTicks(Long.MAX_VALUE, 0L));
+        assertFalse(EffectTimeline.isValidDuration(0));
+        assertTrue(EffectTimeline.isValidDuration(1));
+        assertTrue(EffectTimeline.isValidDuration(EffectTimeline.MAX_DURATION_TICKS));
+        assertFalse(EffectTimeline.isValidDuration(EffectTimeline.MAX_DURATION_TICKS + 1));
+    }
+
+    @Test
     void calculatesFadeInAndFadeOutEnvelope() {
         assertEquals(0.5F, EffectTimeline.fadeEnvelope(0.05F, 0.10F, 0.25F), 1.0E-6F);
         assertEquals(1.0F, EffectTimeline.fadeEnvelope(0.5F, 0.10F, 0.25F));

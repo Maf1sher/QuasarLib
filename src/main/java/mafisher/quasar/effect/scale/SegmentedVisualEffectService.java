@@ -21,15 +21,11 @@ import mafisher.quasar.effect.audio.EffectAudioService;
 import mafisher.quasar.effect.network.StartSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.StopSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateSegmentedVisualEffectPayload;
-import mafisher.quasar.effect.persistence.EffectAudioNbt;
 import mafisher.quasar.effect.persistence.EffectDescriptor;
 import mafisher.quasar.effect.persistence.EffectKind;
 import mafisher.quasar.effect.persistence.EffectPersistenceOptions;
 import mafisher.quasar.effect.persistence.EffectPersistenceService;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.StringTag;
-import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
@@ -204,25 +200,13 @@ public final class SegmentedVisualEffectService {
             spec.roll()
         );
         CompoundTag state = options.state();
-        state.putInt("columns", spec.columns());
-        state.putInt("rows", spec.rows());
-        state.putInt("layers", spec.layers());
-        state.putDouble("spacing", spec.spacing());
-        state.putDouble("layer_spacing", spec.layerSpacing());
-        state.putFloat("segment_scale", spec.segmentScale());
-        state.putString("terrain_source", spec.terrain().source().name());
-        state.putDouble("terrain_offset", spec.terrain().verticalOffset());
-        saveHeights(state, heights);
-        ListTag ids = new ListTag();
+        List<UUID> segmentIds = new ArrayList<>(spec.segmentCount());
         for (int index = 0; index < spec.segmentCount(); index++) {
-            UUID id = restoredSegmentIds == null
+            segmentIds.add(restoredSegmentIds == null
                 ? segmentId(coordinatorId, index)
-                : restoredSegmentIds.get(index);
-            ids.add(StringTag.valueOf(id.toString()));
+                : restoredSegmentIds.get(index));
         }
-        state.put("segment_ids", ids);
-        state.putString("priority", spec.priority().name());
-        EffectAudioNbt.saveInto(state, spec.audio());
+        SegmentedEffectNbt.saveInto(state, spec, heights, segmentIds);
         EffectDescriptor descriptor = restoredDescriptor == null ? new EffectDescriptor(
             coordinatorId,
             EffectKind.SEGMENTED,
@@ -445,7 +429,9 @@ public final class SegmentedVisualEffectService {
     ) {
         int remaining = excess;
         while (remaining > 0) {
-            UUID victim = lowestPriority(active, newcomerId);
+            UUID victim = EffectBudgetService.lowestPriority(
+                active, effect -> effect.spec.priority().weight(), newcomerId
+            );
             if (victim == null) {
                 LOGGER.warn(
                     "Admitted segmented effect over the soft segment budget of {}: {} slot(s) over",
@@ -467,22 +453,6 @@ public final class SegmentedVisualEffectService {
             );
             remaining -= released;
         }
-    }
-
-    private static UUID lowestPriority(Map<UUID, ActiveSegmentedEffect> active, UUID excludedId) {
-        UUID victim = null;
-        int lowest = Integer.MAX_VALUE;
-        for (Map.Entry<UUID, ActiveSegmentedEffect> entry : active.entrySet()) {
-            if (entry.getKey().equals(excludedId)) {
-                continue;
-            }
-            int weight = entry.getValue().spec.priority().weight();
-            if (weight < lowest) {
-                lowest = weight;
-                victim = entry.getKey();
-            }
-        }
-        return victim;
     }
 
     /**
@@ -611,7 +581,7 @@ public final class SegmentedVisualEffectService {
         EffectDescriptor restoredDescriptor
     ) {
         if (restoredDescriptor != null) {
-            SegmentHeightProfile stored = readHeights(restoredDescriptor.state());
+            SegmentHeightProfile stored = SegmentedEffectNbt.readHeights(restoredDescriptor.state());
             if (!stored.isEmpty()) {
                 return stored;
             }
@@ -637,36 +607,6 @@ public final class SegmentedVisualEffectService {
             }
         }
         return SegmentHeightProfile.of(layout.columns(), layout.rows(), values);
-    }
-
-    private static void saveHeights(CompoundTag state, SegmentHeightProfile heights) {
-        if (heights.isEmpty()) {
-            state.remove("column_heights");
-            return;
-        }
-        double[] values = heights.values();
-        long[] bits = new long[values.length];
-        for (int index = 0; index < values.length; index++) {
-            bits[index] = Double.doubleToRawLongBits(values[index]);
-        }
-        state.putLongArray("column_heights", bits);
-    }
-
-    private static SegmentHeightProfile readHeights(CompoundTag state) {
-        int columns = state.getInt("columns");
-        int rows = state.getInt("rows");
-        if (columns < 1 || rows < 1 || !state.contains("column_heights", Tag.TAG_LONG_ARRAY)) {
-            return SegmentHeightProfile.NONE;
-        }
-        long[] bits = state.getLongArray("column_heights");
-        if (bits.length != columns * rows) {
-            return SegmentHeightProfile.NONE;
-        }
-        double[] values = new double[bits.length];
-        for (int index = 0; index < bits.length; index++) {
-            values[index] = Double.longBitsToDouble(bits[index]);
-        }
-        return SegmentHeightProfile.of(columns, rows, values);
     }
 
     private static ActiveSegmentedEffect find(ServerLevel level, SegmentedVisualEffectHandle handle) {

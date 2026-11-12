@@ -14,7 +14,6 @@ import mafisher.quasar.effect.EffectScope;
 import mafisher.quasar.effect.VisualEffectHandle;
 import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.VisualEffectSpec;
-import mafisher.quasar.effect.audio.EffectAudioSpec;
 import mafisher.quasar.effect.cinematic.CinematicEffectService;
 import mafisher.quasar.effect.cinematic.CinematicTimeline;
 import mafisher.quasar.effect.cinematic.CinematicTimelineRegistry;
@@ -24,12 +23,9 @@ import mafisher.quasar.effect.gameplay.GameplayEffectNbt;
 import mafisher.quasar.effect.gameplay.GameplayEffectService;
 import mafisher.quasar.effect.gameplay.GameplayEffectSpec;
 import mafisher.quasar.effect.gameplay.GameplayEffectTypeRegistry;
-import mafisher.quasar.effect.scale.SegmentHeightSource;
-import mafisher.quasar.effect.scale.SegmentTerrainConform;
+import mafisher.quasar.effect.scale.SegmentedEffectNbt;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectService;
-import mafisher.quasar.effect.scale.SegmentedVisualEffectSpec;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
@@ -170,15 +166,6 @@ public final class EffectRestoreService {
         CinematicTimeline timeline = CinematicTimelineRegistry.find(descriptor.typeId()).orElseThrow(
             () -> new IllegalArgumentException("Unknown cinematic timeline " + descriptor.typeId())
         );
-        CompoundTag state = descriptor.stateView();
-        if (state.getBoolean("anchored")) {
-            Vec3 anchor = new Vec3(
-                state.getDouble("anchor_x"),
-                state.getDouble("anchor_y"),
-                state.getDouble("anchor_z")
-            );
-            timeline = timeline.anchored(anchor);
-        }
         return CinematicEffectService.restore(
             level,
             timeline,
@@ -204,38 +191,13 @@ public final class EffectRestoreService {
     }
 
     private static boolean restoreSegmented(ServerLevel level, EffectDescriptor descriptor) {
-        CompoundTag state = descriptor.stateView();
-        EffectAudioSpec audio = EffectAudioNbt.loadFrom(state);
-        SegmentTerrainConform terrain = new SegmentTerrainConform(
-            SegmentHeightSource.byName(state.getString("terrain_source"), SegmentHeightSource.NONE),
-            state.getDouble("terrain_offset")
-        );
-        SegmentedVisualEffectSpec spec = new SegmentedVisualEffectSpec(
-            descriptor.typeId(),
-            transformPosition(descriptor),
-            descriptor.transform().yaw(),
-            descriptor.transform().pitch(),
-            descriptor.transform().roll(),
-            descriptor.scale(),
-            state.getInt("columns"),
-            state.getInt("rows"),
-            state.getDouble("spacing"),
-            descriptor.durationTicks(),
-            descriptor.seed(),
-            descriptor.audience(),
-            audio,
-            priority(state, descriptor),
-            Math.max(1, state.getInt("layers")),
-            state.getDouble("layer_spacing"),
-            terrain
-        );
-        List<UUID> segmentIds = segmentIds(state, descriptor);
+        SegmentedEffectNbt.Loaded loaded = SegmentedEffectNbt.load(descriptor);
         return SegmentedVisualEffectService.restore(
             level,
-            spec,
+            loaded.spec(),
             descriptor.instanceId(),
             descriptor.startGameTime(),
-            segmentIds,
+            loaded.segmentIds(),
             descriptor
         ) != null;
     }
@@ -285,32 +247,5 @@ public final class EffectRestoreService {
     private static EffectPriority priority(CompoundTag state, EffectDescriptor descriptor) {
         String context = descriptor.kind().name() + " effect " + descriptor.instanceId();
         return EffectPriority.byName(state.getString("priority"), EffectPriority.NORMAL, context);
-    }
-
-    private static List<UUID> segmentIds(CompoundTag state, EffectDescriptor descriptor) {
-        int count = Math.max(0, state.getInt("columns") * state.getInt("rows")
-            * Math.max(1, state.getInt("layers")));
-        if (!state.contains("segment_ids")) {
-            return SegmentedVisualEffectService.restoreSegmentIds(descriptor.instanceId(), count);
-        }
-        var stored = state.getList("segment_ids", Tag.TAG_STRING);
-        if (stored.size() != count) {
-            throw new IllegalArgumentException(
-                "Effect " + descriptor.instanceId() + " expected " + count
-                    + " segment IDs but found " + stored.size()
-            );
-        }
-        List<UUID> ids = new ArrayList<>(stored.size());
-        for (int index = 0; index < stored.size(); index++) {
-            try {
-                ids.add(UUID.fromString(stored.getString(index)));
-            } catch (IllegalArgumentException exception) {
-                throw new IllegalArgumentException(
-                    "Invalid segment ID at index " + index + " for effect " + descriptor.instanceId(),
-                    exception
-                );
-            }
-        }
-        return List.copyOf(ids);
     }
 }

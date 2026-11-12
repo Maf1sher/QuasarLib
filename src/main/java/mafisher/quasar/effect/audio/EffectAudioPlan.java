@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import mafisher.quasar.effect.EffectTimeline;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 
@@ -22,7 +23,7 @@ import net.minecraft.world.phys.Vec3;
 public final class EffectAudioPlan {
     public static final int MAX_CUES = EffectAudioSpec.MAX_CUES;
     public static final int MAX_TRIGGERS = EffectAudioSpec.MAX_TRIGGERS;
-    public static final int MAX_DURATION_TICKS = 72_000;
+    public static final int MAX_DURATION_TICKS = EffectTimeline.MAX_DURATION_TICKS;
     /** Late-join and lag tolerance for cues that are already slightly in the past. */
     public static final int GRACE_TICKS = 2;
 
@@ -61,7 +62,7 @@ public final class EffectAudioPlan {
         if (!Double.isFinite(center.x) || !Double.isFinite(center.y) || !Double.isFinite(center.z)) {
             throw new IllegalArgumentException("Effect audio center must be finite");
         }
-        if (durationTicks < 1 || durationTicks > MAX_DURATION_TICKS) {
+        if (!EffectTimeline.isValidDuration(durationTicks)) {
             throw new IllegalArgumentException("Invalid effect audio plan duration");
         }
         this.startGameTime = startGameTime;

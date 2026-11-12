@@ -2,6 +2,7 @@ package mafisher.quasar.effect.network;
 
 import io.netty.buffer.ByteBuf;
 import mafisher.quasar.effect.EffectPoint;
+import mafisher.quasar.effect.EffectTimeline;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.scale.SegmentGridLayout;
 import mafisher.quasar.effect.scale.SegmentLink;
@@ -52,7 +53,7 @@ public record StartVisualEffectPayload(
         if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)
             || !Float.isFinite(yaw) || !Float.isFinite(pitch) || !Float.isFinite(roll)
             || !Float.isFinite(scale) || scale <= 0.0F
-            || durationTicks < 1 || durationTicks > 72_000) {
+            || !EffectTimeline.isValidDuration(durationTicks)) {
             throw new IllegalArgumentException("Invalid visual effect payload");
         }
     }

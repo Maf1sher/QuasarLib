@@ -2,6 +2,7 @@ package mafisher.quasar.effect.network;
 
 import io.netty.buffer.ByteBuf;
 import mafisher.quasar.effect.EffectPoint;
+import mafisher.quasar.effect.EffectTimeline;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.scale.SegmentGridLayout;
 import mafisher.quasar.effect.scale.SegmentHeightProfile;
@@ -55,7 +56,7 @@ public record StartSegmentedVisualEffectPayload(
         if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)
             || !Float.isFinite(yaw) || !Float.isFinite(pitch) || !Float.isFinite(roll)
             || !Float.isFinite(segmentScale) || segmentScale <= 0.0F || segmentScale > 128.0F
-            || durationTicks < 1 || durationTicks > 72_000) {
+            || !EffectTimeline.isValidDuration(durationTicks)) {
             throw new IllegalArgumentException("Invalid segmented visual effect payload");
         }
         new SegmentGridLayout(columns, rows, layers, spacing, layerSpacing);

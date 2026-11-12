@@ -1,6 +1,7 @@
 package mafisher.quasar.effect.audio;
 
 import java.util.Objects;
+import mafisher.quasar.effect.EffectSoundValidation;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.phys.Vec3;
@@ -27,11 +28,7 @@ public record EffectAudioCue(
         Objects.requireNonNull(attenuation, "attenuation");
         Objects.requireNonNull(envelope, "envelope");
         Objects.requireNonNull(motion, "motion");
-        if (!Double.isFinite(position.x) || !Double.isFinite(position.y) || !Double.isFinite(position.z)
-            || !Float.isFinite(volume) || volume < 0.0F
-            || !Float.isFinite(pitch) || pitch <= 0.0F) {
-            throw new IllegalArgumentException("Invalid effect audio cue");
-        }
+        EffectSoundValidation.requirePlayable(position, volume, pitch, "Invalid effect audio cue");
         if (envelope.looping() && envelope.stopTick() != EffectAudioEnvelope.END_OF_EFFECT
             && envelope.stopTick() <= tick) {
             throw new IllegalArgumentException("Looping audio cues must stop after their start tick");

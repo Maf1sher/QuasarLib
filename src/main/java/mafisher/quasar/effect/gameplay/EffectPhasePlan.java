@@ -2,11 +2,12 @@ package mafisher.quasar.effect.gameplay;
 
 import java.util.List;
 import java.util.Objects;
+import mafisher.quasar.effect.EffectTimeline;
 import mafisher.quasar.effect.audio.EffectPhaseTiming;
 
 /** Immutable ordered phase plan; phase membership is derived from effect age. */
 public final class EffectPhasePlan implements EffectPhaseTiming {
-    public static final int MAX_DURATION_TICKS = 72_000;
+    public static final int MAX_DURATION_TICKS = EffectTimeline.MAX_DURATION_TICKS;
 
     private final List<EffectPhase> phases;
     private final int[] phaseStarts;
@@ -25,7 +26,9 @@ public final class EffectPhasePlan implements EffectPhaseTiming {
             this.phaseStarts[index] = (int)total;
             total += phase.durationTicks();
             if (total > MAX_DURATION_TICKS) {
-                throw new IllegalArgumentException("Effect phase plan exceeds 72000 ticks");
+                throw new IllegalArgumentException(
+                    "Effect phase plan exceeds " + MAX_DURATION_TICKS + " ticks"
+                );
             }
         }
         this.totalDurationTicks = (int)total;
