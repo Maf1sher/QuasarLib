@@ -1,8 +1,8 @@
 package mafisher.quasar.effect;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -12,6 +12,7 @@ import mafisher.quasar.api.effect.EffectRemovalPolicy;
 import mafisher.quasar.api.effect.VisualEffectService;
 import mafisher.quasar.api.effect.VisualEffectSpec;
 import mafisher.quasar.api.gameplay.GameplayEffectEndReason;
+import mafisher.quasar.effect.runtime.EffectRuntimeRegistry;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
@@ -23,7 +24,7 @@ class EffectLevelLifecycleTest {
         ResourceLocation.fromNamespaceAndPath("quasar_lib", "lifecycle_test");
 
     @Test
-    void clearDropsVisualsAndEveryLevelSlot() {
+    void clearDropsVisualsAndBudgetCounters() {
         ServerLevel level = mock(ServerLevel.class);
         when(level.isClientSide()).thenReturn(false);
         when(level.dimension()).thenReturn(Level.OVERWORLD);
@@ -31,13 +32,16 @@ class EffectLevelLifecycleTest {
         when(level.getGameTime()).thenReturn(0L);
 
         VisualEffectService.start(level, spec());
-        assertTrue(LevelStateSlot.isTracked(level));
+        EffectBudgetService.recordCull(level);
+        assertNotNull(EffectRuntimeRegistry.peek(level));
+        assertEquals(1L, EffectBudgetService.report(level).culledEffects());
 
         EffectLevelLifecycle.clear(level, EffectRemovalPolicy.KEEP_FOR_RESTORE,
             GameplayEffectEndReason.LEVEL_UNLOAD);
 
         assertEquals(0, VisualEffectService.activeCount(level));
-        assertFalse(LevelStateSlot.isTracked(level));
+        assertNull(EffectRuntimeRegistry.peek(level));
+        assertEquals(0L, EffectBudgetService.report(level).culledEffects());
     }
 
     private static VisualEffectSpec spec() {

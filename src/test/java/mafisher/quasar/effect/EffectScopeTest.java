@@ -57,7 +57,6 @@ class EffectScopeTest {
     void tearDown() {
         VisualEffectService.clear(this.level);
         EffectAudioService.clear(this.level);
-        EffectBudgetService.clear(this.level);
         TestEffectRuntime.uninstall(this.level);
     }
 

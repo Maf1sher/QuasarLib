@@ -8,8 +8,9 @@ import net.minecraft.server.level.ServerLevel;
 import org.jetbrains.annotations.ApiStatus;
 
 /**
- * Per-level effect runtime. It owns the migrated service instances and their mutable state; the
- * public static service classes are facades that resolve this runtime from the registry.
+ * Per-level effect runtime. It owns the migrated service instances and their mutable state,
+ * including budget counters and the entity-spawn budget; the public static service classes are
+ * facades that resolve this runtime from the registry.
  */
 @ApiStatus.Internal
 public final class LevelEffectRuntime {
@@ -17,6 +18,7 @@ public final class LevelEffectRuntime {
     private final EffectStore store;
     private final EffectPacketSink packets;
     private final EffectBudgetSource budgets;
+    private final EffectBudgetRuntime budget;
     private final TransformUpdates transforms;
     private final EffectAudioRuntime audio;
     private final VisualEffectRuntime visuals;
@@ -48,6 +50,7 @@ public final class LevelEffectRuntime {
         this.store = Objects.requireNonNull(store, "store");
         this.packets = Objects.requireNonNull(packets, "packets");
         this.budgets = Objects.requireNonNull(budgets, "budgets");
+        this.budget = new EffectBudgetRuntime(this.level, this.budgets);
         this.transforms = new TransformUpdates(this.level, this.packets);
         this.audio = new EffectAudioRuntime(this.level, this.packets);
         this.visuals = new VisualEffectRuntime(
@@ -95,6 +98,10 @@ public final class LevelEffectRuntime {
 
     public EffectBudgetSource budgets() {
         return this.budgets;
+    }
+
+    public EffectBudgetRuntime budget() {
+        return this.budget;
     }
 
     public TransformUpdates transforms() {
@@ -153,6 +160,7 @@ public final class LevelEffectRuntime {
         this.audio.clear();
         this.rollbacks.clear();
         this.terrain.clear();
+        this.budget.clear();
     }
 
     /** Stops and clears transient runtime state. */
@@ -173,6 +181,7 @@ public final class LevelEffectRuntime {
         this.audio.clear();
         this.terrain.clear();
         this.rollbacks.clear();
+        this.budget.clear();
         this.transforms.clear();
     }
 }

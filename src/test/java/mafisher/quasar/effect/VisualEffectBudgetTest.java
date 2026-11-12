@@ -3,6 +3,7 @@ package mafisher.quasar.effect;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -23,6 +24,7 @@ import mafisher.quasar.api.effect.VisualEffectStartResult;
 import mafisher.quasar.api.persistence.EffectCapabilities;
 import mafisher.quasar.api.persistence.EffectPersistence;
 import mafisher.quasar.api.persistence.EffectPersistenceOptions;
+import mafisher.quasar.effect.runtime.EffectRuntimeRegistry;
 import mafisher.quasar.effect.runtime.RecordingPacketSink;
 import mafisher.quasar.effect.runtime.TestBudgetSource;
 import mafisher.quasar.effect.runtime.TestEffectRuntime;
@@ -58,7 +60,6 @@ class VisualEffectBudgetTest {
     @AfterEach
     void tearDown() {
         VisualEffectService.clear(this.level);
-        EffectBudgetService.clear(this.level);
         TestEffectRuntime.uninstall(this.level);
     }
 
@@ -163,14 +164,14 @@ class VisualEffectBudgetTest {
     }
 
     @Test
-    void reportDoesNotCreateLevelState() {
+    void reportDoesNotCreateRuntime() {
         ServerLevel untouched = mock(ServerLevel.class);
 
         EffectBudgetReport report = EffectBudgetService.report(untouched);
 
         assertEquals(0, report.standaloneVisuals());
         assertEquals(0L, report.culledEffects());
-        assertFalse(LevelStateSlot.isTracked(untouched));
+        assertNull(EffectRuntimeRegistry.peek(untouched));
     }
 
     @Test

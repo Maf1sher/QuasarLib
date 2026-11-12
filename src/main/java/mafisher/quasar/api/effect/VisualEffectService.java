@@ -8,7 +8,6 @@ import java.util.UUID;
 import mafisher.quasar.api.persistence.EffectDescriptor;
 import mafisher.quasar.api.persistence.EffectPersistenceOptions;
 import mafisher.quasar.api.scale.SegmentLink;
-import mafisher.quasar.effect.EffectBudgetService;
 import mafisher.quasar.effect.runtime.EffectRuntimeRegistry;
 import mafisher.quasar.effect.runtime.LevelEffectRuntime;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -246,7 +245,7 @@ public final class VisualEffectService {
             runtime.visuals().clear();
             runtime.transforms().clear();
             runtime.audio().clear();
+            runtime.budget().clear();
         }
-        EffectBudgetService.clear(level);
     }
 }

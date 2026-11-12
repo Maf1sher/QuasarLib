@@ -67,7 +67,6 @@ class SegmentedVisualEffectServiceTest {
         SegmentedVisualEffectService.stopAll(this.level);
         VisualEffectService.clear(this.level);
         EffectAudioService.clear(this.level);
-        EffectBudgetService.clear(this.level);
         TestEffectRuntime.uninstall(this.level);
     }
 

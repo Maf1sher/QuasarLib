@@ -17,6 +17,7 @@ import mafisher.quasar.api.gameplay.GameplayEffectSpec;
 import mafisher.quasar.api.persistence.EffectCapabilities;
 import mafisher.quasar.effect.EffectBudgetService;
 import mafisher.quasar.effect.persistence.BlockJournal;
+import mafisher.quasar.effect.runtime.TestEffectRuntime;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
@@ -37,6 +38,7 @@ class GameplayEffectSpawnTest {
         when(this.level.dimension()).thenReturn(Level.OVERWORLD);
         when(this.level.getGameTime()).thenReturn(0L);
         when(this.level.addFreshEntity(any(Entity.class))).thenReturn(true);
+        TestEffectRuntime.install(this.level);
         this.context = new GameplayEffectContext(
             this.level,
             new EffectScope(this.level),
@@ -50,7 +52,7 @@ class GameplayEffectSpawnTest {
     @AfterEach
     void tearDown() {
         this.context.close();
-        EffectBudgetService.clear(this.level);
+        TestEffectRuntime.uninstall(this.level);
     }
 
     @Test

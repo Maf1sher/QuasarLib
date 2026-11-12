@@ -55,7 +55,6 @@ class EffectAudioServiceTest {
     @AfterEach
     void tearDown() {
         EffectAudioService.clear(this.level);
-        EffectBudgetService.clear(this.level);
         TestEffectRuntime.uninstall(this.level);
     }
 

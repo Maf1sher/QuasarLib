@@ -29,7 +29,6 @@ import mafisher.quasar.api.effect.VisualEffectSpec;
 import mafisher.quasar.api.scale.SegmentTerrainConform;
 import mafisher.quasar.api.scale.SegmentedVisualEffectService;
 import mafisher.quasar.api.scale.SegmentedVisualEffectSpec;
-import mafisher.quasar.effect.EffectBudgetService;
 import mafisher.quasar.effect.runtime.RecordingPacketSink;
 import mafisher.quasar.effect.runtime.TestBudgetSource;
 import mafisher.quasar.effect.runtime.TestEffectRuntime;
@@ -70,7 +69,6 @@ class CinematicEffectServiceTest {
         VisualEffectService.tick(this.level);
         SegmentedVisualEffectService.tick(this.level);
         EffectAudioService.clear(this.level);
-        EffectBudgetService.clear(this.level);
         TestEffectRuntime.uninstall(this.level);
     }
 

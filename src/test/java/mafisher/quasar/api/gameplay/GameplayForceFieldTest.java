@@ -18,7 +18,6 @@ import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.EffectScope;
 import mafisher.quasar.api.gameplay.GameplayEffectContext;
 import mafisher.quasar.api.persistence.EffectCapabilities;
-import mafisher.quasar.effect.EffectBudgetService;
 import mafisher.quasar.effect.persistence.BlockJournal;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -46,7 +45,6 @@ class GameplayForceFieldTest {
     @AfterEach
     void tearDown() {
         this.context.close();
-        EffectBudgetService.clear(this.level);
     }
 
     @Test

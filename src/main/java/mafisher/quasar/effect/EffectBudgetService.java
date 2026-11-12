@@ -12,6 +12,7 @@ import mafisher.quasar.api.effect.EffectBudgets;
 import mafisher.quasar.api.effect.VisualEffectService;
 import mafisher.quasar.api.gameplay.GameplayEffectService;
 import mafisher.quasar.api.scale.SegmentedVisualEffectService;
+import mafisher.quasar.effect.runtime.EffectBudgetRuntime;
 import mafisher.quasar.effect.runtime.EffectBudgetSource;
 import mafisher.quasar.effect.runtime.EffectRuntimeRegistry;
 import mafisher.quasar.effect.runtime.LevelEffectRuntime;
@@ -19,23 +20,23 @@ import net.minecraft.server.level.ServerLevel;
 import org.jetbrains.annotations.ApiStatus;
 
 /**
- * Per-level soft capacity accounting. Every service reports culls, deferrals, dropped spawns,
- * and audio evictions here so operators can inspect degradation from one place.
+ * Stateless facade for the per-level soft capacity accounting owned by
+ * {@link EffectBudgetRuntime}. Every service reports culls, deferrals, dropped spawns, and audio
+ * evictions here so operators can inspect degradation from one place.
  */
 @SuppressWarnings("PMD.TooManyMethods")
 @ApiStatus.Internal
 public final class EffectBudgetService {
-    private static final LevelStateSlot<BudgetState> STATE = LevelStateSlot.create(BudgetState::new);
-
     private EffectBudgetService() {
     }
 
     /** Current capacity state and cumulative degradation counters for one level. */
     public static EffectBudgetReport report(ServerLevel level) {
         Objects.requireNonNull(level, "level");
-        BudgetState state = STATE.peek(level);
-        Counters counters = state == null ? null : state.counters;
-        EffectBudgetSource budgets = budgetSource(level);
+        LevelEffectRuntime runtime = EffectRuntimeRegistry.peek(level);
+        EffectBudgetSource budgets = runtime == null ? null : runtime.budgets();
+        EffectBudgetRuntime.BudgetCounters counters =
+            runtime == null ? null : runtime.budget().counters();
         return new EffectBudgetReport(
             VisualEffectService.activeCount(level),
             budgets == null ? EffectBudgets.standaloneVisuals() : budgets.standaloneVisuals(),
@@ -49,42 +50,62 @@ public final class EffectBudgetService {
             budgets == null ? EffectBudgets.cinematicSessions() : budgets.cinematicSessions(),
             EffectAudioService.activeCount(level),
             EffectAudioService.MAX_ACTIVE_PLANS_PER_LEVEL,
-            counters == null ? 0L : counters.culledEffects,
-            counters == null ? 0L : counters.deferredStarts,
-            counters == null ? 0L : counters.droppedEntitySpawns,
-            counters == null ? 0L : counters.audioEvictions,
-            counters == null ? 0L : counters.audioDrops
+            counters == null ? 0L : counters.culledEffects(),
+            counters == null ? 0L : counters.deferredStarts(),
+            counters == null ? 0L : counters.droppedEntitySpawns(),
+            counters == null ? 0L : counters.audioEvictions(),
+            counters == null ? 0L : counters.audioDrops()
         );
     }
 
-    private static EffectBudgetSource budgetSource(ServerLevel level) {
+    private static EffectBudgetRuntime budget(ServerLevel level) {
         LevelEffectRuntime runtime = EffectRuntimeRegistry.peek(level);
-        return runtime == null ? null : runtime.budgets();
+        return runtime == null ? null : runtime.budget();
     }
 
     /** Records that one active effect was culled because its level was over budget. */
     public static void recordCull(ServerLevel level) {
-        counters(level).culledEffects++;
+        Objects.requireNonNull(level, "level");
+        EffectBudgetRuntime budget = budget(level);
+        if (budget != null) {
+            budget.recordCull();
+        }
     }
 
     /** Records that a gameplay start was queued until capacity becomes available. */
     public static void recordDeferral(ServerLevel level) {
-        counters(level).deferredStarts++;
+        Objects.requireNonNull(level, "level");
+        EffectBudgetRuntime budget = budget(level);
+        if (budget != null) {
+            budget.recordDeferral();
+        }
     }
 
     /** Records that one entity spawn was dropped by a soft spawn budget. */
     public static void recordDroppedEntitySpawn(ServerLevel level) {
-        counters(level).droppedEntitySpawns++;
+        Objects.requireNonNull(level, "level");
+        EffectBudgetRuntime budget = budget(level);
+        if (budget != null) {
+            budget.recordDroppedEntitySpawn();
+        }
     }
 
     /** Records that one active audio plan was evicted by the priority-aware plan cap. */
     public static void recordAudioEviction(ServerLevel level) {
-        counters(level).audioEvictions++;
+        Objects.requireNonNull(level, "level");
+        EffectBudgetRuntime budget = budget(level);
+        if (budget != null) {
+            budget.recordAudioEviction();
+        }
     }
 
     /** Records that a new audio plan was dropped because its priority was below every active plan. */
     public static void recordAudioDrop(ServerLevel level) {
-        counters(level).audioDrops++;
+        Objects.requireNonNull(level, "level");
+        EffectBudgetRuntime budget = budget(level);
+        if (budget != null) {
+            budget.recordAudioDrop();
+        }
     }
 
     /**
@@ -132,58 +153,28 @@ public final class EffectBudgetService {
     /** Whether one more entity spawn fits in the level's current tick without consuming a slot. */
     public static boolean entitySpawnBudgetAvailable(ServerLevel level) {
         Objects.requireNonNull(level, "level");
-        BudgetState state = STATE.peek(level);
-        if (state == null) {
-            return true;
-        }
-        Counters counters = state.counters;
-        return counters.spawnTick != level.getGameTime()
-            || counters.spawnsThisTick < EffectBudgets.entitySpawnsPerLevelTick();
+        EffectBudgetRuntime budget = budget(level);
+        return budget == null || budget.entitySpawnBudgetAvailable();
     }
 
     /**
      * Reserves one level-wide entity spawn slot for the current game tick.
      *
      * @return {@code false} when the level tick budget is exhausted; the caller must drop the
-     *     spawn without throwing
+     *     spawn without throwing. Without an installed runtime no level budget exists.
      */
     public static boolean tryAcquireEntitySpawn(ServerLevel level) {
         Objects.requireNonNull(level, "level");
-        Counters counters = counters(level);
-        long gameTime = level.getGameTime();
-        if (counters.spawnTick != gameTime) {
-            counters.spawnTick = gameTime;
-            counters.spawnsThisTick = 0;
-        }
-        if (counters.spawnsThisTick >= EffectBudgets.entitySpawnsPerLevelTick()) {
-            counters.droppedEntitySpawns++;
-            return false;
-        }
-        counters.spawnsThisTick++;
-        return true;
+        EffectBudgetRuntime budget = budget(level);
+        return budget == null || budget.tryAcquireEntitySpawn();
     }
 
     /** Drops transient counters for a level; active services are unaffected. */
     public static void clear(ServerLevel level) {
         Objects.requireNonNull(level, "level");
-        STATE.remove(level);
-    }
-
-    private static Counters counters(ServerLevel level) {
-        return STATE.get(level).counters;
-    }
-
-    private static final class BudgetState {
-        private final Counters counters = new Counters();
-    }
-
-    private static final class Counters {
-        private long culledEffects;
-        private long deferredStarts;
-        private long droppedEntitySpawns;
-        private long audioEvictions;
-        private long audioDrops;
-        private long spawnTick = Long.MIN_VALUE;
-        private int spawnsThisTick;
+        EffectBudgetRuntime budget = budget(level);
+        if (budget != null) {
+            budget.clear();
+        }
     }
 }

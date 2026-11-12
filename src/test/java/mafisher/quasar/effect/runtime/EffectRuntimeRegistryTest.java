@@ -6,8 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.Level;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -17,8 +20,25 @@ class EffectRuntimeRegistryTest {
 
     @AfterEach
     void tearDown() {
+        when(this.level.getServer()).thenReturn(null);
+        when(this.other.getServer()).thenReturn(null);
         EffectRuntimeRegistry.close(this.level);
         EffectRuntimeRegistry.close(this.other);
+    }
+
+    @Test
+    void peekDoesNotCreateRuntime() {
+        assertNull(EffectRuntimeRegistry.peek(this.level));
+    }
+
+    @Test
+    void rejectsAccessFromAnotherThread() {
+        MinecraftServer server = mock(MinecraftServer.class);
+        when(server.getRunningThread()).thenReturn(new Thread("effect-test"));
+        when(this.level.getServer()).thenReturn(server);
+        when(this.level.dimension()).thenReturn(Level.OVERWORLD);
+
+        assertThrows(IllegalStateException.class, () -> EffectRuntimeRegistry.get(this.level));
     }
 
     @Test

@@ -31,20 +31,14 @@ public final class EffectLevelLifecycle {
             if (runtime != null) {
                 runtime.shutdown(policy, reason);
             }
-            EffectBudgetService.clear(level);
         } finally {
             EffectRuntimeRegistry.close(level);
-            LevelStateSlot.clearLevel(level);
         }
     }
 
     /** Drops stale level state before restore. */
     public static void reset(ServerLevel level) {
         Objects.requireNonNull(level, "level");
-        try {
-            EffectRuntimeRegistry.reset(level);
-        } finally {
-            LevelStateSlot.clearLevel(level);
-        }
+        EffectRuntimeRegistry.reset(level);
     }
 }

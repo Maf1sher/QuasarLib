@@ -25,6 +25,7 @@ import mafisher.quasar.effect.gameplay.TerrainEditService;
 import mafisher.quasar.api.scale.SegmentTerrainConform;
 import mafisher.quasar.api.scale.SegmentedVisualEffectService;
 import mafisher.quasar.api.scale.SegmentedVisualEffectSpec;
+import mafisher.quasar.effect.EffectBudgetService;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
@@ -133,6 +134,22 @@ class EffectRuntimeCompositionTest {
         assertEquals(0, this.runtime.gameplay().activeCount());
         assertEquals(1, this.otherRuntime.gameplay().activeCount());
         assertEquals(1, this.otherRuntime.terrain().pendingWorkCount());
+    }
+
+    @Test
+    void budgetCountersStayPerLevel() {
+        EffectBudgetService.recordCull(this.level);
+        EffectBudgetService.recordDeferral(this.level);
+
+        assertEquals(1L, EffectBudgetService.report(this.level).culledEffects());
+        assertEquals(1L, EffectBudgetService.report(this.level).deferredStarts());
+        assertEquals(0L, EffectBudgetService.report(this.other).culledEffects());
+        assertEquals(0L, EffectBudgetService.report(this.other).deferredStarts());
+
+        this.runtime.close();
+
+        assertEquals(0L, EffectBudgetService.report(this.level).culledEffects());
+        assertEquals(0L, EffectBudgetService.report(this.level).deferredStarts());
     }
 
     private static int otherRuntimeCount(ServerLevel other) {

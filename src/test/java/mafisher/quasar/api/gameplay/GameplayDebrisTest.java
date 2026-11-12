@@ -13,7 +13,6 @@ import mafisher.quasar.api.effect.EffectDebrisSpec;
 import mafisher.quasar.api.effect.EffectScope;
 import mafisher.quasar.api.gameplay.GameplayEffectContext;
 import mafisher.quasar.api.persistence.EffectCapabilities;
-import mafisher.quasar.effect.EffectBudgetService;
 import mafisher.quasar.effect.persistence.BlockJournal;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.resources.ResourceLocation;
@@ -48,7 +47,6 @@ class GameplayDebrisTest {
     @AfterEach
     void tearDown() {
         this.context.close();
-        EffectBudgetService.clear(this.level);
     }
 
     @Test
