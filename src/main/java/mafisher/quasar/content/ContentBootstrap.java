@@ -1,6 +1,8 @@
 package mafisher.quasar.content;
 
 import java.util.Objects;
+import mafisher.quasar.content.command.ContentCommandSessions;
+import mafisher.quasar.content.command.ContentCommands;
 import net.minecraft.server.level.ServerLevel;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;

@@ -1,6 +1,7 @@
 package mafisher.quasar.content;
 
 import mafisher.quasar.api.gameplay.RegisterGameplayEffectTypesEvent;
+import mafisher.quasar.content.blackhole.ContentBlackHoleGameplayController;
 
 /** Registers content-owned gameplay controllers for persistence resume. */
 public final class ContentGameplayEffects {

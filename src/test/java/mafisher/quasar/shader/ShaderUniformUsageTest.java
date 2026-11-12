@@ -27,7 +27,7 @@ class ShaderUniformUsageTest {
             .findFirst()
             .orElseThrow();
         String source = Files.readString(sourceRoot().resolve(
-            "mafisher/quasar/content/ContentBlackHoleOperation.java"));
+            "mafisher/quasar/content/blackhole/ContentBlackHoleOperation.java"));
 
         List<String> failures = new ArrayList<>();
         compare("uniform", names(source, SET_UNIFORM), Set.copyOf(program.uniforms()), failures);

@@ -2,6 +2,16 @@ package mafisher.quasar.content;
 
 import mafisher.quasar.api.client.RegisterScreenEffectOperationsEvent;
 import mafisher.quasar.api.client.RegisterVisualEffectRenderersEvent;
+import mafisher.quasar.content.blackhole.ContentBlackHoleImpulses;
+import mafisher.quasar.content.blackhole.ContentBlackHoleMeshRenderer;
+import mafisher.quasar.content.blackhole.ContentBlackHoleOperation;
+import mafisher.quasar.content.blackhole.ContentBlackHoleRenderer;
+import mafisher.quasar.content.demo.ContentBloomRenderer;
+import mafisher.quasar.content.demo.ContentProbeRenderer;
+import mafisher.quasar.content.demo.ContentSceneBlurRenderer;
+import mafisher.quasar.content.demo.ContentWaveDistortionRenderer;
+import mafisher.quasar.content.rune.ContentRuneCircleRenderer;
+import mafisher.quasar.content.rune.ContentRuneGlowOperation;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
