@@ -93,35 +93,20 @@ class VisualEffectStartRestoreTest {
     }
 
     private static VisualEffectSpec spec() {
-        return new VisualEffectSpec(
-            EFFECT_ID,
-            new Vec3(1.0, 2.0, 3.0),
-            10.0F,
-            20.0F,
-            30.0F,
-            2.0F,
-            200,
-            7L,
-            EffectAudience.nearby(32.0)
-        );
+        return VisualEffectSpec.builder(EFFECT_ID, new Vec3(1.0, 2.0, 3.0), 200, 7L, EffectAudience.nearby(32.0))
+            .rotation(10.0F, 20.0F, 30.0F)
+            .scale(2.0F)
+            .build();
     }
 
     private static EffectDescriptor descriptor() {
-        return new EffectDescriptor(
-            INSTANCE_ID,
-            EffectKind.VISUAL,
-            EFFECT_ID,
-            Level.OVERWORLD.location(),
-            spec().transform(),
-            spec().scale(),
-            spec().seed(),
-            START_TIME,
-            spec().durationTicks(),
-            spec().audience(),
-            EffectCapabilities.NONE,
-            EffectPersistence.RESUMABLE,
-            null,
-            new CompoundTag()
-        );
+        return EffectDescriptor.builder(INSTANCE_ID, EffectKind.VISUAL, EFFECT_ID, Level.OVERWORLD.location())
+            .placement(spec().transform(), spec().scale())
+            .timing(spec().seed(), START_TIME, spec().durationTicks())
+            .audience(spec().audience())
+            .capabilities(EffectCapabilities.NONE)
+            .persistence(EffectPersistence.RESUMABLE)
+            .state(new CompoundTag())
+            .build();
     }
 }

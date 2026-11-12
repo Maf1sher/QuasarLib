@@ -12,6 +12,7 @@ import java.util.UUID;
 import mafisher.quasar.effect.EffectBudgetService;
 import mafisher.quasar.effect.EffectBudgets;
 import mafisher.quasar.effect.EffectPoint;
+import mafisher.quasar.effect.EffectRemovalPolicy;
 import mafisher.quasar.effect.EffectTimeline;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.EffectTransformBatchService;
@@ -41,8 +42,6 @@ import org.slf4j.LoggerFactory;
  * stop, and updates are aggregated per coordinator.
  */
 public final class SegmentedVisualEffectService {
-    /** Default dedicated per-level budget; segmented cells never count against the standalone visual cap. */
-    public static final int MAX_ACTIVE_SEGMENTS_PER_LEVEL = SegmentedEffectLimits.MAX_SEGMENTS_PER_LEVEL;
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
     private static final LevelStateSlot<SegmentState> STATE = LevelStateSlot.create(SegmentState::new);
     private static Integer budgetOverride;
@@ -207,22 +206,16 @@ public final class SegmentedVisualEffectService {
                 : restoredSegmentIds.get(index));
         }
         SegmentedEffectNbt.saveInto(state, spec, heights, segmentIds);
-        EffectDescriptor descriptor = restoredDescriptor == null ? new EffectDescriptor(
-            coordinatorId,
-            EffectKind.SEGMENTED,
-            spec.effectId(),
-            level.dimension().location(),
-            transform,
-            spec.segmentScale(),
-            spec.seed(),
-            startGameTime,
-            spec.durationTicks(),
-            spec.audience(),
-            options.capabilities(),
-            options.persistence(),
-            null,
-            state
-        ) : restoredDescriptor;
+        EffectDescriptor descriptor = restoredDescriptor == null ? EffectDescriptor.builder(
+                coordinatorId, EffectKind.SEGMENTED, spec.effectId(), level.dimension().location()
+            )
+            .placement(transform, spec.segmentScale())
+            .timing(spec.seed(), startGameTime, spec.durationTicks())
+            .audience(spec.audience())
+            .capabilities(options.capabilities())
+            .persistence(options.persistence())
+            .state(state)
+            .build() : restoredDescriptor;
 
         ActiveSegmentedEffect activeEffect = new ActiveSegmentedEffect(
             spec,
@@ -290,7 +283,7 @@ public final class SegmentedVisualEffectService {
         }
         ActiveSegmentedEffect removed = state.coordinators.remove(handle.coordinatorId());
         if (removed != null) {
-            release(level, handle.coordinatorId(), removed, true);
+            release(level, handle.coordinatorId(), removed, EffectRemovalPolicy.DELETE);
         } else {
             EffectAudioService.stop(level, handle.coordinatorId());
         }
@@ -301,15 +294,17 @@ public final class SegmentedVisualEffectService {
 
     /** Stops every coordinator in one level and returns how many were active. */
     public static int stopAll(ServerLevel level) {
-        return stopAll(level, true);
+        return stopAll(level, EffectRemovalPolicy.DELETE);
     }
 
     /**
-     * Stops every coordinator in one level. Level unload and shutdown pass {@code false} so the
-     * persisted descriptors survive; an explicit stop passes {@code true}.
+     * Stops every coordinator in one level. Level unload and shutdown pass
+     * {@link EffectRemovalPolicy#KEEP_FOR_RESTORE} so the persisted descriptors survive; an
+     * explicit stop passes {@link EffectRemovalPolicy#DELETE}.
      */
-    public static int stopAll(ServerLevel level, boolean persistRemoval) {
+    public static int stopAll(ServerLevel level, EffectRemovalPolicy policy) {
         Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(policy, "policy");
         SegmentState state = STATE.peek(level);
         if (state == null) {
             return 0;
@@ -317,7 +312,7 @@ public final class SegmentedVisualEffectService {
         STATE.remove(level);
         int count = state.coordinators.size();
         for (Map.Entry<UUID, ActiveSegmentedEffect> entry : state.coordinators.entrySet()) {
-            release(level, entry.getKey(), entry.getValue(), persistRemoval);
+            release(level, entry.getKey(), entry.getValue(), policy);
         }
         state.coordinators.clear();
         return count;
@@ -441,7 +436,7 @@ public final class SegmentedVisualEffectService {
             }
             ActiveSegmentedEffect victimEffect = active.remove(victim);
             int released = victimEffect == null ? 0 : victimEffect.spec.segmentCount();
-            release(level, victim, victimEffect, true);
+            release(level, victim, victimEffect, EffectRemovalPolicy.DELETE);
             EffectBudgetService.recordCull(level);
             LOGGER.info(
                 "Culled segmented effect {} in {} to free {} segment slot(s) of a soft budget of {}",
@@ -617,13 +612,13 @@ public final class SegmentedVisualEffectService {
         ServerLevel level,
         UUID coordinatorId,
         ActiveSegmentedEffect effect,
-        boolean persistRemoval
+        EffectRemovalPolicy policy
     ) {
         if (effect == null) {
             return;
         }
         sendStop(level, effect);
-        if (persistRemoval) {
+        if (policy.deletesDescriptor()) {
             EffectPersistenceService.recordStop(level, coordinatorId);
         }
         EffectAudioService.stop(level, coordinatorId);

@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import mafisher.quasar.TestConfig;
+import mafisher.quasar.effect.EffectRemovalPolicy;
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectPriority;
@@ -108,7 +109,7 @@ class GameplayPersistenceTest {
         RecordingController controller = new RecordingController();
         GameplayEffectHandle handle = GameplayEffectService.restore(
             this.level, spec, SESSION, 0L, descriptor, controller
-        );
+        ).orElseThrow();
 
         assertEquals(SESSION, handle.sessionId());
         assertEquals(0, controller.starts);
@@ -124,13 +125,13 @@ class GameplayPersistenceTest {
         RecordingController first = new RecordingController();
         GameplayEffectHandle handle = GameplayEffectService.restore(
             this.level, spec, SESSION, 0L, descriptor, first
-        );
+        ).orElseThrow();
         EffectScope scope = GameplayEffectService.scope(this.level, handle);
 
         RecordingController second = new RecordingController();
         GameplayEffectHandle duplicate = GameplayEffectService.restore(
             this.level, spec, SESSION, 0L, descriptor, second
-        );
+        ).orElseThrow();
 
         assertEquals(SESSION, duplicate.sessionId());
         assertEquals(1, GameplayEffectService.activeCount(this.level));
@@ -205,7 +206,8 @@ class GameplayPersistenceTest {
         GameplayEffectService.start(this.level, spec(), new VisualController());
         assertEquals(2, this.store.descriptors().size());
 
-        GameplayEffectService.stopAll(this.level, GameplayEffectEndReason.LEVEL_UNLOAD, false);
+        GameplayEffectService.stopAll(this.level, GameplayEffectEndReason.LEVEL_UNLOAD,
+            EffectRemovalPolicy.KEEP_FOR_RESTORE);
 
         assertEquals(2, this.store.descriptors().size());
         assertTrue(this.store.descriptors().stream().anyMatch(
@@ -307,7 +309,8 @@ class GameplayPersistenceTest {
         GameplayEffectService.tick(this.level);
         verify(this.level).setBlockAndUpdate(FIRST, this.newState);
 
-        GameplayEffectService.stopAll(this.level, GameplayEffectEndReason.LEVEL_UNLOAD, false);
+        GameplayEffectService.stopAll(this.level, GameplayEffectEndReason.LEVEL_UNLOAD,
+            EffectRemovalPolicy.KEEP_FOR_RESTORE);
 
         assertTrue(this.store.contains(handle.sessionId()));
         BlockJournal journal = this.store.journal(handle.sessionId());
@@ -488,22 +491,14 @@ class GameplayPersistenceTest {
     }
 
     private static EffectDescriptor descriptor(GameplayEffectSpec spec, CompoundTag consumerState) {
-        return new EffectDescriptor(
-            SESSION,
-            EffectKind.GAMEPLAY,
-            TYPE,
-            ResourceLocation.fromNamespaceAndPath("minecraft", "overworld"),
-            new EffectTransform(new EffectPoint(0.0, 64.0, 0.0), 0.0F, 0.0F, 0.0F),
-            1.0F,
-            spec.seed(),
-            0L,
-            spec.phases().totalDurationTicks(),
-            EffectAudience.dimensionWide(),
-            EffectCapabilities.NONE,
-            EffectPersistence.RESUMABLE,
-            null,
-            GameplayEffectNbt.saveDescriptorState(spec, consumerState)
-        );
+        return EffectDescriptor.builder(SESSION, EffectKind.GAMEPLAY, TYPE, ResourceLocation.fromNamespaceAndPath("minecraft", "overworld"))
+            .placement(new EffectTransform(new EffectPoint(0.0, 64.0, 0.0), 0.0F, 0.0F, 0.0F), 1.0F)
+            .timing(spec.seed(), 0L, spec.phases().totalDurationTicks())
+            .audience(EffectAudience.dimensionWide())
+            .capabilities(EffectCapabilities.NONE)
+            .persistence(EffectPersistence.RESUMABLE)
+            .state(GameplayEffectNbt.saveDescriptorState(spec, consumerState))
+            .build();
     }
 
     private static final class QueueController implements GameplayEffectController {
@@ -526,17 +521,10 @@ class GameplayPersistenceTest {
     private static final class VisualController implements GameplayEffectController {
         @Override
         public void onStart(GameplayEffectContext context) {
-            context.scope().playVisual(new VisualEffectSpec(
-                TYPE,
-                Vec3.ZERO,
-                0.0F,
-                0.0F,
-                0.0F,
-                1.0F,
-                100,
-                1L,
-                EffectAudience.nearby(64.0)
-            ));
+            context.scope().playVisual(VisualEffectSpec.builder(TYPE, Vec3.ZERO, 100, 1L, EffectAudience.nearby(64.0))
+                .rotation(0.0F, 0.0F, 0.0F)
+                .scale(1.0F)
+                .build());
         }
 
         @Override

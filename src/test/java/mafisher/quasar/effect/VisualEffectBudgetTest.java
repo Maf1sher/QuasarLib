@@ -80,11 +80,11 @@ class VisualEffectBudgetTest {
     }
 
     @Test
-    void restoreNeverReturnsNullForACapacityReason() {
+    void restoreReportsAnInactiveStatusWhenTheBudgetCullsIt() {
         start(EffectPriority.HIGH);
         start(EffectPriority.HIGH);
 
-        VisualEffectHandle restored = VisualEffectService.restore(
+        VisualEffectStartResult restored = VisualEffectService.restore(
             this.level,
             spec(EffectPriority.NORMAL),
             UUID.randomUUID(),
@@ -92,9 +92,23 @@ class VisualEffectBudgetTest {
             null
         );
 
-        assertNotNull(restored);
-        assertFalse(VisualEffectService.isActive(this.level, restored));
+        assertNotNull(restored.handle());
+        assertEquals(EffectStartStatus.RESTORED_INACTIVE, restored.status());
+        assertFalse(restored.active());
         assertEquals(2, VisualEffectService.activeCount(this.level));
+    }
+
+    @Test
+    void startReportsWhenTheNewcomerIsCulled() {
+        start(EffectPriority.HIGH);
+        start(EffectPriority.HIGH);
+
+        VisualEffectStartResult background = VisualEffectService.start(
+            this.level, spec(EffectPriority.BACKGROUND)
+        );
+
+        assertEquals(EffectStartStatus.CULLED_ON_START, background.status());
+        assertFalse(background.active());
     }
 
     @Test
@@ -108,7 +122,7 @@ class VisualEffectBudgetTest {
         );
         VisualEffectHandle handle = VisualEffectService.start(
             this.level, spec(EffectPriority.NORMAL), options
-        );
+        ).handle();
 
         try (EffectScope scope = new EffectScope(this.level)) {
             VisualEffectService.adoptOwnedBy(this.level, ownerSession, scope);
@@ -139,8 +153,18 @@ class VisualEffectBudgetTest {
         assertFalse(LevelStateSlot.isTracked(this.level));
     }
 
+    @Test
+    void reportUsesEffectiveConfiguredBudgets() {
+        EffectBudgetReport report = EffectBudgetService.report(this.level);
+
+        assertEquals(EffectBudgets.standaloneVisuals(), report.standaloneVisualBudget());
+        assertEquals(EffectBudgets.segments(), report.segmentBudget());
+        assertEquals(EffectBudgets.gameplaySessions(), report.gameplaySessionBudget());
+        assertEquals(EffectBudgets.cinematicSessions(), report.cinematicSessionBudget());
+    }
+
     private VisualEffectHandle start(EffectPriority priority) {
-        return VisualEffectService.start(this.level, spec(priority));
+        return VisualEffectService.start(this.level, spec(priority)).handle();
     }
 
     private static VisualEffectSpec spec(EffectPriority priority) {

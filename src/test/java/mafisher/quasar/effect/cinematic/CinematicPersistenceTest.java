@@ -121,35 +121,20 @@ class CinematicPersistenceTest {
     }
 
     private static VisualEffectSpec visualSpec(int durationTicks) {
-        return new VisualEffectSpec(
-            VISUAL_ID,
-            Vec3.ZERO,
-            0.0F,
-            0.0F,
-            0.0F,
-            1.0F,
-            durationTicks,
-            2L,
-            EffectAudience.nearby(64.0)
-        );
+        return VisualEffectSpec.builder(VISUAL_ID, Vec3.ZERO, durationTicks, 2L, EffectAudience.nearby(64.0))
+            .rotation(0.0F, 0.0F, 0.0F)
+            .scale(1.0F)
+            .build();
     }
 
     private static EffectDescriptor descriptor() {
-        return new EffectDescriptor(
-            SESSION,
-            EffectKind.CINEMATIC,
-            TIMELINE_ID,
-            ResourceLocation.fromNamespaceAndPath("minecraft", "overworld"),
-            new EffectTransform(new EffectPoint(0.0, 0.0, 0.0), 0.0F, 0.0F, 0.0F),
-            1.0F,
-            1L,
-            0L,
-            100,
-            EffectAudience.dimensionWide(),
-            EffectCapabilities.NONE,
-            EffectPersistence.RESUMABLE,
-            null,
-            new CompoundTag()
-        );
+        return EffectDescriptor.builder(SESSION, EffectKind.CINEMATIC, TIMELINE_ID, ResourceLocation.fromNamespaceAndPath("minecraft", "overworld"))
+            .placement(new EffectTransform(new EffectPoint(0.0, 0.0, 0.0), 0.0F, 0.0F, 0.0F), 1.0F)
+            .timing(1L, 0L, 100)
+            .audience(EffectAudience.dimensionWide())
+            .capabilities(EffectCapabilities.NONE)
+            .persistence(EffectPersistence.RESUMABLE)
+            .state(new CompoundTag())
+            .build();
     }
 }

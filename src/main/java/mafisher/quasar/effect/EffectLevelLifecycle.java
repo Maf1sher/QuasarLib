@@ -18,18 +18,19 @@ public final class EffectLevelLifecycle {
     private EffectLevelLifecycle() {
     }
 
-    /** Stops and clears one level; descriptors survive when {@code persistRemoval} is false. */
+    /** Stops and clears one level; {@link EffectRemovalPolicy#KEEP_FOR_RESTORE} preserves descriptors. */
     public static void clear(
         ServerLevel level,
-        boolean persistRemoval,
+        EffectRemovalPolicy policy,
         GameplayEffectEndReason reason
     ) {
         Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(policy, "policy");
         Objects.requireNonNull(reason, "reason");
         try {
-            CinematicEffectService.stopAll(level, persistRemoval);
-            GameplayEffectService.stopAll(level, reason, persistRemoval);
-            SegmentedVisualEffectService.stopAll(level, persistRemoval);
+            CinematicEffectService.stopAll(level, policy);
+            GameplayEffectService.stopAll(level, reason, policy);
+            SegmentedVisualEffectService.stopAll(level, policy);
             VisualEffectService.clear(level);
             EffectAudioService.clear(level);
             EffectBudgetService.clear(level);

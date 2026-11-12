@@ -84,22 +84,15 @@ class EffectDescriptorNbtTest {
     @Test
     void roundTripsCapabilitiesAndOwnership() {
         EffectDescriptor descriptor = descriptor(new CompoundTag()).withOwnerSessionId(UUID.randomUUID());
-        descriptor = new EffectDescriptor(
-            descriptor.instanceId(),
-            descriptor.kind(),
-            descriptor.typeId(),
-            descriptor.dimensionId(),
-            descriptor.transform(),
-            descriptor.scale(),
-            descriptor.seed(),
-            descriptor.startGameTime(),
-            descriptor.durationTicks(),
-            descriptor.audience(),
-            new EffectCapabilities(true, Set.of(TYPE)),
-            EffectPersistence.COSMETIC,
-            descriptor.ownerSessionId(),
-            descriptor.state()
-        );
+        descriptor = EffectDescriptor.builder(descriptor.instanceId(), descriptor.kind(), descriptor.typeId(), descriptor.dimensionId())
+            .placement(descriptor.transform(), descriptor.scale())
+            .timing(descriptor.seed(), descriptor.startGameTime(), descriptor.durationTicks())
+            .audience(descriptor.audience())
+            .capabilities(new EffectCapabilities(true, Set.of(TYPE)))
+            .persistence(EffectPersistence.COSMETIC)
+            .ownerSessionId(descriptor.ownerSessionId())
+            .state(descriptor.state())
+            .build();
 
         EffectDescriptor decoded = EffectDescriptorNbt.load(EffectDescriptorNbt.save(descriptor));
 
@@ -121,21 +114,13 @@ class EffectDescriptorNbtTest {
     }
 
     private static EffectDescriptor descriptor(CompoundTag state) {
-        return new EffectDescriptor(
-            UUID.fromString("00000000-0000-0000-0000-000000000001"),
-            EffectKind.VISUAL,
-            TYPE,
-            DIMENSION,
-            new EffectTransform(new EffectPoint(1.0, 64.0, -2.0), 10.0F, 20.0F, 30.0F),
-            2.5F,
-            1234L,
-            42L,
-            200,
-            EffectAudience.nearby(64.0),
-            EffectCapabilities.NONE,
-            EffectPersistence.RESUMABLE,
-            null,
-            state
-        );
+        return EffectDescriptor.builder(UUID.fromString("00000000-0000-0000-0000-000000000001"), EffectKind.VISUAL, TYPE, DIMENSION)
+            .placement(new EffectTransform(new EffectPoint(1.0, 64.0, -2.0), 10.0F, 20.0F, 30.0F), 2.5F)
+            .timing(1234L, 42L, 200)
+            .audience(EffectAudience.nearby(64.0))
+            .capabilities(EffectCapabilities.NONE)
+            .persistence(EffectPersistence.RESUMABLE)
+            .state(state)
+            .build();
     }
 }

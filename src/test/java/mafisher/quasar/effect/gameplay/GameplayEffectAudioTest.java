@@ -17,7 +17,9 @@ import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.audio.EffectAudioAttenuation;
 import mafisher.quasar.effect.audio.EffectAudioPlan;
 import mafisher.quasar.effect.audio.EffectAudioService;
+import mafisher.quasar.effect.audio.EffectAudioCue;
 import mafisher.quasar.effect.audio.EffectAudioSpec;
+import mafisher.quasar.effect.audio.EffectAudioTrigger;
 import mafisher.quasar.effect.persistence.EffectCapabilities;
 import mafisher.quasar.effect.persistence.EffectDescriptor;
 import mafisher.quasar.effect.persistence.EffectKind;
@@ -107,22 +109,14 @@ class GameplayEffectAudioTest {
     void restoresAudioAtTheOriginalStartTime() {
         UUID sessionId = UUID.randomUUID();
         GameplayEffectSpec spec = spec();
-        EffectDescriptor descriptor = new EffectDescriptor(
-            sessionId,
-            EffectKind.GAMEPLAY,
-            TYPE_ID,
-            ResourceLocation.withDefaultNamespace("overworld"),
-            new EffectTransform(new EffectPoint(0.0, 0.0, 0.0), 0.0F, 0.0F, 0.0F),
-            1.0F,
-            spec.seed(),
-            10L,
-            50,
-            EffectAudience.dimensionWide(),
-            EffectCapabilities.NONE,
-            EffectPersistence.RESUMABLE,
-            null,
-            GameplayEffectNbt.saveDescriptorState(spec, new CompoundTag())
-        );
+        EffectDescriptor descriptor = EffectDescriptor.builder(sessionId, EffectKind.GAMEPLAY, TYPE_ID, ResourceLocation.withDefaultNamespace("overworld"))
+            .placement(new EffectTransform(new EffectPoint(0.0, 0.0, 0.0), 0.0F, 0.0F, 0.0F), 1.0F)
+            .timing(spec.seed(), 10L, 50)
+            .audience(EffectAudience.dimensionWide())
+            .capabilities(EffectCapabilities.NONE)
+            .persistence(EffectPersistence.RESUMABLE)
+            .state(GameplayEffectNbt.saveDescriptorState(spec, new CompoundTag()))
+            .build();
         this.gameTime = 20L;
 
         GameplayEffectService.restore(this.level, spec, sessionId, 10L, descriptor, new TestController());
@@ -149,16 +143,12 @@ class GameplayEffectAudioTest {
             new EffectPhase("impact", 30)
         );
         EffectAudioSpec audio = EffectAudioSpec.builder(phases)
-            .phaseCue(
-                "impact",
-                0,
-                Vec3.ZERO,
+            .phaseCue("impact", 0, EffectAudioCue.at(0, Vec3.ZERO,
                 SOUND,
                 SoundSource.MASTER,
                 1.0F,
                 1.0F,
-                EffectAudioAttenuation.distance(64.0F)
-            )
+                EffectAudioAttenuation.distance(64.0F)))
             .build();
         return new GameplayEffectSpec(
             TYPE_ID,
@@ -178,7 +168,7 @@ class GameplayEffectAudioTest {
             new EffectPhase("impact", 30)
         );
         EffectAudioSpec audio = EffectAudioSpec.builder(phases)
-            .trigger("impact", Vec3.ZERO, SOUND, SoundSource.PLAYERS, 1.0F, 1.0F)
+            .trigger(EffectAudioTrigger.at("impact", Vec3.ZERO, SOUND, SoundSource.PLAYERS, 1.0F, 1.0F))
             .build();
         return new GameplayEffectSpec(
             TYPE_ID,

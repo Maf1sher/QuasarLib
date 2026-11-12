@@ -14,6 +14,9 @@ import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
+import mafisher.quasar.effect.audio.EffectAudioSpec;
+import mafisher.quasar.effect.EffectPriority;
+import mafisher.quasar.effect.scale.SegmentTerrainConform;
 
 class CinematicTimelineTest {
     private static final ResourceLocation TIMELINE_ID = ResourceLocation.fromNamespaceAndPath("quasar_lib", "test");
@@ -126,12 +129,22 @@ class CinematicTimelineTest {
     }
 
     private static VisualEffectSpec visualSpec() {
-        return new VisualEffectSpec(VISUAL_ID, Vec3.ZERO, 0.0F, 0.0F, 0.0F, 1.0F, 100, 1L,
-            EffectAudience.nearby(32.0));
+        return VisualEffectSpec.builder(VISUAL_ID, Vec3.ZERO, 100, 1L, EffectAudience.nearby(32.0))
+            .rotation(0.0F, 0.0F, 0.0F)
+            .scale(1.0F)
+            .build();
     }
 
     private static SegmentedVisualEffectSpec segmentedSpec() {
-        return new SegmentedVisualEffectSpec(VISUAL_ID, Vec3.ZERO, 0.0F, 0.0F, 0.0F, 2.0F, 2, 2, 2.0,
-            100, 1L, EffectAudience.nearby(32.0));
+        return SegmentedVisualEffectSpec.builder(VISUAL_ID, Vec3.ZERO, 100, 1L, EffectAudience.nearby(32.0))
+            .rotation(0.0F, 0.0F, 0.0F)
+            .segmentScale(2.0F)
+            .grid(2, 2)
+            .spacing(2.0)
+            .layers(1, 0.0)
+            .audio(EffectAudioSpec.NONE)
+            .priority(EffectPriority.NORMAL)
+            .terrain(SegmentTerrainConform.NONE)
+            .build();
     }
 }

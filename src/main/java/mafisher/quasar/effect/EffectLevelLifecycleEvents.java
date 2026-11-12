@@ -17,14 +17,16 @@ public final class EffectLevelLifecycleEvents {
     @SubscribeEvent
     public static void onLevelUnload(LevelEvent.Unload event) {
         if (event.getLevel() instanceof ServerLevel level) {
-            EffectLevelLifecycle.clear(level, false, GameplayEffectEndReason.LEVEL_UNLOAD);
+            EffectLevelLifecycle.clear(level, EffectRemovalPolicy.KEEP_FOR_RESTORE,
+                GameplayEffectEndReason.LEVEL_UNLOAD);
         }
     }
 
     @SubscribeEvent
     public static void onServerStopping(ServerStoppingEvent event) {
         for (ServerLevel level : event.getServer().getAllLevels()) {
-            EffectLevelLifecycle.clear(level, false, GameplayEffectEndReason.SERVER_STOPPING);
+            EffectLevelLifecycle.clear(level, EffectRemovalPolicy.KEEP_FOR_RESTORE,
+                GameplayEffectEndReason.SERVER_STOPPING);
         }
     }
 }

@@ -44,21 +44,13 @@ class CinematicEffectNbtTest {
     }
 
     private static EffectDescriptor descriptor(Vec3 anchor, CompoundTag state) {
-        return new EffectDescriptor(
-            SESSION_ID,
-            EffectKind.CINEMATIC,
-            TIMELINE_ID,
-            Level.OVERWORLD.location(),
-            new EffectTransform(new EffectPoint(anchor.x, anchor.y, anchor.z), 0.0F, 0.0F, 0.0F),
-            1.0F,
-            7L,
-            0L,
-            200,
-            EffectAudience.dimensionWide(),
-            EffectCapabilities.NONE,
-            EffectPersistence.RESUMABLE,
-            null,
-            state
-        );
+        return EffectDescriptor.builder(SESSION_ID, EffectKind.CINEMATIC, TIMELINE_ID, Level.OVERWORLD.location())
+            .placement(new EffectTransform(new EffectPoint(anchor.x, anchor.y, anchor.z), 0.0F, 0.0F, 0.0F), 1.0F)
+            .timing(7L, 0L, 200)
+            .audience(EffectAudience.dimensionWide())
+            .capabilities(EffectCapabilities.NONE)
+            .persistence(EffectPersistence.RESUMABLE)
+            .state(state)
+            .build();
     }
 }

@@ -14,7 +14,9 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import mafisher.quasar.effect.EffectAudience;
+import mafisher.quasar.effect.EffectBudgets;
 import mafisher.quasar.effect.EffectPriority;
+import mafisher.quasar.effect.EffectStartStatus;
 import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.VisualEffectSpec;
 import mafisher.quasar.effect.audio.EffectAudioService;
@@ -30,6 +32,8 @@ import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import mafisher.quasar.effect.audio.EffectAudioSpec;
+import mafisher.quasar.effect.scale.SegmentTerrainConform;
 
 class CinematicEffectServiceTest {
     private static final ResourceLocation TIMELINE_ID = ResourceLocation.fromNamespaceAndPath("quasar_lib", "test");
@@ -186,41 +190,44 @@ class CinematicEffectServiceTest {
 
     @Test
     void cullsTheOldestLowestPriorityCinematicAtTheSessionBudget() {
-        for (int index = 0; index < CinematicEffectService.MAX_ACTIVE_SESSIONS_PER_LEVEL; index++) {
+        for (int index = 0; index < EffectBudgets.cinematicSessions(); index++) {
             CinematicEffectService.start(this.level, timelineBuilder(100)
                 .priority(EffectPriority.LOW)
                 .sound(0, Vec3.ZERO, SOUND, SoundSource.PLAYERS, 1.0F, 1.0F)
                 .build());
         }
 
-        CinematicEffectHandle admitted = CinematicEffectService.start(this.level,
+        CinematicEffectStartResult admitted = CinematicEffectService.start(this.level,
             timelineBuilder(100)
                 .priority(EffectPriority.HIGH)
                 .sound(0, Vec3.ZERO, SOUND, SoundSource.PLAYERS, 1.0F, 1.0F)
                 .build());
 
-        assertTrue(CinematicEffectService.isActive(this.level, admitted));
-        assertEquals(CinematicEffectService.MAX_ACTIVE_SESSIONS_PER_LEVEL,
+        assertTrue(admitted.active());
+        assertTrue(CinematicEffectService.isActive(this.level, admitted.handle()));
+        assertEquals(EffectBudgets.cinematicSessions(),
             CinematicEffectService.activeCount(this.level));
     }
 
     @Test
     void cullsALowerPriorityNewcomerWithoutThrowing() {
-        for (int index = 0; index < CinematicEffectService.MAX_ACTIVE_SESSIONS_PER_LEVEL; index++) {
+        for (int index = 0; index < EffectBudgets.cinematicSessions(); index++) {
             CinematicEffectService.start(this.level, timelineBuilder(100)
                 .priority(EffectPriority.HIGH)
                 .sound(0, Vec3.ZERO, SOUND, SoundSource.PLAYERS, 1.0F, 1.0F)
                 .build());
         }
 
-        CinematicEffectHandle culled = CinematicEffectService.start(this.level,
+        CinematicEffectStartResult culled = CinematicEffectService.start(this.level,
             timelineBuilder(100)
                 .priority(EffectPriority.BACKGROUND)
                 .sound(0, Vec3.ZERO, SOUND, SoundSource.PLAYERS, 1.0F, 1.0F)
                 .build());
 
-        assertFalse(CinematicEffectService.isActive(this.level, culled));
-        assertEquals(CinematicEffectService.MAX_ACTIVE_SESSIONS_PER_LEVEL,
+        assertFalse(culled.active());
+        assertEquals(EffectStartStatus.CULLED_ON_START, culled.status());
+        assertFalse(CinematicEffectService.isActive(this.level, culled.handle()));
+        assertEquals(EffectBudgets.cinematicSessions(),
             CinematicEffectService.activeCount(this.level));
     }
 
@@ -236,7 +243,7 @@ class CinematicEffectServiceTest {
 
     @Test
     void segmentedCueDoesNotConsumeTheStandaloneCap() {
-        for (int index = 0; index < VisualEffectService.MAX_ACTIVE_EFFECTS_PER_LEVEL; index++) {
+        for (int index = 0; index < EffectBudgets.standaloneVisuals(); index++) {
             VisualEffectService.start(this.level, visualSpec(100));
         }
 
@@ -245,19 +252,19 @@ class CinematicEffectServiceTest {
 
         assertEquals(1, CinematicEffectService.activeCount(this.level));
         assertEquals(1, SegmentedVisualEffectService.activeCount(this.level));
-        assertEquals(VisualEffectService.MAX_ACTIVE_EFFECTS_PER_LEVEL,
+        assertEquals(EffectBudgets.standaloneVisuals(),
             VisualEffectService.activeCount(this.level));
     }
 
     @Test
     void cullsTheOldestCoordinatorToAdmitACinematicSegment() {
-        int fullGrids = SegmentedVisualEffectService.MAX_ACTIVE_SEGMENTS_PER_LEVEL / 128;
+        int fullGrids = EffectBudgets.segments() / 128;
         for (int index = 0; index < fullGrids; index++) {
             SegmentedVisualEffectService.start(this.level, largeSegmentedSpec(100));
         }
 
         CinematicEffectHandle handle = CinematicEffectService.start(this.level,
-            timelineBuilder(100).segmented("field", 0, segmentedSpec(100)).build());
+            timelineBuilder(100).segmented("field", 0, segmentedSpec(100)).build()).handle();
 
         assertTrue(CinematicEffectService.isActive(this.level, handle));
         assertEquals(1, CinematicEffectService.activeCount(this.level));
@@ -273,17 +280,35 @@ class CinematicEffectServiceTest {
     }
 
     private static VisualEffectSpec visualSpec(int durationTicks) {
-        return new VisualEffectSpec(VISUAL_ID, Vec3.ZERO, 0.0F, 0.0F, 0.0F, 1.0F, durationTicks, 1L,
-            EffectAudience.nearby(32.0));
+        return VisualEffectSpec.builder(VISUAL_ID, Vec3.ZERO, durationTicks, 1L, EffectAudience.nearby(32.0))
+            .rotation(0.0F, 0.0F, 0.0F)
+            .scale(1.0F)
+            .build();
     }
 
     private static SegmentedVisualEffectSpec segmentedSpec(int durationTicks) {
-        return new SegmentedVisualEffectSpec(VISUAL_ID, Vec3.ZERO, 0.0F, 0.0F, 0.0F, 2.0F, 2, 2, 2.0,
-            durationTicks, 1L, EffectAudience.nearby(32.0));
+        return SegmentedVisualEffectSpec.builder(VISUAL_ID, Vec3.ZERO, durationTicks, 1L, EffectAudience.nearby(32.0))
+            .rotation(0.0F, 0.0F, 0.0F)
+            .segmentScale(2.0F)
+            .grid(2, 2)
+            .spacing(2.0)
+            .layers(1, 0.0)
+            .audio(EffectAudioSpec.NONE)
+            .priority(EffectPriority.NORMAL)
+            .terrain(SegmentTerrainConform.NONE)
+            .build();
     }
 
     private static SegmentedVisualEffectSpec largeSegmentedSpec(int durationTicks) {
-        return new SegmentedVisualEffectSpec(VISUAL_ID, Vec3.ZERO, 0.0F, 0.0F, 0.0F, 2.0F, 16, 8, 2.0,
-            durationTicks, 1L, EffectAudience.nearby(32.0));
+        return SegmentedVisualEffectSpec.builder(VISUAL_ID, Vec3.ZERO, durationTicks, 1L, EffectAudience.nearby(32.0))
+            .rotation(0.0F, 0.0F, 0.0F)
+            .segmentScale(2.0F)
+            .grid(16, 8)
+            .spacing(2.0)
+            .layers(1, 0.0)
+            .audio(EffectAudioSpec.NONE)
+            .priority(EffectPriority.NORMAL)
+            .terrain(SegmentTerrainConform.NONE)
+            .build();
     }
 }

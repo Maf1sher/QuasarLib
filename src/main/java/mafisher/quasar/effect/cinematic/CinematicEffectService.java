@@ -12,7 +12,9 @@ import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectBudgetService;
 import mafisher.quasar.effect.EffectBudgets;
 import mafisher.quasar.effect.EffectPriority;
+import mafisher.quasar.effect.EffectRemovalPolicy;
 import mafisher.quasar.effect.EffectScope;
+import mafisher.quasar.effect.EffectStartStatus;
 import mafisher.quasar.effect.EffectTimeline;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.EffectPoint;
@@ -39,9 +41,6 @@ import org.slf4j.LoggerFactory;
  * culls a strictly lower-priority newcomer.
  */
 public final class CinematicEffectService {
-    /** Default soft budget; it is a quality threshold, not a hard capability gate. */
-    public static final int MAX_ACTIVE_SESSIONS_PER_LEVEL = 16;
-
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
     private static final LevelStateSlot<CinematicState> STATE = LevelStateSlot.create(CinematicState::new);
     private static Integer budgetOverride;
@@ -53,12 +52,12 @@ public final class CinematicEffectService {
      * Starts a relative timeline at a world anchor. JSON-authored timelines use this overload; code-authored
      * timelines with absolute positions use {@link #start(ServerLevel, CinematicTimeline)}.
      */
-    public static CinematicEffectHandle start(ServerLevel level, CinematicTimeline timeline, Vec3 anchor) {
+    public static CinematicEffectStartResult start(ServerLevel level, CinematicTimeline timeline, Vec3 anchor) {
         Objects.requireNonNull(timeline, "timeline");
         return start(level, timeline, anchor, EffectPersistenceOptions.DEFAULT);
     }
 
-    public static CinematicEffectHandle start(
+    public static CinematicEffectStartResult start(
         ServerLevel level,
         CinematicTimeline timeline,
         Vec3 anchor,
@@ -79,12 +78,12 @@ public final class CinematicEffectService {
      * level budget is full, the lowest-priority cinematic is closed first; a lower-priority newcomer returns an
      * inactive handle instead of throwing.
      */
-    public static CinematicEffectHandle start(ServerLevel level, CinematicTimeline timeline) {
+    public static CinematicEffectStartResult start(ServerLevel level, CinematicTimeline timeline) {
         Objects.requireNonNull(timeline, "timeline");
         return start(level, timeline, Vec3.ZERO, EffectPersistenceOptions.DEFAULT);
     }
 
-    public static CinematicEffectHandle start(
+    public static CinematicEffectStartResult start(
         ServerLevel level,
         CinematicTimeline timeline,
         EffectPersistenceOptions options
@@ -94,7 +93,7 @@ public final class CinematicEffectService {
     }
 
     /** Restores a cinematic session and fast-forwards it to the current age without replaying past cues. */
-    public static CinematicEffectHandle restore(
+    public static CinematicEffectStartResult restore(
         ServerLevel level,
         CinematicTimeline timeline,
         UUID sessionId,
@@ -116,7 +115,7 @@ public final class CinematicEffectService {
             sessionId, startGameTime, EffectPersistenceOptions.DEFAULT, descriptor);
     }
 
-    private static CinematicEffectHandle startInternal(
+    private static CinematicEffectStartResult startInternal(
         ServerLevel level,
         CinematicTimeline timeline,
         Vec3 anchor,
@@ -142,7 +141,10 @@ public final class CinematicEffectService {
                 level.dimension().location(),
                 timeline.priority()
             );
-            return new CinematicEffectHandle(sessionId);
+            return new CinematicEffectStartResult(
+                new CinematicEffectHandle(sessionId),
+                startStatus(restoredDescriptor, false)
+            );
         }
 
         EffectScope scope = new EffectScope(level, sessionId);
@@ -157,7 +159,7 @@ public final class CinematicEffectService {
                 session.advanceTo(level, level.getGameTime());
             }
         } catch (RuntimeException | Error exception) {
-            session.close(level, false);
+            session.close(level, EffectRemovalPolicy.KEEP_FOR_RESTORE);
             if (sessions != null && sessions.isEmpty()) {
                 STATE.remove(level);
             }
@@ -173,7 +175,17 @@ public final class CinematicEffectService {
                 );
             }
         }
-        return new CinematicEffectHandle(sessionId);
+        return new CinematicEffectStartResult(
+            new CinematicEffectHandle(sessionId),
+            startStatus(restoredDescriptor, !session.closed)
+        );
+    }
+
+    private static EffectStartStatus startStatus(EffectDescriptor restoredDescriptor, boolean active) {
+        if (restoredDescriptor == null) {
+            return active ? EffectStartStatus.ACTIVE : EffectStartStatus.CULLED_ON_START;
+        }
+        return active ? EffectStartStatus.RESTORED_ACTIVE : EffectStartStatus.RESTORED_INACTIVE;
     }
 
     private static EffectDescriptor descriptor(
@@ -186,22 +198,16 @@ public final class CinematicEffectService {
     ) {
         net.minecraft.nbt.CompoundTag state = options.state();
         CinematicEffectNbt.saveAnchor(state, anchor);
-        return new EffectDescriptor(
-            sessionId,
-            EffectKind.CINEMATIC,
-            timeline.id(),
-            level.dimension().location(),
-            new EffectTransform(new EffectPoint(anchor.x, anchor.y, anchor.z), 0.0F, 0.0F, 0.0F),
-            1.0F,
-            timeline.seed(),
-            startGameTime,
-            timeline.durationTicks(),
-            mafisher.quasar.effect.EffectAudience.dimensionWide(),
-            options.capabilities(),
-            options.persistence(),
-            null,
-            state
-        );
+        return EffectDescriptor.builder(
+                sessionId, EffectKind.CINEMATIC, timeline.id(), level.dimension().location()
+            )
+            .placement(new EffectTransform(new EffectPoint(anchor.x, anchor.y, anchor.z), 0.0F, 0.0F, 0.0F), 1.0F)
+            .timing(timeline.seed(), startGameTime, timeline.durationTicks())
+            .audience(mafisher.quasar.effect.EffectAudience.dimensionWide())
+            .capabilities(options.capabilities())
+            .persistence(options.persistence())
+            .state(state)
+            .build();
     }
 
     /** Advances one level's cinematic sessions. A failed session is logged, closed, and removed. */
@@ -227,7 +233,7 @@ public final class CinematicEffectService {
             } catch (RuntimeException exception) {
                 LOGGER.error("Cinematic session {} failed in {}", session.timeline.id(),
                     level.dimension().location(), exception);
-                session.close(level, true);
+                session.close(level, EffectRemovalPolicy.DELETE);
                 iterator.remove();
             }
         }
@@ -246,7 +252,7 @@ public final class CinematicEffectService {
         }
         ActiveCinematic session = state.sessions.remove(handle.sessionId());
         if (session != null) {
-            session.close(level, true);
+            session.close(level, EffectRemovalPolicy.DELETE);
         }
         if (state.sessions.isEmpty()) {
             STATE.remove(level);
@@ -255,15 +261,16 @@ public final class CinematicEffectService {
 
     /** Stops every cinematic session in one level and returns how many were active. */
     public static int stopAll(ServerLevel level) {
-        return stopAll(level, true);
+        return stopAll(level, EffectRemovalPolicy.DELETE);
     }
 
     /**
-     * Stops every cinematic session in one level. Level unload and shutdown pass {@code false}
-     * to preserve descriptors for restore.
+     * Stops every cinematic session in one level. Level unload and shutdown pass
+     * {@link EffectRemovalPolicy#KEEP_FOR_RESTORE} to preserve descriptors for restore.
      */
-    public static int stopAll(ServerLevel level, boolean persistRemoval) {
+    public static int stopAll(ServerLevel level, EffectRemovalPolicy policy) {
         Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(policy, "policy");
         CinematicState state = STATE.peek(level);
         if (state == null) {
             return 0;
@@ -271,7 +278,7 @@ public final class CinematicEffectService {
         STATE.remove(level);
         int count = state.sessions.size();
         for (ActiveCinematic session : state.sessions.values()) {
-            session.close(level, persistRemoval);
+            session.close(level, policy);
         }
         state.sessions.clear();
         return count;
@@ -331,7 +338,7 @@ public final class CinematicEffectService {
             return false;
         }
         sessions.remove(victimId);
-        victimSession.close(level, true);
+        victimSession.close(level, EffectRemovalPolicy.DELETE);
         EffectBudgetService.recordCull(level);
         LOGGER.info(
             "Closed cinematic {} in {} to admit a priority {} cinematic under the soft budget of {}",
@@ -389,7 +396,7 @@ public final class CinematicEffectService {
             }
             int age = EffectTimeline.ageTicks(gameTime, this.startGameTime);
             if (age >= this.timeline.durationTicks()) {
-                this.close(level, true);
+                this.close(level, EffectRemovalPolicy.DELETE);
                 return;
             }
 
@@ -405,15 +412,15 @@ public final class CinematicEffectService {
             if (cue instanceof CinematicCue.VisualStartCue start) {
                 if (start.tick() + start.spec().durationTicks() > age) {
                     UUID visualId = visualId(this.scope.sessionId(), start.key());
-                    var handle = VisualEffectService.restore(
+                    var result = VisualEffectService.restore(
                         level,
                         start.spec(),
                         visualId,
                         this.startGameTime + start.tick(),
                         null
                     );
-                    if (handle != null) {
-                        this.scope.adoptVisual(visualId, handle);
+                    if (result.active()) {
+                        this.scope.adoptVisual(visualId, result.handle());
                         this.visuals.put(start.key(), visualId);
                     }
                 }
@@ -434,9 +441,7 @@ public final class CinematicEffectService {
                         null,
                         EffectPersistenceOptions.cosmetic()
                     );
-                    if (handle != null) {
-                        this.segmented.put(start.key(), handle);
-                    }
+                    this.segmented.put(start.key(), handle);
                 }
             } else if (cue instanceof CinematicCue.SegmentedStopCue stop) {
                 SegmentedVisualEffectHandle handle = this.segmented.remove(stop.key());
@@ -455,7 +460,7 @@ public final class CinematicEffectService {
 
             int age = EffectTimeline.ageTicks(gameTime, this.startGameTime);
             if (age >= this.timeline.durationTicks()) {
-                this.close(level, true);
+                this.close(level, EffectRemovalPolicy.DELETE);
                 return false;
             }
             age = Math.max(age, this.lastTransformAge);
@@ -482,15 +487,15 @@ public final class CinematicEffectService {
                 }
             } else if (cue instanceof CinematicCue.VisualStartCue start) {
                 UUID visualId = visualId(this.scope.sessionId(), start.key());
-                var handle = VisualEffectService.startWithId(
+                var result = VisualEffectService.startWithId(
                     level,
                     start.spec(),
                     visualId,
                     this.startGameTime + start.tick(),
                     EffectPersistenceOptions.cosmetic()
                 );
-                if (handle != null) {
-                    this.scope.adoptVisual(visualId, handle);
+                if (result.active()) {
+                    this.scope.adoptVisual(visualId, result.handle());
                     this.visuals.put(start.key(), visualId);
                 }
             } else if (cue instanceof CinematicCue.VisualStopCue stop) {
@@ -507,11 +512,6 @@ public final class CinematicEffectService {
                     this.startGameTime + start.tick(),
                     EffectPersistenceOptions.cosmetic()
                 );
-                if (handle == null) {
-                    EffectBudgetService.recordCull(level);
-                    LOGGER.warn("Skipped segmented cinematic cue {}: no coordinator was created", start.key());
-                    return;
-                }
                 this.segmented.put(start.key(), handle);
             } else if (cue instanceof CinematicCue.SegmentedStopCue stop) {
                 SegmentedVisualEffectHandle handle = this.segmented.remove(stop.key());
@@ -535,7 +535,7 @@ public final class CinematicEffectService {
             }
         }
 
-        private void close(ServerLevel level, boolean persistRemoval) {
+        private void close(ServerLevel level, EffectRemovalPolicy policy) {
             if (this.closed) {
                 return;
             }
@@ -548,8 +548,8 @@ public final class CinematicEffectService {
             }
             this.segmented.clear();
             this.visuals.clear();
-            this.scope.close(persistRemoval);
-            if (persistRemoval) {
+            this.scope.close(policy);
+            if (policy.deletesDescriptor()) {
                 EffectPersistenceService.recordStop(level, this.descriptor.instanceId());
             }
         }

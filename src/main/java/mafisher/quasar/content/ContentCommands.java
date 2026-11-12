@@ -10,6 +10,7 @@ import mafisher.quasar.effect.EffectPriority;
 import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.VisualEffectSpec;
 import mafisher.quasar.effect.audio.EffectAudioAttenuation;
+import mafisher.quasar.effect.audio.EffectAudioCue;
 import mafisher.quasar.effect.audio.EffectAudioSpec;
 import mafisher.quasar.effect.gameplay.EffectPhase;
 import mafisher.quasar.effect.gameplay.EffectPhasePlan;
@@ -123,7 +124,7 @@ final class ContentCommands {
         Vec3 position = source.getPosition();
         Vec3 effectPosition = new Vec3(position.x, position.y - 1.4, position.z);
         EffectAudioSpec audio = EffectAudioSpec.builder(DEBUG_LIFETIME_TICKS)
-            .cue(
+            .cue(EffectAudioCue.at(
                 0,
                 effectPosition,
                 RUNE_CHIME,
@@ -131,8 +132,8 @@ final class ContentCommands {
                 1.0F,
                 1.0F,
                 EffectAudioAttenuation.distance(64.0F)
-            )
-            .cue(
+            ))
+            .cue(EffectAudioCue.at(
                 20,
                 effectPosition.add(0.0, 2.0, 0.0),
                 RUNE_CHIME,
@@ -146,20 +147,19 @@ final class ContentCommands {
                     0.25F,
                     64.0F
                 )
-            )
+            ))
             .build();
-        VisualEffectService.start(level, new VisualEffectSpec(
+        VisualEffectService.start(level, VisualEffectSpec.builder(
             ContentEffectIds.RUNE_CIRCLE,
             effectPosition,
-            source.getRotation().y,
-            0.0F,
-            0.0F,
-            DEBUG_SCALE,
             DEBUG_LIFETIME_TICKS,
             level.getRandom().nextLong(),
-            EffectAudience.nearby(DEBUG_AUDIENCE_RADIUS),
-            audio
-        ));
+            EffectAudience.nearby(DEBUG_AUDIENCE_RADIUS)
+        )
+            .rotation(source.getRotation().y, 0.0F, 0.0F)
+            .scale(DEBUG_SCALE)
+            .audio(audio)
+            .build());
         source.sendSuccess(() -> Component.literal("Started the content rune effect."), false);
         return 1;
     }
@@ -340,18 +340,17 @@ final class ContentCommands {
         Vec3 look = Vec3.directionFromRotation(viewPitch, viewYaw);
         Vec3 center = origin.add(look.scale(distance));
         EffectAudioSpec audio = ContentBlackHoleAudio.plan(center, BLACK_HOLE_LIFETIME_TICKS);
-        return new VisualEffectSpec(
+        return VisualEffectSpec.builder(
             ContentEffectIds.BLACK_HOLE,
             center,
-            viewYaw,
-            BLACK_HOLE_DISK_PITCH,
-            0.0F,
-            scale,
             BLACK_HOLE_LIFETIME_TICKS,
             ContentBlackHoleGeometry.withVariant(seed, variant),
-            EffectAudience.dimensionWide(),
-            audio
-        );
+            EffectAudience.dimensionWide()
+        )
+            .rotation(viewYaw, BLACK_HOLE_DISK_PITCH, 0.0F)
+            .scale(scale)
+            .audio(audio)
+            .build();
     }
 
     private static String blackHoleVariantName(int variant) {
@@ -382,19 +381,20 @@ final class ContentCommands {
         if ((long)columns * rows > SegmentedVisualEffectSpec.MAX_SEGMENTS) {
             throw new IllegalArgumentException("A segmented effect supports at most 128 segments");
         }
-        return new SegmentedVisualEffectSpec(
+        return SegmentedVisualEffectSpec.builder(
             ContentEffectIds.RUNE_CIRCLE,
             new Vec3(position.x, position.y - 1.4, position.z),
-            yaw,
-            0.0F,
-            0.0F,
-            DEBUG_SCALE,
-            columns,
-            rows,
-            spacing,
             SEGMENTED_LIFETIME_TICKS,
             seed,
             EffectAudience.nearby(SEGMENTED_AUDIENCE_RADIUS)
-        );
+        )
+            .rotation(yaw, 0.0F, 0.0F)
+            .segmentScale(DEBUG_SCALE)
+            .grid(columns, rows)
+            .spacing(spacing)
+            .layers(1, 0.0)
+            .audio(EffectAudioSpec.NONE)
+            .priority(EffectPriority.NORMAL)
+            .build();
     }
 }

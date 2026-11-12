@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.UUID;
 import mafisher.quasar.effect.audio.EffectAudioAttenuation;
 import mafisher.quasar.effect.audio.EffectAudioService;
+import mafisher.quasar.effect.audio.EffectAudioCue;
 import mafisher.quasar.effect.audio.EffectAudioSpec;
 import mafisher.quasar.effect.persistence.EffectAudioNbt;
 import mafisher.quasar.effect.persistence.EffectCapabilities;
@@ -49,7 +50,7 @@ class VisualEffectAudioTest {
 
     @Test
     void startsAndStopsAudioWithTheVisual() {
-        VisualEffectHandle handle = VisualEffectService.start(this.level, spec(100));
+        VisualEffectHandle handle = VisualEffectService.start(this.level, spec(100)).handle();
 
         assertEquals(1, EffectAudioService.activeCount(this.level));
 
@@ -61,21 +62,14 @@ class VisualEffectAudioTest {
     @Test
     void rejectsAudioCuesOutsideTheVisualDuration() {
         EffectAudioSpec audio = EffectAudioSpec.builder(5)
-            .cue(4, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F)
+            .cue(EffectAudioCue.at(4, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F))
             .build();
 
-        assertThrows(IllegalArgumentException.class, () -> new VisualEffectSpec(
-            EFFECT_ID,
-            Vec3.ZERO,
-            0.0F,
-            0.0F,
-            0.0F,
-            1.0F,
-            4,
-            7L,
-            EffectAudience.dimensionWide(),
-            audio
-        ));
+        assertThrows(IllegalArgumentException.class, () -> VisualEffectSpec.builder(EFFECT_ID, Vec3.ZERO, 4, 7L, EffectAudience.dimensionWide())
+            .rotation(0.0F, 0.0F, 0.0F)
+            .scale(1.0F)
+            .audio(audio)
+            .build());
     }
 
     @Test
@@ -94,22 +88,14 @@ class VisualEffectAudioTest {
         VisualEffectSpec spec = spec(100);
         CompoundTag state = new CompoundTag();
         EffectAudioNbt.saveInto(state, spec.audio());
-        EffectDescriptor descriptor = new EffectDescriptor(
-            instanceId,
-            EffectKind.VISUAL,
-            EFFECT_ID,
-            ResourceLocation.withDefaultNamespace("overworld"),
-            spec.transform(),
-            spec.scale(),
-            spec.seed(),
-            0L,
-            spec.durationTicks(),
-            spec.audience(),
-            EffectCapabilities.NONE,
-            EffectPersistence.RESUMABLE,
-            null,
-            state
-        );
+        EffectDescriptor descriptor = EffectDescriptor.builder(instanceId, EffectKind.VISUAL, EFFECT_ID, ResourceLocation.withDefaultNamespace("overworld"))
+            .placement(spec.transform(), spec.scale())
+            .timing(spec.seed(), 0L, spec.durationTicks())
+            .audience(spec.audience())
+            .capabilities(EffectCapabilities.NONE)
+            .persistence(EffectPersistence.RESUMABLE)
+            .state(state)
+            .build();
 
         VisualEffectService.restore(this.level, spec, instanceId, 0L, descriptor);
 
@@ -118,20 +104,13 @@ class VisualEffectAudioTest {
 
     private static VisualEffectSpec spec(int durationTicks) {
         EffectAudioSpec audio = EffectAudioSpec.builder(durationTicks)
-            .cue(0, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F,
-                EffectAudioAttenuation.distance(64.0F))
+            .cue(EffectAudioCue.at(0, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F,
+                EffectAudioAttenuation.distance(64.0F)))
             .build();
-        return new VisualEffectSpec(
-            EFFECT_ID,
-            Vec3.ZERO,
-            0.0F,
-            0.0F,
-            0.0F,
-            1.0F,
-            durationTicks,
-            7L,
-            EffectAudience.dimensionWide(),
-            audio
-        );
+        return VisualEffectSpec.builder(EFFECT_ID, Vec3.ZERO, durationTicks, 7L, EffectAudience.dimensionWide())
+            .rotation(0.0F, 0.0F, 0.0F)
+            .scale(1.0F)
+            .audio(audio)
+            .build();
     }
 }

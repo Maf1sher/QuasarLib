@@ -313,22 +313,14 @@ class GameplayBlockOperationsTest {
     }
 
     private EffectDescriptor descriptor(GameplayEffectSpec spec, UUID sessionId) {
-        return new EffectDescriptor(
-            sessionId,
-            EffectKind.GAMEPLAY,
-            spec.typeId(),
-            ResourceLocation.fromNamespaceAndPath("minecraft", "overworld"),
-            new EffectTransform(new EffectPoint(0.0, 64.0, 0.0), 0.0F, 0.0F, 0.0F),
-            1.0F,
-            spec.seed(),
-            0L,
-            spec.phases().totalDurationTicks(),
-            EffectAudience.dimensionWide(),
-            EffectCapabilities.destructiveCapability(),
-            EffectPersistence.RESUMABLE,
-            null,
-            GameplayEffectNbt.saveDescriptorState(spec, new CompoundTag())
-        );
+        return EffectDescriptor.builder(sessionId, EffectKind.GAMEPLAY, spec.typeId(), ResourceLocation.fromNamespaceAndPath("minecraft", "overworld"))
+            .placement(new EffectTransform(new EffectPoint(0.0, 64.0, 0.0), 0.0F, 0.0F, 0.0F), 1.0F)
+            .timing(spec.seed(), 0L, spec.phases().totalDurationTicks())
+            .audience(EffectAudience.dimensionWide())
+            .capabilities(EffectCapabilities.destructiveCapability())
+            .persistence(EffectPersistence.RESUMABLE)
+            .state(GameplayEffectNbt.saveDescriptorState(spec, new CompoundTag()))
+            .build();
     }
 
     private List<BlockChange> changes(BlockPos... positions) {

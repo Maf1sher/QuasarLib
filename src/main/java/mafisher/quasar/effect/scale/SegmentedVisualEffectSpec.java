@@ -27,16 +27,12 @@ public record SegmentedVisualEffectSpec(
     float pitch,
     float roll,
     float segmentScale,
-    int columns,
-    int rows,
-    double spacing,
+    SegmentGridLayout grid,
     int durationTicks,
     long seed,
     EffectAudience audience,
     EffectAudioSpec audio,
     EffectPriority priority,
-    int layers,
-    double layerSpacing,
     SegmentTerrainConform terrain
 ) {
     /** Shared per-level ceiling. A coordinator cannot reserve more than this many segments. */
@@ -45,11 +41,11 @@ public record SegmentedVisualEffectSpec(
     public SegmentedVisualEffectSpec {
         Objects.requireNonNull(effectId, "effectId");
         Objects.requireNonNull(center, "center");
+        Objects.requireNonNull(grid, "grid");
         Objects.requireNonNull(audience, "audience");
         Objects.requireNonNull(audio, "audio");
         Objects.requireNonNull(priority, "priority");
         Objects.requireNonNull(terrain, "terrain");
-        new SegmentGridLayout(columns, rows, layers, spacing, layerSpacing);
         if (!Double.isFinite(center.x) || !Double.isFinite(center.y) || !Double.isFinite(center.z)
             || !Float.isFinite(yaw) || !Float.isFinite(pitch) || !Float.isFinite(roll)
             || !Float.isFinite(segmentScale) || segmentScale <= 0.0F
@@ -60,87 +56,15 @@ public record SegmentedVisualEffectSpec(
         audio.requireFitsWithin(durationTicks);
     }
 
-    /** Source-compatible constructor for effects that use the default priority and a flat single-layer grid. */
-    public SegmentedVisualEffectSpec(
+    /** Starts a builder with the required fields; optional options keep their current defaults. */
+    public static Builder builder(
         ResourceLocation effectId,
         Vec3 center,
-        float yaw,
-        float pitch,
-        float roll,
-        float segmentScale,
-        int columns,
-        int rows,
-        double spacing,
-        int durationTicks,
-        long seed,
-        EffectAudience audience,
-        EffectAudioSpec audio
-    ) {
-        this(effectId, center, yaw, pitch, roll, segmentScale, columns, rows, spacing, durationTicks, seed, audience,
-            audio, EffectPriority.NORMAL, 1, 0.0, SegmentTerrainConform.NONE);
-    }
-
-    /** Source-compatible constructor for effects without audio or an explicit priority. */
-    public SegmentedVisualEffectSpec(
-        ResourceLocation effectId,
-        Vec3 center,
-        float yaw,
-        float pitch,
-        float roll,
-        float segmentScale,
-        int columns,
-        int rows,
-        double spacing,
         int durationTicks,
         long seed,
         EffectAudience audience
     ) {
-        this(effectId, center, yaw, pitch, roll, segmentScale, columns, rows, spacing, durationTicks, seed, audience,
-            EffectAudioSpec.NONE, EffectPriority.NORMAL, 1, 0.0, SegmentTerrainConform.NONE);
-    }
-
-    /** Source-compatible constructor with an explicit priority but no vertical layers. */
-    public SegmentedVisualEffectSpec(
-        ResourceLocation effectId,
-        Vec3 center,
-        float yaw,
-        float pitch,
-        float roll,
-        float segmentScale,
-        int columns,
-        int rows,
-        double spacing,
-        int durationTicks,
-        long seed,
-        EffectAudience audience,
-        EffectAudioSpec audio,
-        EffectPriority priority
-    ) {
-        this(effectId, center, yaw, pitch, roll, segmentScale, columns, rows, spacing, durationTicks, seed, audience,
-            audio, priority, 1, 0.0, SegmentTerrainConform.NONE);
-    }
-
-    /** Layered grid without terrain alignment. */
-    public SegmentedVisualEffectSpec(
-        ResourceLocation effectId,
-        Vec3 center,
-        float yaw,
-        float pitch,
-        float roll,
-        float segmentScale,
-        int columns,
-        int rows,
-        double spacing,
-        int durationTicks,
-        long seed,
-        EffectAudience audience,
-        EffectAudioSpec audio,
-        EffectPriority priority,
-        int layers,
-        double layerSpacing
-    ) {
-        this(effectId, center, yaw, pitch, roll, segmentScale, columns, rows, spacing, durationTicks, seed, audience,
-            audio, priority, layers, layerSpacing, SegmentTerrainConform.NONE);
+        return new Builder(effectId, center, durationTicks, seed, audience);
     }
 
     public VisualEffectSpec segmentSpec(int column, int row) {
@@ -165,9 +89,49 @@ public record SegmentedVisualEffectSpec(
         );
     }
 
+    /** Returns a copy centered at {@code center}, preserving every other authored option. */
+    public SegmentedVisualEffectSpec withCenter(Vec3 center) {
+        Objects.requireNonNull(center, "center");
+        return new SegmentedVisualEffectSpec(
+            this.effectId,
+            center,
+            this.yaw,
+            this.pitch,
+            this.roll,
+            this.segmentScale,
+            this.grid,
+            this.durationTicks,
+            this.seed,
+            this.audience,
+            this.audio,
+            this.priority,
+            this.terrain
+        );
+    }
+
     /** Grid geometry shared with the client, so both sides place segments identically. */
     public SegmentGridLayout layout() {
-        return new SegmentGridLayout(this.columns, this.rows, this.layers, this.spacing, this.layerSpacing);
+        return this.grid;
+    }
+
+    public int columns() {
+        return this.grid.columns();
+    }
+
+    public int rows() {
+        return this.grid.rows();
+    }
+
+    public int layers() {
+        return this.grid.layers();
+    }
+
+    public double spacing() {
+        return this.grid.spacing();
+    }
+
+    public double layerSpacing() {
+        return this.grid.layerSpacing();
     }
 
     /** Offset from the root center to one segment in the bottom layer, rotated by {@code yaw}. */
@@ -193,13 +157,119 @@ public record SegmentedVisualEffectSpec(
     }
 
     public int segmentCount() {
-        return this.columns * this.rows * this.layers;
+        return this.grid.segmentCount();
     }
 
     private void requireCell(int column, int row, int layer) {
-        if (column < 0 || column >= this.columns || row < 0 || row >= this.rows
-            || layer < 0 || layer >= this.layers) {
+        if (column < 0 || column >= this.columns() || row < 0 || row >= this.rows()
+            || layer < 0 || layer >= this.layers()) {
             throw new IndexOutOfBoundsException("Segment cell is outside the configured grid");
+        }
+    }
+
+    /** Builder for grid, terrain, audio, priority, and rotation without a long positional list. */
+    public static final class Builder {
+        private final ResourceLocation effectId;
+        private final Vec3 center;
+        private final int durationTicks;
+        private final long seed;
+        private final EffectAudience audience;
+        private float yaw;
+        private float pitch;
+        private float roll;
+        private float segmentScale = 1.0F;
+        private int columns = 1;
+        private int rows = 1;
+        private int layers = 1;
+        private double spacing;
+        private double layerSpacing;
+        private SegmentGridLayout explicitGrid;
+        private EffectAudioSpec audio = EffectAudioSpec.NONE;
+        private EffectPriority priority = EffectPriority.NORMAL;
+        private SegmentTerrainConform terrain = SegmentTerrainConform.NONE;
+
+        private Builder(
+            ResourceLocation effectId,
+            Vec3 center,
+            int durationTicks,
+            long seed,
+            EffectAudience audience
+        ) {
+            this.effectId = effectId;
+            this.center = center;
+            this.durationTicks = durationTicks;
+            this.seed = seed;
+            this.audience = audience;
+        }
+
+        public Builder rotation(float yaw, float pitch, float roll) {
+            this.yaw = yaw;
+            this.pitch = pitch;
+            this.roll = roll;
+            return this;
+        }
+
+        public Builder segmentScale(float segmentScale) {
+            this.segmentScale = segmentScale;
+            return this;
+        }
+
+        public Builder grid(int columns, int rows) {
+            this.columns = columns;
+            this.rows = rows;
+            return this;
+        }
+
+        public Builder grid(SegmentGridLayout grid) {
+            this.explicitGrid = Objects.requireNonNull(grid, "grid");
+            return this;
+        }
+
+        public Builder spacing(double spacing) {
+            this.spacing = spacing;
+            return this;
+        }
+
+        public Builder layers(int layers, double layerSpacing) {
+            this.layers = layers;
+            this.layerSpacing = layerSpacing;
+            return this;
+        }
+
+        public Builder audio(EffectAudioSpec audio) {
+            this.audio = audio;
+            return this;
+        }
+
+        public Builder priority(EffectPriority priority) {
+            this.priority = priority;
+            return this;
+        }
+
+        public Builder terrain(SegmentTerrainConform terrain) {
+            this.terrain = terrain;
+            return this;
+        }
+
+        public SegmentedVisualEffectSpec build() {
+            SegmentGridLayout grid = this.explicitGrid == null
+                ? new SegmentGridLayout(this.columns, this.rows, this.layers, this.spacing, this.layerSpacing)
+                : this.explicitGrid;
+            return new SegmentedVisualEffectSpec(
+                this.effectId,
+                this.center,
+                this.yaw,
+                this.pitch,
+                this.roll,
+                this.segmentScale,
+                grid,
+                this.durationTicks,
+                this.seed,
+                this.audience,
+                this.audio,
+                this.priority,
+                this.terrain
+            );
         }
     }
 }

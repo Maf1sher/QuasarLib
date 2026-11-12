@@ -9,16 +9,24 @@ import mafisher.quasar.effect.EffectTransform;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
+import mafisher.quasar.effect.EffectPriority;
+import mafisher.quasar.effect.audio.EffectAudioSpec;
 
 class SegmentGridLayoutTest {
     private static final ResourceLocation EFFECT_ID = ResourceLocation.fromNamespaceAndPath("quasar_lib", "test");
 
     @Test
     void offsetsMatchTheCoordinatorSpec() {
-        SegmentedVisualEffectSpec spec = new SegmentedVisualEffectSpec(
-            EFFECT_ID, new Vec3(0.0, 64.0, 0.0), 0.0F, 0.0F, 0.0F, 4.0F,
-            3, 3, 10.0, 200, 42L, EffectAudience.dimensionWide()
-        );
+        SegmentedVisualEffectSpec spec = SegmentedVisualEffectSpec.builder(EFFECT_ID, new Vec3(0.0, 64.0, 0.0), 200, 42L, EffectAudience.dimensionWide())
+            .rotation(0.0F, 0.0F, 0.0F)
+            .segmentScale(4.0F)
+            .grid(3, 3)
+            .spacing(10.0)
+            .layers(1, 0.0)
+            .audio(EffectAudioSpec.NONE)
+            .priority(EffectPriority.NORMAL)
+            .terrain(SegmentTerrainConform.NONE)
+            .build();
         SegmentGridLayout layout = spec.layout();
 
         for (int row = 0; row < 3; row++) {

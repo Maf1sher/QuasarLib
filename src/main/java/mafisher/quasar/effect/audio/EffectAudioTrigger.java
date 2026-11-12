@@ -60,6 +60,56 @@ public record EffectAudioTrigger(
         this(id, position, soundId, source, volume, pitch, EffectAudioAttenuation.VANILLA);
     }
 
+    /** Convenience factory for a trigger that uses vanilla attenuation. */
+    public static EffectAudioTrigger at(
+        String id,
+        Vec3 position,
+        SoundEvent sound,
+        SoundSource source,
+        float volume,
+        float pitch
+    ) {
+        return at(id, position, sound, source, volume, pitch, EffectAudioAttenuation.VANILLA);
+    }
+
+    /** Convenience factory for a resource-location trigger that uses vanilla attenuation. */
+    public static EffectAudioTrigger at(
+        String id,
+        Vec3 position,
+        ResourceLocation soundId,
+        SoundSource source,
+        float volume,
+        float pitch
+    ) {
+        return at(id, position, soundId, source, volume, pitch, EffectAudioAttenuation.VANILLA);
+    }
+
+    /** Convenience factory for a resource-location trigger with explicit attenuation. */
+    public static EffectAudioTrigger at(
+        String id,
+        Vec3 position,
+        ResourceLocation soundId,
+        SoundSource source,
+        float volume,
+        float pitch,
+        EffectAudioAttenuation attenuation
+    ) {
+        return new EffectAudioTrigger(id, position, soundId, source, volume, pitch, attenuation);
+    }
+
+    /** Convenience factory for a trigger with explicit attenuation. */
+    public static EffectAudioTrigger at(
+        String id,
+        Vec3 position,
+        SoundEvent sound,
+        SoundSource source,
+        float volume,
+        float pitch,
+        EffectAudioAttenuation attenuation
+    ) {
+        return new EffectAudioTrigger(id, position, sound, source, volume, pitch, attenuation);
+    }
+
     /** Returns a copy that plays at an explicitly supplied event position. */
     public EffectAudioTrigger withPosition(Vec3 position) {
         return new EffectAudioTrigger(

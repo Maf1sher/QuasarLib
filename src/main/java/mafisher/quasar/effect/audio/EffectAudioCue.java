@@ -3,6 +3,7 @@ package mafisher.quasar.effect.audio;
 import java.util.Objects;
 import mafisher.quasar.effect.EffectSoundValidation;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.phys.Vec3;
 
@@ -57,5 +58,58 @@ public record EffectAudioCue(
         float pitch
     ) {
         this(tick, position, soundId, source, volume, pitch, EffectAudioAttenuation.VANILLA);
+    }
+
+    /** Convenience factory for a one-shot cue that uses vanilla attenuation. */
+    public static EffectAudioCue at(
+        int tick,
+        Vec3 position,
+        SoundEvent sound,
+        SoundSource source,
+        float volume,
+        float pitch
+    ) {
+        return at(tick, position, sound, source, volume, pitch, EffectAudioAttenuation.VANILLA);
+    }
+
+    /** Convenience factory for a resource-location cue that uses vanilla attenuation. */
+    public static EffectAudioCue at(
+        int tick,
+        Vec3 position,
+        ResourceLocation soundId,
+        SoundSource source,
+        float volume,
+        float pitch
+    ) {
+        return at(tick, position, soundId, source, volume, pitch, EffectAudioAttenuation.VANILLA);
+    }
+
+    /** Convenience factory for a resource-location cue with explicit attenuation. */
+    public static EffectAudioCue at(
+        int tick,
+        Vec3 position,
+        ResourceLocation soundId,
+        SoundSource source,
+        float volume,
+        float pitch,
+        EffectAudioAttenuation attenuation
+    ) {
+        return new EffectAudioCue(tick, position, soundId, source, volume, pitch, attenuation);
+    }
+
+    /** Convenience factory for a one-shot cue with explicit attenuation. */
+    public static EffectAudioCue at(
+        int tick,
+        Vec3 position,
+        SoundEvent sound,
+        SoundSource source,
+        float volume,
+        float pitch,
+        EffectAudioAttenuation attenuation
+    ) {
+        Objects.requireNonNull(sound, "sound");
+        return new EffectAudioCue(
+            tick, position, sound.getLocation(), source, volume, pitch, attenuation
+        );
     }
 }

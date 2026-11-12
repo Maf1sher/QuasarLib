@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import mafisher.quasar.effect.scale.SegmentHeightSource;
+import mafisher.quasar.effect.scale.SegmentTerrainConform;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 
@@ -52,6 +54,64 @@ class CinematicTimelineJsonTest {
         assertEquals(2, timeline.cueCount());
         assertTrue(timeline.cues().getFirst() instanceof CinematicCue.VisualStartCue);
         assertEquals(2, timeline.tracks().iterator().next().keyframes().size());
+    }
+
+    @Test
+    void parsesLayeredAndTerrainConformingSegmentedCues() {
+        CinematicTimeline timeline = parse("""
+            {
+              "duration_ticks": 20,
+              "cues": [
+                {
+                  "type": "segmented",
+                  "tick": 0,
+                  "key": "field",
+                  "effect": "quasar_content:rune_circle",
+                  "center": [0, 64, 0],
+                  "columns": 2,
+                  "rows": 2,
+                  "spacing": 4,
+                  "duration_ticks": 10,
+                  "audience": {"type": "nearby", "radius": 32},
+                  "layers": 3,
+                  "layer_spacing": 5,
+                  "terrain": {"source": "world_surface", "offset": 1.5}
+                }
+              ]
+            }
+            """);
+
+        CinematicCue.SegmentedStartCue cue = (CinematicCue.SegmentedStartCue)timeline.cues().getFirst();
+        assertEquals(3, cue.spec().layers());
+        assertEquals(5.0, cue.spec().layerSpacing());
+        assertEquals(
+            new SegmentTerrainConform(SegmentHeightSource.WORLD_SURFACE, 1.5),
+            cue.spec().terrain()
+        );
+    }
+
+    @Test
+    void rejectsUnknownTerrainSources() {
+        assertThrows(RuntimeException.class, () -> parse("""
+            {
+              "duration_ticks": 20,
+              "cues": [
+                {
+                  "type": "segmented",
+                  "tick": 0,
+                  "key": "field",
+                  "effect": "quasar_content:rune_circle",
+                  "center": [0, 64, 0],
+                  "columns": 1,
+                  "rows": 1,
+                  "spacing": 1,
+                  "duration_ticks": 10,
+                  "audience": {"type": "nearby", "radius": 32},
+                  "terrain": {"source": "moon_rocks"}
+                }
+              ]
+            }
+            """));
     }
 
     @Test

@@ -29,23 +29,17 @@ class EffectLevelLifecycleTest {
         VisualEffectService.start(level, spec());
         assertTrue(LevelStateSlot.isTracked(level));
 
-        EffectLevelLifecycle.clear(level, false, GameplayEffectEndReason.LEVEL_UNLOAD);
+        EffectLevelLifecycle.clear(level, EffectRemovalPolicy.KEEP_FOR_RESTORE,
+            GameplayEffectEndReason.LEVEL_UNLOAD);
 
         assertEquals(0, VisualEffectService.activeCount(level));
         assertFalse(LevelStateSlot.isTracked(level));
     }
 
     private static VisualEffectSpec spec() {
-        return new VisualEffectSpec(
-            EFFECT_ID,
-            Vec3.ZERO,
-            0.0F,
-            0.0F,
-            0.0F,
-            1.0F,
-            200,
-            42L,
-            EffectAudience.dimensionWide()
-        );
+        return VisualEffectSpec.builder(EFFECT_ID, Vec3.ZERO, 200, 42L, EffectAudience.dimensionWide())
+            .rotation(0.0F, 0.0F, 0.0F)
+            .scale(1.0F)
+            .build();
     }
 }

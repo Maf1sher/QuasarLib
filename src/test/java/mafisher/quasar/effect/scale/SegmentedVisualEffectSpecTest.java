@@ -42,10 +42,16 @@ class SegmentedVisualEffectSpecTest {
     void derivesDeterministicPerSegmentSeeds() {
         SegmentedVisualEffectSpec spec = spec(4, 4, 8.0, 0.0F);
         SegmentedVisualEffectSpec same = spec(4, 4, 8.0, 0.0F);
-        SegmentedVisualEffectSpec other = new SegmentedVisualEffectSpec(
-            EFFECT_ID, new Vec3(0.0, 64.0, 0.0), 0.0F, 0.0F, 0.0F, 4.0F,
-            4, 4, 8.0, 200, 99L, EffectAudience.dimensionWide()
-        );
+        SegmentedVisualEffectSpec other = SegmentedVisualEffectSpec.builder(EFFECT_ID, new Vec3(0.0, 64.0, 0.0), 200, 99L, EffectAudience.dimensionWide())
+            .rotation(0.0F, 0.0F, 0.0F)
+            .segmentScale(4.0F)
+            .grid(4, 4)
+            .spacing(8.0)
+            .layers(1, 0.0)
+            .audio(EffectAudioSpec.NONE)
+            .priority(EffectPriority.NORMAL)
+            .terrain(SegmentTerrainConform.NONE)
+            .build();
 
         assertEquals(spec.segmentSeed(2, 3), same.segmentSeed(2, 3));
         assertNotEquals(spec.segmentSeed(2, 3), spec.segmentSeed(3, 3));
@@ -77,15 +83,27 @@ class SegmentedVisualEffectSpecTest {
         assertThrows(IllegalArgumentException.class, () -> spec(2, 2, 0.0, 0.0F));
         assertThrows(IllegalArgumentException.class, () -> spec(1, 1, -1.0, 0.0F));
         assertThrows(IllegalArgumentException.class,
-            () -> new SegmentedVisualEffectSpec(
-                EFFECT_ID, new Vec3(0.0, 64.0, 0.0), 0.0F, 0.0F, 0.0F, 129.0F,
-                1, 1, 0.0, 200, 42L, EffectAudience.dimensionWide()
-            ));
+            () -> SegmentedVisualEffectSpec.builder(EFFECT_ID, new Vec3(0.0, 64.0, 0.0), 200, 42L, EffectAudience.dimensionWide())
+                .rotation(0.0F, 0.0F, 0.0F)
+                .segmentScale(129.0F)
+                .grid(1, 1)
+                .spacing(0.0)
+                .layers(1, 0.0)
+                .audio(EffectAudioSpec.NONE)
+                .priority(EffectPriority.NORMAL)
+                .terrain(SegmentTerrainConform.NONE)
+                .build());
         assertThrows(IllegalArgumentException.class,
-            () -> new SegmentedVisualEffectSpec(
-                EFFECT_ID, new Vec3(0.0, 64.0, 0.0), 0.0F, 0.0F, 0.0F, 4.0F,
-                1, 1, 0.0, 0, 42L, EffectAudience.dimensionWide()
-            ));
+            () -> SegmentedVisualEffectSpec.builder(EFFECT_ID, new Vec3(0.0, 64.0, 0.0), 0, 42L, EffectAudience.dimensionWide())
+                .rotation(0.0F, 0.0F, 0.0F)
+                .segmentScale(4.0F)
+                .grid(1, 1)
+                .spacing(0.0)
+                .layers(1, 0.0)
+                .audio(EffectAudioSpec.NONE)
+                .priority(EffectPriority.NORMAL)
+                .terrain(SegmentTerrainConform.NONE)
+                .build());
         assertThrows(IndexOutOfBoundsException.class, () -> spec(2, 2, 4.0, 0.0F).segmentSpec(2, 0));
     }
 
@@ -119,40 +137,28 @@ class SegmentedVisualEffectSpecTest {
         double spacing,
         double layerSpacing
     ) {
-        return new SegmentedVisualEffectSpec(
-            EFFECT_ID,
-            new Vec3(0.0, 64.0, 0.0),
-            0.0F,
-            0.0F,
-            0.0F,
-            4.0F,
-            columns,
-            rows,
-            spacing,
-            200,
-            42L,
-            EffectAudience.dimensionWide(),
-            EffectAudioSpec.NONE,
-            EffectPriority.NORMAL,
-            layers,
-            layerSpacing
-        );
+        return SegmentedVisualEffectSpec.builder(EFFECT_ID, new Vec3(0.0, 64.0, 0.0), 200, 42L, EffectAudience.dimensionWide())
+            .rotation(0.0F, 0.0F, 0.0F)
+            .segmentScale(4.0F)
+            .grid(columns, rows)
+            .spacing(spacing)
+            .layers(layers, layerSpacing)
+            .audio(EffectAudioSpec.NONE)
+            .priority(EffectPriority.NORMAL)
+            .terrain(SegmentTerrainConform.NONE)
+            .build();
     }
 
     private static SegmentedVisualEffectSpec spec(int columns, int rows, double spacing, float yaw) {
-        return new SegmentedVisualEffectSpec(
-            EFFECT_ID,
-            new Vec3(0.0, 64.0, 0.0),
-            yaw,
-            0.0F,
-            0.0F,
-            4.0F,
-            columns,
-            rows,
-            spacing,
-            200,
-            42L,
-            EffectAudience.dimensionWide()
-        );
+        return SegmentedVisualEffectSpec.builder(EFFECT_ID, new Vec3(0.0, 64.0, 0.0), 200, 42L, EffectAudience.dimensionWide())
+            .rotation(yaw, 0.0F, 0.0F)
+            .segmentScale(4.0F)
+            .grid(columns, rows)
+            .spacing(spacing)
+            .layers(1, 0.0)
+            .audio(EffectAudioSpec.NONE)
+            .priority(EffectPriority.NORMAL)
+            .terrain(SegmentTerrainConform.NONE)
+            .build();
     }
 }

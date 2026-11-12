@@ -1,7 +1,9 @@
 package mafisher.quasar.effect.network;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.netty.handler.codec.DecoderException;
 import java.util.List;
 import java.util.UUID;
 import mafisher.quasar.effect.audio.EffectAudioAttenuation;
@@ -68,6 +70,45 @@ class EffectAudioPlanPayloadTest {
         assertEquals(8.0, decoded.triggers().getFirst().position().x);
         assertEquals(32.0F,
             ((EffectAudioAttenuation.Distance)decoded.triggers().getFirst().attenuation()).maxDistance());
+    }
+
+    @Test
+    void rejectsAnOversizedCueCount() {
+        FriendlyByteBuf buffer = new FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
+        buffer.writeUUID(UUID.randomUUID());
+        buffer.writeResourceLocation(DIMENSION);
+        buffer.writeDouble(0.0);
+        buffer.writeDouble(0.0);
+        buffer.writeDouble(0.0);
+        buffer.writeLong(0L);
+        buffer.writeVarInt(200);
+        buffer.writeVarInt(EffectAudioPlan.MAX_CUES + 1);
+
+        assertThrows(DecoderException.class, () -> EffectAudioPlanPayload.STREAM_CODEC.decode(buffer));
+    }
+
+    @Test
+    void rejectsAnUnknownAttenuationType() {
+        FriendlyByteBuf buffer = new FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
+        buffer.writeUUID(UUID.randomUUID());
+        buffer.writeResourceLocation(DIMENSION);
+        buffer.writeDouble(0.0);
+        buffer.writeDouble(0.0);
+        buffer.writeDouble(0.0);
+        buffer.writeLong(0L);
+        buffer.writeVarInt(200);
+        buffer.writeVarInt(1);
+        buffer.writeVarInt(0);
+        buffer.writeDouble(0.0);
+        buffer.writeDouble(0.0);
+        buffer.writeDouble(0.0);
+        buffer.writeResourceLocation(SOUND);
+        buffer.writeEnum(SoundSource.MASTER);
+        buffer.writeFloat(1.0F);
+        buffer.writeFloat(1.0F);
+        buffer.writeByte(9);
+
+        assertThrows(DecoderException.class, () -> EffectAudioPlanPayload.STREAM_CODEC.decode(buffer));
     }
 
     @Test

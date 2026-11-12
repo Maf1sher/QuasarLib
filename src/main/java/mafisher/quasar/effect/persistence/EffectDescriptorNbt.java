@@ -46,22 +46,19 @@ public final class EffectDescriptorNbt {
             ResourceLocation dimensionId = resourceLocation(tag.getString("dimension_id"), "dimension_id");
             EffectTransform transform = loadTransform(tag.getCompound("transform"));
             UUID ownerSession = tag.contains("owner_session") ? tag.getUUID("owner_session") : null;
-            return new EffectDescriptor(
-                instanceId,
-                kind,
-                typeId,
-                dimensionId,
-                transform,
-                tag.getFloat("scale"),
-                tag.getLong("seed"),
-                tag.getLong("start_game_time"),
-                tag.getInt("duration_ticks"),
-                loadAudience(tag.getCompound("audience")),
-                loadCapabilities(tag.getCompound("capabilities")),
-                EffectPersistence.valueOf(tag.getString("persistence")),
-                ownerSession,
-                tag.getCompound("state")
-            );
+            return EffectDescriptor.builder(instanceId, kind, typeId, dimensionId)
+                .placement(transform, tag.getFloat("scale"))
+                .timing(
+                    tag.getLong("seed"),
+                    tag.getLong("start_game_time"),
+                    tag.getInt("duration_ticks")
+                )
+                .audience(loadAudience(tag.getCompound("audience")))
+                .capabilities(loadCapabilities(tag.getCompound("capabilities")))
+                .persistence(EffectPersistence.valueOf(tag.getString("persistence")))
+                .ownerSessionId(ownerSession)
+                .state(tag.getCompound("state"))
+                .build();
         } catch (RuntimeException exception) {
             throw new IllegalArgumentException("Invalid effect descriptor", exception);
         }

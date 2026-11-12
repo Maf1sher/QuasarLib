@@ -39,7 +39,7 @@ class VisualEffectServiceResumeTest {
 
     @Test
     void resumeMarksThePlayerAsTrackingSoTheNextTickDoesNotResend() {
-        VisualEffectHandle handle = VisualEffectService.start(this.level, spec(EffectAudience.dimensionWide()));
+        VisualEffectHandle handle = VisualEffectService.start(this.level, spec(EffectAudience.dimensionWide())).handle();
         ServerPlayer player = player(new Vec3(0.0, 64.0, 0.0));
         when(this.level.players()).thenReturn(List.of(player));
         this.gameTime = 50L;
@@ -56,7 +56,7 @@ class VisualEffectServiceResumeTest {
         VisualEffectHandle handle = VisualEffectService.start(
             this.level,
             spec(EffectAudience.nearby(16.0))
-        );
+        ).handle();
         ServerPlayer player = player(new Vec3(4.0, 64.0, 0.0));
         when(this.level.players()).thenReturn(List.of(player));
 
@@ -73,17 +73,10 @@ class VisualEffectServiceResumeTest {
     }
 
     private static VisualEffectSpec spec(EffectAudience audience) {
-        return new VisualEffectSpec(
-            EFFECT_ID,
-            new Vec3(0.0, 64.0, 0.0),
-            0.0F,
-            0.0F,
-            0.0F,
-            1.0F,
-            200,
-            3L,
-            audience
-        );
+        return VisualEffectSpec.builder(EFFECT_ID, new Vec3(0.0, 64.0, 0.0), 200, 3L, audience)
+            .rotation(0.0F, 0.0F, 0.0F)
+            .scale(1.0F)
+            .build();
     }
 
     private ServerPlayer player(Vec3 position) {

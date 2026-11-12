@@ -79,18 +79,11 @@ class ContentBlackHoleGameplayTest {
 
     @Test
     void gameplaySpecMirrorsTheVisualDurationAndScale() {
-        VisualEffectSpec visual = new VisualEffectSpec(
-            ContentEffectIds.BLACK_HOLE,
-            new Vec3(1.0, 2.0, 3.0),
-            10.0F,
-            8.0F,
-            0.0F,
-            12.0F,
-            1_200,
-            7L,
-            EffectAudience.dimensionWide(),
-            ContentBlackHoleAudio.plan(new Vec3(1.0, 2.0, 3.0), 1_200)
-        );
+        VisualEffectSpec visual = VisualEffectSpec.builder(ContentEffectIds.BLACK_HOLE, new Vec3(1.0, 2.0, 3.0), 1_200, 7L, EffectAudience.dimensionWide())
+            .rotation(10.0F, 8.0F, 0.0F)
+            .scale(12.0F)
+            .audio(ContentBlackHoleAudio.plan(new Vec3(1.0, 2.0, 3.0), 1_200))
+            .build();
 
         GameplayEffectSpec spec = ContentCommands.blackHoleGameplaySpec(visual);
 

@@ -23,8 +23,8 @@ class PublicAudioApiVisibilityTest {
     @Test
     void exposesTheAudioSpecAndPlan() {
         EffectAudioSpec spec = EffectAudioSpec.builder(100)
-            .cue(10, Vec3.ZERO, ResourceLocation.withDefaultNamespace("test"), SoundSource.MASTER, 1.0F, 1.0F,
-                EffectAudioAttenuation.distance(64.0F))
+            .cue(EffectAudioCue.at(10, Vec3.ZERO, ResourceLocation.withDefaultNamespace("test"), SoundSource.MASTER, 1.0F, 1.0F,
+                EffectAudioAttenuation.distance(64.0F)))
             .build();
         EffectAudioPlan plan = EffectAudioPlan.from(
             UUID.randomUUID(),

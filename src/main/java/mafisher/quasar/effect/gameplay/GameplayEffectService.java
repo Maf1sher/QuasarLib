@@ -6,9 +6,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import mafisher.quasar.effect.EffectBudgetService;
 import mafisher.quasar.effect.EffectBudgets;
+import mafisher.quasar.effect.EffectRemovalPolicy;
 import mafisher.quasar.effect.EffectScope;
 import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.EffectTransform;
@@ -36,17 +38,6 @@ import org.slf4j.LoggerFactory;
  * descriptors; level unload and server shutdown close them without deleting persisted state.
  */
 public final class GameplayEffectService {
-    /** Default soft budget; it is a quality threshold, not a hard capability gate. */
-    public static final int MAX_ACTIVE_SESSIONS_PER_LEVEL = 128;
-    /** Default per-owner soft budget. */
-    public static final int MAX_ACTIVE_SESSIONS_PER_OWNER = OwnerAdmission.MAX_ACTIVE_SESSIONS_PER_OWNER;
-    /** Default per-owner start rate. Further starts are deferred, never rejected. */
-    public static final int MAX_STARTS_PER_OWNER_PER_TICK = OwnerAdmission.MAX_STARTS_PER_OWNER_PER_TICK;
-    /**
-     * Legacy default for the level-wide block-change cap. The live value comes from
-     * {@link EffectBudgets#blockChangesPerLevelTick()} and is configurable.
-     */
-    public static final int MAX_BLOCK_CHANGES_PER_LEVEL_TICK = 512;
     /**
      * How long a restored session may wait for its owner to become available before the normal
      * {@link OwnerPolicy#STOP_WHEN_UNAVAILABLE} path cancels it. Dedicated servers restore effects
@@ -170,7 +161,7 @@ public final class GameplayEffectService {
         }
         startAudio(level, session);
         if (context.isStopRequested()) {
-            finish(level, session, GameplayEffectEndReason.CANCELLED, true);
+            finish(level, session, GameplayEffectEndReason.CANCELLED, EffectRemovalPolicy.DELETE);
         }
         return true;
     }
@@ -182,22 +173,24 @@ public final class GameplayEffectService {
         long startGameTime,
         EffectPersistenceOptions options
     ) {
-        return new EffectDescriptor(
-            sessionId,
-            EffectKind.GAMEPLAY,
-            spec.typeId(),
-            level.dimension().location(),
-            new EffectTransform(new EffectPoint(spec.anchor().x, spec.anchor().y, spec.anchor().z), 0.0F, 0.0F, 0.0F),
-            spec.scale(),
-            spec.seed(),
-            startGameTime,
-            spec.phases().totalDurationTicks(),
-            EffectAudience.dimensionWide(),
-            options.capabilities(),
-            options.persistence(),
-            null,
-            GameplayEffectNbt.saveDescriptorState(spec, options.state())
-        );
+        return EffectDescriptor.builder(
+                sessionId, EffectKind.GAMEPLAY, spec.typeId(), level.dimension().location()
+            )
+            .placement(
+                new EffectTransform(
+                    new EffectPoint(spec.anchor().x, spec.anchor().y, spec.anchor().z),
+                    0.0F,
+                    0.0F,
+                    0.0F
+                ),
+                spec.scale()
+            )
+            .timing(spec.seed(), startGameTime, spec.phases().totalDurationTicks())
+            .audience(EffectAudience.dimensionWide())
+            .capabilities(options.capabilities())
+            .persistence(options.persistence())
+            .state(GameplayEffectNbt.saveDescriptorState(spec, options.state()))
+            .build();
     }
 
     /**
@@ -205,7 +198,7 @@ public final class GameplayEffectService {
      * The controller factory must be registered in {@link GameplayEffectTypeRegistry}.
      * Restoring a session that is already active or pending keeps the existing session.
      */
-    public static GameplayEffectHandle restore(
+    public static Optional<GameplayEffectHandle> restore(
         ServerLevel level,
         GameplayEffectSpec spec,
         UUID sessionId,
@@ -227,7 +220,7 @@ public final class GameplayEffectService {
                 spec.typeId(),
                 level.dimension().location()
             );
-            return handle;
+            return Optional.of(handle);
         }
 
         BlockJournal journal = EffectPersistenceService.journalOrNull(level, sessionId);
@@ -236,13 +229,13 @@ public final class GameplayEffectService {
         }
         if (journal.isRollbackPending()) {
             BlockRollbackService.schedule(level, sessionId, journal);
-            return null;
+            return Optional.empty();
         }
 
         int age = EffectTimeline.ageTicks(level.getGameTime(), startGameTime);
         if (age >= spec.phases().totalDurationTicks()) {
             EffectPersistenceService.recordStop(level, sessionId);
-            return null;
+            return Optional.empty();
         }
         if (!destructivePolicyAllows(level, spec, descriptor.capabilities())) {
             LOGGER.info(
@@ -250,7 +243,7 @@ public final class GameplayEffectService {
                 spec.typeId(),
                 level.dimension().location()
             );
-            return null;
+            return Optional.empty();
         }
 
         PendingStart pending = PendingStart.restored(
@@ -265,7 +258,7 @@ public final class GameplayEffectService {
                 );
             }
         }
-        return new GameplayEffectHandle(sessionId);
+        return Optional.of(new GameplayEffectHandle(sessionId));
     }
 
     /** Attempts to resume a persisted session immediately; returns {@code false} when capacity is full. */
@@ -304,7 +297,7 @@ public final class GameplayEffectService {
             pending.controller.onResume(context);
         } catch (RuntimeException | Error exception) {
             context.close();
-            scope.close(false);
+            scope.close(EffectRemovalPolicy.KEEP_FOR_RESTORE);
             throw exception;
         }
         admission.adopt(pending.spec.ownerId());
@@ -322,7 +315,7 @@ public final class GameplayEffectService {
         startAudio(level, session);
         VisualEffectService.adoptOwnedBy(level, session.id, scope);
         if (context.isStopRequested()) {
-            finish(level, session, GameplayEffectEndReason.CANCELLED, true);
+            finish(level, session, GameplayEffectEndReason.CANCELLED, EffectRemovalPolicy.DELETE);
         }
         return true;
     }
@@ -361,36 +354,42 @@ public final class GameplayEffectService {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(handle, "handle");
         Objects.requireNonNull(reason, "reason");
-        if (removePending(level, handle.sessionId(), true)) {
+        if (removePending(level, handle.sessionId(), EffectRemovalPolicy.DELETE)) {
             return;
         }
         GameplayState state = STATE.peek(level);
         ActiveSession session = state == null ? null : state.sessions.get(handle.sessionId());
         if (session != null) {
-            finish(level, session, reason, true);
+            finish(level, session, reason, EffectRemovalPolicy.DELETE);
         }
     }
 
     /** Stops every session in one level and returns how many were active. */
     public static int stopAll(ServerLevel level, GameplayEffectEndReason reason) {
-        return stopAll(level, reason, true);
+        return stopAll(level, reason, EffectRemovalPolicy.DELETE);
     }
 
     /**
-     * Stops every session in one level. Level unload and shutdown pass {@code false} so the
-     * descriptors stay available for restore; an explicit stop passes {@code true}.
+     * Stops every session in one level. Level unload and shutdown pass
+     * {@link EffectRemovalPolicy#KEEP_FOR_RESTORE} so descriptors stay available for restore; an
+     * explicit stop passes {@link EffectRemovalPolicy#DELETE}.
      */
-    public static int stopAll(ServerLevel level, GameplayEffectEndReason reason, boolean persistRemoval) {
+    public static int stopAll(
+        ServerLevel level,
+        GameplayEffectEndReason reason,
+        EffectRemovalPolicy policy
+    ) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(reason, "reason");
+        Objects.requireNonNull(policy, "policy");
         GameplayState state = STATE.peek(level);
         if (state == null) {
             return 0;
         }
-        clearPending(level, state, persistRemoval);
+        clearPending(level, state, policy);
         int count = state.sessions.size();
         for (ActiveSession session : new ArrayList<>(state.sessions.values())) {
-            finish(level, session, reason, persistRemoval);
+            finish(level, session, reason, policy);
         }
         STATE.remove(level);
         return count;
@@ -491,12 +490,12 @@ public final class GameplayEffectService {
                 );
             }
             persistJournal(level, session);
-            finish(level, session, GameplayEffectEndReason.EXPIRED, true);
+            finish(level, session, GameplayEffectEndReason.EXPIRED, EffectRemovalPolicy.DELETE);
             return remainingBlockChanges;
         }
         if (ownerUnavailable(level, session)) {
             persistJournal(level, session);
-            finish(level, session, GameplayEffectEndReason.OWNER_UNAVAILABLE, true);
+            finish(level, session, GameplayEffectEndReason.OWNER_UNAVAILABLE, EffectRemovalPolicy.DELETE);
             return remainingBlockChanges;
         }
 
@@ -509,7 +508,7 @@ public final class GameplayEffectService {
                 if (context.isStopRequested()) {
                     remainingBlockChanges = applyBlockChanges(session, remainingBlockChanges);
                     persistJournal(level, session);
-                    finish(level, session, GameplayEffectEndReason.CANCELLED, true);
+                    finish(level, session, GameplayEffectEndReason.CANCELLED, EffectRemovalPolicy.DELETE);
                     return remainingBlockChanges;
                 }
             }
@@ -523,7 +522,7 @@ public final class GameplayEffectService {
                 nextAge,
                 exception
             );
-            finish(level, session, GameplayEffectEndReason.FAILED, true);
+            finish(level, session, GameplayEffectEndReason.FAILED, EffectRemovalPolicy.DELETE);
             return remainingBlockChanges;
         }
 
@@ -535,7 +534,7 @@ public final class GameplayEffectService {
         }
 
         if (context.isStopRequested()) {
-            finish(level, session, GameplayEffectEndReason.CANCELLED, true);
+            finish(level, session, GameplayEffectEndReason.CANCELLED, EffectRemovalPolicy.DELETE);
         }
         return remainingBlockChanges;
     }
@@ -637,7 +636,7 @@ public final class GameplayEffectService {
         ServerLevel level,
         ActiveSession session,
         GameplayEffectEndReason reason,
-        boolean persistRemoval
+        EffectRemovalPolicy policy
     ) {
         GameplayState state = STATE.peek(level);
         Map<UUID, ActiveSession> sessions = state == null ? null : state.sessions;
@@ -646,7 +645,7 @@ public final class GameplayEffectService {
         }
 
         BlockJournal journal = session.context.blockJournal();
-        boolean wantsRollback = persistRemoval && shouldRollback(reason);
+        boolean wantsRollback = policy.deletesDescriptor() && shouldRollback(reason);
         boolean rollback = wantsRollback && journal.canRollback();
         if (wantsRollback && journal.isTruncated()) {
             LOGGER.warn(
@@ -657,7 +656,7 @@ public final class GameplayEffectService {
         if (rollback) {
             journal.beginRollback();
             EffectPersistenceService.recordJournal(level, session.id, journal);
-        } else if (!persistRemoval) {
+        } else if (!policy.deletesDescriptor()) {
             persistJournal(level, session, true);
         }
 
@@ -667,7 +666,7 @@ public final class GameplayEffectService {
             LOGGER.error("Gameplay effect {} failed in onEnd", session.spec.typeId(), exception);
         } finally {
             session.context.close();
-            session.scope.close(persistRemoval);
+            session.scope.close(policy);
             EffectAudioService.stop(level, session.id);
             OwnerAdmission admission = state.ownerAdmission;
             if (admission != null) {
@@ -681,7 +680,7 @@ public final class GameplayEffectService {
             } catch (RuntimeException exception) {
                 LOGGER.error("Could not schedule block rollback for {}", session.id, exception);
             }
-        } else if (persistRemoval) {
+        } else if (policy.deletesDescriptor()) {
             EffectPersistenceService.recordStop(level, session.id);
         }
     }
@@ -787,7 +786,7 @@ public final class GameplayEffectService {
         }
     }
 
-    private static boolean removePending(ServerLevel level, UUID id, boolean persistRemoval) {
+    private static boolean removePending(ServerLevel level, UUID id, EffectRemovalPolicy policy) {
         GameplayState state = STATE.peek(level);
         if (state == null) {
             return false;
@@ -799,7 +798,7 @@ public final class GameplayEffectService {
                 continue;
             }
             queue.remove(index);
-            if (persistRemoval && pending.restored) {
+            if (policy.deletesDescriptor() && pending.restored) {
                 EffectPersistenceService.recordStop(level, pending.id);
             }
             return true;
@@ -807,14 +806,14 @@ public final class GameplayEffectService {
         return false;
     }
 
-    private static void clearPending(ServerLevel level, GameplayState state, boolean persistRemoval) {
+    private static void clearPending(ServerLevel level, GameplayState state, EffectRemovalPolicy policy) {
         List<PendingStart> queue = state.pendingStarts;
         if (queue.isEmpty()) {
             return;
         }
         List<PendingStart> cleared = new ArrayList<>(queue);
         queue.clear();
-        if (!persistRemoval) {
+        if (!policy.deletesDescriptor()) {
             return;
         }
         for (PendingStart pending : cleared) {

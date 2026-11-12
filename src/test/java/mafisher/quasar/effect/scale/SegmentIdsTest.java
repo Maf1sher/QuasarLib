@@ -9,6 +9,8 @@ import mafisher.quasar.effect.EffectAudience;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
+import mafisher.quasar.effect.EffectPriority;
+import mafisher.quasar.effect.audio.EffectAudioSpec;
 
 class SegmentIdsTest {
     @Test
@@ -46,20 +48,16 @@ class SegmentIdsTest {
 
     @Test
     void matchesTheSpecSeedDerivation() {
-        SegmentedVisualEffectSpec spec = new SegmentedVisualEffectSpec(
-            ResourceLocation.fromNamespaceAndPath("quasar_lib", "test"),
-            new Vec3(0.0, 64.0, 0.0),
-            0.0F,
-            0.0F,
-            0.0F,
-            4.0F,
-            4,
-            4,
-            8.0,
-            200,
-            42L,
-            EffectAudience.dimensionWide()
-        );
+        SegmentedVisualEffectSpec spec = SegmentedVisualEffectSpec.builder(ResourceLocation.fromNamespaceAndPath("quasar_lib", "test"), new Vec3(0.0, 64.0, 0.0), 200, 42L, EffectAudience.dimensionWide())
+            .rotation(0.0F, 0.0F, 0.0F)
+            .segmentScale(4.0F)
+            .grid(4, 4)
+            .spacing(8.0)
+            .layers(1, 0.0)
+            .audio(EffectAudioSpec.NONE)
+            .priority(EffectPriority.NORMAL)
+            .terrain(SegmentTerrainConform.NONE)
+            .build();
 
         for (int row = 0; row < spec.rows(); row++) {
             for (int column = 0; column < spec.columns(); column++) {

@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import mafisher.quasar.effect.EffectBudgets;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
@@ -63,18 +64,18 @@ class GameplayEffectServiceTest {
     @Test
     void defersStartsAboveTheOwnerSessionBudget() {
         List<GameplayEffectHandle> handles = new ArrayList<>();
-        for (int tick = 0; tick < GameplayEffectService.MAX_ACTIVE_SESSIONS_PER_OWNER; tick++) {
+        for (int tick = 0; tick < EffectBudgets.gameplaySessionsPerOwner(); tick++) {
             this.gameTime = tick;
             handles.add(start(OWNER, OwnerPolicy.CONTINUE, new RecordingController()));
         }
-        this.gameTime = GameplayEffectService.MAX_ACTIVE_SESSIONS_PER_OWNER;
+        this.gameTime = EffectBudgets.gameplaySessionsPerOwner();
 
         GameplayEffectHandle deferred = start(
             OWNER, OwnerPolicy.CONTINUE, new RecordingController()
         );
 
         assertEquals(
-            GameplayEffectService.MAX_ACTIVE_SESSIONS_PER_OWNER,
+            EffectBudgets.gameplaySessionsPerOwner(),
             GameplayEffectService.activeCount(this.level)
         );
         assertEquals(1, GameplayEffectService.pendingCount(this.level));
@@ -85,7 +86,7 @@ class GameplayEffectServiceTest {
 
         assertTrue(GameplayEffectService.isActive(this.level, deferred));
         assertEquals(
-            GameplayEffectService.MAX_ACTIVE_SESSIONS_PER_OWNER,
+            EffectBudgets.gameplaySessionsPerOwner(),
             GameplayEffectService.activeCount(this.level)
         );
         assertEquals(0, GameplayEffectService.pendingCount(this.level));

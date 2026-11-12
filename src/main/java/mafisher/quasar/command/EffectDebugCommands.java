@@ -22,6 +22,7 @@ import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.VisualEffectSpec;
 import mafisher.quasar.effect.cinematic.CinematicEffectHandle;
 import mafisher.quasar.effect.cinematic.CinematicEffectService;
+import mafisher.quasar.effect.cinematic.CinematicEffectStartResult;
 import mafisher.quasar.effect.cinematic.CinematicAudioMode;
 import mafisher.quasar.effect.cinematic.CinematicTimeline;
 import mafisher.quasar.effect.cinematic.CinematicTimelineRegistry;
@@ -208,17 +209,16 @@ public final class EffectDebugCommands {
     private static int testWaves(CommandSourceStack source, EffectAngles angles) {
         ServerLevel level = source.getLevel();
         Vec3 position = effectPosition(source);
-        VisualEffectService.start(level, new VisualEffectSpec(
+        VisualEffectService.start(level, VisualEffectSpec.builder(
             EffectVisualIds.DEBUG_WAVE_DISTORTION,
             position,
-            angles.yaw(),
-            angles.pitch(),
-            angles.roll(),
-            5.0F,
             DEBUG_EFFECT_LIFETIME_TICKS,
             level.getRandom().nextLong(),
             EffectAudience.nearby(128.0)
-        ));
+        )
+            .rotation(angles.yaw(), angles.pitch(), angles.roll())
+            .scale(5.0F)
+            .build());
         source.sendSuccess(() -> Component.literal("Started the visual-only wave distortion test."), false);
         return 1;
     }
@@ -226,17 +226,16 @@ public final class EffectDebugCommands {
     private static int testSceneBlur(CommandSourceStack source, EffectAngles angles) {
         ServerLevel level = source.getLevel();
         Vec3 position = effectPosition(source);
-        VisualEffectService.start(level, new VisualEffectSpec(
+        VisualEffectService.start(level, VisualEffectSpec.builder(
             EffectVisualIds.DEBUG_SCENE_BLUR,
             position,
-            angles.yaw(),
-            angles.pitch(),
-            angles.roll(),
-            5.0F,
             DEBUG_EFFECT_LIFETIME_TICKS,
             level.getRandom().nextLong(),
             EffectAudience.nearby(128.0)
-        ));
+        )
+            .rotation(angles.yaw(), angles.pitch(), angles.roll())
+            .scale(5.0F)
+            .build());
         source.sendSuccess(() -> Component.literal("Started the visual-only scene blur test."), false);
         return 1;
     }
@@ -244,17 +243,16 @@ public final class EffectDebugCommands {
     private static int testBloom(CommandSourceStack source, EffectAngles angles) {
         ServerLevel level = source.getLevel();
         Vec3 position = effectPosition(source);
-        VisualEffectService.start(level, new VisualEffectSpec(
+        VisualEffectService.start(level, VisualEffectSpec.builder(
             EffectVisualIds.DEBUG_BLOOM,
             position,
-            angles.yaw(),
-            angles.pitch(),
-            angles.roll(),
-            5.0F,
             DEBUG_EFFECT_LIFETIME_TICKS,
             level.getRandom().nextLong(),
             EffectAudience.nearby(128.0)
-        ));
+        )
+            .rotation(angles.yaw(), angles.pitch(), angles.roll())
+            .scale(5.0F)
+            .build());
         source.sendSuccess(() -> Component.literal("Started the visual-only bloom test."), false);
         return 1;
     }
@@ -262,17 +260,16 @@ public final class EffectDebugCommands {
     private static int testBlackHole(CommandSourceStack source, EffectAngles angles) {
         ServerLevel level = source.getLevel();
         Vec3 position = effectPosition(source);
-        VisualEffectService.start(level, new VisualEffectSpec(
+        VisualEffectService.start(level, VisualEffectSpec.builder(
             EffectVisualIds.DEBUG_BLACK_HOLE,
             position,
-            angles.yaw(),
-            angles.pitch(),
-            angles.roll(),
-            5.0F,
             DEBUG_EFFECT_LIFETIME_TICKS,
             level.getRandom().nextLong(),
             EffectAudience.nearby(128.0)
-        ));
+        )
+            .rotation(angles.yaw(), angles.pitch(), angles.roll())
+            .scale(5.0F)
+            .build());
         source.sendSuccess(() -> Component.literal("Started the visual-only black-hole effect test."), false);
         return 1;
     }
@@ -402,54 +399,56 @@ public final class EffectDebugCommands {
             .transformUpdateIntervalTicks(1)
             .audioMode(CinematicAudioMode.CLIENT)
             .sound(0, position, QuasarSounds.EFFECT_TEST.get(), SoundSource.MASTER, 4.0F, 1.0F)
-            .visual("ring", 0, new VisualEffectSpec(
+            .visual("ring", 0, VisualEffectSpec.builder(
                 EffectVisualIds.DEBUG_RUNE_CIRCLE,
                 position,
-                yaw,
-                0.0F,
-                0.0F,
-                5.0F,
                 220,
                 seed + 1L,
                 EffectAudience.nearby(128.0)
-            ))
+            )
+                .rotation(yaw, 0.0F, 0.0F)
+                .scale(5.0F)
+                .build())
             .transform("ring", 0, cinematicTransform(position, yaw), EffectEasing.EASE_OUT_CUBIC)
             .transform("ring", 100, cinematicTransform(position.add(0.0, 3.0, 0.0), yaw + 180.0F),
                 EffectEasing.LINEAR)
             .sound(20, position, QuasarSounds.EFFECT_TEST.get(), SoundSource.MASTER, 4.0F, 1.2F)
-            .visual("waves", 40, new VisualEffectSpec(
+            .visual("waves", 40, VisualEffectSpec.builder(
                 EffectVisualIds.DEBUG_WAVE_DISTORTION,
                 position,
-                yaw,
-                0.0F,
-                0.0F,
-                5.0F,
                 180,
                 seed + 2L,
                 EffectAudience.nearby(128.0)
-            ))
+            )
+                .rotation(yaw, 0.0F, 0.0F)
+                .scale(5.0F)
+                .build())
             .sound(100, position, QuasarSounds.EFFECT_TEST.get(), SoundSource.MASTER, 4.0F, 0.8F)
-            .visual("bloom", 100, new VisualEffectSpec(
+            .visual("bloom", 100, VisualEffectSpec.builder(
                 EffectVisualIds.DEBUG_BLOOM,
                 position,
-                yaw,
-                0.0F,
-                0.0F,
-                5.0F,
                 120,
                 seed + 3L,
                 EffectAudience.nearby(128.0)
-            ))
+            )
+                .rotation(yaw, 0.0F, 0.0F)
+                .scale(5.0F)
+                .build())
             .stopVisual("ring", 160)
             .build();
 
-        CinematicEffectHandle handle;
+        CinematicEffectStartResult result;
         try {
-            handle = CinematicEffectService.start(level, timeline);
+            result = CinematicEffectService.start(level, timeline);
         } catch (IllegalStateException exception) {
             source.sendFailure(Component.literal(exception.getMessage()));
             return 0;
         }
+        if (!result.active()) {
+            source.sendFailure(Component.literal("The cinematic was culled by the session budget."));
+            return 0;
+        }
+        CinematicEffectHandle handle = result.handle();
         source.sendSuccess(
             () -> Component.literal(
                 "Started cinematic " + timeline.id() + " (" + timeline.cueCount() + " cues, "
@@ -467,11 +466,16 @@ public final class EffectDebugCommands {
             return 0;
         }
         try {
-            CinematicEffectHandle handle = CinematicEffectService.start(
+            CinematicEffectStartResult result = CinematicEffectService.start(
                 source.getLevel(),
                 timeline,
                 source.getPosition()
             );
+            if (!result.active()) {
+                source.sendFailure(Component.literal("The cinematic was culled by the session budget."));
+                return 0;
+            }
+            CinematicEffectHandle handle = result.handle();
             source.sendSuccess(
                 () -> Component.literal(
                     "Started cinematic " + id + " (" + timeline.cueCount() + " cues, "
@@ -578,17 +582,16 @@ public final class EffectDebugCommands {
     }
 
     private static void startRing(ServerLevel level, Vec3 position, EffectAngles angles) {
-        VisualEffectService.start(level, new VisualEffectSpec(
+        VisualEffectService.start(level, VisualEffectSpec.builder(
             EffectVisualIds.DEBUG_RUNE_CIRCLE,
             position,
-            angles.yaw(),
-            angles.pitch(),
-            angles.roll(),
-            5.0F,
             DEBUG_EFFECT_LIFETIME_TICKS,
             level.getRandom().nextLong(),
             EffectAudience.nearby(128.0)
-        ));
+        )
+            .rotation(angles.yaw(), angles.pitch(), angles.roll())
+            .scale(5.0F)
+            .build());
     }
 
     private static boolean spawnProbe(ServerLevel level, Vec3 position, EffectAngles angles) {
@@ -647,17 +650,16 @@ public final class EffectDebugCommands {
 
         @Override
         public void onStart(GameplayEffectContext context) {
-            context.scope().playVisual(new VisualEffectSpec(
+            context.scope().playVisual(VisualEffectSpec.builder(
                 EffectVisualIds.DEBUG_RUNE_CIRCLE,
                 this.position,
-                0.0F,
-                0.0F,
-                0.0F,
-                5.0F,
                 GAMEPLAY_DURATION_TICKS,
                 context.spec().seed(),
                 EffectAudience.nearby(128.0)
-            ));
+            )
+                .rotation(0.0F, 0.0F, 0.0F)
+                .scale(5.0F)
+                .build());
         }
 
         @Override

@@ -1,6 +1,7 @@
 package mafisher.quasar.effect;
 
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import mafisher.quasar.effect.scale.SegmentLink;
 import mafisher.quasar.effect.persistence.EffectPersistenceOptions;
@@ -24,7 +25,7 @@ public final class EffectScope implements AutoCloseable {
     private final EffectScopeResources resources = new EffectScopeResources();
     private final EffectScopeVisuals visuals;
     private boolean closed;
-    private boolean persistRemovalOnClose = true;
+    private EffectRemovalPolicy removalPolicy = EffectRemovalPolicy.DELETE;
 
     public EffectScope(ServerLevel level) {
         this(level, UUID.randomUUID());
@@ -36,7 +37,7 @@ public final class EffectScope implements AutoCloseable {
         this.visuals = new EffectScopeVisuals(
             this.level,
             this.resources,
-            () -> this.persistRemovalOnClose
+            () -> this.removalPolicy
         );
     }
 
@@ -44,36 +45,43 @@ public final class EffectScope implements AutoCloseable {
         return this.sessionId;
     }
 
-    public UUID playVisual(VisualEffectSpec spec) {
+    public Optional<UUID> playVisual(VisualEffectSpec spec) {
         return this.playVisual(spec, EffectLifetimePolicy.CANCEL_WITH_SCOPE, null);
     }
 
-    public UUID playVisual(VisualEffectSpec spec, EffectLifetimePolicy lifetimePolicy) {
+    public Optional<UUID> playVisual(VisualEffectSpec spec, EffectLifetimePolicy lifetimePolicy) {
         return this.playVisual(spec, lifetimePolicy, null);
     }
 
     /** Plays a legacy coordinator-linked visual. New segmented effects use the segmented service. */
-    public UUID playVisual(VisualEffectSpec spec, SegmentLink segmentLink) {
+    public Optional<UUID> playVisual(VisualEffectSpec spec, SegmentLink segmentLink) {
         return this.playVisual(spec, EffectLifetimePolicy.CANCEL_WITH_SCOPE, segmentLink);
     }
 
-    public UUID playVisual(VisualEffectSpec spec, EffectLifetimePolicy lifetimePolicy, SegmentLink segmentLink) {
+    public Optional<UUID> playVisual(
+        VisualEffectSpec spec,
+        EffectLifetimePolicy lifetimePolicy,
+        SegmentLink segmentLink
+    ) {
         this.ensureOpen();
         Objects.requireNonNull(spec, "spec");
         Objects.requireNonNull(lifetimePolicy, "lifetimePolicy");
         this.visuals.prune();
 
-        VisualEffectHandle handle = VisualEffectService.start(this.level, spec, segmentLink,
+        VisualEffectStartResult result = VisualEffectService.start(this.level, spec, segmentLink,
             lifetimePolicy == EffectLifetimePolicy.CANCEL_WITH_SCOPE
                 ? EffectPersistenceOptions.DEFAULT.withOwnerSessionId(this.sessionId)
                 : EffectPersistenceOptions.DEFAULT);
-        UUID instanceId = handle.instanceId();
+        if (!result.active()) {
+            return Optional.empty();
+        }
+        UUID instanceId = result.handle().instanceId();
         this.visuals.track(
             instanceId,
-            handle,
+            result.handle(),
             lifetimePolicy == EffectLifetimePolicy.CANCEL_WITH_SCOPE
         );
-        return instanceId;
+        return Optional.of(instanceId);
     }
 
     /**
@@ -94,7 +102,7 @@ public final class EffectScope implements AutoCloseable {
     /** Stops a visual created by this scope and removes it from the cleanup ledger. */
     public void stopVisual(UUID instanceId) {
         this.visuals.prune();
-        this.visuals.stop(instanceId, true);
+        this.visuals.stop(instanceId, EffectRemovalPolicy.DELETE);
     }
 
     /** Updates a visual created by this scope without changing its lifetime or ownership. */
@@ -142,20 +150,22 @@ public final class EffectScope implements AutoCloseable {
 
     @Override
     public void close() {
-        close(true);
+        close(EffectRemovalPolicy.DELETE);
     }
 
     /**
-     * Closes the scope. Level unload and server shutdown pass {@code false} so child visual
-     * descriptors survive for restore; explicit stops pass {@code true}.
+     * Closes the scope. Level unload and server shutdown pass {@link EffectRemovalPolicy#KEEP_FOR_RESTORE}
+     * so child visual descriptors survive for restore; explicit stops pass
+     * {@link EffectRemovalPolicy#DELETE}.
      */
-    public void close(boolean persistRemoval) {
+    public void close(EffectRemovalPolicy policy) {
+        Objects.requireNonNull(policy, "policy");
         if (this.closed) {
             return;
         }
         this.visuals.prune();
         this.closed = true;
-        this.persistRemovalOnClose = persistRemoval;
+        this.removalPolicy = policy;
         try {
             this.resources.close();
         } catch (RuntimeException exception) {

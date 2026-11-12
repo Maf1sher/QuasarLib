@@ -179,22 +179,7 @@ public final class CinematicTimeline {
             return new CinematicCue.SegmentedStartCue(
                 start.tick(),
                 start.key(),
-                new SegmentedVisualEffectSpec(
-                    spec.effectId(),
-                    spec.center().add(anchor),
-                    spec.yaw(),
-                    spec.pitch(),
-                    spec.roll(),
-                    spec.segmentScale(),
-                    spec.columns(),
-                    spec.rows(),
-                    spec.spacing(),
-                    spec.durationTicks(),
-                    spec.seed(),
-                    spec.audience(),
-                    spec.audio(),
-                    spec.priority()
-                )
+                spec.withCenter(spec.center().add(anchor))
             );
         }
         return cue;

@@ -11,7 +11,6 @@ import java.util.WeakHashMap;
 import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectPriority;
 import mafisher.quasar.effect.EffectScope;
-import mafisher.quasar.effect.VisualEffectHandle;
 import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.VisualEffectSpec;
 import mafisher.quasar.effect.cinematic.CinematicEffectService;
@@ -172,7 +171,7 @@ public final class EffectRestoreService {
             descriptor.instanceId(),
             descriptor.startGameTime(),
             descriptor
-        ) != null;
+        ).active();
     }
 
     private static boolean restoreGameplay(ServerLevel level, EffectDescriptor descriptor) {
@@ -187,19 +186,20 @@ public final class EffectRestoreService {
             descriptor.startGameTime(),
             descriptor,
             controller
-        ) != null;
+        ).isPresent();
     }
 
     private static boolean restoreSegmented(ServerLevel level, EffectDescriptor descriptor) {
         SegmentedEffectNbt.Loaded loaded = SegmentedEffectNbt.load(descriptor);
-        return SegmentedVisualEffectService.restore(
+        SegmentedVisualEffectService.restore(
             level,
             loaded.spec(),
             descriptor.instanceId(),
             descriptor.startGameTime(),
             loaded.segmentIds(),
             descriptor
-        ) != null;
+        );
+        return true;
     }
 
     private static boolean restoreVisual(ServerLevel level, EffectDescriptor descriptor) {
@@ -217,14 +217,19 @@ public final class EffectRestoreService {
             EffectAudioNbt.loadFrom(state),
             priority(state, descriptor)
         );
-        VisualEffectHandle handle = VisualEffectService.restore(
+        var result = VisualEffectService.restore(
             level,
             spec,
             descriptor.instanceId(),
             descriptor.startGameTime(),
             descriptor
         );
-        if (handle == null) {
+        if (!result.active()) {
+            LOGGER.info(
+                "Deferred visual restore {} in {}: the soft budget culled it",
+                descriptor.instanceId(),
+                level.dimension().location()
+            );
             return false;
         }
         if (descriptor.ownerSessionId() != null) {
@@ -233,7 +238,7 @@ public final class EffectRestoreService {
                 new GameplayEffectHandle(descriptor.ownerSessionId())
             );
             if (scope != null) {
-                scope.adoptVisual(descriptor.instanceId(), handle);
+                scope.adoptVisual(descriptor.instanceId(), result.handle());
             }
         }
         return true;

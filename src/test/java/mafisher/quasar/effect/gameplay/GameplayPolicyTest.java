@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -80,9 +81,9 @@ class GameplayPolicyTest {
         policy(false);
         GameplayEffectSpec spec = spec();
 
-        assertNull(GameplayEffectService.restore(
+        assertTrue(GameplayEffectService.restore(
             this.level, spec, SESSION, 0L, descriptor(spec), new DummyController()
-        ));
+        ).isEmpty());
         assertEquals(0, GameplayEffectService.activeCount(this.level));
     }
 
@@ -93,7 +94,7 @@ class GameplayPolicyTest {
 
         GameplayEffectHandle handle = GameplayEffectService.restore(
             this.level, spec, SESSION, 0L, descriptor(spec), new DummyController()
-        );
+        ).orElseThrow();
 
         assertNotNull(handle);
         assertEquals(1, GameplayEffectService.activeCount(this.level));
@@ -124,22 +125,14 @@ class GameplayPolicyTest {
     }
 
     private static EffectDescriptor descriptor(GameplayEffectSpec spec) {
-        return new EffectDescriptor(
-            SESSION,
-            EffectKind.GAMEPLAY,
-            TYPE,
-            ResourceLocation.fromNamespaceAndPath("minecraft", "overworld"),
-            new EffectTransform(new EffectPoint(0.0, 64.0, 0.0), 0.0F, 0.0F, 0.0F),
-            1.0F,
-            spec.seed(),
-            0L,
-            spec.phases().totalDurationTicks(),
-            EffectAudience.dimensionWide(),
-            EffectCapabilities.destructiveCapability(),
-            EffectPersistence.RESUMABLE,
-            null,
-            GameplayEffectNbt.saveDescriptorState(spec, new CompoundTag())
-        );
+        return EffectDescriptor.builder(SESSION, EffectKind.GAMEPLAY, TYPE, ResourceLocation.fromNamespaceAndPath("minecraft", "overworld"))
+            .placement(new EffectTransform(new EffectPoint(0.0, 64.0, 0.0), 0.0F, 0.0F, 0.0F), 1.0F)
+            .timing(spec.seed(), 0L, spec.phases().totalDurationTicks())
+            .audience(EffectAudience.dimensionWide())
+            .capabilities(EffectCapabilities.destructiveCapability())
+            .persistence(EffectPersistence.RESUMABLE)
+            .state(GameplayEffectNbt.saveDescriptorState(spec, new CompoundTag()))
+            .build();
     }
 
     private static final class DummyController implements GameplayEffectController {

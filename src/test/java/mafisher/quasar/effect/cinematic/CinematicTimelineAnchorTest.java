@@ -5,8 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectPoint;
+import mafisher.quasar.effect.EffectPriority;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.VisualEffectSpec;
+import mafisher.quasar.effect.audio.EffectAudioSpec;
+import mafisher.quasar.effect.scale.SegmentHeightSource;
+import mafisher.quasar.effect.scale.SegmentTerrainConform;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectSpec;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvent;
@@ -25,14 +29,20 @@ class CinematicTimelineAnchorTest {
     void offsetsCuesTracksAndSegmentedCentersWithoutMutatingTheOriginal() {
         CinematicTimeline timeline = CinematicTimeline.builder(ID, 100, 1L)
             .sound(0, new Vec3(1.0, 2.0, 3.0), SOUND, SoundSource.MASTER, 1.0F, 1.0F)
-            .visual("ring", 0, new VisualEffectSpec(
-                EFFECT_ID, new Vec3(4.0, 5.0, 6.0), 0.0F, 0.0F, 0.0F, 2.0F, 50, 2L,
-                EffectAudience.nearby(32.0)
-            ))
-            .segmented("field", 0, new SegmentedVisualEffectSpec(
-                EFFECT_ID, new Vec3(7.0, 8.0, 9.0), 0.0F, 0.0F, 0.0F, 2.0F, 2, 2, 4.0,
-                50, 3L, EffectAudience.nearby(32.0)
-            ))
+            .visual("ring", 0, VisualEffectSpec.builder(EFFECT_ID, new Vec3(4.0, 5.0, 6.0), 50, 2L, EffectAudience.nearby(32.0))
+                .rotation(0.0F, 0.0F, 0.0F)
+                .scale(2.0F)
+                .build())
+            .segmented("field", 0, SegmentedVisualEffectSpec.builder(EFFECT_ID, new Vec3(7.0, 8.0, 9.0), 50, 3L, EffectAudience.nearby(32.0))
+                .rotation(0.0F, 0.0F, 0.0F)
+                .segmentScale(2.0F)
+                .grid(2, 2)
+                .spacing(4.0)
+                .layers(1, 0.0)
+                .audio(EffectAudioSpec.NONE)
+                .priority(EffectPriority.NORMAL)
+                .terrain(SegmentTerrainConform.NONE)
+                .build())
             .transform("ring", 0, transform(1.0, 2.0, 3.0), EffectEasing.LINEAR)
             .transform("ring", 10, transform(1.0, 5.0, 3.0), EffectEasing.LINEAR)
             .build();
@@ -51,6 +61,35 @@ class CinematicTimelineAnchorTest {
 
         CinematicCue.VisualStartCue original = (CinematicCue.VisualStartCue)timeline.cues().get(1);
         assertEquals(new Vec3(4.0, 5.0, 6.0), original.spec().position());
+    }
+
+    @Test
+    void keepsLayersSpacingAndTerrainWhenTheAnchorMovesTheCenter() {
+        SegmentTerrainConform terrain = new SegmentTerrainConform(SegmentHeightSource.WORLD_SURFACE, 1.5);
+        SegmentedVisualEffectSpec original = SegmentedVisualEffectSpec.builder(EFFECT_ID, new Vec3(7.0, 8.0, 9.0), 50, 3L, EffectAudience.nearby(32.0))
+            .rotation(15.0F, 5.0F, 2.0F)
+            .segmentScale(3.0F)
+            .grid(2, 3)
+            .spacing(4.0)
+            .layers(4, 5.0)
+            .audio(EffectAudioSpec.NONE)
+            .priority(EffectPriority.NORMAL)
+            .terrain(terrain)
+            .build();
+        CinematicTimeline timeline = CinematicTimeline.builder(ID, 100, 1L)
+            .segmented("field", 0, original)
+            .build();
+
+        CinematicCue.SegmentedStartCue anchored = (CinematicCue.SegmentedStartCue)timeline
+            .anchored(new Vec3(10.0, 64.0, -5.0))
+            .cues()
+            .getFirst();
+
+        assertEquals(new Vec3(17.0, 72.0, 4.0), anchored.spec().center());
+        assertEquals(4, anchored.spec().layers());
+        assertEquals(5.0, anchored.spec().layerSpacing());
+        assertEquals(terrain, anchored.spec().terrain());
+        assertEquals(original.segmentCount(), anchored.spec().segmentCount());
     }
 
     @Test

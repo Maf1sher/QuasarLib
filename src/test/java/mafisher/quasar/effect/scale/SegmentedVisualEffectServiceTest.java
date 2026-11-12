@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.UUID;
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectBudgetService;
+import mafisher.quasar.effect.EffectBudgets;
 import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectPriority;
 import mafisher.quasar.effect.EffectTransform;
@@ -21,6 +22,7 @@ import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.VisualEffectSpec;
 import mafisher.quasar.effect.audio.EffectAudioAttenuation;
 import mafisher.quasar.effect.audio.EffectAudioService;
+import mafisher.quasar.effect.audio.EffectAudioCue;
 import mafisher.quasar.effect.audio.EffectAudioSpec;
 import mafisher.quasar.effect.network.StartSegmentedVisualEffectPayload;
 import net.minecraft.resources.ResourceLocation;
@@ -73,13 +75,13 @@ class SegmentedVisualEffectServiceTest {
 
     @Test
     void aLargeGridStartsWithEveryStandaloneSlotFull() {
-        for (int index = 0; index < VisualEffectService.MAX_ACTIVE_EFFECTS_PER_LEVEL; index++) {
+        for (int index = 0; index < EffectBudgets.standaloneVisuals(); index++) {
             VisualEffectService.start(this.level, visualSpec());
         }
 
         SegmentedVisualEffectService.start(this.level, spec(16, 8, 200));
 
-        assertEquals(VisualEffectService.MAX_ACTIVE_EFFECTS_PER_LEVEL,
+        assertEquals(EffectBudgets.standaloneVisuals(),
             VisualEffectService.activeCount(this.level));
         assertEquals(128, SegmentedVisualEffectService.activeSegmentCount(this.level));
     }
@@ -87,13 +89,13 @@ class SegmentedVisualEffectServiceTest {
     @Test
     void standaloneStartsNeverEvictSegmentedCells() {
         SegmentedVisualEffectService.start(this.level, spec(2, 2, 200));
-        for (int index = 0; index < VisualEffectService.MAX_ACTIVE_EFFECTS_PER_LEVEL; index++) {
+        for (int index = 0; index < EffectBudgets.standaloneVisuals(); index++) {
             VisualEffectService.start(this.level, visualSpec());
         }
 
         VisualEffectService.start(this.level, visualSpec());
 
-        assertEquals(VisualEffectService.MAX_ACTIVE_EFFECTS_PER_LEVEL,
+        assertEquals(EffectBudgets.standaloneVisuals(),
             VisualEffectService.activeCount(this.level));
         assertEquals(4, SegmentedVisualEffectService.activeSegmentCount(this.level));
         assertEquals(1, SegmentedVisualEffectService.activeCount(this.level));
@@ -101,7 +103,7 @@ class SegmentedVisualEffectServiceTest {
 
     @Test
     void cullsTheOldestCoordinatorBeyondTheDedicatedSegmentBudget() {
-        int fullGrids = SegmentedVisualEffectService.MAX_ACTIVE_SEGMENTS_PER_LEVEL / 128;
+        int fullGrids = EffectBudgets.segments() / 128;
         SegmentedVisualEffectHandle oldest = null;
         for (int index = 0; index < fullGrids; index++) {
             SegmentedVisualEffectHandle handle = SegmentedVisualEffectService.start(
@@ -120,12 +122,12 @@ class SegmentedVisualEffectServiceTest {
         assertFalse(SegmentedVisualEffectService.isActive(this.level, oldest));
         assertEquals(fullGrids, SegmentedVisualEffectService.activeCount(this.level));
         assertTrue(SegmentedVisualEffectService.activeSegmentCount(this.level)
-            <= SegmentedVisualEffectService.MAX_ACTIVE_SEGMENTS_PER_LEVEL);
+            <= EffectBudgets.segments());
     }
 
     @Test
     void cullsABackgroundCoordinatorBeforeANormalOne() {
-        int fullGrids = SegmentedVisualEffectService.MAX_ACTIVE_SEGMENTS_PER_LEVEL / 128;
+        int fullGrids = EffectBudgets.segments() / 128;
         SegmentedVisualEffectHandle background = SegmentedVisualEffectService.start(
             this.level, spec(16, 8, 200, EffectPriority.BACKGROUND)
         );
@@ -251,20 +253,16 @@ class SegmentedVisualEffectServiceTest {
 
     @Test
     void resumeExpandsTheAudienceByTheGridHalfDiagonal() {
-        SegmentedVisualEffectSpec nearbySpec = new SegmentedVisualEffectSpec(
-            EFFECT_ID,
-            new Vec3(0.0, 64.0, 0.0),
-            0.0F,
-            0.0F,
-            0.0F,
-            4.0F,
-            2,
-            2,
-            8.0,
-            200,
-            42L,
-            EffectAudience.nearby(8.0)
-        );
+        SegmentedVisualEffectSpec nearbySpec = SegmentedVisualEffectSpec.builder(EFFECT_ID, new Vec3(0.0, 64.0, 0.0), 200, 42L, EffectAudience.nearby(8.0))
+            .rotation(0.0F, 0.0F, 0.0F)
+            .segmentScale(4.0F)
+            .grid(2, 2)
+            .spacing(8.0)
+            .layers(1, 0.0)
+            .audio(EffectAudioSpec.NONE)
+            .priority(EffectPriority.NORMAL)
+            .terrain(SegmentTerrainConform.NONE)
+            .build();
         SegmentedVisualEffectService.start(this.level, nearbySpec);
         ServerPlayer player = player(new Vec3(13.0, 64.0, 0.0));
         when(this.level.players()).thenReturn(List.of(player));
@@ -364,25 +362,16 @@ class SegmentedVisualEffectServiceTest {
     }
 
     private static SegmentedVisualEffectSpec terrainSpec(int columns, int rows, double spacing) {
-        return new SegmentedVisualEffectSpec(
-            EFFECT_ID,
-            new Vec3(0.0, 64.0, 0.0),
-            0.0F,
-            0.0F,
-            0.0F,
-            4.0F,
-            columns,
-            rows,
-            spacing,
-            200,
-            42L,
-            EffectAudience.dimensionWide(),
-            EffectAudioSpec.NONE,
-            EffectPriority.NORMAL,
-            2,
-            4.0,
-            new SegmentTerrainConform(SegmentHeightSource.WORLD_SURFACE, 0.0)
-        );
+        return SegmentedVisualEffectSpec.builder(EFFECT_ID, new Vec3(0.0, 64.0, 0.0), 200, 42L, EffectAudience.dimensionWide())
+            .rotation(0.0F, 0.0F, 0.0F)
+            .segmentScale(4.0F)
+            .grid(columns, rows)
+            .spacing(spacing)
+            .layers(2, 4.0)
+            .audio(EffectAudioSpec.NONE)
+            .priority(EffectPriority.NORMAL)
+            .terrain(new SegmentTerrainConform(SegmentHeightSource.WORLD_SURFACE, 0.0))
+            .build();
     }
 
     private static SegmentedVisualEffectSpec spec(int columns, int rows, int durationTicks) {
@@ -395,41 +384,28 @@ class SegmentedVisualEffectServiceTest {
         int durationTicks,
         EffectPriority priority
     ) {
-        return new SegmentedVisualEffectSpec(
-            EFFECT_ID,
-            new Vec3(0.0, 64.0, 0.0),
-            0.0F,
-            0.0F,
-            0.0F,
-            4.0F,
-            columns,
-            rows,
-            columns * rows > 1 ? 8.0 : 0.0,
-            durationTicks,
-            42L,
-            EffectAudience.dimensionWide(),
-            EffectAudioSpec.NONE,
-            priority
-        );
+        return SegmentedVisualEffectSpec.builder(EFFECT_ID, new Vec3(0.0, 64.0, 0.0), durationTicks, 42L, EffectAudience.dimensionWide())
+            .rotation(0.0F, 0.0F, 0.0F)
+            .segmentScale(4.0F)
+            .grid(columns, rows)
+            .spacing(columns * rows > 1 ? 8.0 : 0.0)
+            .layers(1, 0.0)
+            .audio(EffectAudioSpec.NONE)
+            .priority(priority)
+            .terrain(SegmentTerrainConform.NONE)
+            .build();
     }
 
     private static VisualEffectSpec visualSpec() {
-        return new VisualEffectSpec(
-            EFFECT_ID,
-            new Vec3(0.0, 64.0, 0.0),
-            0.0F,
-            0.0F,
-            0.0F,
-            1.0F,
-            200,
-            42L,
-            EffectAudience.dimensionWide()
-        );
+        return VisualEffectSpec.builder(EFFECT_ID, new Vec3(0.0, 64.0, 0.0), 200, 42L, EffectAudience.dimensionWide())
+            .rotation(0.0F, 0.0F, 0.0F)
+            .scale(1.0F)
+            .build();
     }
 
     private static SegmentedVisualEffectSpec specWithAudio(int columns, int rows, int durationTicks) {
         EffectAudioSpec audio = EffectAudioSpec.builder(durationTicks)
-            .cue(
+            .cue(EffectAudioCue.at(
                 0,
                 new Vec3(0.0, 64.0, 0.0),
                 ResourceLocation.withDefaultNamespace("test"),
@@ -437,23 +413,18 @@ class SegmentedVisualEffectServiceTest {
                 1.0F,
                 1.0F,
                 EffectAudioAttenuation.distance(64.0F)
-            )
+            ))
             .build();
-        return new SegmentedVisualEffectSpec(
-            EFFECT_ID,
-            new Vec3(0.0, 64.0, 0.0),
-            0.0F,
-            0.0F,
-            0.0F,
-            4.0F,
-            columns,
-            rows,
-            columns * rows > 1 ? 8.0 : 0.0,
-            durationTicks,
-            42L,
-            EffectAudience.dimensionWide(),
-            audio
-        );
+        return SegmentedVisualEffectSpec.builder(EFFECT_ID, new Vec3(0.0, 64.0, 0.0), durationTicks, 42L, EffectAudience.dimensionWide())
+            .rotation(0.0F, 0.0F, 0.0F)
+            .segmentScale(4.0F)
+            .grid(columns, rows)
+            .spacing(columns * rows > 1 ? 8.0 : 0.0)
+            .layers(1, 0.0)
+            .audio(audio)
+            .priority(EffectPriority.NORMAL)
+            .terrain(SegmentTerrainConform.NONE)
+            .build();
     }
 
     private ServerPlayer player(Vec3 position) {

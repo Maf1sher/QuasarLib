@@ -22,41 +22,13 @@ public final class EffectDescriptor {
     private final Fields fields;
     private final CompoundTag state;
 
-    @SuppressWarnings("checkstyle:ParameterNumber")
-    public EffectDescriptor(
+    public static Builder builder(
         UUID instanceId,
         EffectKind kind,
         ResourceLocation typeId,
-        ResourceLocation dimensionId,
-        EffectTransform transform,
-        float scale,
-        long seed,
-        long startGameTime,
-        int durationTicks,
-        EffectAudience audience,
-        EffectCapabilities capabilities,
-        EffectPersistence persistence,
-        UUID ownerSessionId,
-        CompoundTag state
+        ResourceLocation dimensionId
     ) {
-        this(
-            new Fields(
-                instanceId,
-                kind,
-                typeId,
-                dimensionId,
-                transform,
-                scale,
-                seed,
-                startGameTime,
-                durationTicks,
-                audience,
-                capabilities,
-                persistence,
-                ownerSessionId
-            ),
-            Objects.requireNonNull(state, "state").copy()
-        );
+        return new Builder(instanceId, kind, typeId, dimensionId);
     }
 
     private EffectDescriptor(Fields fields, CompoundTag state) {
@@ -161,6 +133,100 @@ public final class EffectDescriptor {
     @Override
     public String toString() {
         return "EffectDescriptor[fields=" + this.fields + ", state=" + this.state + "]";
+    }
+
+    /** Builder that groups placement, timing, and ownership instead of a 14-argument constructor. */
+    public static final class Builder {
+        private final UUID instanceId;
+        private final EffectKind kind;
+        private final ResourceLocation typeId;
+        private final ResourceLocation dimensionId;
+        private EffectTransform transform;
+        private float scale = 1.0F;
+        private long seed;
+        private long startGameTime;
+        private int durationTicks = 1;
+        private EffectAudience audience = EffectAudience.dimensionWide();
+        private EffectCapabilities capabilities = EffectCapabilities.NONE;
+        private EffectPersistence persistence = EffectPersistence.COSMETIC;
+        private UUID ownerSessionId;
+        private CompoundTag state = new CompoundTag();
+        private boolean timingSet;
+
+        private Builder(
+            UUID instanceId,
+            EffectKind kind,
+            ResourceLocation typeId,
+            ResourceLocation dimensionId
+        ) {
+            this.instanceId = instanceId;
+            this.kind = kind;
+            this.typeId = typeId;
+            this.dimensionId = dimensionId;
+        }
+
+        public Builder placement(EffectTransform transform, float scale) {
+            this.transform = transform;
+            this.scale = scale;
+            return this;
+        }
+
+        public Builder timing(long seed, long startGameTime, int durationTicks) {
+            this.seed = seed;
+            this.startGameTime = startGameTime;
+            this.durationTicks = durationTicks;
+            this.timingSet = true;
+            return this;
+        }
+
+        public Builder audience(EffectAudience audience) {
+            this.audience = audience;
+            return this;
+        }
+
+        public Builder capabilities(EffectCapabilities capabilities) {
+            this.capabilities = capabilities;
+            return this;
+        }
+
+        public Builder persistence(EffectPersistence persistence) {
+            this.persistence = persistence;
+            return this;
+        }
+
+        public Builder ownerSessionId(UUID ownerSessionId) {
+            this.ownerSessionId = ownerSessionId;
+            return this;
+        }
+
+        public Builder state(CompoundTag state) {
+            this.state = Objects.requireNonNull(state, "state");
+            return this;
+        }
+
+        public EffectDescriptor build() {
+            if (!this.timingSet) {
+                throw new IllegalStateException("Effect descriptor timing is required");
+            }
+            return new EffectDescriptor(
+                new Fields(
+                    this.instanceId,
+                    this.kind,
+                    this.typeId,
+                    this.dimensionId,
+                    Objects.requireNonNull(this.transform, "transform"),
+                    this.scale,
+                    this.seed,
+                    this.startGameTime,
+                    this.durationTicks,
+                    this.audience,
+                    this.capabilities,
+                    this.persistence,
+                    this.ownerSessionId
+                ),
+                Objects.requireNonNull(this.state, "state").copy()
+            );
+        }
     }
 
     private record Fields(

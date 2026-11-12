@@ -9,6 +9,7 @@ import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectPriority;
 import mafisher.quasar.effect.EffectTransform;
+import mafisher.quasar.effect.audio.EffectAudioCue;
 import mafisher.quasar.effect.audio.EffectAudioSpec;
 import mafisher.quasar.effect.persistence.EffectCapabilities;
 import mafisher.quasar.effect.persistence.EffectDescriptor;
@@ -65,52 +66,35 @@ class SegmentedEffectNbtTest {
 
     private static SegmentedVisualEffectSpec spec() {
         EffectAudioSpec audio = EffectAudioSpec.builder(200)
-            .cue(0, Vec3.ZERO, ResourceLocation.withDefaultNamespace("test"),
-                net.minecraft.sounds.SoundSource.MASTER, 1.0F, 1.0F)
+            .cue(EffectAudioCue.at(0, Vec3.ZERO, ResourceLocation.withDefaultNamespace("test"),
+                net.minecraft.sounds.SoundSource.MASTER, 1.0F, 1.0F))
             .build();
-        return new SegmentedVisualEffectSpec(
-            EFFECT_ID,
-            new Vec3(0.0, 64.0, 0.0),
-            0.0F,
-            0.0F,
-            0.0F,
-            4.0F,
-            2,
-            2,
-            8.0,
-            200,
-            42L,
-            EffectAudience.dimensionWide(),
-            audio,
-            EffectPriority.HIGH,
-            2,
-            4.0,
-            SegmentTerrainConform.NONE
-        );
+        return SegmentedVisualEffectSpec.builder(EFFECT_ID, new Vec3(0.0, 64.0, 0.0), 200, 42L, EffectAudience.dimensionWide())
+            .rotation(0.0F, 0.0F, 0.0F)
+            .segmentScale(4.0F)
+            .grid(2, 2)
+            .spacing(8.0)
+            .layers(2, 4.0)
+            .audio(audio)
+            .priority(EffectPriority.HIGH)
+            .terrain(SegmentTerrainConform.NONE)
+            .build();
     }
 
     private static EffectDescriptor descriptor(CompoundTag state) {
         SegmentedVisualEffectSpec spec = spec();
-        return new EffectDescriptor(
-            COORDINATOR_ID,
-            EffectKind.SEGMENTED,
-            EFFECT_ID,
-            Level.OVERWORLD.location(),
-            new EffectTransform(
+        return EffectDescriptor.builder(COORDINATOR_ID, EffectKind.SEGMENTED, EFFECT_ID, Level.OVERWORLD.location())
+            .placement(new EffectTransform(
                 new EffectPoint(spec.center().x, spec.center().y, spec.center().z),
                 spec.yaw(),
                 spec.pitch(),
                 spec.roll()
-            ),
-            spec.segmentScale(),
-            spec.seed(),
-            0L,
-            spec.durationTicks(),
-            spec.audience(),
-            EffectCapabilities.NONE,
-            EffectPersistence.RESUMABLE,
-            null,
-            state
-        );
+            ), spec.segmentScale())
+            .timing(spec.seed(), 0L, spec.durationTicks())
+            .audience(spec.audience())
+            .capabilities(EffectCapabilities.NONE)
+            .persistence(EffectPersistence.RESUMABLE)
+            .state(state)
+            .build();
     }
 }

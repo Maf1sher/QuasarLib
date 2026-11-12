@@ -22,8 +22,8 @@ class EffectAudioSpecTest {
     @Test
     void sortsCuesByTick() {
         EffectAudioSpec spec = EffectAudioSpec.builder(100)
-            .cue(40, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F)
-            .cue(10, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F)
+            .cue(EffectAudioCue.at(40, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F))
+            .cue(EffectAudioCue.at(10, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F))
             .build();
 
         assertEquals(2, spec.cueCount());
@@ -39,8 +39,8 @@ class EffectAudioSpecTest {
         );
 
         EffectAudioSpec spec = EffectAudioSpec.builder(phases)
-            .phaseCue(1, 5, Vec3.ZERO, SOUND_EVENT, SoundSource.MASTER, 1.0F, 1.0F)
-            .phaseCue("impact", 10, Vec3.ZERO, SOUND_EVENT, SoundSource.MASTER, 1.0F, 1.0F)
+            .phaseCue(1, 5, EffectAudioCue.at(0, Vec3.ZERO, SOUND_EVENT, SoundSource.MASTER, 1.0F, 1.0F))
+            .phaseCue("impact", 10, EffectAudioCue.at(0, Vec3.ZERO, SOUND_EVENT, SoundSource.MASTER, 1.0F, 1.0F))
             .build();
 
         assertEquals(2, spec.cueCount());
@@ -56,28 +56,28 @@ class EffectAudioSpecTest {
         );
 
         assertThrows(IllegalArgumentException.class, () -> EffectAudioSpec.builder(phases)
-            .phaseCue("missing", 0, Vec3.ZERO, SOUND_EVENT, SoundSource.MASTER, 1.0F, 1.0F));
+            .phaseCue("missing", 0, EffectAudioCue.at(0, Vec3.ZERO, SOUND_EVENT, SoundSource.MASTER, 1.0F, 1.0F)));
         assertThrows(IllegalArgumentException.class, () -> EffectAudioSpec.builder(phases)
-            .phaseCue("same", 0, Vec3.ZERO, SOUND_EVENT, SoundSource.MASTER, 1.0F, 1.0F));
+            .phaseCue("same", 0, EffectAudioCue.at(0, Vec3.ZERO, SOUND_EVENT, SoundSource.MASTER, 1.0F, 1.0F)));
     }
 
     @Test
     void rejectsCuesAtOrBeyondDuration() {
         assertThrows(IllegalArgumentException.class, () -> EffectAudioSpec.builder(10)
-            .cue(10, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F));
+            .cue(EffectAudioCue.at(10, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F)));
         assertThrows(IllegalArgumentException.class, () -> EffectAudioSpec.builder(10)
-            .cue(11, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F));
+            .cue(EffectAudioCue.at(11, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F)));
     }
 
     @Test
     void capsTheCueCount() {
         EffectAudioSpec.Builder builder = EffectAudioSpec.builder(1000);
         for (int index = 0; index < EffectAudioSpec.MAX_CUES; index++) {
-            builder.cue(index, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F);
+            builder.cue(EffectAudioCue.at(index, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F));
         }
 
         assertThrows(IllegalArgumentException.class,
-            () -> builder.cue(EffectAudioSpec.MAX_CUES, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F));
+            () -> builder.cue(EffectAudioCue.at(EffectAudioSpec.MAX_CUES, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F)));
     }
 
     @Test
@@ -89,7 +89,7 @@ class EffectAudioSpecTest {
     @Test
     void validatesCueTicksAgainstDuration() {
         EffectAudioSpec spec = EffectAudioSpec.builder(10)
-            .cue(9, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F)
+            .cue(EffectAudioCue.at(9, Vec3.ZERO, SOUND, SoundSource.MASTER, 1.0F, 1.0F))
             .build();
 
         assertTrue(spec.fitsWithin(10));

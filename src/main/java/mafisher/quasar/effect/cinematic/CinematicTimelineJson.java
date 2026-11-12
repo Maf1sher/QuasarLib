@@ -11,6 +11,8 @@ import mafisher.quasar.effect.EffectPriority;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.VisualEffectSpec;
 import mafisher.quasar.effect.audio.EffectAudioSpec;
+import mafisher.quasar.effect.scale.SegmentHeightSource;
+import mafisher.quasar.effect.scale.SegmentTerrainConform;
 import mafisher.quasar.effect.scale.SegmentedVisualEffectSpec;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -71,44 +73,59 @@ final class CinematicTimelineJson {
             case "visual" -> builder.visual(
                 GsonHelper.getAsString(cue, "key"),
                 tick,
-                new VisualEffectSpec(
-                    resourceLocation(cue, "effect"),
-                    position(cue, "position"),
-                    GsonHelper.getAsFloat(cue, "yaw", 0.0F),
-                    GsonHelper.getAsFloat(cue, "pitch", 0.0F),
-                    GsonHelper.getAsFloat(cue, "roll", 0.0F),
-                    GsonHelper.getAsFloat(cue, "scale", 1.0F),
-                    GsonHelper.getAsInt(cue, "duration_ticks"),
-                    GsonHelper.getAsLong(cue, "seed", 0L),
-                    audience(cue),
-                    EffectAudioSpec.NONE,
-                    priority(cue, EffectPriority.NORMAL)
-                )
+                visualSpec(cue)
             );
             case "visual_stop" -> builder.stopVisual(GsonHelper.getAsString(cue, "key"), tick);
             case "segmented" -> builder.segmented(
                 GsonHelper.getAsString(cue, "key"),
                 tick,
-                new SegmentedVisualEffectSpec(
-                    resourceLocation(cue, "effect"),
-                    position(cue, "center"),
-                    GsonHelper.getAsFloat(cue, "yaw", 0.0F),
-                    GsonHelper.getAsFloat(cue, "pitch", 0.0F),
-                    GsonHelper.getAsFloat(cue, "roll", 0.0F),
-                    GsonHelper.getAsFloat(cue, "segment_scale", 1.0F),
-                    GsonHelper.getAsInt(cue, "columns"),
-                    GsonHelper.getAsInt(cue, "rows"),
-                    GsonHelper.getAsDouble(cue, "spacing"),
-                    GsonHelper.getAsInt(cue, "duration_ticks"),
-                    GsonHelper.getAsLong(cue, "seed", 0L),
-                    audience(cue),
-                    EffectAudioSpec.NONE,
-                    priority(cue, EffectPriority.NORMAL)
-                )
+                segmentedSpec(cue)
             );
             case "segmented_stop" -> builder.stopSegmented(GsonHelper.getAsString(cue, "key"), tick);
             default -> throw new JsonParseException("Cinematic " + id + " has an unknown cue type: " + type);
         }
+    }
+
+    private static VisualEffectSpec visualSpec(JsonObject cue) {
+        return new VisualEffectSpec(
+            resourceLocation(cue, "effect"),
+            position(cue, "position"),
+            GsonHelper.getAsFloat(cue, "yaw", 0.0F),
+            GsonHelper.getAsFloat(cue, "pitch", 0.0F),
+            GsonHelper.getAsFloat(cue, "roll", 0.0F),
+            GsonHelper.getAsFloat(cue, "scale", 1.0F),
+            GsonHelper.getAsInt(cue, "duration_ticks"),
+            GsonHelper.getAsLong(cue, "seed", 0L),
+            audience(cue),
+            EffectAudioSpec.NONE,
+            priority(cue, EffectPriority.NORMAL)
+        );
+    }
+
+    private static SegmentedVisualEffectSpec segmentedSpec(JsonObject cue) {
+        return SegmentedVisualEffectSpec.builder(
+                resourceLocation(cue, "effect"),
+                position(cue, "center"),
+                GsonHelper.getAsInt(cue, "duration_ticks"),
+                GsonHelper.getAsLong(cue, "seed", 0L),
+                audience(cue)
+            )
+            .rotation(
+                GsonHelper.getAsFloat(cue, "yaw", 0.0F),
+                GsonHelper.getAsFloat(cue, "pitch", 0.0F),
+                GsonHelper.getAsFloat(cue, "roll", 0.0F)
+            )
+            .segmentScale(GsonHelper.getAsFloat(cue, "segment_scale", 1.0F))
+            .grid(GsonHelper.getAsInt(cue, "columns"), GsonHelper.getAsInt(cue, "rows"))
+            .spacing(GsonHelper.getAsDouble(cue, "spacing"))
+            .layers(
+                GsonHelper.getAsInt(cue, "layers", 1),
+                GsonHelper.getAsDouble(cue, "layer_spacing", 0.0)
+            )
+            .audio(EffectAudioSpec.NONE)
+            .priority(priority(cue, EffectPriority.NORMAL))
+            .terrain(terrain(cue))
+            .build();
     }
 
     private static void parseTrack(ResourceLocation id, CinematicTimeline.Builder builder, JsonObject track) {
@@ -197,6 +214,26 @@ final class CinematicTimelineJson {
             case "dimension_wide" -> EffectAudience.dimensionWide();
             default -> throw new JsonParseException("Unknown cinematic audience type: " + type);
         };
+    }
+
+    private static SegmentTerrainConform terrain(JsonObject cue) {
+        if (!cue.has("terrain")) {
+            return SegmentTerrainConform.NONE;
+        }
+        JsonObject terrain = GsonHelper.getAsJsonObject(cue, "terrain");
+        String value = GsonHelper.getAsString(terrain, "source", "none").toUpperCase(Locale.ROOT);
+        SegmentHeightSource source;
+        try {
+            source = SegmentHeightSource.valueOf(value);
+        } catch (IllegalArgumentException exception) {
+            throw new JsonParseException("Unknown cinematic terrain source: " + value, exception);
+        }
+        double offset = GsonHelper.getAsDouble(terrain, "offset", 0.0);
+        try {
+            return new SegmentTerrainConform(source, offset);
+        } catch (IllegalArgumentException exception) {
+            throw new JsonParseException("Invalid cinematic terrain offset: " + offset, exception);
+        }
     }
 
     private static Vec3 position(JsonObject json, String name) {

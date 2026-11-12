@@ -269,21 +269,14 @@ class EffectSavedDataTest {
     }
 
     private static EffectDescriptor descriptor(long startGameTime, UUID ownerSessionId) {
-        return new EffectDescriptor(
-            UUID.randomUUID(),
-            EffectKind.VISUAL,
-            TYPE,
-            DIMENSION,
-            new EffectTransform(new EffectPoint(0.0, 64.0, 0.0), 0.0F, 0.0F, 0.0F),
-            1.0F,
-            7L,
-            startGameTime,
-            100,
-            EffectAudience.dimensionWide(),
-            EffectCapabilities.NONE,
-            EffectPersistence.RESUMABLE,
-            ownerSessionId,
-            new CompoundTag()
-        );
+        return EffectDescriptor.builder(UUID.randomUUID(), EffectKind.VISUAL, TYPE, DIMENSION)
+            .placement(new EffectTransform(new EffectPoint(0.0, 64.0, 0.0), 0.0F, 0.0F, 0.0F), 1.0F)
+            .timing(7L, startGameTime, 100)
+            .audience(EffectAudience.dimensionWide())
+            .capabilities(EffectCapabilities.NONE)
+            .persistence(EffectPersistence.RESUMABLE)
+            .ownerSessionId(ownerSessionId)
+            .state(new CompoundTag())
+            .build();
     }
 }

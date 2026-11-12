@@ -3,12 +3,17 @@ package mafisher.quasar.effect;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.UUID;
 import mafisher.quasar.effect.audio.EffectAudioService;
+import mafisher.quasar.effect.persistence.EffectPersistenceService;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
@@ -44,7 +49,7 @@ class EffectScopeTest {
     @Test
     void prunesFinishedVisualsFromTheLedger() {
         try (EffectScope scope = new EffectScope(this.level)) {
-            UUID visualId = scope.playVisual(spec(2, EffectPriority.NORMAL));
+            UUID visualId = scope.playVisual(spec(2, EffectPriority.NORMAL)).orElseThrow();
             assertEquals(1, scope.activeVisualCount());
 
             this.gameTime = 2L;
@@ -59,8 +64,8 @@ class EffectScopeTest {
     void prunesCulledVisualsFromTheLedger() {
         VisualEffectService.overrideBudgetForTesting(1);
         try (EffectScope scope = new EffectScope(this.level)) {
-            UUID backgroundId = scope.playVisual(spec(200, EffectPriority.BACKGROUND));
-            UUID normalId = scope.playVisual(spec(200, EffectPriority.NORMAL));
+            UUID backgroundId = scope.playVisual(spec(200, EffectPriority.BACKGROUND)).orElseThrow();
+            UUID normalId = scope.playVisual(spec(200, EffectPriority.NORMAL)).orElseThrow();
 
             assertFalse(VisualEffectService.isActive(this.level, new VisualEffectHandle(backgroundId)));
             assertTrue(VisualEffectService.isActive(this.level, new VisualEffectHandle(normalId)));
@@ -76,17 +81,44 @@ class EffectScopeTest {
         VisualEffectService.overrideBudgetForTesting(1);
         VisualEffectService.start(this.level, spec(200, EffectPriority.HIGH));
         try (EffectScope scope = new EffectScope(this.level)) {
-            UUID visualId = scope.playVisual(spec(200, EffectPriority.BACKGROUND));
-
-            assertFalse(VisualEffectService.isActive(this.level, new VisualEffectHandle(visualId)));
+            assertTrue(scope.playVisual(spec(200, EffectPriority.BACKGROUND)).isEmpty());
             assertEquals(0, scope.activeVisualCount());
+        }
+    }
+
+    @Test
+    void closeKeepsDescriptorsWhenThePolicySaysSo() {
+        try (var persistence = mockStatic(EffectPersistenceService.class)) {
+            try (EffectScope scope = new EffectScope(this.level)) {
+                scope.playVisual(spec(200, EffectPriority.NORMAL)).orElseThrow();
+                scope.close(EffectRemovalPolicy.KEEP_FOR_RESTORE);
+            }
+
+            persistence.verify(
+                () -> EffectPersistenceService.recordStop(any(), any()),
+                never()
+            );
+        }
+    }
+
+    @Test
+    void closeDeletesDescriptorsByDefault() {
+        try (var persistence = mockStatic(EffectPersistenceService.class)) {
+            try (EffectScope scope = new EffectScope(this.level)) {
+                scope.playVisual(spec(200, EffectPriority.NORMAL)).orElseThrow();
+            }
+
+            persistence.verify(
+                () -> EffectPersistenceService.recordStop(any(), any()),
+                times(1)
+            );
         }
     }
 
     @Test
     void duplicateAdoptKeepsOneLedgerEntry() {
         try (EffectScope scope = new EffectScope(this.level)) {
-            UUID visualId = scope.playVisual(spec(200, EffectPriority.NORMAL));
+            UUID visualId = scope.playVisual(spec(200, EffectPriority.NORMAL)).orElseThrow();
             scope.adoptVisual(visualId, new VisualEffectHandle(visualId));
 
             assertEquals(1, scope.activeVisualCount());

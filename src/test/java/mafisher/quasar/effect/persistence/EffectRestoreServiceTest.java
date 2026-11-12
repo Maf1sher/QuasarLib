@@ -17,10 +17,12 @@ import mafisher.quasar.TestConfig;
 import mafisher.quasar.effect.EffectAudience;
 import mafisher.quasar.effect.EffectPoint;
 import mafisher.quasar.effect.EffectPriority;
+import mafisher.quasar.effect.EffectRemovalPolicy;
 import mafisher.quasar.effect.EffectTransform;
 import mafisher.quasar.effect.VisualEffectService;
 import mafisher.quasar.effect.audio.EffectAudioAttenuation;
 import mafisher.quasar.effect.audio.EffectAudioService;
+import mafisher.quasar.effect.audio.EffectAudioCue;
 import mafisher.quasar.effect.audio.EffectAudioSpec;
 import mafisher.quasar.effect.block.BlockChange;
 import mafisher.quasar.effect.gameplay.EffectPhase;
@@ -148,20 +150,21 @@ class EffectRestoreServiceTest {
 
     @Test
     void restoresSegmentedCoordinatorsWithEverySegment() {
-        SegmentedVisualEffectSpec spec = new SegmentedVisualEffectSpec(
-            EFFECT,
-            new net.minecraft.world.phys.Vec3(0.0, 64.0, 0.0),
-            0.0F, 0.0F, 0.0F,
-            1.0F, 2, 2, 4.0,
-            200,
-            7L,
-            EffectAudience.nearby(64.0)
-        );
+        SegmentedVisualEffectSpec spec = SegmentedVisualEffectSpec.builder(EFFECT, new net.minecraft.world.phys.Vec3(0.0, 64.0, 0.0), 200, 7L, EffectAudience.nearby(64.0))
+            .rotation(0.0F, 0.0F, 0.0F)
+            .segmentScale(1.0F)
+            .grid(2, 2)
+            .spacing(4.0)
+            .layers(1, 0.0)
+            .audio(EffectAudioSpec.NONE)
+            .priority(EffectPriority.NORMAL)
+            .terrain(SegmentTerrainConform.NONE)
+            .build();
         SegmentedVisualEffectService.start(this.level, spec);
         assertEquals(4, SegmentedVisualEffectService.activeSegmentCount(this.level));
         assertEquals(0, VisualEffectService.activeCount(this.level));
 
-        SegmentedVisualEffectService.stopAll(this.level, false);
+        SegmentedVisualEffectService.stopAll(this.level, EffectRemovalPolicy.KEEP_FOR_RESTORE);
         VisualEffectService.clear(this.level);
         this.gameTime = 80L;
 
@@ -175,24 +178,20 @@ class EffectRestoreServiceTest {
 
     @Test
     void restoresLayeredAndTerrainAlignedCoordinators() {
-        SegmentedVisualEffectSpec spec = new SegmentedVisualEffectSpec(
-            EFFECT,
-            new net.minecraft.world.phys.Vec3(0.0, 64.0, 0.0),
-            0.0F, 0.0F, 0.0F,
-            1.0F, 2, 2, 4.0,
-            200,
-            7L,
-            EffectAudience.nearby(64.0),
-            EffectAudioSpec.NONE,
-            EffectPriority.NORMAL,
-            4,
-            6.0,
-            new SegmentTerrainConform(SegmentHeightSource.WORLD_SURFACE, 0.0)
-        );
+        SegmentedVisualEffectSpec spec = SegmentedVisualEffectSpec.builder(EFFECT, new net.minecraft.world.phys.Vec3(0.0, 64.0, 0.0), 200, 7L, EffectAudience.nearby(64.0))
+            .rotation(0.0F, 0.0F, 0.0F)
+            .segmentScale(1.0F)
+            .grid(2, 2)
+            .spacing(4.0)
+            .layers(4, 6.0)
+            .audio(EffectAudioSpec.NONE)
+            .priority(EffectPriority.NORMAL)
+            .terrain(new SegmentTerrainConform(SegmentHeightSource.WORLD_SURFACE, 0.0))
+            .build();
         SegmentedVisualEffectService.start(this.level, spec);
         assertEquals(16, SegmentedVisualEffectService.activeSegmentCount(this.level));
 
-        SegmentedVisualEffectService.stopAll(this.level, false);
+        SegmentedVisualEffectService.stopAll(this.level, EffectRemovalPolicy.KEEP_FOR_RESTORE);
         VisualEffectService.clear(this.level);
         this.gameTime = 80L;
 
@@ -205,22 +204,18 @@ class EffectRestoreServiceTest {
 
     @Test
     void restoreReusesBakedTerrainHeights() {
-        SegmentedVisualEffectSpec spec = new SegmentedVisualEffectSpec(
-            EFFECT,
-            new net.minecraft.world.phys.Vec3(0.0, 64.0, 0.0),
-            0.0F, 0.0F, 0.0F,
-            1.0F, 1, 1, 0.0,
-            200,
-            7L,
-            EffectAudience.dimensionWide(),
-            EffectAudioSpec.NONE,
-            EffectPriority.NORMAL,
-            1,
-            0.0,
-            new SegmentTerrainConform(SegmentHeightSource.WORLD_SURFACE, 0.0)
-        );
+        SegmentedVisualEffectSpec spec = SegmentedVisualEffectSpec.builder(EFFECT, new net.minecraft.world.phys.Vec3(0.0, 64.0, 0.0), 200, 7L, EffectAudience.dimensionWide())
+            .rotation(0.0F, 0.0F, 0.0F)
+            .segmentScale(1.0F)
+            .grid(1, 1)
+            .spacing(0.0)
+            .layers(1, 0.0)
+            .audio(EffectAudioSpec.NONE)
+            .priority(EffectPriority.NORMAL)
+            .terrain(new SegmentTerrainConform(SegmentHeightSource.WORLD_SURFACE, 0.0))
+            .build();
         SegmentedVisualEffectService.start(this.level, spec);
-        SegmentedVisualEffectService.stopAll(this.level, false);
+        SegmentedVisualEffectService.stopAll(this.level, EffectRemovalPolicy.KEEP_FOR_RESTORE);
         VisualEffectService.clear(this.level);
         this.gameTime = 80L;
         when(this.level.hasChunkAt(anyInt(), anyInt())).thenReturn(true);
@@ -242,7 +237,7 @@ class EffectRestoreServiceTest {
         SegmentedVisualEffectSpec spec = segmentedSpecWithAudio();
         SegmentedVisualEffectService.start(this.level, spec);
 
-        SegmentedVisualEffectService.stopAll(this.level, false);
+        SegmentedVisualEffectService.stopAll(this.level, EffectRemovalPolicy.KEEP_FOR_RESTORE);
         VisualEffectService.clear(this.level);
         this.gameTime = 20L;
 
@@ -264,22 +259,14 @@ class EffectRestoreServiceTest {
             EffectTickBudget.unlimited(),
             OwnerPolicy.CONTINUE
         );
-        this.store.put(new EffectDescriptor(
-            UUID.randomUUID(),
-            EffectKind.GAMEPLAY,
-            EFFECT,
-            DIMENSION,
-            new EffectTransform(new EffectPoint(0.0, 64.0, 0.0), 0.0F, 0.0F, 0.0F),
-            1.0F,
-            3L,
-            0L,
-            100,
-            EffectAudience.dimensionWide(),
-            EffectCapabilities.NONE,
-            EffectPersistence.RESUMABLE,
-            null,
-            GameplayEffectNbt.saveDescriptorState(spec, new CompoundTag())
-        ));
+        this.store.put(EffectDescriptor.builder(UUID.randomUUID(), EffectKind.GAMEPLAY, EFFECT, DIMENSION)
+            .placement(new EffectTransform(new EffectPoint(0.0, 64.0, 0.0), 0.0F, 0.0F, 0.0F), 1.0F)
+            .timing(3L, 0L, 100)
+            .audience(EffectAudience.dimensionWide())
+            .capabilities(EffectCapabilities.NONE)
+            .persistence(EffectPersistence.RESUMABLE)
+            .state(GameplayEffectNbt.saveDescriptorState(spec, new CompoundTag()))
+            .build());
 
         EffectRecoveryReport report = EffectRestoreService.restoreLevel(this.level);
 
@@ -306,22 +293,14 @@ class EffectRestoreServiceTest {
             EffectTickBudget.unlimited(),
             OwnerPolicy.CONTINUE
         );
-        EffectDescriptor descriptor = new EffectDescriptor(
-            instanceId,
-            EffectKind.GAMEPLAY,
-            EFFECT,
-            DIMENSION,
-            new EffectTransform(new EffectPoint(0.0, 64.0, 0.0), 0.0F, 0.0F, 0.0F),
-            1.0F,
-            3L,
-            0L,
-            100,
-            EffectAudience.dimensionWide(),
-            EffectCapabilities.destructiveCapability(),
-            EffectPersistence.RESUMABLE,
-            null,
-            GameplayEffectNbt.saveDescriptorState(spec, new CompoundTag())
-        );
+        EffectDescriptor descriptor = EffectDescriptor.builder(instanceId, EffectKind.GAMEPLAY, EFFECT, DIMENSION)
+            .placement(new EffectTransform(new EffectPoint(0.0, 64.0, 0.0), 0.0F, 0.0F, 0.0F), 1.0F)
+            .timing(3L, 0L, 100)
+            .audience(EffectAudience.dimensionWide())
+            .capabilities(EffectCapabilities.destructiveCapability())
+            .persistence(EffectPersistence.RESUMABLE)
+            .state(GameplayEffectNbt.saveDescriptorState(spec, new CompoundTag()))
+            .build();
         this.store.put(descriptor);
         this.store.putJournal(instanceId, journal);
         when(this.level.hasChunkAt(any())).thenReturn(true);
@@ -352,17 +331,18 @@ class EffectRestoreServiceTest {
 
     @Test
     void restoringSegmentedDoesNotDirtyAnUnchangedStore() {
-        SegmentedVisualEffectSpec spec = new SegmentedVisualEffectSpec(
-            EFFECT,
-            new net.minecraft.world.phys.Vec3(0.0, 64.0, 0.0),
-            0.0F, 0.0F, 0.0F,
-            1.0F, 2, 2, 4.0,
-            200,
-            7L,
-            EffectAudience.dimensionWide()
-        );
+        SegmentedVisualEffectSpec spec = SegmentedVisualEffectSpec.builder(EFFECT, new net.minecraft.world.phys.Vec3(0.0, 64.0, 0.0), 200, 7L, EffectAudience.dimensionWide())
+            .rotation(0.0F, 0.0F, 0.0F)
+            .segmentScale(1.0F)
+            .grid(2, 2)
+            .spacing(4.0)
+            .layers(1, 0.0)
+            .audio(EffectAudioSpec.NONE)
+            .priority(EffectPriority.NORMAL)
+            .terrain(SegmentTerrainConform.NONE)
+            .build();
         SegmentedVisualEffectService.start(this.level, spec);
-        SegmentedVisualEffectService.stopAll(this.level, false);
+        SegmentedVisualEffectService.stopAll(this.level, EffectRemovalPolicy.KEEP_FOR_RESTORE);
         VisualEffectService.clear(this.level);
         this.gameTime = 80L;
         this.store.setDirty(false);
@@ -417,17 +397,18 @@ class EffectRestoreServiceTest {
 
     @Test
     void quarantinesSegmentedEffectWithInvalidSegmentIds() {
-        SegmentedVisualEffectSpec spec = new SegmentedVisualEffectSpec(
-            EFFECT,
-            new net.minecraft.world.phys.Vec3(0.0, 64.0, 0.0),
-            0.0F, 0.0F, 0.0F,
-            1.0F, 2, 2, 4.0,
-            200,
-            7L,
-            EffectAudience.dimensionWide()
-        );
+        SegmentedVisualEffectSpec spec = SegmentedVisualEffectSpec.builder(EFFECT, new net.minecraft.world.phys.Vec3(0.0, 64.0, 0.0), 200, 7L, EffectAudience.dimensionWide())
+            .rotation(0.0F, 0.0F, 0.0F)
+            .segmentScale(1.0F)
+            .grid(2, 2)
+            .spacing(4.0)
+            .layers(1, 0.0)
+            .audio(EffectAudioSpec.NONE)
+            .priority(EffectPriority.NORMAL)
+            .terrain(SegmentTerrainConform.NONE)
+            .build();
         UUID coordinatorId = SegmentedVisualEffectService.start(this.level, spec).coordinatorId();
-        SegmentedVisualEffectService.stopAll(this.level, false);
+        SegmentedVisualEffectService.stopAll(this.level, EffectRemovalPolicy.KEEP_FOR_RESTORE);
         VisualEffectService.clear(this.level);
         this.gameTime = 80L;
         EffectDescriptor descriptor = this.store.find(coordinatorId);
@@ -453,47 +434,32 @@ class EffectRestoreServiceTest {
             EffectTickBudget.unlimited(),
             OwnerPolicy.CONTINUE
         );
-        return new EffectDescriptor(
-            instanceId,
-            EffectKind.GAMEPLAY,
-            EFFECT,
-            DIMENSION,
-            new EffectTransform(new EffectPoint(0.0, 64.0, 0.0), 0.0F, 0.0F, 0.0F),
-            1.0F,
-            3L,
-            0L,
-            100,
-            EffectAudience.dimensionWide(),
-            EffectCapabilities.NONE,
-            EffectPersistence.RESUMABLE,
-            ownerSessionId,
-            GameplayEffectNbt.saveDescriptorState(spec, new CompoundTag())
-        );
+        return EffectDescriptor.builder(instanceId, EffectKind.GAMEPLAY, EFFECT, DIMENSION)
+            .placement(new EffectTransform(new EffectPoint(0.0, 64.0, 0.0), 0.0F, 0.0F, 0.0F), 1.0F)
+            .timing(3L, 0L, 100)
+            .audience(EffectAudience.dimensionWide())
+            .capabilities(EffectCapabilities.NONE)
+            .persistence(EffectPersistence.RESUMABLE)
+            .ownerSessionId(ownerSessionId)
+            .state(GameplayEffectNbt.saveDescriptorState(spec, new CompoundTag()))
+            .build();
     }
 
     private static EffectDescriptor visualDescriptor(long startGameTime, int durationTicks,
         ResourceLocation dimension) {
-        return new EffectDescriptor(
-            UUID.randomUUID(),
-            EffectKind.VISUAL,
-            EFFECT,
-            dimension,
-            new EffectTransform(new EffectPoint(1.0, 64.0, 2.0), 0.0F, 0.0F, 0.0F),
-            1.0F,
-            11L,
-            startGameTime,
-            durationTicks,
-            EffectAudience.nearby(64.0),
-            EffectCapabilities.NONE,
-            EffectPersistence.RESUMABLE,
-            null,
-            new CompoundTag()
-        );
+        return EffectDescriptor.builder(UUID.randomUUID(), EffectKind.VISUAL, EFFECT, dimension)
+            .placement(new EffectTransform(new EffectPoint(1.0, 64.0, 2.0), 0.0F, 0.0F, 0.0F), 1.0F)
+            .timing(11L, startGameTime, durationTicks)
+            .audience(EffectAudience.nearby(64.0))
+            .capabilities(EffectCapabilities.NONE)
+            .persistence(EffectPersistence.RESUMABLE)
+            .state(new CompoundTag())
+            .build();
     }
 
     private static SegmentedVisualEffectSpec segmentedSpecWithAudio() {
         EffectAudioSpec audio = EffectAudioSpec.builder(200)
-            .cue(
+            .cue(EffectAudioCue.at(
                 0,
                 new net.minecraft.world.phys.Vec3(0.0, 64.0, 0.0),
                 ResourceLocation.withDefaultNamespace("test"),
@@ -501,23 +467,23 @@ class EffectRestoreServiceTest {
                 1.0F,
                 1.0F,
                 EffectAudioAttenuation.distance(64.0F)
-            )
+            ))
             .build();
-        return new SegmentedVisualEffectSpec(
-            EFFECT,
-            new net.minecraft.world.phys.Vec3(0.0, 64.0, 0.0),
-            0.0F, 0.0F, 0.0F,
-            1.0F, 2, 2, 4.0,
-            200,
-            7L,
-            EffectAudience.nearby(64.0),
-            audio
-        );
+        return SegmentedVisualEffectSpec.builder(EFFECT, new net.minecraft.world.phys.Vec3(0.0, 64.0, 0.0), 200, 7L, EffectAudience.nearby(64.0))
+            .rotation(0.0F, 0.0F, 0.0F)
+            .segmentScale(1.0F)
+            .grid(2, 2)
+            .spacing(4.0)
+            .layers(1, 0.0)
+            .audio(audio)
+            .priority(EffectPriority.NORMAL)
+            .terrain(SegmentTerrainConform.NONE)
+            .build();
     }
 
     private static EffectDescriptor visualDescriptorWithAudio() {
         EffectAudioSpec audio = EffectAudioSpec.builder(200)
-            .cue(
+            .cue(EffectAudioCue.at(
                 10,
                 new net.minecraft.world.phys.Vec3(1.0, 64.0, 2.0),
                 ResourceLocation.withDefaultNamespace("test"),
@@ -525,25 +491,17 @@ class EffectRestoreServiceTest {
                 1.0F,
                 1.0F,
                 EffectAudioAttenuation.distance(64.0F)
-            )
+            ))
             .build();
         CompoundTag state = new CompoundTag();
         EffectAudioNbt.saveInto(state, audio);
-        return new EffectDescriptor(
-            UUID.randomUUID(),
-            EffectKind.VISUAL,
-            EFFECT,
-            DIMENSION,
-            new EffectTransform(new EffectPoint(1.0, 64.0, 2.0), 0.0F, 0.0F, 0.0F),
-            1.0F,
-            11L,
-            0L,
-            200,
-            EffectAudience.nearby(64.0),
-            EffectCapabilities.NONE,
-            EffectPersistence.RESUMABLE,
-            null,
-            state
-        );
+        return EffectDescriptor.builder(UUID.randomUUID(), EffectKind.VISUAL, EFFECT, DIMENSION)
+            .placement(new EffectTransform(new EffectPoint(1.0, 64.0, 2.0), 0.0F, 0.0F, 0.0F), 1.0F)
+            .timing(11L, 0L, 200)
+            .audience(EffectAudience.nearby(64.0))
+            .capabilities(EffectCapabilities.NONE)
+            .persistence(EffectPersistence.RESUMABLE)
+            .state(state)
+            .build();
     }
 }

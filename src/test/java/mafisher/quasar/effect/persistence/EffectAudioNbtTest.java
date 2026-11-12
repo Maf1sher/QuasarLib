@@ -23,12 +23,12 @@ class EffectAudioNbtTest {
     @Test
     void roundTripsEveryAttenuationVariant() {
         EffectAudioSpec spec = EffectAudioSpec.builder(100)
-            .cue(0, new Vec3(1.0, 2.0, 3.0), SOUND, SoundSource.MASTER, 1.0F, 1.0F,
-                EffectAudioAttenuation.VANILLA)
-            .cue(10, Vec3.ZERO, SOUND, SoundSource.PLAYERS, 0.5F, 1.2F,
-                EffectAudioAttenuation.distance(64.0F))
-            .cue(20, new Vec3(-1.0, 4.0, 8.0), SOUND, SoundSource.AMBIENT, 0.8F, 0.9F,
-                EffectAudioAttenuation.directional(new Vec3(0.0, -2.0, 0.0), 30.0F, 90.0F, 0.25F, 48.0F))
+            .cue(EffectAudioCue.at(0, new Vec3(1.0, 2.0, 3.0), SOUND, SoundSource.MASTER, 1.0F, 1.0F,
+                EffectAudioAttenuation.VANILLA))
+            .cue(EffectAudioCue.at(10, Vec3.ZERO, SOUND, SoundSource.PLAYERS, 0.5F, 1.2F,
+                EffectAudioAttenuation.distance(64.0F)))
+            .cue(EffectAudioCue.at(20, new Vec3(-1.0, 4.0, 8.0), SOUND, SoundSource.AMBIENT, 0.8F, 0.9F,
+                EffectAudioAttenuation.directional(new Vec3(0.0, -2.0, 0.0), 30.0F, 90.0F, 0.25F, 48.0F)))
             .build();
 
         CompoundTag parent = new CompoundTag();

@@ -62,25 +62,26 @@ public final class SegmentedEffectNbt {
             SegmentHeightSource.byName(state.getString("terrain_source"), SegmentHeightSource.NONE),
             state.getDouble("terrain_offset")
         );
-        SegmentedVisualEffectSpec spec = new SegmentedVisualEffectSpec(
-            descriptor.typeId(),
-            transformPosition(descriptor),
-            descriptor.transform().yaw(),
-            descriptor.transform().pitch(),
-            descriptor.transform().roll(),
-            descriptor.scale(),
-            state.getInt("columns"),
-            state.getInt("rows"),
-            state.getDouble("spacing"),
-            descriptor.durationTicks(),
-            descriptor.seed(),
-            descriptor.audience(),
-            audio,
-            priority(state, descriptor),
-            layers,
-            state.getDouble("layer_spacing"),
-            terrain
-        );
+        SegmentedVisualEffectSpec spec = SegmentedVisualEffectSpec.builder(
+                descriptor.typeId(),
+                transformPosition(descriptor),
+                descriptor.durationTicks(),
+                descriptor.seed(),
+                descriptor.audience()
+            )
+            .rotation(
+                descriptor.transform().yaw(),
+                descriptor.transform().pitch(),
+                descriptor.transform().roll()
+            )
+            .segmentScale(descriptor.scale())
+            .grid(state.getInt("columns"), state.getInt("rows"))
+            .spacing(state.getDouble("spacing"))
+            .layers(layers, state.getDouble("layer_spacing"))
+            .audio(audio)
+            .priority(priority(state, descriptor))
+            .terrain(terrain)
+            .build();
         return new Loaded(spec, segmentIds(state, descriptor, spec.segmentCount()));
     }
 

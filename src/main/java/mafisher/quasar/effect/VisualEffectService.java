@@ -33,11 +33,6 @@ import org.slf4j.LoggerFactory;
 public final class VisualEffectService {
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
 
-    /**
-     * Default soft budget per level for visuals tracked by this service. Segmented coordinators use their own
-     * dedicated budget and are not stored here.
-     */
-    public static final int MAX_ACTIVE_EFFECTS_PER_LEVEL = 128;
     private static final int GRID_MIN_PLAYERS = 8;
     private static final long GRID_MIN_QUERIES = 256L;
     private static final LevelStateSlot<VisualState> STATE = LevelStateSlot.create(VisualState::new);
@@ -46,7 +41,7 @@ public final class VisualEffectService {
     private VisualEffectService() {
     }
 
-    public static VisualEffectHandle start(ServerLevel level, VisualEffectSpec spec) {
+    public static VisualEffectStartResult start(ServerLevel level, VisualEffectSpec spec) {
         return start(level, spec, null, EffectPersistenceOptions.DEFAULT);
     }
 
@@ -54,11 +49,11 @@ public final class VisualEffectService {
      * Starts a visual effect with a legacy coordinator link. New segmented effects use
      * {@code SegmentedVisualEffectService}, which sends the whole grid in one aggregated lifecycle.
      */
-    public static VisualEffectHandle start(ServerLevel level, VisualEffectSpec spec, SegmentLink segmentLink) {
+    public static VisualEffectStartResult start(ServerLevel level, VisualEffectSpec spec, SegmentLink segmentLink) {
         return start(level, spec, segmentLink, EffectPersistenceOptions.DEFAULT);
     }
 
-    public static VisualEffectHandle start(
+    public static VisualEffectStartResult start(
         ServerLevel level,
         VisualEffectSpec spec,
         EffectPersistenceOptions options
@@ -66,7 +61,7 @@ public final class VisualEffectService {
         return start(level, spec, null, options);
     }
 
-    public static VisualEffectHandle start(
+    public static VisualEffectStartResult start(
         ServerLevel level,
         VisualEffectSpec spec,
         SegmentLink segmentLink,
@@ -82,7 +77,7 @@ public final class VisualEffectService {
      * Starts a visual effect with a caller-supplied identity and absolute start time. Used by
      * cinematic timelines and persistence restore, which must preserve ages across restarts.
      */
-    public static VisualEffectHandle startWithId(
+    public static VisualEffectStartResult startWithId(
         ServerLevel level,
         VisualEffectSpec spec,
         UUID instanceId,
@@ -92,7 +87,7 @@ public final class VisualEffectService {
         return startWithId(level, spec, instanceId, startGameTime, options, null);
     }
 
-    public static VisualEffectHandle startWithId(
+    public static VisualEffectStartResult startWithId(
         ServerLevel level,
         VisualEffectSpec spec,
         UUID instanceId,
@@ -107,7 +102,7 @@ public final class VisualEffectService {
         return startInternal(level, spec, segmentLink, options, instanceId, startGameTime);
     }
 
-    private static VisualEffectHandle startInternal(
+    private static VisualEffectStartResult startInternal(
         ServerLevel level,
         VisualEffectSpec spec,
         SegmentLink segmentLink,
@@ -115,22 +110,17 @@ public final class VisualEffectService {
         UUID instanceId,
         long startGameTime
     ) {
-        EffectDescriptor descriptor = segmentLink == null ? new EffectDescriptor(
-            instanceId,
-            EffectKind.VISUAL,
-            spec.effectId(),
-            level.dimension().location(),
-            spec.transform(),
-            spec.scale(),
-            spec.seed(),
-            startGameTime,
-            spec.durationTicks(),
-            spec.audience(),
-            options.capabilities(),
-            options.persistence(),
-            options.ownerSessionId(),
-            descriptorState(options, spec)
-        ) : null;
+        EffectDescriptor descriptor = segmentLink == null ? EffectDescriptor.builder(
+                instanceId, EffectKind.VISUAL, spec.effectId(), level.dimension().location()
+            )
+            .placement(spec.transform(), spec.scale())
+            .timing(spec.seed(), startGameTime, spec.durationTicks())
+            .audience(spec.audience())
+            .capabilities(options.capabilities())
+            .persistence(options.persistence())
+            .ownerSessionId(options.ownerSessionId())
+            .state(descriptorState(options, spec))
+            .build() : null;
         return activate(level, spec, instanceId, startGameTime, segmentLink, descriptor, true);
     }
 
@@ -139,7 +129,7 @@ public final class VisualEffectService {
      * records or starts its side effects. Start and restore differ only in descriptor ownership and
      * whether a new persistence record is written.
      */
-    private static VisualEffectHandle activate(
+    private static VisualEffectStartResult activate(
         ServerLevel level,
         VisualEffectSpec spec,
         UUID instanceId,
@@ -175,7 +165,10 @@ public final class VisualEffectService {
             if (effects.isEmpty()) {
                 STATE.remove(level);
             }
-            return new VisualEffectHandle(instanceId);
+            EffectStartStatus status = recordStart
+                ? EffectStartStatus.CULLED_ON_START
+                : EffectStartStatus.RESTORED_INACTIVE;
+            return new VisualEffectStartResult(new VisualEffectHandle(instanceId), status);
         }
         Map<UUID, ServerPlayer> audience = new LinkedHashMap<>();
         collectAudience(level, active, null, audience);
@@ -188,7 +181,10 @@ public final class VisualEffectService {
         if (segmentLink == null) {
             startAudio(level, instanceId, spec, startGameTime);
         }
-        return new VisualEffectHandle(instanceId);
+        EffectStartStatus status = recordStart
+            ? EffectStartStatus.ACTIVE
+            : EffectStartStatus.RESTORED_ACTIVE;
+        return new VisualEffectStartResult(new VisualEffectHandle(instanceId), status);
     }
 
     /**
@@ -265,7 +261,7 @@ public final class VisualEffectService {
      * Restores one standalone visual with its original identity, start time, and transform. The
      * handle may be inactive when the soft budget culled it; query {@link #isActive}.
      */
-    public static VisualEffectHandle restore(
+    public static VisualEffectStartResult restore(
         ServerLevel level,
         VisualEffectSpec spec,
         UUID instanceId,
@@ -279,7 +275,7 @@ public final class VisualEffectService {
     }
 
     /** Restores one legacy coordinator-linked visual without recording a standalone descriptor. */
-    public static VisualEffectHandle restoreSegment(
+    public static VisualEffectStartResult restoreSegment(
         ServerLevel level,
         VisualEffectSpec spec,
         UUID instanceId,
@@ -289,7 +285,7 @@ public final class VisualEffectService {
         return restore(level, spec, instanceId, startGameTime, null, link);
     }
 
-    private static VisualEffectHandle restore(
+    private static VisualEffectStartResult restore(
         ServerLevel level,
         VisualEffectSpec spec,
         UUID instanceId,
@@ -324,20 +320,6 @@ public final class VisualEffectService {
         EffectTransformBatchService.queueVisual(
             level, active.payload().instanceId(), transform, active.trackingPlayers()
         );
-    }
-
-    /**
-     * Records a transform without sending packets. Segmented coordinators stage every segment so late joiners receive
-     * the current placement, then send one aggregated update themselves.
-     */
-    public static void stageTransform(ServerLevel level, VisualEffectHandle handle, EffectTransform transform) {
-        Objects.requireNonNull(level, "level");
-        Objects.requireNonNull(handle, "handle");
-        Objects.requireNonNull(transform, "transform");
-        ActiveEffect active = findActive(level, handle);
-        if (active != null) {
-            active.setTransform(transform);
-        }
     }
 
     /** Player IDs currently tracking one effect; empty for unknown, finished, or untracked handles. */
@@ -383,13 +365,14 @@ public final class VisualEffectService {
     }
 
     public static void stop(ServerLevel level, VisualEffectHandle handle) {
-        stop(level, handle, true);
+        stop(level, handle, EffectRemovalPolicy.DELETE);
     }
 
-    /** Stops an instance; {@code persistRemoval=false} keeps its descriptor for a later restore. */
-    public static void stop(ServerLevel level, VisualEffectHandle handle, boolean persistRemoval) {
+    /** Stops an instance; {@link EffectRemovalPolicy#KEEP_FOR_RESTORE} keeps its descriptor. */
+    public static void stop(ServerLevel level, VisualEffectHandle handle, EffectRemovalPolicy policy) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(handle, "handle");
+        Objects.requireNonNull(policy, "policy");
         VisualState state = STATE.peek(level);
         if (state == null) {
             EffectAudioService.stop(level, handle.instanceId());
@@ -398,7 +381,7 @@ public final class VisualEffectService {
         ActiveEffect active = state.effects.remove(handle.instanceId());
         if (active != null) {
             sendStop(level, active);
-            if (persistRemoval) {
+            if (policy.deletesDescriptor()) {
                 EffectPersistenceService.recordStop(level, handle.instanceId());
             }
         }
