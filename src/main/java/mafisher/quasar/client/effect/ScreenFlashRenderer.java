@@ -16,7 +16,7 @@ import org.slf4j.Logger;
 /** Draws active additive screen flashes over the composed level target. */
 final class ScreenFlashRenderer {
     private static final Logger LOGGER = LogUtils.getLogger();
-    private static boolean unavailable;
+    private static volatile boolean unavailable;
 
     private ScreenFlashRenderer() {
     }
@@ -43,15 +43,16 @@ final class ScreenFlashRenderer {
             return;
         }
 
-        EffectRenderState.bindTarget(mainTarget);
-        RenderSystem.colorMask(true, true, true, true);
-        RenderSystem.depthMask(false);
-        RenderSystem.disableDepthTest();
-        RenderSystem.disableCull();
-        RenderSystem.enableBlend();
-        RenderSystem.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE);
+        ScreenGlState state = ScreenGlState.capture();
         boolean shaderApplied = false;
         try {
+            EffectRenderState.bindTarget(mainTarget);
+            RenderSystem.colorMask(true, true, true, true);
+            RenderSystem.depthMask(false);
+            RenderSystem.disableDepthTest();
+            RenderSystem.disableCull();
+            RenderSystem.enableBlend();
+            RenderSystem.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE);
             shader.safeGetUniform("FlashColor")
                 .set(sample.red(), sample.green(), sample.blue());
             shader.safeGetUniform("FlashStrength").set(sample.strength());
@@ -71,11 +72,7 @@ final class ScreenFlashRenderer {
             if (shaderApplied) {
                 shader.clear();
             }
-            RenderSystem.disableBlend();
-            RenderSystem.enableCull();
-            RenderSystem.depthMask(true);
-            RenderSystem.enableDepthTest();
-            EffectRenderState.forceViewport(mainTarget.width, mainTarget.height);
+            state.restore();
         }
     }
 

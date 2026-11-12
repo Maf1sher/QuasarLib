@@ -257,11 +257,6 @@ final class ClientEffectFrameRuntime {
         }
     }
 
-    static boolean armScreenCompositorFailureOnce() {
-        ClientScreenCompositor compositor = screenCompositor;
-        return compositor != null && compositor.armFailureAfterCompositionOnce();
-    }
-
     /** Logs one composed frame of presentation GL state; the next composed frame clears the request. */
     static boolean requestCompositorDiagnostics() {
         if (manager == null) {

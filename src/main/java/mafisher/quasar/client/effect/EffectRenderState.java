@@ -38,10 +38,15 @@ final class EffectRenderState {
      * This is one path for every mod; no Sodium-specific branch is needed.</p>
      */
     static void forceViewport(int width, int height) {
+        forceViewport(0, 0, width, height);
+    }
+
+    /** Forces a full viewport rectangle through the same Sodium-cache-safe path. */
+    static void forceViewport(int x, int y, int width, int height) {
         if (width <= 0 || height <= 0) {
             return;
         }
-        GlStateManager._viewport(0, 0, width, 0);
-        GlStateManager._viewport(0, 0, width, height);
+        GlStateManager._viewport(x, y, width, 0);
+        GlStateManager._viewport(x, y, width, height);
     }
 }

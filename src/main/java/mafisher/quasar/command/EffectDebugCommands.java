@@ -38,7 +38,6 @@ import mafisher.quasar.effect.gameplay.GameplayEffectHandle;
 import mafisher.quasar.effect.gameplay.GameplayEffectService;
 import mafisher.quasar.effect.gameplay.GameplayEffectSpec;
 import mafisher.quasar.effect.gameplay.OwnerPolicy;
-import mafisher.quasar.effect.network.ArmScreenCompositorFailurePayload;
 import mafisher.quasar.effect.persistence.EffectRecoveryReport;
 import mafisher.quasar.effect.persistence.EffectRestoreService;
 import mafisher.quasar.sound.QuasarSounds;
@@ -59,7 +58,6 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
-import net.neoforged.neoforge.network.PacketDistributor;
 
 @EventBusSubscriber(modid = QuasarLib.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
 public final class EffectDebugCommands {
@@ -133,8 +131,6 @@ public final class EffectDebugCommands {
                                 return testAll(context.getSource(), angles, angles);
                             }
                         ))
-                        .then(Commands.literal("compositor-fail-next")
-                            .executes(context -> armCompositorFailure(context.getSource())))
                 )
                 .then(
                     Commands.literal("cinematic")
@@ -614,21 +610,6 @@ public final class EffectDebugCommands {
     private static void playTestSound(ServerLevel level, Vec3 position) {
         level.playSound(null, position.x, position.y, position.z, QuasarSounds.EFFECT_TEST.get(), SoundSource.PLAYERS,
             0.8F, 1.0F);
-    }
-
-    private static int armCompositorFailure(CommandSourceStack source) {
-        ServerPlayer player = source.getPlayer();
-        if (player == null) {
-            source.sendFailure(Component.literal("This command must be run by a player."));
-            return 0;
-        }
-
-        PacketDistributor.sendToPlayer(player, new ArmScreenCompositorFailurePayload());
-        source.sendSuccess(
-            () -> Component.literal("Armed one compositor failure for your client; show a screen effect to trigger it."),
-            false
-        );
-        return 1;
     }
 
     private static Vec3 effectPosition(CommandSourceStack source) {

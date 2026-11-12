@@ -15,7 +15,7 @@ final class ClientEffectClock {
     }
 
     /** Records one server timestamp together with the client time at which it was received. */
-    static void observe(long serverGameTime, long clientGameTime) {
+    static synchronized void observe(long serverGameTime, long clientGameTime) {
         if (!sampled) {
             sampled = true;
             lastEstimate = Long.MIN_VALUE;
@@ -25,7 +25,7 @@ final class ClientEffectClock {
     }
 
     /** Returns the monotonic estimate of server game time for the current client tick. */
-    static long estimate(long clientGameTime) {
+    static synchronized long estimate(long clientGameTime) {
         if (!sampled) {
             return clientGameTime;
         }
@@ -38,7 +38,7 @@ final class ClientEffectClock {
     }
 
     /** Clears the sampled offset when the client leaves a level or disconnects. */
-    static void reset() {
+    static synchronized void reset() {
         sampled = false;
         offsetTicks = 0L;
         lastEstimate = Long.MIN_VALUE;

@@ -9,8 +9,10 @@ import com.mojang.blaze3d.vertex.BufferUploader;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.logging.LogUtils;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import mafisher.quasar.compat.CompatRegistry;
 import mafisher.quasar.compat.RenderEnvironment;
 import mafisher.quasar.effect.EffectQualityTier;
@@ -20,6 +22,7 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.material.FogType;
@@ -34,14 +37,11 @@ import org.slf4j.Logger;
 /** Optional depth-aware per-effect mask composition for client screen effects. */
 final class ClientScreenCompositor {
     private static final Logger LOGGER = LogUtils.getLogger();
-    private static final int READ_FRAMEBUFFER = 0x8CA8;
-    private static final int DRAW_FRAMEBUFFER = 0x8CA9;
-    private static final int COLOR_BUFFER_BIT = 0x00004000;
-    private static final int DEPTH_BUFFER_BIT = 0x00000100;
     private static final int NEAREST_FILTER = 0x2600;
 
     private final ScreenEffectOperationRegistry operationRegistry;
     private final ScreenEffectScratchTargetPool scratchTargets = new ScreenEffectScratchTargetPool();
+    private final Set<ResourceLocation> failingOperations = new HashSet<>();
     private TextureTarget rawSceneTarget;
     private TextureTarget sceneColorTarget;
     private TextureTarget compositionTarget;
@@ -53,7 +53,6 @@ final class ClientScreenCompositor {
     private boolean opaqueDepthCaptured;
     private boolean foregroundDepthCaptured;
     private boolean hadScreenEffects;
-    private boolean failAfterCompositionOnce;
     private boolean warnedPresentationViewport;
     private boolean warnedDegenerateCamera;
     private boolean loggedDeferredBufferFlush;
@@ -82,7 +81,7 @@ final class ClientScreenCompositor {
             this.hadScreenEffects = false;
             this.unavailableWidth = -1;
             this.unavailableHeight = -1;
-            this.releaseTargets();
+            this.releaseTargetsSafely();
             return;
         }
         if (!this.hadScreenEffects) {
@@ -93,7 +92,7 @@ final class ClientScreenCompositor {
 
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.level == null || manager == null) {
-            this.releaseTargets();
+            this.releaseTargetsSafely();
             return;
         }
 
@@ -101,7 +100,7 @@ final class ClientScreenCompositor {
         int width = mainTarget.width;
         int height = mainTarget.height;
         if (width <= 0 || height <= 0) {
-            this.releaseTargets();
+            this.releaseTargetsSafely();
             return;
         }
         if (width != this.unavailableWidth || height != this.unavailableHeight) {
@@ -112,8 +111,9 @@ final class ClientScreenCompositor {
             return;
         }
 
-        ClientQualityController.beginLevelGpu();
+        ScreenGlState previousState = ScreenGlState.capture();
         try {
+            ClientQualityController.beginLevelGpu();
             try {
                 EffectQualityTier quality = ClientQualityController.tier();
                 float compositionScale = quality.screenScale();
@@ -154,6 +154,7 @@ final class ClientScreenCompositor {
                 this.warnedDegenerateCamera = false;
 
                 this.ensureTargets(targetWidth, targetHeight);
+                this.scratchTargets.beginFrame();
                 RenderTarget depthTarget = CompatRegistry.sceneDepthTarget(mainTarget);
                 RenderTarget maskDepthTarget = opaqueDepthAvailable
                     && !environment.hasDepthProvider()
@@ -168,30 +169,20 @@ final class ClientScreenCompositor {
                 }
 
                 this.captureSceneColor(mainTarget, this.rawSceneTarget);
-                ScreenEffectFogState fogState = this.fogState;
+                CompositionFrame frame = new CompositionFrame(
+                    event, manager, maskDepthTarget, camera, quality, environment, this.fogState);
 
                 List<ScreenEffectBatch> orderedBatches = ScreenEffectBatch.depthOrdered(batches);
-                RenderTarget currentColor = this.rawSceneTarget;
-                RenderTarget alternateColor = this.sceneColorTarget;
-                boolean firstBatch = true;
-                for (ScreenEffectBatch batch : orderedBatches) {
-                    this.renderMask(event, manager, maskDepthTarget, batch);
-                    this.renderOperation(currentColor, alternateColor, batch, camera, quality, environment,
-                        fogState);
-                    currentColor = alternateColor;
-                    if (firstBatch) {
-                        firstBatch = false;
-                        alternateColor = this.compositionTarget;
-                    } else {
-                        alternateColor = alternateColor == this.sceneColorTarget
-                            ? this.compositionTarget : this.sceneColorTarget;
-                    }
-                }
-
-                if (this.failAfterCompositionOnce) {
-                    this.failAfterCompositionOnce = false;
-                    throw new IllegalStateException("Screen compositor failure injection");
-                }
+                RenderTarget currentColor = ScreenEffectCompositionLoop.render(
+                    orderedBatches,
+                    this.rawSceneTarget,
+                    this.sceneColorTarget,
+                    this.compositionTarget,
+                    (batch, source, destination) -> this.renderBatch(frame, batch, source, destination),
+                    (batch, source, failedDestination, failure) -> this.reportOperationFailure(
+                        batch, source, failedDestination, failure),
+                    this::reportOperationSuccess
+                );
 
                 boolean diagnose = this.diagnosticsRequested;
                 if (diagnose) {
@@ -204,10 +195,7 @@ final class ClientScreenCompositor {
                     this.logPresentationDiagnostics("after present", mainTarget, currentColor, quality,
                         batches.size());
                 }
-                this.restoreMainTargetState(mainTarget);
             } catch (RuntimeException exception) {
-                this.failAfterCompositionOnce = false;
-                this.restoreMainTargetState(mainTarget);
                 this.unavailableWidth = width;
                 this.unavailableHeight = height;
                 this.releaseTargets();
@@ -216,35 +204,31 @@ final class ClientScreenCompositor {
             }
         } finally {
             ClientQualityController.endLevelGpu();
+            previousState.restore();
         }
     }
 
     void onLevelUnload() {
         this.hadScreenEffects = false;
-        this.failAfterCompositionOnce = false;
         this.diagnosticsRequested = false;
         this.warnedDegenerateCamera = false;
+        this.failingOperations.clear();
         this.fogState = ScreenEffectFogState.NONE;
         this.foregroundDepthCaptured = false;
         this.unavailableWidth = -1;
         this.unavailableHeight = -1;
-        this.releaseTargets();
+        this.releaseTargetsForLifecycle();
     }
 
     void onResourceReload() {
-        this.failAfterCompositionOnce = false;
         this.diagnosticsRequested = false;
         this.warnedDegenerateCamera = false;
+        this.failingOperations.clear();
         this.fogState = ScreenEffectFogState.NONE;
         this.foregroundDepthCaptured = false;
         this.unavailableWidth = -1;
         this.unavailableHeight = -1;
-        this.releaseTargets();
-    }
-
-    boolean armFailureAfterCompositionOnce() {
-        this.failAfterCompositionOnce = true;
-        return true;
+        this.releaseTargetsForLifecycle();
     }
 
     /** Logs one frame of presentation GL state and target dimensions on the next composed frame. */
@@ -253,39 +237,69 @@ final class ClientScreenCompositor {
         return true;
     }
 
-    private void renderOperation(RenderTarget sourceColor, RenderTarget destination,
-        ScreenEffectBatch batch, ScreenEffectCameraState camera, EffectQualityTier quality,
-        RenderEnvironment environment, ScreenEffectFogState fogState) {
+    private void renderBatch(CompositionFrame frame, ScreenEffectBatch batch, RenderTarget sourceColor,
+        RenderTarget destination) {
+        ScreenGlState batchState = ScreenGlState.capture();
+        try {
+            this.renderMask(frame.event(), frame.manager(), frame.maskDepthTarget(), batch);
+            this.renderOperation(frame, batch, sourceColor, destination);
+        } finally {
+            this.scratchTargets.releaseOperation();
+            batchState.restore();
+        }
+    }
+
+    private void renderOperation(CompositionFrame frame, ScreenEffectBatch batch, RenderTarget sourceColor,
+        RenderTarget destination) {
         ScreenEffectOperationRenderer renderer = this.operationRegistry.find(batch.settings().operation())
             .orElseThrow(() -> new IllegalStateException("No screen effect operation registered for "
                 + batch.settings().operation().id()));
+        var effectPosition = batch.operationContext().transform().position();
+        MediumCapture medium = captureMedium(
+            new Vec3(effectPosition.x(), effectPosition.y(), effectPosition.z()),
+            frame.camera().position());
+        ScreenEffectOperationContext context = new ScreenEffectOperationContext(
+            batch.settings(),
+            batch.operationContext(),
+            batch.mask(),
+            frame.camera(),
+            frame.quality(),
+            frame.environment(),
+            frame.fogState(),
+            medium.state(),
+            medium.path(),
+            this.opaqueColorTarget,
+            this.foregroundDepthCaptured ? this.foregroundDepthTarget : null,
+            sourceColor,
+            this.rawSceneTarget,
+            destination,
+            this.screenMaskTarget,
+            this.scratchTargets
+        );
+        renderer.render(context);
+    }
+
+    private void reportOperationFailure(ScreenEffectBatch batch, RenderTarget source,
+        RenderTarget failedDestination, RuntimeException failure) {
+        ResourceLocation operationId = batch.settings().operation().id();
+        if (this.failingOperations.add(operationId)) {
+            LOGGER.warn("Screen operation {} failed; skipping it and continuing with other screen effects.",
+                operationId, failure);
+        } else {
+            LOGGER.debug("Screen operation {} is still failing; skipping this frame.", operationId);
+        }
         try {
-            var effectPosition = batch.operationContext().transform().position();
-            MediumCapture medium = captureMedium(
-                new Vec3(effectPosition.x(), effectPosition.y(), effectPosition.z()),
-                camera.position());
-            ScreenEffectOperationContext context = new ScreenEffectOperationContext(
-                batch.settings(),
-                batch.operationContext(),
-                batch.mask(),
-                camera,
-                quality,
-                environment,
-                fogState,
-                medium.state(),
-                medium.path(),
-                this.opaqueColorTarget,
-                this.foregroundDepthCaptured ? this.foregroundDepthTarget : null,
-                sourceColor,
-                this.rawSceneTarget,
-                destination,
-                this.screenMaskTarget,
-                this.scratchTargets
-            );
-            renderer.render(context);
-        } finally {
-            this.scratchTargets.releaseOperation();
-            this.restoreOperationState();
+            ScreenTargetBlit.color(source, failedDestination);
+        } catch (RuntimeException cleanupFailure) {
+            LOGGER.debug("Could not reset the destination of failed screen operation {}.",
+                operationId, cleanupFailure);
+        }
+    }
+
+    private void reportOperationSuccess(ScreenEffectBatch batch) {
+        ResourceLocation operationId = batch.settings().operation().id();
+        if (this.failingOperations.remove(operationId)) {
+            LOGGER.info("Screen operation {} recovered.", operationId);
         }
     }
 
@@ -346,6 +360,11 @@ final class ClientScreenCompositor {
             new Vector3d(cameraPosition.x, cameraPosition.y, cameraPosition.z),
             new Vector3d(effectPosition.x, effectPosition.y, effectPosition.z),
             sampler);
+    }
+
+    private record CompositionFrame(RenderLevelStageEvent event, ClientVisualEffectManager manager,
+        RenderTarget maskDepthTarget, ScreenEffectCameraState camera, EffectQualityTier quality,
+        RenderEnvironment environment, ScreenEffectFogState fogState) {
     }
 
     private record MediumCapture(ScreenEffectMediumState state, ScreenEffectMediumPath path) {
@@ -439,24 +458,10 @@ final class ClientScreenCompositor {
             return;
         }
         this.opaqueColorTarget = this.ensureTarget(this.opaqueColorTarget, width, height, false);
-        RenderSystem.disableScissor();
         if (this.opaqueColorTarget.getColorTextureId() > 0) {
-            GlStateManager._glBindFramebuffer(READ_FRAMEBUFFER, mainTarget.frameBufferId);
-            GlStateManager._glBindFramebuffer(DRAW_FRAMEBUFFER, this.opaqueColorTarget.frameBufferId);
-            GlStateManager._glBlitFrameBuffer(
-                0, 0, width, height,
-                0, 0, width, height,
-                COLOR_BUFFER_BIT, NEAREST_FILTER
-            );
+            ScreenTargetBlit.color(mainTarget, this.opaqueColorTarget);
         }
-        GlStateManager._glBindFramebuffer(READ_FRAMEBUFFER, mainTarget.frameBufferId);
-        GlStateManager._glBindFramebuffer(DRAW_FRAMEBUFFER, this.opaqueDepthTarget.frameBufferId);
-        GlStateManager._glBlitFrameBuffer(
-            0, 0, width, height,
-            0, 0, width, height,
-            DEPTH_BUFFER_BIT, NEAREST_FILTER
-        );
-        mainTarget.bindWrite(false);
+        ScreenTargetBlit.depth(mainTarget, this.opaqueDepthTarget);
         this.opaqueDepthCaptured = true;
     }
 
@@ -491,16 +496,9 @@ final class ClientScreenCompositor {
         if (this.foregroundDepthTarget.getDepthTextureId() <= 0) {
             return;
         }
-        RenderSystem.disableScissor();
-        GlStateManager._glBindFramebuffer(READ_FRAMEBUFFER, source.frameBufferId);
-        GlStateManager._glBindFramebuffer(DRAW_FRAMEBUFFER, this.foregroundDepthTarget.frameBufferId);
-        GlStateManager._glBlitFrameBuffer(
-            0, 0, width, height,
-            0, 0, width, height,
-            DEPTH_BUFFER_BIT, NEAREST_FILTER
-        );
-        // The translucent layer pass continues on this target in Fabulous mode.
-        source.bindWrite(false);
+        // The translucent layer pass continues on this target in Fabulous mode; the
+        // blit helper restores the previous framebuffer and viewport.
+        ScreenTargetBlit.depth(source, this.foregroundDepthTarget);
         this.foregroundDepthCaptured = true;
     }
 
@@ -564,15 +562,16 @@ final class ClientScreenCompositor {
         // of relying on the vanilla blit_screen path or Sodium's cached
         // GlStateManager viewport. A stale viewport cache would draw the
         // composition into only the smaller quality-scaled rectangle.
-        EffectRenderState.bindTarget(mainTarget);
-        RenderSystem.disableScissor();
-        RenderSystem.colorMask(true, true, true, false);
-        RenderSystem.depthMask(false);
-        RenderSystem.disableDepthTest();
-        RenderSystem.disableBlend();
-        RenderSystem.disableCull();
+        ScreenGlState state = ScreenGlState.capture();
         boolean shaderApplied = false;
         try {
+            EffectRenderState.bindTarget(mainTarget);
+            RenderSystem.disableScissor();
+            RenderSystem.colorMask(true, true, true, false);
+            RenderSystem.depthMask(false);
+            RenderSystem.disableDepthTest();
+            RenderSystem.disableBlend();
+            RenderSystem.disableCull();
             shader.setSampler("DiffuseSampler", composition.getColorTextureId());
             shader.apply();
             shaderApplied = true;
@@ -587,38 +586,12 @@ final class ClientScreenCompositor {
             if (shaderApplied) {
                 shader.clear();
             }
-            RenderSystem.colorMask(true, true, true, true);
-            RenderSystem.enableCull();
-            RenderSystem.depthMask(true);
-            RenderSystem.enableDepthTest();
-            EffectRenderState.forceViewport(width, height);
+            state.restore();
         }
     }
 
     private void captureSceneColor(RenderTarget mainTarget, RenderTarget captureTarget) {
-        RenderSystem.disableScissor();
-        GlStateManager._glBindFramebuffer(READ_FRAMEBUFFER, mainTarget.frameBufferId);
-        GlStateManager._glBindFramebuffer(DRAW_FRAMEBUFFER, captureTarget.frameBufferId);
-        GlStateManager._glBlitFrameBuffer(
-            0, 0, mainTarget.width, mainTarget.height,
-            0, 0, captureTarget.width, captureTarget.height,
-            COLOR_BUFFER_BIT, NEAREST_FILTER
-        );
-        mainTarget.bindWrite(false);
-    }
-
-    private void restoreMainTargetState(RenderTarget mainTarget) {
-        EffectRenderState.bindTarget(mainTarget);
-        this.restoreOperationState();
-    }
-
-    private void restoreOperationState() {
-        RenderSystem.colorMask(true, true, true, true);
-        RenderSystem.depthMask(true);
-        RenderSystem.enableDepthTest();
-        RenderSystem.disableBlend();
-        RenderSystem.disableScissor();
-        RenderSystem.enableCull();
+        ScreenTargetBlit.color(mainTarget, captureTarget);
     }
 
     private void warnDegenerateCameraOnce(Matrix4f projection) {
@@ -659,6 +632,25 @@ final class ClientScreenCompositor {
             composition.width, composition.height,
             quality, quality.screenScale(), batchCount,
             window.getWidth(), window.getHeight(), errorBefore);
+    }
+
+    /** Releases compositor targets without leaking the framebuffer state they change. */
+    private void releaseTargetsSafely() {
+        ScreenGlState state = ScreenGlState.capture();
+        try {
+            this.releaseTargets();
+        } finally {
+            state.restore();
+        }
+    }
+
+    /** Releases targets from a lifecycle callback, where destruction may already be deferred. */
+    private void releaseTargetsForLifecycle() {
+        if (RenderSystem.isOnRenderThreadOrInit()) {
+            this.releaseTargetsSafely();
+        } else {
+            this.releaseTargets();
+        }
     }
 
     private void releaseTargets() {

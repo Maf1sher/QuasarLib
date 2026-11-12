@@ -73,10 +73,6 @@ public final class ClientEffectRuntime {
 
     /** Returns the quality tier currently used for client presentation. */
     public static EffectQualityTier qualityTier() {
-        return ClientQualityController.tier();
-    }
-
-    public static boolean armScreenCompositorFailureOnce() {
-        return ClientEffectFrameRuntime.armScreenCompositorFailureOnce();
+        return ClientQualityController.publishedTier();
     }
 }

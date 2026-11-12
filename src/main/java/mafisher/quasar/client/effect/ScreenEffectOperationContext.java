@@ -14,6 +14,7 @@ import mafisher.quasar.compat.RenderEnvironment;
 import mafisher.quasar.effect.EffectQualityTier;
 import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.client.GlStateBackup;
 import org.joml.Matrix4f;
 
 /**
@@ -29,11 +30,6 @@ import org.joml.Matrix4f;
  * callback.</p>
  */
 public final class ScreenEffectOperationContext {
-    private static final int READ_FRAMEBUFFER = 0x8CA8;
-    private static final int DRAW_FRAMEBUFFER = 0x8CA9;
-    private static final int COLOR_BUFFER_BIT = 0x00004000;
-    private static final int NEAREST_FILTER = 0x2600;
-
     private final ScreenEffectSettings settings;
     private final EffectRenderContext effect;
     private final ScreenEffectMask mask;
@@ -188,7 +184,7 @@ public final class ScreenEffectOperationContext {
     /**
      * Acquires a frame-scoped color target. The operation may release it
      * explicitly for reuse; unreleased targets are released after the callback.
-     * The returned target may be reused by a later operation.
+     * Targets unused for more than a frame are destroyed by the compositor.
      */
     public TextureTarget acquireScratchTarget(int width, int height) {
         return this.scratchTargets.acquire(width, height);
@@ -241,22 +237,26 @@ public final class ScreenEffectOperationContext {
     }
 
     /**
-     * Binds {@code destination}, resets color/depth/blend state, applies the
-     * shader, and draws one fullscreen quad. Callers still own target lifetime.
+     * Binds {@code destination}, forces the composition draw state, applies the
+     * shader, and draws one fullscreen quad. The changed enable, blend, depth,
+     * cull, color-mask, and scissor state is restored; callers still own target
+     * lifetime.
      */
     public void drawFullscreen(RenderTarget destination, ShaderInstance shader) {
         Objects.requireNonNull(destination, "destination");
         Objects.requireNonNull(shader, "shader");
-        EffectRenderState.bindTarget(destination);
-        RenderSystem.disableScissor();
-        RenderSystem.disableCull();
-        RenderSystem.colorMask(true, true, true, true);
-        RenderSystem.depthMask(false);
-        RenderSystem.disableDepthTest();
-        RenderSystem.disableBlend();
+        GlStateBackup state = new GlStateBackup();
+        GlStateManager._backupGlState(state);
 
         boolean shaderApplied = false;
         try {
+            EffectRenderState.bindTarget(destination);
+            RenderSystem.disableScissor();
+            RenderSystem.disableCull();
+            RenderSystem.colorMask(true, true, true, true);
+            RenderSystem.depthMask(false);
+            RenderSystem.disableDepthTest();
+            RenderSystem.disableBlend();
             shader.apply();
             shaderApplied = true;
             BufferBuilder builder = RenderSystem.renderThreadTesselator()
@@ -267,10 +267,10 @@ public final class ScreenEffectOperationContext {
             builder.addVertex(0.0F, 1.0F, 0.0F);
             BufferUploader.draw(builder.buildOrThrow());
         } finally {
-            RenderSystem.enableCull();
             if (shaderApplied) {
                 shader.clear();
             }
+            GlStateManager._restoreGlState(state);
         }
     }
 
@@ -330,16 +330,7 @@ public final class ScreenEffectOperationContext {
 
     /** Copies source color into destination with a nearest-filter full-target blit. */
     public void blitColor(RenderTarget source, RenderTarget destination) {
-        Objects.requireNonNull(source, "source");
-        Objects.requireNonNull(destination, "destination");
-        RenderSystem.disableScissor();
-        GlStateManager._glBindFramebuffer(READ_FRAMEBUFFER, source.frameBufferId);
-        GlStateManager._glBindFramebuffer(DRAW_FRAMEBUFFER, destination.frameBufferId);
-        GlStateManager._glBlitFrameBuffer(
-            0, 0, source.width, source.height,
-            0, 0, destination.width, destination.height,
-            COLOR_BUFFER_BIT, NEAREST_FILTER
-        );
+        ScreenTargetBlit.color(source, destination);
     }
 
     private static AbstractUniform uniform(ShaderInstance shader, String name) {

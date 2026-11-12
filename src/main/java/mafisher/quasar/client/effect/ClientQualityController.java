@@ -3,27 +3,41 @@ package mafisher.quasar.client.effect;
 import mafisher.quasar.QuasarClientConfig;
 import mafisher.quasar.effect.EffectQualityTier;
 
-/** Client-lifetime quality tier selection and automatic degradation state. */
+/**
+ * Client-lifetime quality tier selection and automatic degradation state.
+ *
+ * <p>All mutable state is render-thread confined except the volatile reset handoff and the published
+ * tier read by {@link ClientEffectRuntime#qualityTier()}.</p>
+ */
 final class ClientQualityController {
     private static final EffectGpuTimer gpuTimer = new EffectGpuTimer(new GlGpuQueryBackend());
+    private static volatile EffectQualityTier publishedTier;
     private static EffectQualityGovernor governor;
     private static long worldRenderNanos;
-    private static EffectQualityTier forcedTier;
-    private static boolean gpuResetPending;
+    private static volatile boolean resetPending;
 
     private ClientQualityController() {
     }
 
-    /** Returns the tier used by the current frame. */
+    /** Returns the tier used by the current frame; call on the render thread. */
     static EffectQualityTier tier() {
-        if (forcedTier != null) {
-            return forcedTier;
+        processPendingReset();
+        EffectQualityTier fixed = QuasarClientConfig.qualityMode().fixedTier();
+        EffectQualityTier selected = fixed != null ? fixed : governor().tier();
+        publishedTier = selected;
+        return selected;
+    }
+
+    /** Returns the most recently published tier for render-thread-external readers. */
+    static EffectQualityTier publishedTier() {
+        EffectQualityTier current = publishedTier;
+        if (current != null) {
+            return current;
         }
         EffectQualityTier fixed = QuasarClientConfig.qualityMode().fixedTier();
-        if (fixed != null) {
-            return fixed;
-        }
-        return governor().tier();
+        EffectQualityTier selected = fixed != null ? fixed : QuasarClientConfig.autoMaxTier();
+        publishedTier = selected;
+        return selected;
     }
 
     static void recordWorldRender(long nanos) {
@@ -32,9 +46,9 @@ final class ClientQualityController {
 
     /** Completes one frame sample; called after screen effects and composition. */
     static void recordLevelRender(long nanos) {
+        processPendingReset();
         long cost = worldRenderNanos + Math.max(0L, nanos);
         worldRenderNanos = 0L;
-        processPendingGpuReset();
         long gpuNanos = gpuTimer.consumeCompletedNanos();
         if (autoQuality()) {
             governor().sample(cost, gpuNanos);
@@ -43,7 +57,7 @@ final class ClientQualityController {
 
     /** Starts the GPU timer for the effect world pass; a no-op unless automatic quality is active. */
     static void beginWorldGpu() {
-        processPendingGpuReset();
+        processPendingReset();
         if (autoQuality()) {
             gpuTimer.beginWorld();
         }
@@ -55,7 +69,7 @@ final class ClientQualityController {
 
     /** Starts the GPU timer for screen composition; a no-op unless automatic quality is active. */
     static void beginLevelGpu() {
-        processPendingGpuReset();
+        processPendingReset();
         if (autoQuality()) {
             gpuTimer.beginLevel();
         }
@@ -72,32 +86,23 @@ final class ClientQualityController {
 
     /**
      * Resets the governor; the next frame starts again at the configured maximum tier. GPU queries are released on
-     * the render thread, so lifecycle events from another thread only schedule the reset.
+     * the render thread, so a reset requested by another thread is applied on the next render-thread call.
      */
     static void reset() {
-        governor = null;
-        worldRenderNanos = 0L;
-        gpuResetPending = true;
-    }
-
-    static long lastP95Nanos() {
-        return governor == null ? 0L : governor.lastP95Nanos();
-    }
-
-    /** Test/benchmark hook; {@code null} restores normal configuration-driven selection. */
-    static void forceTier(EffectQualityTier tier) {
-        forcedTier = tier;
+        resetPending = true;
     }
 
     private static boolean autoQuality() {
-        return forcedTier == null && QuasarClientConfig.qualityMode().fixedTier() == null;
+        return QuasarClientConfig.qualityMode().fixedTier() == null;
     }
 
-    private static void processPendingGpuReset() {
-        if (!gpuResetPending) {
+    private static void processPendingReset() {
+        if (!resetPending) {
             return;
         }
-        gpuResetPending = false;
+        resetPending = false;
+        governor = null;
+        worldRenderNanos = 0L;
         gpuTimer.reset();
     }
 
