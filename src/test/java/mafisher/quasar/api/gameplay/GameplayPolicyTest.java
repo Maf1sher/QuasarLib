@@ -28,6 +28,7 @@ import mafisher.quasar.api.persistence.EffectKind;
 import mafisher.quasar.api.persistence.EffectPersistence;
 import mafisher.quasar.api.persistence.EffectPersistenceOptions;
 import mafisher.quasar.effect.gameplay.GameplayEffectNbt;
+import mafisher.quasar.testing.GlobalStateTest;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -37,6 +38,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+@GlobalStateTest
 class GameplayPolicyTest {
     private static final ResourceLocation TYPE =
         ResourceLocation.fromNamespaceAndPath("quasar_lib", "policy_effect");

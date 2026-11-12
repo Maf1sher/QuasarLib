@@ -7,17 +7,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
 import java.util.Map;
+import mafisher.quasar.testing.GlobalStateTest;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+@GlobalStateTest
 class CinematicTimelineRegistryTest {
     private static final ResourceLocation VALID = ResourceLocation.fromNamespaceAndPath("quasar_lib", "valid");
     private static final ResourceLocation INVALID = ResourceLocation.fromNamespaceAndPath("quasar_lib", "invalid");
 
     @AfterEach
     void tearDown() {
-        CinematicTimelineRegistry.clearForTesting();
+        CinematicTimelineRegistry.reload(Map.of());
     }
 
     @Test

@@ -43,8 +43,4 @@ public final class GameplayEffectTypeRegistry {
     public static int size() {
         return FACTORIES.size();
     }
-
-    static void clearForTesting() {
-        FACTORIES.clear();
-    }
 }

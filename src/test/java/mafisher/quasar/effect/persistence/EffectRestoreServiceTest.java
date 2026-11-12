@@ -48,6 +48,7 @@ import mafisher.quasar.effect.runtime.RecordingPacketSink;
 import mafisher.quasar.effect.runtime.SavedDataEffectStore;
 import mafisher.quasar.effect.runtime.TestBudgetSource;
 import mafisher.quasar.effect.runtime.TestEffectRuntime;
+import mafisher.quasar.testing.GlobalStateTest;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -67,6 +68,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+@GlobalStateTest
 class EffectRestoreServiceTest {
     private static final ResourceLocation EFFECT = ResourceLocation.fromNamespaceAndPath("quasar_lib", "effect");
     private static final ResourceLocation DIMENSION = ResourceLocation.fromNamespaceAndPath("minecraft", "overworld");

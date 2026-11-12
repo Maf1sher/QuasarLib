@@ -51,8 +51,4 @@ public final class CinematicTimelineRegistry {
         }
         timelines = Map.copyOf(parsed);
     }
-
-    static void clearForTesting() {
-        timelines = Map.of();
-    }
 }

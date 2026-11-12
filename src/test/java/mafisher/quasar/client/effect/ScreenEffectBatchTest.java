@@ -19,6 +19,7 @@ import mafisher.quasar.api.effect.EffectQualityTier;
 import mafisher.quasar.api.effect.StartVisualEffectPayload;
 import mafisher.quasar.api.scale.SegmentGridLayout;
 import mafisher.quasar.api.scale.SegmentLink;
+import mafisher.quasar.testing.TestVisualEffects;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.resources.ResourceLocation;
@@ -194,7 +195,7 @@ class ScreenEffectBatchTest {
     }
 
     private static EffectRenderContext context(StartVisualEffectPayload payload) {
-        return new EffectRenderContext(new VisualEffectInstance(payload), payload.transform(), 10.0F, 0.5F, 0.0F);
+        return TestVisualEffects.context(payload, 10.0F, 0.5F);
     }
 
     private static EffectRenderContext context(StartVisualEffectPayload payload, double cameraDistance) {

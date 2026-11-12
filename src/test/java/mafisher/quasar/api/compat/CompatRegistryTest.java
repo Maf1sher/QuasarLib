@@ -1,4 +1,4 @@
-package mafisher.quasar.compat;
+package mafisher.quasar.api.compat;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -18,10 +18,12 @@ import mafisher.quasar.api.compat.SceneDepthProvider;
 import mafisher.quasar.api.compat.SceneDepthSource;
 import mafisher.quasar.api.compat.ShaderPackProvider;
 import mafisher.quasar.api.compat.ShaderPackState;
+import mafisher.quasar.testing.GlobalStateTest;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+@GlobalStateTest
 class CompatRegistryTest {
     @AfterEach
     void reset() {

@@ -13,16 +13,15 @@ import mafisher.quasar.api.client.EffectRenderContext;
 import mafisher.quasar.api.client.EffectRenderTypeOptions;
 import mafisher.quasar.api.client.EffectShader;
 import mafisher.quasar.api.client.QuasarRenderTypes;
-import mafisher.quasar.api.client.VisualEffectInstance;
-import mafisher.quasar.api.effect.StartVisualEffectPayload;
+import mafisher.quasar.testing.TestVisualEffects;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.junit.jupiter.api.Test;
 
 class InstancedBatchBuilderTest {
     private static final ResourceLocation EFFECT_ID = ResourceLocation.fromNamespaceAndPath("quasar_lib", "test");
-    private static final ResourceLocation DIMENSION = ResourceLocation.fromNamespaceAndPath("minecraft", "overworld");
     private static final RenderType RENDER_TYPE = QuasarRenderTypes.instancedWorldVisual(
         ResourceLocation.fromNamespaceAndPath("test", "textures/effect/instanced.png")
     );
@@ -165,21 +164,17 @@ class InstancedBatchBuilderTest {
     }
 
     private static EffectRenderContext context(double x, double y, double z) {
-        StartVisualEffectPayload payload = new StartVisualEffectPayload(
-            EFFECT_ID,
-            UUID.randomUUID(),
-            DIMENSION,
-            x,
-            y,
-            z,
+        return TestVisualEffects.context(
+            TestVisualEffects.payload(
+                EFFECT_ID,
+                UUID.randomUUID(),
+                new Vec3(x, y, z),
+                2.0F,
+                100,
+                1L
+            ),
             0.0F,
-            0.0F,
-            0.0F,
-            2.0F,
-            100,
-            0L,
-            1L
+            0.0F
         );
-        return new EffectRenderContext(new VisualEffectInstance(payload), payload.transform(), 0.0F, 0.0F, 0.0F);
     }
 }

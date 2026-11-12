@@ -26,6 +26,7 @@ import mafisher.quasar.api.gameplay.GameplayEffectSpec;
 import mafisher.quasar.api.gameplay.OwnerPolicy;
 import mafisher.quasar.api.persistence.EffectCapabilities;
 import mafisher.quasar.api.persistence.EffectPersistenceOptions;
+import mafisher.quasar.testing.GlobalStateTest;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -36,6 +37,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+@GlobalStateTest
 class GameplayProtectionTest {
     private static final ResourceLocation TYPE =
         ResourceLocation.fromNamespaceAndPath("quasar_lib", "protected_effect");

@@ -1,4 +1,4 @@
-package mafisher.quasar.compat;
+package mafisher.quasar.api.compat;
 
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import java.util.concurrent.atomic.AtomicInteger;

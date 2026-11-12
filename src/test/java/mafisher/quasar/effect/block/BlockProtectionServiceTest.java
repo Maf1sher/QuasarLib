@@ -10,6 +10,7 @@ import java.util.UUID;
 import mafisher.quasar.api.block.BlockChange;
 import mafisher.quasar.api.block.BlockProtectionContext;
 import mafisher.quasar.api.block.RegisterBlockProtectionsEvent;
+import mafisher.quasar.testing.GlobalStateTest;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -18,6 +19,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+@GlobalStateTest
 class BlockProtectionServiceTest {
     private static final ResourceLocation PROTECTION =
         ResourceLocation.fromNamespaceAndPath("quasar_lib", "test_protection");

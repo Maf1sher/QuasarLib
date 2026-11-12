@@ -8,6 +8,7 @@ import static org.mockito.Mockito.mock;
 
 import mafisher.quasar.api.gameplay.DestructiveEffectPolicyContext;
 import mafisher.quasar.api.persistence.EffectCapabilities;
+import mafisher.quasar.testing.GlobalStateTest;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.phys.Vec3;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+@GlobalStateTest
 class DestructiveEffectPoliciesTest {
     private static final ResourceLocation POLICY =
         ResourceLocation.fromNamespaceAndPath("quasar_lib", "test_policy");

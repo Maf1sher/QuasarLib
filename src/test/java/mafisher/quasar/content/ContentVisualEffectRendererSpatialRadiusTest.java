@@ -7,16 +7,16 @@ import java.util.List;
 import java.util.UUID;
 import mafisher.quasar.api.client.EffectLodProfile;
 import mafisher.quasar.api.client.EffectRenderContext;
-import mafisher.quasar.api.client.VisualEffectInstance;
 import mafisher.quasar.api.client.VisualEffectRenderer;
 import mafisher.quasar.api.effect.StartVisualEffectPayload;
+import mafisher.quasar.testing.TestVisualEffects;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 
 class ContentVisualEffectRendererSpatialRadiusTest {
     private static final ResourceLocation EFFECT_ID = ResourceLocation.fromNamespaceAndPath("quasar_content", "test");
-    private static final ResourceLocation DIMENSION = ResourceLocation.fromNamespaceAndPath("minecraft", "overworld");
 
     @Test
     void defaultsToInfinite() {
@@ -56,24 +56,18 @@ class ContentVisualEffectRendererSpatialRadiusTest {
     }
 
     private static EffectRenderContext context(float scale, float progress) {
-        StartVisualEffectPayload payload = new StartVisualEffectPayload(
+        StartVisualEffectPayload payload = TestVisualEffects.payload(
             EFFECT_ID,
             UUID.randomUUID(),
-            DIMENSION,
-            10.0,
-            64.0,
-            -5.0,
+            new Vec3(10.0, 64.0, -5.0),
             20.0F,
             5.0F,
             -3.0F,
             scale,
             100,
-            0L,
             1234L
         );
-        VisualEffectInstance instance = new VisualEffectInstance(payload);
-        float age = progress * 100.0F;
-        return new EffectRenderContext(instance, payload.transform(), age, progress, 0.5F);
+        return TestVisualEffects.context(payload, progress * 100.0F, progress);
     }
 
     private static double maximumExtent(AABB bounds, double x, double y, double z) {

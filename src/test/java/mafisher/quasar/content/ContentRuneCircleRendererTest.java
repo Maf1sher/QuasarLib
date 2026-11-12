@@ -15,12 +15,12 @@ import mafisher.quasar.api.client.EffectMeshes;
 import mafisher.quasar.api.client.EffectRenderContext;
 import mafisher.quasar.api.client.ScreenEffectMask;
 import mafisher.quasar.api.client.ScreenEffectSettings;
-import mafisher.quasar.api.client.VisualEffectInstance;
 import mafisher.quasar.api.effect.EffectQualityTier;
 import mafisher.quasar.api.effect.StartVisualEffectPayload;
+import mafisher.quasar.testing.TestVisualEffects;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;
 import org.junit.jupiter.api.Test;
 
@@ -118,22 +118,15 @@ class ContentRuneCircleRendererTest {
     }
 
     private static EffectRenderContext context() {
-        StartVisualEffectPayload payload = new StartVisualEffectPayload(
+        StartVisualEffectPayload payload = TestVisualEffects.payload(
             ContentEffectIds.RUNE_CIRCLE,
             UUID.randomUUID(),
-            ResourceLocation.fromNamespaceAndPath("minecraft", "overworld"),
-            0.0,
-            0.0,
-            0.0,
-            0.0F,
-            0.0F,
-            0.0F,
+            Vec3.ZERO,
             5.0F,
             100,
-            0L,
             12_345L
         );
-        return new EffectRenderContext(new VisualEffectInstance(payload), payload.transform(), 10.0F, 0.1F, 0.5F);
+        return TestVisualEffects.context(payload, 10.0F, 0.1F);
     }
 
     private static final class RecordingVertexConsumer implements VertexConsumer {

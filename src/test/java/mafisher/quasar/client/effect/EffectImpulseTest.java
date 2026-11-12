@@ -8,11 +8,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import mafisher.quasar.api.client.CameraShakeImpulse;
 import mafisher.quasar.api.client.ClientEffectImpulses;
 import mafisher.quasar.api.client.ScreenFlashImpulse;
+import mafisher.quasar.testing.GlobalStateTest;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+@GlobalStateTest
 class EffectImpulseTest {
     private static final Vec3 ORIGIN = new Vec3(0.0, 64.0, 0.0);
 

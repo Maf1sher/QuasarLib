@@ -369,7 +369,7 @@ public final class CompatRegistry {
         }
     }
 
-    public static void clearForTesting() {
+    static void clearForTesting() {
         synchronized (LOCK) {
             DEPTH_PROVIDERS.clear();
             SHADER_PACK_PROVIDERS.clear();

@@ -37,6 +37,7 @@ import mafisher.quasar.effect.runtime.RecordingEffectStore;
 import mafisher.quasar.effect.runtime.RecordingPacketSink;
 import mafisher.quasar.effect.runtime.TestBudgetSource;
 import mafisher.quasar.effect.runtime.TestEffectRuntime;
+import mafisher.quasar.testing.GlobalStateTest;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
@@ -48,6 +49,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+@GlobalStateTest
 class GameplayBlockOperationsTest {
     private static final ResourceLocation TYPE =
         ResourceLocation.fromNamespaceAndPath("quasar_lib", "test_block_effect");
