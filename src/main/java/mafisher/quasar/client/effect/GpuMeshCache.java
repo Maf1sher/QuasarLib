@@ -26,7 +26,7 @@ import org.slf4j.LoggerFactory;
 final class GpuMeshCache implements AutoCloseable {
     private static final int MAX_MESHES = 256;
     private static final int FULLBRIGHT_LIGHT = 0x00F000F0;
-    private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
+    private static final Logger LOGGER = LoggerFactory.getLogger(GpuMeshCache.class);
 
     private final Map<GpuMeshKey, GpuMesh> meshes = new LinkedHashMap<>(16, 0.75F, true);
 

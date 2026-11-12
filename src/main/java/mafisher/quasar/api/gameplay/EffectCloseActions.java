@@ -8,7 +8,7 @@ import org.slf4j.LoggerFactory;
 
 /** Runs engine-owned session cleanup in reverse registration order, even after a failure. */
 final class EffectCloseActions {
-    private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
+    private static final Logger LOGGER = LoggerFactory.getLogger(EffectCloseActions.class);
 
     private final List<Runnable> actions = new ArrayList<>();
 

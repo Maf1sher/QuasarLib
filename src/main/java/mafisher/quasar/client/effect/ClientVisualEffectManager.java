@@ -58,7 +58,7 @@ import org.slf4j.LoggerFactory;
 public final class ClientVisualEffectManager {
     private static final int MAX_ACTIVE_STANDALONE_EFFECTS = 128;
     private static final double INDEX_QUERY_MARGIN = 16.0;
-    private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
+    private static final Logger LOGGER = LoggerFactory.getLogger(ClientVisualEffectManager.class);
 
     private final Map<UUID, VisualEffectInstance> activeEffects = new LinkedHashMap<>();
     private final Map<UUID, ClientSegmentGroup> segmentedGroups = new LinkedHashMap<>();
@@ -586,8 +586,7 @@ public final class ClientVisualEffectManager {
     }
 
     private AABB queryBox(Vec3 cameraPosition) {
-        Minecraft minecraft = Minecraft.getInstance();
-        double far = minecraft.gameRenderer == null ? 256.0 : minecraft.gameRenderer.getDepthFar();
+        double far = ClientFarPlane.current();
         double radius = Math.max(64.0, Math.max(far, this.frameEnvironment.horizonDistance())) + INDEX_QUERY_MARGIN;
         return new AABB(
             cameraPosition.x - radius, Double.NEGATIVE_INFINITY, cameraPosition.z - radius,

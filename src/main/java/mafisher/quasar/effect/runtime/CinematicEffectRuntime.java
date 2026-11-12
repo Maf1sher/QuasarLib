@@ -43,7 +43,7 @@ import org.slf4j.LoggerFactory;
  */
 @ApiStatus.Internal
 public final class CinematicEffectRuntime {
-    private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
+    private static final Logger LOGGER = LoggerFactory.getLogger(CinematicEffectRuntime.class);
 
     private final ServerLevel level;
     private final EffectStore store;

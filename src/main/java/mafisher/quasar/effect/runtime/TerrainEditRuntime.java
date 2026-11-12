@@ -28,7 +28,7 @@ import org.slf4j.LoggerFactory;
  */
 @ApiStatus.Internal
 public final class TerrainEditRuntime {
-    private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
+    private static final Logger LOGGER = LoggerFactory.getLogger(TerrainEditRuntime.class);
     private static final int LIGHT_CHUNKS_PER_TICK = 2;
     /** Priority relights are the visible destruction front; let them keep up with section edits. */
     private static final int PRIORITY_LIGHT_CHUNKS_PER_TICK = 6;

@@ -42,7 +42,7 @@ import org.slf4j.LoggerFactory;
 /** Per-level replication state for standalone visuals. */
 @ApiStatus.Internal
 public final class VisualEffectRuntime {
-    private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
+    private static final Logger LOGGER = LoggerFactory.getLogger(VisualEffectRuntime.class);
 
     private static final int GRID_MIN_PLAYERS = 8;
     private static final long GRID_MIN_QUERIES = 256L;

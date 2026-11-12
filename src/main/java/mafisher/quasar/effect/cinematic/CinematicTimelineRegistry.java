@@ -16,7 +16,7 @@ import org.slf4j.LoggerFactory;
 /** Server-side registry of datapack cinematic timelines, replaced atomically on resource reload. */
 @ApiStatus.Internal
 public final class CinematicTimelineRegistry {
-    private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
+    private static final Logger LOGGER = LoggerFactory.getLogger(CinematicTimelineRegistry.class);
     private static volatile Map<ResourceLocation, CinematicTimeline> timelines = Map.of();
 
     private CinematicTimelineRegistry() {

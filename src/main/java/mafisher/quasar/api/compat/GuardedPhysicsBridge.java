@@ -2,7 +2,6 @@ package mafisher.quasar.api.compat;
 
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
-import mafisher.quasar.QuasarLib;
 import mafisher.quasar.api.compat.PhysicsBridge;
 import net.minecraft.resources.ResourceLocation;
 import org.slf4j.Logger;
@@ -10,7 +9,7 @@ import org.slf4j.LoggerFactory;
 
 /** Guards a physics bridge so a failing availability check reads as absent. */
 final class GuardedPhysicsBridge implements PhysicsBridge {
-    private static final Logger LOGGER = LoggerFactory.getLogger(QuasarLib.MOD_ID);
+    private static final Logger LOGGER = LoggerFactory.getLogger(GuardedPhysicsBridge.class);
     private final ResourceLocation id;
     private final PhysicsBridge delegate;
     private final AtomicBoolean loggedFailure = new AtomicBoolean();

@@ -48,7 +48,7 @@ public final class GameplayEffectRuntime {
      */
     public static final int RESTORED_OWNER_GRACE_TICKS = 6_000;
 
-    private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
+    private static final Logger LOGGER = LoggerFactory.getLogger(GameplayEffectRuntime.class);
 
     private final ServerLevel level;
     private final EffectStore store;

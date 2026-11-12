@@ -4,10 +4,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.function.Consumer;
 import mafisher.quasar.api.client.ClientEffectImpulses;
-import mafisher.quasar.api.client.RegisterScreenEffectOperationsEvent;
-import mafisher.quasar.api.client.RegisterVisualEffectRenderersEvent;
 import mafisher.quasar.api.compat.CompatRegistry;
-import mafisher.quasar.api.compat.RegisterCompatProvidersEvent;
 import mafisher.quasar.api.compat.RenderEnvironment;
 import mafisher.quasar.api.effect.StartVisualEffectPayload;
 import mafisher.quasar.api.scale.StartSegmentedVisualEffectPayload;
@@ -21,12 +18,10 @@ import mafisher.quasar.effect.network.StopSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.StopVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateVisualEffectPayload;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
-import net.neoforged.neoforge.common.NeoForge;
 
 /**
  * Client-only owner of the effect manager and screen compositor. Common payload handlers must
@@ -34,11 +29,8 @@ import net.neoforged.neoforge.common.NeoForge;
  */
 final class ClientEffectFrameRuntime {
     private static final Object INIT_LOCK = new Object();
-    private static final Consumer<Runnable> DEFAULT_RELOAD_DISPATCHER = task -> Minecraft.getInstance().execute(task);
     private static final CompatFrameEnvironment FRAME_ENVIRONMENT =
         new CompatFrameEnvironment(CompatRegistry::environment);
-    /** Package-private seam so reload dispatch can be verified without a live client. */
-    static volatile Consumer<Runnable> reloadDispatcher = DEFAULT_RELOAD_DISPATCHER;
     private static volatile ClientVisualEffectManager manager;
     private static volatile ClientScreenCompositor screenCompositor;
 
@@ -46,9 +38,13 @@ final class ClientEffectFrameRuntime {
     }
 
     /**
-     * Builds the renderer registry on first use. The registration event is posted lazily so the game bus is fully
-     * active; posting it during client setup can run before consumer game-bus listeners are ready.
+     * Closes client registration before the first effect frame. Called from the client load-complete
+     * hook; {@link #manager()} keeps an idempotent lazy fallback for tests and unusual call orders.
      */
+    static void initialize() {
+        ClientEffectRegistries.shared();
+    }
+
     private static ClientVisualEffectManager manager() {
         ClientVisualEffectManager current = manager;
         if (current != null) {
@@ -56,20 +52,9 @@ final class ClientEffectFrameRuntime {
         }
         synchronized (INIT_LOCK) {
             if (manager == null) {
-                ScreenEffectOperationRegistry operationRegistry = new ScreenEffectOperationRegistry();
-                operationRegistry.registerBuiltIns();
-                NeoForge.EVENT_BUS.post(new RegisterScreenEffectOperationsEvent(operationRegistry::register));
-                operationRegistry.freeze();
-                VisualEffectRendererRegistry rendererRegistry = new VisualEffectRendererRegistry();
-                NeoForge.EVENT_BUS.post(new RegisterVisualEffectRenderersEvent(rendererRegistry::register));
-                rendererRegistry.freeze();
-                try {
-                    NeoForge.EVENT_BUS.post(new RegisterCompatProvidersEvent());
-                } finally {
-                    CompatRegistry.freezeClientProviders();
-                }
-                screenCompositor = new ClientScreenCompositor(operationRegistry);
-                manager = new ClientVisualEffectManager(rendererRegistry);
+                ClientEffectRegistries currentRegistries = ClientEffectRegistries.shared();
+                screenCompositor = new ClientScreenCompositor(currentRegistries.operations());
+                manager = new ClientVisualEffectManager(currentRegistries.renderers());
             }
             return manager;
         }
@@ -203,8 +188,7 @@ final class ClientEffectFrameRuntime {
 
     /** Resolves the far plane once so both client stages share the same frame environment. */
     private static double currentFarPlane() {
-        Minecraft minecraft = Minecraft.getInstance();
-        return minecraft.gameRenderer == null ? 256.0 : minecraft.gameRenderer.getDepthFar();
+        return ClientFarPlane.current();
     }
 
     static void onLevelUnload(ClientLevel level) {
@@ -244,8 +228,8 @@ final class ClientEffectFrameRuntime {
         }
     }
 
-    static void onResourceReload(ResourceManager resourceManager) {
-        reloadDispatcher.accept(() -> applyResourceReload(resourceManager));
+    static void onResourceReload(ResourceManager resourceManager, Consumer<Runnable> dispatcher) {
+        dispatcher.accept(() -> applyResourceReload(resourceManager));
     }
 
     private static void applyResourceReload(ResourceManager resourceManager) {

@@ -17,7 +17,7 @@ import org.slf4j.LoggerFactory;
  */
 @ApiStatus.Internal
 public final class BlockRollbackRuntime {
-    private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
+    private static final Logger LOGGER = LoggerFactory.getLogger(BlockRollbackRuntime.class);
 
     private final ServerLevel level;
     private final EffectStore store;

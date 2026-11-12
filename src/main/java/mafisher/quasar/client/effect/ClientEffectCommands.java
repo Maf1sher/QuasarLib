@@ -5,7 +5,6 @@ import java.util.stream.Collectors;
 import mafisher.quasar.QuasarLib;
 import mafisher.quasar.api.compat.CompatRegistry;
 import mafisher.quasar.api.compat.RenderEnvironment;
-import net.minecraft.client.Minecraft;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -52,9 +51,7 @@ public final class ClientEffectCommands {
     }
 
     private static int reportCompat(CommandSourceStack source) {
-        Minecraft minecraft = Minecraft.getInstance();
-        double farPlane = minecraft.gameRenderer == null ? 256.0 : minecraft.gameRenderer.getDepthFar();
-        RenderEnvironment environment = CompatRegistry.environment(farPlane);
+        RenderEnvironment environment = CompatRegistry.environment(ClientFarPlane.current());
         String providers = environment.activeProviders().isEmpty()
             ? "none"
             : environment.activeProviders().stream()

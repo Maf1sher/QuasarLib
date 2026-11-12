@@ -34,7 +34,7 @@ import org.slf4j.LoggerFactory;
 
 /** Read-mostly view of one active gameplay effect session. */
 public final class GameplayEffectContext {
-    private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
+    private static final Logger LOGGER = LoggerFactory.getLogger(GameplayEffectContext.class);
     private final ServerLevel level;
     private final EffectScope scope;
     private final GameplayEffectSpec spec;

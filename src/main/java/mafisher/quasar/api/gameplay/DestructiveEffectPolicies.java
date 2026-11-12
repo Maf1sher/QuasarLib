@@ -11,7 +11,7 @@ import org.slf4j.LoggerFactory;
 
 /** Internal registry that ANDs every destructive-effect policy. */
 final class DestructiveEffectPolicies {
-    private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
+    private static final Logger LOGGER = LoggerFactory.getLogger(DestructiveEffectPolicies.class);
     private static final ResourceLocation CONFIG_POLICY_ID =
         ResourceLocation.fromNamespaceAndPath(QuasarLib.MOD_ID, "config");
     private static final Map<ResourceLocation, DestructiveEffectPolicy> POLICIES = new LinkedHashMap<>();

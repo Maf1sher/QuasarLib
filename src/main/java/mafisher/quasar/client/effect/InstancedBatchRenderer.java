@@ -29,7 +29,7 @@ final class InstancedBatchRenderer implements AutoCloseable {
     private static final int FLOATS_PER_DATA = 4;
     private static final int FLOATS_PER_INSTANCE = FLOATS_PER_MATRIX + FLOATS_PER_COLOR + FLOATS_PER_DATA;
     private static final int UNIFORM_RESERVE = 64;
-    private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
+    private static final Logger LOGGER = LoggerFactory.getLogger(InstancedBatchRenderer.class);
 
     private final GpuMeshCache meshes;
     private final InstanceUniformLocationCache<ShaderInstance> uniformLocations =

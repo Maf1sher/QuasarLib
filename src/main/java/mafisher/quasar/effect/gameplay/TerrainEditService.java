@@ -16,7 +16,7 @@ import org.slf4j.LoggerFactory;
  */
 @ApiStatus.Internal
 public final class TerrainEditService {
-    private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
+    private static final Logger LOGGER = LoggerFactory.getLogger(TerrainEditService.class);
 
     private TerrainEditService() {
     }

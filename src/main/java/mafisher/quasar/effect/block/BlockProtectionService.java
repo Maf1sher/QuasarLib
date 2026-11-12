@@ -13,7 +13,7 @@ import org.slf4j.LoggerFactory;
 /** Registry and query surface for per-change block protection callbacks. */
 @ApiStatus.Internal
 public final class BlockProtectionService {
-    private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
+    private static final Logger LOGGER = LoggerFactory.getLogger(BlockProtectionService.class);
     private static final Map<ResourceLocation, BlockProtection> PROTECTIONS = new LinkedHashMap<>();
     private static boolean frozen;
 

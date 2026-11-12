@@ -28,7 +28,7 @@ public final class EffectSavedData extends SavedData {
     public static final String FILE_ID = "quasar_lib_effects";
     public static final int SCHEMA_VERSION = 2;
 
-    private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
+    private static final Logger LOGGER = LoggerFactory.getLogger(EffectSavedData.class);
     private static final String QUARANTINED_JOURNAL_KEY = "quarantined_journal";
 
     private final Map<UUID, EffectDescriptor> descriptors = new LinkedHashMap<>();

@@ -17,7 +17,7 @@ import org.slf4j.LoggerFactory;
  * shared {@link GpuMeshCache}; this class only binds render state and issues one draw per pass.
  */
 final class CachedMeshRenderer {
-    private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
+    private static final Logger LOGGER = LoggerFactory.getLogger(CachedMeshRenderer.class);
 
     private final GpuMeshCache meshes;
     private final Set<String> passIds = new HashSet<>();

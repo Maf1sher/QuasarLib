@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
-import mafisher.quasar.QuasarLib;
 import net.minecraft.resources.ResourceLocation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,9 +14,9 @@ import org.slf4j.LoggerFactory;
 /**
  * Registration and per-frame resolution of optional capability providers.
  *
- * <p>Providers are registered during setup through
- * {@link RegisterCompatProvidersEvent} (client) and
- * {@link RegisterCompatBridgesEvent} (common), then frozen. Registration only
+ * <p>Providers are registered through {@link RegisterCompatProvidersEvent} when client loading
+ * completes and through {@link RegisterCompatBridgesEvent} during common setup, then frozen.
+ * Registration only
  * mutates the registry under its lock; resolution snapshots the registry under
  * the lock and invokes provider callbacks after releasing it. Resolution is
  * deterministic: higher priority wins, a failing provider is skipped, duplicate
@@ -26,9 +25,8 @@ import org.slf4j.LoggerFactory;
  * instead of failing an effect.</p>
  */
 public final class CompatRegistry {
-    private static final Logger LOGGER = LoggerFactory.getLogger(QuasarLib.MOD_ID);
+    private static final Logger LOGGER = LoggerFactory.getLogger(CompatRegistry.class);
     private static final Object LOCK = new Object();
-    private static final double FALLBACK_DISTANCE = 256.0;
     private static final Map<ResourceLocation, DepthEntry> DEPTH_PROVIDERS = new LinkedHashMap<>();
     private static final Map<ResourceLocation, ShaderPackEntry> SHADER_PACK_PROVIDERS = new LinkedHashMap<>();
     private static final AtomicBoolean LOGGED_DEPTH_FAILURE = new AtomicBoolean();
@@ -346,7 +344,7 @@ public final class CompatRegistry {
 
     private static double sanitizeDistance(double value) {
         if (!Double.isFinite(value) || value <= 0.0) {
-            return FALLBACK_DISTANCE;
+            return RenderEnvironment.VANILLA.farPlane();
         }
         return Math.min(value, 1_000_000.0);
     }

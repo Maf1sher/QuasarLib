@@ -19,7 +19,7 @@ import org.slf4j.LoggerFactory;
  * Finished or culled visuals are pruned from the ownership ledger on the next scope operation.
  */
 public final class EffectScope implements AutoCloseable {
-    private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
+    private static final Logger LOGGER = LoggerFactory.getLogger(EffectScope.class);
 
     private final ServerLevel level;
     private final UUID sessionId;

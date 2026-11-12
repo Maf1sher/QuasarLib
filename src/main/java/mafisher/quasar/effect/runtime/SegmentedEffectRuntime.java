@@ -41,7 +41,7 @@ import org.slf4j.LoggerFactory;
  */
 @ApiStatus.Internal
 public final class SegmentedEffectRuntime {
-    private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
+    private static final Logger LOGGER = LoggerFactory.getLogger(SegmentedEffectRuntime.class);
 
     private final ServerLevel level;
     private final EffectStore store;

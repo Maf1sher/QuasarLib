@@ -2,7 +2,6 @@ package mafisher.quasar.api.compat;
 
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
-import mafisher.quasar.QuasarLib;
 import mafisher.quasar.api.block.BlockProtectionContext;
 import mafisher.quasar.api.compat.ProtectionBridge;
 import net.minecraft.resources.ResourceLocation;
@@ -11,7 +10,7 @@ import org.slf4j.LoggerFactory;
 
 /** Wraps a protection bridge so failures deny changes and read as unavailable. */
 final class GuardedProtectionBridge implements ProtectionBridge {
-    private static final Logger LOGGER = LoggerFactory.getLogger(QuasarLib.MOD_ID);
+    private static final Logger LOGGER = LoggerFactory.getLogger(GuardedProtectionBridge.class);
     private final ResourceLocation id;
     private final ProtectionBridge delegate;
     private final AtomicBoolean loggedAvailabilityFailure = new AtomicBoolean();

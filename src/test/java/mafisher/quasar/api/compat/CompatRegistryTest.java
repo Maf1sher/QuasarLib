@@ -49,6 +49,14 @@ class CompatRegistryTest {
     }
 
     @Test
+    void invalidFarPlaneUsesTheVanillaFallback() {
+        RenderEnvironment environment = CompatRegistry.environment(Double.NaN);
+
+        assertEquals(RenderEnvironment.VANILLA.farPlane(), environment.farPlane());
+        assertEquals(RenderEnvironment.VANILLA.farPlane(), environment.horizonDistance());
+    }
+
+    @Test
     void usesTheRegisteredHorizonProvider() {
         CompatRegistry.registerHorizonProvider(new HorizonProvider() {
             @Override

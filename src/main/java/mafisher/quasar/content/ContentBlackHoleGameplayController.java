@@ -59,7 +59,7 @@ import org.slf4j.LoggerFactory;
  * in one place.
  */
 final class ContentBlackHoleGameplayController implements GameplayEffectController {
-    private static final Logger LOGGER = LoggerFactory.getLogger(ContentBootstrap.MOD_ID);
+    private static final Logger LOGGER = LoggerFactory.getLogger(ContentBlackHoleGameplayController.class);
     private static final ContentBlackHoleGameplaySettings SETTINGS =
         ContentBlackHoleGameplaySettings.DEFAULT;
     private static final double MAX_PENDING_HEADROOM = 12_000.0;

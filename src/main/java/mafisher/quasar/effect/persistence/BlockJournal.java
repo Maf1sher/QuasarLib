@@ -42,7 +42,7 @@ import org.slf4j.LoggerFactory;
 public final class BlockJournal {
     static final int SCHEMA_VERSION = 1;
 
-    private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
+    private static final Logger LOGGER = LoggerFactory.getLogger(BlockJournal.class);
     private static final int SECTION_BLOCK_COST = 4_096;
     private static final String POSITION_KEY = "quasar_pos";
     private static final String SCHEMA_KEY = "journal_schema";

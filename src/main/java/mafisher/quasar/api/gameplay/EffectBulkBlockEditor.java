@@ -49,7 +49,7 @@ import org.slf4j.LoggerFactory;
  * records a compact section snapshot for rollback. Clients only present the final chunk.
  */
 public final class EffectBulkBlockEditor {
-    private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
+    private static final Logger LOGGER = LoggerFactory.getLogger(EffectBulkBlockEditor.class);
     private static final int SECTION_BLOCKS = 16 * 16 * 16;
     private static final int MAX_CLEARED_STATES = 12;
     private static final int MAX_TICKET_CHUNKS = 1_024;
@@ -433,7 +433,7 @@ public final class EffectBulkBlockEditor {
         return MAX_TICKET_CHUNKS;
     }
 
-    /** Test hook: chunks whose client resend has not been released yet. */
+    /** Chunks whose client resend is still queued; package-private for lifecycle tests. */
     int dirtyChunkCount() {
         return this.dirtyChunks.size();
     }

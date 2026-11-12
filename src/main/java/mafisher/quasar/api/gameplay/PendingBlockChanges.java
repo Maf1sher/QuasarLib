@@ -25,7 +25,7 @@ final class PendingBlockChanges {
     /** Provisional safety cap; it bounds memory until configurable quality budgets arrive. */
     static final int DEFAULT_MAX_PENDING = 16_384;
 
-    private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
+    private static final Logger LOGGER = LoggerFactory.getLogger(PendingBlockChanges.class);
 
     private final Deque<QueuedChange> changes = new ArrayDeque<>();
     private final int maxPending;

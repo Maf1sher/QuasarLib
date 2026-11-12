@@ -37,7 +37,7 @@ public final class EffectAudioRuntime {
     public static final int MAX_TRIGGER_EVENTS_PER_TICK_PER_PLAN = 16;
 
     private static final int RESUME_GRACE_TICKS = EffectAudioPlan.GRACE_TICKS;
-    private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
+    private static final Logger LOGGER = LoggerFactory.getLogger(EffectAudioRuntime.class);
 
     private final ServerLevel level;
     private final EffectPacketSink packets;

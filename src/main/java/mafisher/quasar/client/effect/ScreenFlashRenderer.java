@@ -7,16 +7,16 @@ import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.BufferUploader;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.VertexFormat;
-import com.mojang.logging.LogUtils;
 import mafisher.quasar.api.client.ClientEffectImpulses;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Draws active additive screen flashes over the composed level target. */
 final class ScreenFlashRenderer {
-    private static final Logger LOGGER = LogUtils.getLogger();
+    private static final Logger LOGGER = LoggerFactory.getLogger(ScreenFlashRenderer.class);
     private static volatile boolean unavailable;
 
     private ScreenFlashRenderer() {

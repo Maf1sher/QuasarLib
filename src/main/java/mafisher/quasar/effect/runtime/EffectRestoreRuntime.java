@@ -39,7 +39,7 @@ import org.slf4j.LoggerFactory;
  */
 @ApiStatus.Internal
 public final class EffectRestoreRuntime {
-    private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
+    private static final Logger LOGGER = LoggerFactory.getLogger(EffectRestoreRuntime.class);
     private static final List<EffectKind> RESTORE_ORDER = List.of(
         EffectKind.CINEMATIC,
         EffectKind.GAMEPLAY,

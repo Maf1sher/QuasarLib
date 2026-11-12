@@ -8,7 +8,6 @@ import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.BufferUploader;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.VertexFormat;
-import com.mojang.logging.LogUtils;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -41,10 +40,11 @@ import org.joml.Vector3d;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL30;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Optional depth-aware per-effect mask composition for client screen effects. */
 final class ClientScreenCompositor {
-    private static final Logger LOGGER = LogUtils.getLogger();
+    private static final Logger LOGGER = LoggerFactory.getLogger(ClientScreenCompositor.class);
     private static final int NEAREST_FILTER = 0x2600;
 
     private final ScreenEffectOperationRegistry operationRegistry;
