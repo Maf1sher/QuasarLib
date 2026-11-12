@@ -7,7 +7,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
-import mafisher.quasar.effect.gameplay.GameplayEffectEndReason;
+import mafisher.quasar.api.effect.EffectAudience;
+import mafisher.quasar.api.effect.EffectRemovalPolicy;
+import mafisher.quasar.api.effect.VisualEffectService;
+import mafisher.quasar.api.effect.VisualEffectSpec;
+import mafisher.quasar.api.gameplay.GameplayEffectEndReason;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;

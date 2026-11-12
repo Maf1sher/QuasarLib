@@ -5,12 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import mafisher.quasar.effect.audio.EffectAudioAttenuation;
-import mafisher.quasar.effect.audio.EffectAudioCue;
-import mafisher.quasar.effect.audio.EffectAudioEnvelope;
-import mafisher.quasar.effect.audio.EffectAudioMotion;
-import mafisher.quasar.effect.audio.EffectAudioSpec;
-import mafisher.quasar.effect.audio.EffectAudioTrigger;
+import mafisher.quasar.api.audio.EffectAudioAttenuation;
+import mafisher.quasar.api.audio.EffectAudioCue;
+import mafisher.quasar.api.audio.EffectAudioEnvelope;
+import mafisher.quasar.api.audio.EffectAudioMotion;
+import mafisher.quasar.api.audio.EffectAudioSpec;
+import mafisher.quasar.api.audio.EffectAudioTrigger;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundSource;

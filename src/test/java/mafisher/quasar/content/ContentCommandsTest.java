@@ -5,9 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import mafisher.quasar.effect.EffectAudience;
-import mafisher.quasar.effect.VisualEffectSpec;
-import mafisher.quasar.effect.scale.SegmentedVisualEffectSpec;
+import mafisher.quasar.api.effect.EffectAudience;
+import mafisher.quasar.api.effect.VisualEffectSpec;
+import mafisher.quasar.api.scale.SegmentedVisualEffectSpec;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 

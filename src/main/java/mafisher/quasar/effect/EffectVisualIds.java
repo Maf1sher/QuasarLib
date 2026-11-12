@@ -2,7 +2,9 @@ package mafisher.quasar.effect;
 
 import mafisher.quasar.QuasarLib;
 import net.minecraft.resources.ResourceLocation;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public final class EffectVisualIds {
     public static final ResourceLocation DEBUG_RUNE_CIRCLE = ResourceLocation.fromNamespaceAndPath(
         QuasarLib.MOD_ID, "debug_rune_circle"

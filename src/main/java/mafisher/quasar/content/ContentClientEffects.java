@@ -1,12 +1,12 @@
 package mafisher.quasar.content;
 
-import mafisher.quasar.client.effect.RegisterScreenEffectOperationsEvent;
-import mafisher.quasar.client.effect.RegisterVisualEffectRenderersEvent;
+import mafisher.quasar.api.client.RegisterScreenEffectOperationsEvent;
+import mafisher.quasar.api.client.RegisterVisualEffectRenderersEvent;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.event.level.LevelEvent;
 
 /** Client-only content renderer registration through the public QuasarLib SPI. */
 @EventBusSubscriber(modid = ContentBootstrap.MOD_ID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)

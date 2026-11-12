@@ -3,6 +3,7 @@ package mafisher.quasar.client.effect;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import java.io.IOException;
 import mafisher.quasar.QuasarLib;
+import mafisher.quasar.api.client.EffectShader;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.client.event.RegisterShadersEvent;
 

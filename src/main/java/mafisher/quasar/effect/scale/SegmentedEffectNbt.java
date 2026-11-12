@@ -4,21 +4,28 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
-import mafisher.quasar.effect.EffectPriority;
-import mafisher.quasar.effect.audio.EffectAudioSpec;
+import mafisher.quasar.api.audio.EffectAudioSpec;
+import mafisher.quasar.api.effect.EffectPriority;
+import mafisher.quasar.api.persistence.EffectDescriptor;
+import mafisher.quasar.api.scale.SegmentHeightProfile;
+import mafisher.quasar.api.scale.SegmentHeightSource;
+import mafisher.quasar.api.scale.SegmentTerrainConform;
+import mafisher.quasar.api.scale.SegmentedVisualEffectService;
+import mafisher.quasar.api.scale.SegmentedVisualEffectSpec;
 import mafisher.quasar.effect.persistence.EffectAudioNbt;
-import mafisher.quasar.effect.persistence.EffectDescriptor;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.StringTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * NBT codec for one segmented coordinator's descriptor state. The service writes with
  * {@link #saveInto} and restore reads with {@link #load}, so the persistence keys stay in one
  * place instead of being duplicated between the runtime and restore paths.
  */
+@ApiStatus.Internal
 public final class SegmentedEffectNbt {
     private SegmentedEffectNbt() {
     }
@@ -86,7 +93,7 @@ public final class SegmentedEffectNbt {
     }
 
     /** Baked heights stored in descriptor state, or {@link SegmentHeightProfile#NONE}. */
-    static SegmentHeightProfile readHeights(CompoundTag state) {
+    public static SegmentHeightProfile readHeights(CompoundTag state) {
         int columns = state.getInt("columns");
         int rows = state.getInt("rows");
         if (columns < 1 || rows < 1 || !state.contains("column_heights", Tag.TAG_LONG_ARRAY)) {

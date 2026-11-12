@@ -7,7 +7,11 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.UUID;
-import mafisher.quasar.effect.network.StartVisualEffectPayload;
+import mafisher.quasar.api.effect.EffectAudience;
+import mafisher.quasar.api.effect.StartVisualEffectPayload;
+import mafisher.quasar.api.effect.VisualEffectHandle;
+import mafisher.quasar.api.effect.VisualEffectService;
+import mafisher.quasar.api.effect.VisualEffectSpec;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;

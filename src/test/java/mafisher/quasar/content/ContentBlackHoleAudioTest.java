@@ -4,8 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import mafisher.quasar.effect.audio.EffectAudioCue;
-import mafisher.quasar.effect.audio.EffectAudioSpec;
+import mafisher.quasar.api.audio.EffectAudioCue;
+import mafisher.quasar.api.audio.EffectAudioSpec;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;

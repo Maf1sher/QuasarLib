@@ -1,15 +1,18 @@
 package mafisher.quasar.effect;
 
 import mafisher.quasar.QuasarLib;
-import mafisher.quasar.effect.gameplay.GameplayEffectEndReason;
+import mafisher.quasar.api.effect.EffectRemovalPolicy;
+import mafisher.quasar.api.gameplay.GameplayEffectEndReason;
 import net.minecraft.server.level.ServerLevel;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
+import org.jetbrains.annotations.ApiStatus;
 
 /** Clears every per-level effect runtime when its level or the server goes away. */
 @EventBusSubscriber(modid = QuasarLib.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@ApiStatus.Internal
 public final class EffectLevelLifecycleEvents {
     private EffectLevelLifecycleEvents() {
     }

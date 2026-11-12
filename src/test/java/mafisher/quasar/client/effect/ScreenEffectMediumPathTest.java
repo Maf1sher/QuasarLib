@@ -6,6 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import mafisher.quasar.api.client.ScreenEffectMedium;
+import mafisher.quasar.api.client.ScreenEffectMediumCrossing;
+import mafisher.quasar.api.client.ScreenEffectMediumPath;
+import mafisher.quasar.api.client.ScreenEffectMediumSpan;
 import org.junit.jupiter.api.Test;
 
 class ScreenEffectMediumPathTest {

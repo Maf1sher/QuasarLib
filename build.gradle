@@ -35,6 +35,9 @@ repositories {
 }
 
 dependencies {
+    // JSpecify supplies @NullMarked/@Nullable for the public api packages. It is
+    // compile-only: annotations have CLASS retention and are not needed at runtime.
+    compileOnly 'org.jspecify:jspecify:1.0.0'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
     testImplementation 'org.mockito:mockito-core:5.14.2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
@@ -45,6 +48,12 @@ dependencies {
 
 tasks.named('test', Test).configure {
     useJUnitPlatform()
+    // The API boundary test reads the project paths through explicit properties
+    // instead of relying on the test process working directory.
+    systemProperty 'quasar.api.sourceRoot',
+            layout.projectDirectory.dir('src/main/java').asFile.absolutePath
+    systemProperty 'quasar.api.classesDir',
+            layout.buildDirectory.dir('classes/java/main').get().asFile.absolutePath
 }
 
 // Quality gate. The tasks always produce reports; scripts/quality.sh compares

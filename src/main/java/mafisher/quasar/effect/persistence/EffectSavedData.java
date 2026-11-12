@@ -6,11 +6,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import mafisher.quasar.api.persistence.EffectDescriptor;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.world.level.saveddata.SavedData;
+import org.jetbrains.annotations.ApiStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,6 +23,7 @@ import org.slf4j.LoggerFactory;
  * saves, so per-tick transform updates do not allocate NBT. Block journals live in the same file,
  * keyed by effect ID, so they do not have to be reserialized with consumer state every tick.
  */
+@ApiStatus.Internal
 public final class EffectSavedData extends SavedData {
     public static final String FILE_ID = "quasar_lib_effects";
     public static final int SCHEMA_VERSION = 2;

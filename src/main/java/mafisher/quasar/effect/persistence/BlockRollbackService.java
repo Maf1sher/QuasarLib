@@ -7,6 +7,7 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.WeakHashMap;
 import net.minecraft.server.level.ServerLevel;
+import org.jetbrains.annotations.ApiStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -14,6 +15,7 @@ import org.slf4j.LoggerFactory;
  * Budgeted, resumable rollback of block journals. Tasks survive in memory across ticks; journal
  * progress is persisted so a restart can continue from the saved cursor.
  */
+@ApiStatus.Internal
 public final class BlockRollbackService {
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
     private static final Map<ServerLevel, Map<UUID, BlockJournal>> TASKS = new WeakHashMap<>();

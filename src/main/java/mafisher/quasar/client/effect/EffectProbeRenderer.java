@@ -3,7 +3,8 @@ package mafisher.quasar.client.effect;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import mafisher.quasar.QuasarLib;
-import mafisher.quasar.effect.EffectTimeline;
+import mafisher.quasar.api.client.EffectMeshes;
+import mafisher.quasar.api.effect.EffectTimeline;
 import mafisher.quasar.effect.entity.EffectProbeEntity;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -11,8 +12,10 @@ import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.resources.ResourceLocation;
+import org.jetbrains.annotations.ApiStatus;
 
 /** Renderer for the harmless, server-spawned framework test entity. */
+@ApiStatus.Internal
 public final class EffectProbeRenderer extends EntityRenderer<EffectProbeEntity> {
     private static final ResourceLocation TEXTURE = ResourceLocation.fromNamespaceAndPath(
         QuasarLib.MOD_ID, "textures/effect/ice_shard.png"

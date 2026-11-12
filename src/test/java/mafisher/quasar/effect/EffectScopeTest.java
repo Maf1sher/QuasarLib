@@ -12,7 +12,16 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.UUID;
-import mafisher.quasar.effect.audio.EffectAudioService;
+import mafisher.quasar.api.audio.EffectAudioService;
+import mafisher.quasar.api.effect.EffectAudience;
+import mafisher.quasar.api.effect.EffectPoint;
+import mafisher.quasar.api.effect.EffectPriority;
+import mafisher.quasar.api.effect.EffectRemovalPolicy;
+import mafisher.quasar.api.effect.EffectScope;
+import mafisher.quasar.api.effect.EffectTransform;
+import mafisher.quasar.api.effect.VisualEffectHandle;
+import mafisher.quasar.api.effect.VisualEffectService;
+import mafisher.quasar.api.effect.VisualEffectSpec;
 import mafisher.quasar.effect.persistence.EffectPersistenceService;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -137,7 +146,7 @@ class EffectScopeTest {
             durationTicks,
             42L,
             EffectAudience.dimensionWide(),
-            mafisher.quasar.effect.audio.EffectAudioSpec.NONE,
+            mafisher.quasar.api.audio.EffectAudioSpec.NONE,
             priority
         );
     }

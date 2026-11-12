@@ -2,20 +2,22 @@ package mafisher.quasar.effect.persistence;
 
 import java.util.ArrayList;
 import java.util.List;
-import mafisher.quasar.effect.audio.EffectAudioAttenuation;
-import mafisher.quasar.effect.audio.EffectAudioCue;
-import mafisher.quasar.effect.audio.EffectAudioEnvelope;
-import mafisher.quasar.effect.audio.EffectAudioMotion;
-import mafisher.quasar.effect.audio.EffectAudioSpec;
-import mafisher.quasar.effect.audio.EffectAudioTrigger;
+import mafisher.quasar.api.audio.EffectAudioAttenuation;
+import mafisher.quasar.api.audio.EffectAudioCue;
+import mafisher.quasar.api.audio.EffectAudioEnvelope;
+import mafisher.quasar.api.audio.EffectAudioMotion;
+import mafisher.quasar.api.audio.EffectAudioSpec;
+import mafisher.quasar.api.audio.EffectAudioTrigger;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.ApiStatus;
 
 /** NBT codec for an effect's audio declaration. Stored in descriptor state, not in a separate save section. */
+@ApiStatus.Internal
 public final class EffectAudioNbt {
     /** Reserved engine key inside descriptor state. */
     public static final String KEY = "quasar_lib:audio";

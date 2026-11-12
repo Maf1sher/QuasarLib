@@ -5,6 +5,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import mafisher.quasar.api.client.ScreenEffectInputs;
+import mafisher.quasar.api.client.ScreenEffectOperation;
+import mafisher.quasar.api.client.ScreenEffectOperationRenderer;
 import net.minecraft.resources.ResourceLocation;
 
 /** Client-only registry of screen-space compositor operations. */

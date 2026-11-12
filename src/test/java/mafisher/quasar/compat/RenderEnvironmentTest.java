@@ -7,6 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import mafisher.quasar.api.compat.FogPolicy;
+import mafisher.quasar.api.compat.RenderEnvironment;
+import mafisher.quasar.api.compat.SceneDepthSource;
+import mafisher.quasar.api.compat.ShaderPackState;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 

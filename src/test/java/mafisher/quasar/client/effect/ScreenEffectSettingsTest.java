@@ -5,6 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import mafisher.quasar.api.client.SceneBlurSettings;
+import mafisher.quasar.api.client.ScreenEffectOperation;
+import mafisher.quasar.api.client.ScreenEffectSettings;
+import mafisher.quasar.api.client.WaveDistortionSettings;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 

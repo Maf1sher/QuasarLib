@@ -2,6 +2,7 @@ package mafisher.quasar.client.effect;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import mafisher.quasar.api.client.RegisterVisualEffectRenderersEvent;
 import mafisher.quasar.content.ContentClientEffects;
 import mafisher.quasar.content.ContentEffectIds;
 import org.junit.jupiter.api.Test;
@@ -11,7 +12,7 @@ class ContentSpiRegistrationTest {
     @Test
     void registersContentRendererThroughTheEvent() {
         VisualEffectRendererRegistry registry = new VisualEffectRendererRegistry();
-        RegisterVisualEffectRenderersEvent event = new RegisterVisualEffectRenderersEvent(registry);
+        RegisterVisualEffectRenderersEvent event = new RegisterVisualEffectRenderersEvent(registry::register);
 
         ContentClientEffects.registerRenderers(event);
 

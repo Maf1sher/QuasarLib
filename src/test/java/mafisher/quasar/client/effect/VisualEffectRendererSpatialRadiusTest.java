@@ -5,7 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.UUID;
-import mafisher.quasar.effect.network.StartVisualEffectPayload;
+import mafisher.quasar.api.client.EffectLodProfile;
+import mafisher.quasar.api.client.EffectRenderContext;
+import mafisher.quasar.api.client.VisualEffectInstance;
+import mafisher.quasar.api.client.VisualEffectRenderer;
+import mafisher.quasar.api.effect.StartVisualEffectPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.AABB;
 import org.junit.jupiter.api.Test;

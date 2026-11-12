@@ -3,6 +3,8 @@ package mafisher.quasar.client.effect;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import mafisher.quasar.api.client.RegisterVisualEffectRenderersEvent;
+import mafisher.quasar.api.client.VisualEffectRenderer;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 
@@ -12,7 +14,7 @@ class RegisterVisualEffectRenderersEventTest {
     @Test
     void registersThroughEvent() {
         VisualEffectRendererRegistry registry = new VisualEffectRendererRegistry();
-        RegisterVisualEffectRenderersEvent event = new RegisterVisualEffectRenderersEvent(registry);
+        RegisterVisualEffectRenderersEvent event = new RegisterVisualEffectRenderersEvent(registry::register);
         VisualEffectRenderer renderer = new VisualEffectRenderer() {
         };
 
@@ -24,7 +26,7 @@ class RegisterVisualEffectRenderersEventTest {
     @Test
     void surfacesDuplicateRegistration() {
         VisualEffectRendererRegistry registry = new VisualEffectRendererRegistry();
-        RegisterVisualEffectRenderersEvent event = new RegisterVisualEffectRenderersEvent(registry);
+        RegisterVisualEffectRenderersEvent event = new RegisterVisualEffectRenderersEvent(registry::register);
         event.register(TEST_ID, new VisualEffectRenderer() {
         });
 
@@ -36,7 +38,7 @@ class RegisterVisualEffectRenderersEventTest {
     void surfacesFrozenRegistry() {
         VisualEffectRendererRegistry registry = new VisualEffectRendererRegistry();
         registry.freeze();
-        RegisterVisualEffectRenderersEvent event = new RegisterVisualEffectRenderersEvent(registry);
+        RegisterVisualEffectRenderersEvent event = new RegisterVisualEffectRenderersEvent(registry::register);
 
         assertThrows(IllegalStateException.class, () -> event.register(TEST_ID, new VisualEffectRenderer() {
         }));

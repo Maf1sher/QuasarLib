@@ -3,16 +3,19 @@ package mafisher.quasar.client.effect;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Consumer;
-import mafisher.quasar.compat.CompatRegistry;
-import mafisher.quasar.compat.RegisterCompatProvidersEvent;
-import mafisher.quasar.compat.RenderEnvironment;
+import mafisher.quasar.api.client.ClientEffectImpulses;
+import mafisher.quasar.api.client.RegisterScreenEffectOperationsEvent;
+import mafisher.quasar.api.client.RegisterVisualEffectRenderersEvent;
+import mafisher.quasar.api.compat.CompatRegistry;
+import mafisher.quasar.api.compat.RegisterCompatProvidersEvent;
+import mafisher.quasar.api.compat.RenderEnvironment;
+import mafisher.quasar.api.effect.StartVisualEffectPayload;
+import mafisher.quasar.api.scale.StartSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.EffectAudioPlanPayload;
 import mafisher.quasar.effect.network.EffectAudioTriggerPayload;
 import mafisher.quasar.effect.network.EffectDebrisPayload;
 import mafisher.quasar.effect.network.EffectTransformBatchPayload;
 import mafisher.quasar.effect.network.ResumeEffectsPayload;
-import mafisher.quasar.effect.network.StartSegmentedVisualEffectPayload;
-import mafisher.quasar.effect.network.StartVisualEffectPayload;
 import mafisher.quasar.effect.network.StopEffectAudioPayload;
 import mafisher.quasar.effect.network.StopSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.StopVisualEffectPayload;
@@ -55,11 +58,11 @@ final class ClientEffectFrameRuntime {
             if (manager == null) {
                 ScreenEffectOperationRegistry operationRegistry = new ScreenEffectOperationRegistry();
                 operationRegistry.registerBuiltIns();
-                NeoForge.EVENT_BUS.post(new RegisterScreenEffectOperationsEvent(operationRegistry));
+                NeoForge.EVENT_BUS.post(new RegisterScreenEffectOperationsEvent(operationRegistry::register));
                 operationRegistry.freeze();
                 VisualEffectRendererRegistry rendererRegistry = new VisualEffectRendererRegistry();
                 rendererRegistry.registerBuiltIns();
-                NeoForge.EVENT_BUS.post(new RegisterVisualEffectRenderersEvent(rendererRegistry));
+                NeoForge.EVENT_BUS.post(new RegisterVisualEffectRenderersEvent(rendererRegistry::register));
                 rendererRegistry.freeze();
                 try {
                     NeoForge.EVENT_BUS.post(new RegisterCompatProvidersEvent());

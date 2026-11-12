@@ -1,0 +1,9 @@
+package mafisher.quasar.api.persistence;
+
+/** The kind of effect state held by one persistent descriptor. */
+public enum EffectKind {
+    VISUAL,
+    SEGMENTED,
+    GAMEPLAY,
+    CINEMATIC
+}

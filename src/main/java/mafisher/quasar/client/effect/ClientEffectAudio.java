@@ -6,12 +6,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import mafisher.quasar.effect.EffectTimeline;
-import mafisher.quasar.effect.audio.EffectAudioAttenuation;
-import mafisher.quasar.effect.audio.EffectAudioCue;
-import mafisher.quasar.effect.audio.EffectAudioMotion;
-import mafisher.quasar.effect.audio.EffectAudioPlan;
-import mafisher.quasar.effect.audio.EffectAudioTrigger;
+import mafisher.quasar.api.audio.EffectAudioAttenuation;
+import mafisher.quasar.api.audio.EffectAudioCue;
+import mafisher.quasar.api.audio.EffectAudioMotion;
+import mafisher.quasar.api.audio.EffectAudioPlan;
+import mafisher.quasar.api.audio.EffectAudioTrigger;
+import mafisher.quasar.api.effect.EffectTimeline;
 import mafisher.quasar.effect.network.EffectAudioPlanPayload;
 import mafisher.quasar.effect.network.EffectAudioTriggerPayload;
 import mafisher.quasar.effect.network.StopEffectAudioPayload;
@@ -22,8 +22,10 @@ import net.minecraft.client.sounds.SoundManager;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.ApiStatus;
 
 /** Client-side scheduler for effect sound plans; cue timing follows a server-relative timeline, not packet arrival. */
+@ApiStatus.Internal
 public final class ClientEffectAudio {
     private static final int MAX_ACTIVE_PLANS = 128;
     private static final int MAX_ACTIVE_LOOPS_PER_PLAN = 4;

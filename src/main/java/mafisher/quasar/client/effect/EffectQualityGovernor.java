@@ -1,7 +1,7 @@
 package mafisher.quasar.client.effect;
 
 import java.util.Arrays;
-import mafisher.quasar.effect.EffectQualityTier;
+import mafisher.quasar.api.effect.EffectQualityTier;
 
 /**
  * Sliding-window quality governor. Samples the engine's per-frame effect cost and lowers or raises the quality tier

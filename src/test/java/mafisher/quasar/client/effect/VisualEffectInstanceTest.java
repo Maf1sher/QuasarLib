@@ -4,9 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 import java.util.UUID;
-import mafisher.quasar.effect.EffectPoint;
-import mafisher.quasar.effect.EffectTransform;
-import mafisher.quasar.effect.network.StartVisualEffectPayload;
+import mafisher.quasar.api.client.VisualEffectInstance;
+import mafisher.quasar.api.effect.EffectPoint;
+import mafisher.quasar.api.effect.EffectTransform;
+import mafisher.quasar.api.effect.StartVisualEffectPayload;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 

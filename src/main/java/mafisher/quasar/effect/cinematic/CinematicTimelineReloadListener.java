@@ -11,9 +11,11 @@ import net.minecraft.util.profiling.ProfilerFiller;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.AddReloadListenerEvent;
+import org.jetbrains.annotations.ApiStatus;
 
 /** Loads datapack timelines from {@code data/<namespace>/quasar/cinematics/<path>.json}. */
 @EventBusSubscriber(modid = QuasarLib.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@ApiStatus.Internal
 public final class CinematicTimelineReloadListener extends SimpleJsonResourceReloadListener {
     private static final Gson GSON = new Gson();
     private static final String DIRECTORY = "quasar/cinematics";

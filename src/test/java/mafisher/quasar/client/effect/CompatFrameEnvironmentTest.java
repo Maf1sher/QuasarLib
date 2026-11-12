@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 import java.util.concurrent.atomic.AtomicInteger;
-import mafisher.quasar.compat.RenderEnvironment;
+import mafisher.quasar.api.compat.RenderEnvironment;
 import org.junit.jupiter.api.Test;
 
 class CompatFrameEnvironmentTest {

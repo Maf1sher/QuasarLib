@@ -1,12 +1,14 @@
 package mafisher.quasar.effect.entity;
 
-import mafisher.quasar.QuasarLib;
 import java.util.function.Supplier;
+import mafisher.quasar.QuasarLib;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobCategory;
 import net.neoforged.neoforge.registries.DeferredRegister;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public final class QuasarEffectEntities {
     public static final DeferredRegister<EntityType<?>> ENTITY_TYPES = DeferredRegister.create(
         BuiltInRegistries.ENTITY_TYPE, QuasarLib.MOD_ID

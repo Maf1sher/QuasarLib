@@ -6,8 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import mafisher.quasar.effect.scale.SegmentHeightSource;
-import mafisher.quasar.effect.scale.SegmentTerrainConform;
+import mafisher.quasar.api.cinematic.CinematicCue;
+import mafisher.quasar.api.cinematic.CinematicTimeline;
+import mafisher.quasar.api.scale.SegmentHeightSource;
+import mafisher.quasar.api.scale.SegmentTerrainConform;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 

@@ -3,8 +3,10 @@ package mafisher.quasar.effect.scale;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import java.util.UUID;
+import org.jetbrains.annotations.ApiStatus;
 
 /** Deterministic segment identity and seed derivation shared by the server coordinator and the client. */
+@ApiStatus.Internal
 public final class SegmentIds {
     private SegmentIds() {
     }

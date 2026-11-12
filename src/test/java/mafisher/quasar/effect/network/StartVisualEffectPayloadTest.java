@@ -8,8 +8,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.util.UUID;
-import mafisher.quasar.effect.scale.SegmentGridLayout;
-import mafisher.quasar.effect.scale.SegmentLink;
+import mafisher.quasar.api.effect.StartVisualEffectPayload;
+import mafisher.quasar.api.scale.SegmentGridLayout;
+import mafisher.quasar.api.scale.SegmentLink;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 

@@ -7,6 +7,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import mafisher.quasar.api.client.EffectRenderContext;
+import mafisher.quasar.api.client.ScreenEffectMask;
+import mafisher.quasar.api.client.ScreenEffectRenderer;
+import mafisher.quasar.api.client.ScreenEffectSettings;
 import net.minecraft.client.renderer.RenderType;
 
 /**

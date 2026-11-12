@@ -7,7 +7,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.util.UUID;
-import mafisher.quasar.effect.scale.SegmentHeightProfile;
+import mafisher.quasar.api.effect.StartVisualEffectPayload;
+import mafisher.quasar.api.scale.SegmentHeightProfile;
+import mafisher.quasar.api.scale.StartSegmentedVisualEffectPayload;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 

@@ -1,6 +1,7 @@
 package mafisher.quasar.client.effect;
 
 import java.util.Objects;
+import mafisher.quasar.api.client.ScreenEffectInputs;
 
 /** Chooses the optional captures for the next frame from the previous and current operation requirements. */
 final class ScreenEffectCapturePolicy {

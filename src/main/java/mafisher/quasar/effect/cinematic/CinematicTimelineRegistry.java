@@ -7,11 +7,14 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import mafisher.quasar.api.cinematic.CinematicTimeline;
 import net.minecraft.resources.ResourceLocation;
+import org.jetbrains.annotations.ApiStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /** Server-side registry of datapack cinematic timelines, replaced atomically on resource reload. */
+@ApiStatus.Internal
 public final class CinematicTimelineRegistry {
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
     private static volatile Map<ResourceLocation, CinematicTimeline> timelines = Map.of();

@@ -5,6 +5,11 @@ import static org.mockito.Mockito.mock;
 
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import java.util.concurrent.atomic.AtomicInteger;
+import mafisher.quasar.api.compat.CompatRegistry;
+import mafisher.quasar.api.compat.PhysicsBridge;
+import mafisher.quasar.api.compat.SceneDepthSource;
+import mafisher.quasar.api.compat.ShaderPackProvider;
+import mafisher.quasar.api.compat.ShaderPackState;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

@@ -1,8 +1,8 @@
 package mafisher.quasar.content;
 
-import mafisher.quasar.client.effect.ScreenEffectInputs;
-import mafisher.quasar.client.effect.ScreenEffectOperationContext;
-import mafisher.quasar.client.effect.ScreenEffectOperationRenderer;
+import mafisher.quasar.api.client.ScreenEffectInputs;
+import mafisher.quasar.api.client.ScreenEffectOperationContext;
+import mafisher.quasar.api.client.ScreenEffectOperationRenderer;
 import net.minecraft.client.renderer.ShaderInstance;
 
 /** Content-owned masked screen glow, built only on the public operation context. */

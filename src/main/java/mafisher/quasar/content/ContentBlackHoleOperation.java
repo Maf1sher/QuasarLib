@@ -1,14 +1,14 @@
 package mafisher.quasar.content;
 
 import com.mojang.blaze3d.pipeline.TextureTarget;
-import mafisher.quasar.client.effect.ScreenEffectMedium;
-import mafisher.quasar.client.effect.ScreenEffectMediumPath;
-import mafisher.quasar.client.effect.ScreenEffectMediumState;
-import mafisher.quasar.client.effect.ScreenEffectOperationContext;
-import mafisher.quasar.client.effect.ScreenEffectInputs;
-import mafisher.quasar.client.effect.ScreenEffectOperationRenderer;
-import mafisher.quasar.compat.FogPolicy;
-import mafisher.quasar.effect.EffectQualityTier;
+import mafisher.quasar.api.client.ScreenEffectInputs;
+import mafisher.quasar.api.client.ScreenEffectMedium;
+import mafisher.quasar.api.client.ScreenEffectMediumPath;
+import mafisher.quasar.api.client.ScreenEffectMediumState;
+import mafisher.quasar.api.client.ScreenEffectOperationContext;
+import mafisher.quasar.api.client.ScreenEffectOperationRenderer;
+import mafisher.quasar.api.compat.FogPolicy;
+import mafisher.quasar.api.effect.EffectQualityTier;
 import net.minecraft.client.renderer.ShaderInstance;
 import org.joml.Vector3f;
 

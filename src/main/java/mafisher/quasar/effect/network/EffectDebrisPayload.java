@@ -3,19 +3,21 @@ package mafisher.quasar.effect.network;
 import io.netty.buffer.ByteBuf;
 import java.util.Objects;
 import mafisher.quasar.QuasarLib;
-import mafisher.quasar.effect.EffectDebrisAttractor;
-import mafisher.quasar.effect.EffectDebrisSpawn;
-import mafisher.quasar.effect.EffectDebrisSpec;
+import mafisher.quasar.api.effect.EffectDebrisAttractor;
+import mafisher.quasar.api.effect.EffectDebrisSpawn;
+import mafisher.quasar.api.effect.EffectDebrisSpec;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * One client-only block-debris burst. The server sends a compact description; clients derive every
  * piece from the seed, so this payload never spawns entities and is not persisted.
  */
+@ApiStatus.Internal
 public record EffectDebrisPayload(
     ResourceLocation dimensionId,
     Vec3 origin,

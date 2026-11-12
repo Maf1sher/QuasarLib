@@ -1,7 +1,7 @@
 package mafisher.quasar.client.effect;
 
 import mafisher.quasar.QuasarClientConfig;
-import mafisher.quasar.effect.EffectQualityTier;
+import mafisher.quasar.api.effect.EffectQualityTier;
 
 /**
  * Client-lifetime quality tier selection and automatic degradation state.

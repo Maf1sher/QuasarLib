@@ -12,6 +12,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import mafisher.quasar.api.effect.EffectPoint;
+import mafisher.quasar.api.effect.EffectTransform;
 import mafisher.quasar.effect.network.EffectTransformBatchPayload;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;

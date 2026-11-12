@@ -1,19 +1,23 @@
 package mafisher.quasar.effect;
 
 import java.util.Objects;
-import mafisher.quasar.effect.audio.EffectAudioService;
-import mafisher.quasar.effect.cinematic.CinematicEffectService;
-import mafisher.quasar.effect.gameplay.GameplayEffectEndReason;
-import mafisher.quasar.effect.gameplay.GameplayEffectService;
+import mafisher.quasar.api.audio.EffectAudioService;
+import mafisher.quasar.api.cinematic.CinematicEffectService;
+import mafisher.quasar.api.effect.EffectRemovalPolicy;
+import mafisher.quasar.api.effect.VisualEffectService;
+import mafisher.quasar.api.gameplay.GameplayEffectEndReason;
+import mafisher.quasar.api.gameplay.GameplayEffectService;
+import mafisher.quasar.api.scale.SegmentedVisualEffectService;
 import mafisher.quasar.effect.gameplay.TerrainEditService;
 import mafisher.quasar.effect.persistence.BlockRollbackService;
-import mafisher.quasar.effect.scale.SegmentedVisualEffectService;
 import net.minecraft.server.level.ServerLevel;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Single owner of per-level effect runtime shutdown. Services still own their domain state, but
  * this class decides when every domain stops and clears on level unload or server shutdown.
  */
+@ApiStatus.Internal
 public final class EffectLevelLifecycle {
     private EffectLevelLifecycle() {
     }

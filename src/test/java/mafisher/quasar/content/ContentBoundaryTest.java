@@ -5,12 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
-import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -25,89 +23,12 @@ class ContentBoundaryTest {
     private static final Pattern QUASAR_REFERENCE = Pattern.compile(
         "mafisher\\.quasar\\.[A-Za-z0-9_$.]+"
     );
-    private static final Set<String> PUBLIC_ENGINE_API = Set.of(
-        "mafisher.quasar.QuasarClientConfig",
-        "mafisher.quasar.client.effect.CameraShakeImpulse",
-        "mafisher.quasar.client.effect.ClientEffectImpulses",
-        "mafisher.quasar.client.effect.EffectLod",
-        "mafisher.quasar.client.effect.EffectLodProfile",
-        "mafisher.quasar.client.effect.EffectInstancedPass",
-        "mafisher.quasar.client.effect.EffectMesh",
-        "mafisher.quasar.client.effect.EffectMeshes",
-        "mafisher.quasar.client.effect.EffectRenderContext",
-        "mafisher.quasar.client.effect.EffectRenderPass",
-        "mafisher.quasar.client.effect.EffectRenderTypeOptions",
-        "mafisher.quasar.client.effect.EffectShader",
-        "mafisher.quasar.client.effect.InstancedVisualEffectRenderer",
-        "mafisher.quasar.client.effect.QuasarRenderTypes",
-        "mafisher.quasar.client.effect.RegisterScreenEffectOperationsEvent",
-        "mafisher.quasar.client.effect.RegisterVisualEffectRenderersEvent",
-        "mafisher.quasar.client.effect.ScreenEffectFogState",
-        "mafisher.quasar.client.effect.ScreenEffectInputs",
-        "mafisher.quasar.client.effect.ScreenEffectMask",
-        "mafisher.quasar.client.effect.ScreenEffectMedium",
-        "mafisher.quasar.client.effect.ScreenEffectMediumCrossing",
-        "mafisher.quasar.client.effect.ScreenEffectMediumPath",
-        "mafisher.quasar.client.effect.ScreenEffectMediumSpan",
-        "mafisher.quasar.client.effect.ScreenEffectMediumState",
-        "mafisher.quasar.client.effect.ScreenEffectOperation",
-        "mafisher.quasar.client.effect.ScreenEffectOperationContext",
-        "mafisher.quasar.client.effect.ScreenEffectOperationRenderer",
-        "mafisher.quasar.client.effect.ScreenEffectRenderer",
-        "mafisher.quasar.client.effect.ScreenEffectSettings",
-        "mafisher.quasar.compat.FogPolicy",
-        "mafisher.quasar.effect.EffectAudience",
-        "mafisher.quasar.effect.EffectBudgets",
-        "mafisher.quasar.effect.EffectDamageShape",
-        "mafisher.quasar.effect.EffectDebrisAttractor",
-        "mafisher.quasar.effect.EffectDebrisSpec",
-        "mafisher.quasar.effect.EffectDebrisSpawn",
-        "mafisher.quasar.effect.EffectForceField",
-        "mafisher.quasar.effect.EffectHitbox",
-        "mafisher.quasar.effect.EffectLifetimePolicy",
-        "mafisher.quasar.effect.EffectPoint",
-        "mafisher.quasar.effect.EffectPriority",
-        "mafisher.quasar.effect.EffectQualityTier",
-        "mafisher.quasar.effect.EffectTimeline",
-        "mafisher.quasar.effect.VisualEffectService",
-        "mafisher.quasar.effect.VisualEffectSpec",
-        "mafisher.quasar.effect.audio.EffectAudioAttenuation",
-        "mafisher.quasar.effect.audio.EffectAudioCue",
-        "mafisher.quasar.effect.audio.EffectAudioEnvelope",
-        "mafisher.quasar.effect.audio.EffectAudioMotion",
-        "mafisher.quasar.effect.audio.EffectAudioSpec",
-        "mafisher.quasar.effect.audio.EffectAudioTrigger",
-        "mafisher.quasar.effect.block.BlockChange",
-        "mafisher.quasar.effect.gameplay.EffectBlockCursor",
-        "mafisher.quasar.effect.gameplay.EffectBlockSample",
-        "mafisher.quasar.effect.gameplay.EffectBlockVolume",
-        "mafisher.quasar.effect.gameplay.EffectBulkBlockEditor",
-        "mafisher.quasar.effect.gameplay.BlockJournalMode",
-        "mafisher.quasar.effect.gameplay.EffectPhase",
-        "mafisher.quasar.effect.gameplay.EffectPhasePlan",
-        "mafisher.quasar.effect.gameplay.EffectRaycastResult",
-        "mafisher.quasar.effect.gameplay.EffectRaycastStatus",
-        "mafisher.quasar.effect.gameplay.EffectTickBudget",
-        "mafisher.quasar.effect.gameplay.GameplayEffectContext",
-        "mafisher.quasar.effect.gameplay.GameplayEffectController",
-        "mafisher.quasar.effect.gameplay.GameplayEffectEndReason",
-        "mafisher.quasar.effect.gameplay.GameplayEffectHandle",
-        "mafisher.quasar.effect.gameplay.GameplayEffectService",
-        "mafisher.quasar.effect.gameplay.GameplayEffectSpec",
-        "mafisher.quasar.effect.gameplay.OwnerPolicy",
-        "mafisher.quasar.effect.gameplay.RegisterGameplayEffectTypesEvent",
-        "mafisher.quasar.effect.persistence.EffectCapabilities",
-        "mafisher.quasar.effect.persistence.EffectPersistenceOptions",
-        "mafisher.quasar.effect.scale.SegmentedVisualEffectService",
-        "mafisher.quasar.effect.scale.SegmentedVisualEffectSpec"
-    );
-
     @Test
     void contentMainUsesOnlyPublicEngineApi() throws IOException {
         List<String> violations = new ArrayList<>();
         for (Path file : javaSources(CONTENT_SOURCE_ROOT)) {
             for (String reference : references(Files.readString(file))) {
-                if (isContentReference(reference) || isPublicApi(reference)) {
+                if (isContentReference(reference) || isEngineApi(reference)) {
                     continue;
                 }
                 violations.add(file + " -> " + reference);
@@ -115,7 +36,7 @@ class ContentBoundaryTest {
         }
 
         assertTrue(violations.isEmpty(),
-            () -> "Content must use only allowlisted public engine API: " + violations);
+            () -> "Content must use only mafisher.quasar.api contracts: " + violations);
     }
 
     @Test
@@ -170,33 +91,23 @@ class ContentBoundaryTest {
     }
 
     @Test
-    void publicApiAllowlistContainsOnlyPublicTypes() throws ClassNotFoundException {
-        ClassLoader loader = ContentBoundaryTest.class.getClassLoader();
-        for (String name : PUBLIC_ENGINE_API) {
-            Class<?> type = Class.forName(name, false, loader);
-            assertTrue(Modifier.isPublic(type.getModifiers()), name + " must be public");
-            assertFalse(type.getPackageName().equals(CONTENT_PACKAGE),
-                name + " must not belong to the content package");
-        }
-    }
-
-    @Test
     void scannerFindsFullyQualifiedReferences() {
-        assertEquals(List.of("mafisher.quasar.client.effect.EffectRenderTypes"),
-            references("import mafisher.quasar.client.effect.EffectRenderTypes;"));
+        assertEquals(List.of("mafisher.quasar.api.client.EffectShader"),
+            references("import mafisher.quasar.api.client.EffectShader;"));
     }
 
     @Test
     void scannerTreatsOwnPackageAsContent() {
         assertTrue(isContentReference(CONTENT_PACKAGE));
         assertTrue(isContentReference(CONTENT_PACKAGE + ".ContentBootstrap"));
-        assertFalse(isContentReference("mafisher.quasar.client.effect.EffectShader"));
+        assertFalse(isContentReference("mafisher.quasar.api.client.EffectShader"));
     }
 
     @Test
-    void allowlistMatchesNestedTypes() {
-        assertTrue(isPublicApi("mafisher.quasar.client.effect.EffectRenderTypeOptions.Transparency"));
-        assertFalse(isPublicApi("mafisher.quasar.client.effect.EffectRenderTypes"));
+    void engineApiMatchesPackagesAndNestedTypes() {
+        assertTrue(isEngineApi("mafisher.quasar.api.client.EffectRenderTypeOptions.Transparency"));
+        assertTrue(isEngineApi("mafisher.quasar.QuasarClientConfig"));
+        assertFalse(isEngineApi("mafisher.quasar.client.effect.EffectRenderTypes"));
     }
 
     private static List<String> references(String source) {
@@ -212,13 +123,11 @@ class ContentBoundaryTest {
         return reference.equals(CONTENT_PACKAGE) || reference.startsWith(CONTENT_PACKAGE + ".");
     }
 
-    private static boolean isPublicApi(String reference) {
-        for (String allowed : PUBLIC_ENGINE_API) {
-            if (reference.equals(allowed) || reference.startsWith(allowed + ".")) {
-                return true;
-            }
-        }
-        return false;
+    private static boolean isEngineApi(String reference) {
+        return reference.startsWith("mafisher.quasar.api")
+            || reference.equals("mafisher.quasar.QuasarLib")
+            || reference.equals("mafisher.quasar.QuasarConfig")
+            || reference.equals("mafisher.quasar.QuasarClientConfig");
     }
 
     private static Path findSourceRoot() {

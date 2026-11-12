@@ -1,6 +1,6 @@
 package mafisher.quasar;
 
-import mafisher.quasar.effect.EffectQualityTier;
+import mafisher.quasar.api.effect.EffectQualityTier;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
 /** Client-side presentation quality configuration. Loaded only on the physical client. */

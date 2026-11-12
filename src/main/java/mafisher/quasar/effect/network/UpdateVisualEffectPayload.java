@@ -1,16 +1,18 @@
 package mafisher.quasar.effect.network;
 
-import mafisher.quasar.effect.EffectPoint;
-import mafisher.quasar.effect.EffectTransform;
 import io.netty.buffer.ByteBuf;
 import java.util.Objects;
 import java.util.UUID;
+import mafisher.quasar.api.effect.EffectPoint;
+import mafisher.quasar.api.effect.EffectTransform;
 import net.minecraft.core.UUIDUtil;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
+import org.jetbrains.annotations.ApiStatus;
 
 /** Server-to-client transform update for an active visual effect. */
+@ApiStatus.Internal
 public record UpdateVisualEffectPayload(
     UUID instanceId,
     ResourceLocation dimensionId,

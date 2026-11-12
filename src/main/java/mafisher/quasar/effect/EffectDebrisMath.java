@@ -1,9 +1,12 @@
 package mafisher.quasar.effect;
 
 import java.util.Objects;
+import mafisher.quasar.api.effect.EffectDebrisAttractor;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.ApiStatus;
 
 /** Pure deterministic math for curved client-debris motion. */
+@ApiStatus.Internal
 public final class EffectDebrisMath {
     private EffectDebrisMath() {
     }

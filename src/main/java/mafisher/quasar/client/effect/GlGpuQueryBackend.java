@@ -2,9 +2,9 @@ package mafisher.quasar.client.effect;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import org.lwjgl.opengl.ARBTimerQuery;
-import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL32C;
 import org.lwjgl.opengl.GL33C;
+import org.lwjgl.opengl.GL;
 
 /** OpenGL implementation of {@link GpuQueryBackend} backed by {@code ARB_timer_query}. */
 final class GlGpuQueryBackend implements GpuQueryBackend {

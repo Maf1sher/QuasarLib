@@ -3,6 +3,8 @@ package mafisher.quasar.effect;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import mafisher.quasar.api.effect.EffectPoint;
+import mafisher.quasar.api.effect.EffectTransform;
 import org.junit.jupiter.api.Test;
 
 class EffectTransformTest {

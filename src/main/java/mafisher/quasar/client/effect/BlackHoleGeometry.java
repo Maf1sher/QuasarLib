@@ -1,5 +1,9 @@
 package mafisher.quasar.client.effect;
 
+
+import mafisher.quasar.api.client.EffectMesh;
+import mafisher.quasar.api.client.EffectMeshes;
+
 /** Black-hole-specific local mesh templates built on the shared effect mesh representation. */
 final class BlackHoleGeometry {
     private static final int DISK_ANGULAR_SEGMENTS = 64;

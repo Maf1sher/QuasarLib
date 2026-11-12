@@ -8,7 +8,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import mafisher.quasar.effect.EffectTransform;
+import mafisher.quasar.api.client.EffectInstancedPass;
+import mafisher.quasar.api.client.EffectMesh;
+import mafisher.quasar.api.client.EffectRenderContext;
+import mafisher.quasar.api.effect.EffectTransform;
 import net.minecraft.client.renderer.RenderType;
 import org.joml.Matrix4f;
 

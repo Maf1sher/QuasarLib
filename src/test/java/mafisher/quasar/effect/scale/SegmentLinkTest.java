@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.UUID;
+import mafisher.quasar.api.scale.SegmentGridLayout;
+import mafisher.quasar.api.scale.SegmentLink;
 import org.junit.jupiter.api.Test;
 
 class SegmentLinkTest {

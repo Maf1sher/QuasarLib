@@ -3,6 +3,10 @@ package mafisher.quasar.effect.audio;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import mafisher.quasar.api.audio.EffectAudioAttenuation;
+import mafisher.quasar.api.audio.EffectAudioCue;
+import mafisher.quasar.api.audio.EffectAudioEnvelope;
+import mafisher.quasar.api.audio.EffectAudioMotion;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.phys.Vec3;

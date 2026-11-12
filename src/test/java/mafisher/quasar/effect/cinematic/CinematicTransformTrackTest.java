@@ -5,8 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
-import mafisher.quasar.effect.EffectPoint;
-import mafisher.quasar.effect.EffectTransform;
+import mafisher.quasar.api.cinematic.CinematicKeyframe;
+import mafisher.quasar.api.cinematic.CinematicTransformTrack;
+import mafisher.quasar.api.cinematic.EffectEasing;
+import mafisher.quasar.api.effect.EffectPoint;
+import mafisher.quasar.api.effect.EffectTransform;
 import org.junit.jupiter.api.Test;
 
 class CinematicTransformTrackTest {

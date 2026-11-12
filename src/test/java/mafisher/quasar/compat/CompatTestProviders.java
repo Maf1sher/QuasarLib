@@ -2,7 +2,14 @@ package mafisher.quasar.compat;
 
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import java.util.concurrent.atomic.AtomicInteger;
-import mafisher.quasar.effect.block.BlockProtectionContext;
+import mafisher.quasar.api.block.BlockProtectionContext;
+import mafisher.quasar.api.compat.HorizonProvider;
+import mafisher.quasar.api.compat.PhysicsBridge;
+import mafisher.quasar.api.compat.ProtectionBridge;
+import mafisher.quasar.api.compat.SceneDepthProvider;
+import mafisher.quasar.api.compat.SceneDepthSource;
+import mafisher.quasar.api.compat.ShaderPackProvider;
+import mafisher.quasar.api.compat.ShaderPackState;
 import net.minecraft.resources.ResourceLocation;
 
 /** Small provider fixtures shared by the compat registry tests. */

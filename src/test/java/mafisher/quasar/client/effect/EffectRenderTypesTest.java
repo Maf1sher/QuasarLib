@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import mafisher.quasar.api.client.EffectRenderTypeOptions;
+import mafisher.quasar.api.client.EffectShader;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 

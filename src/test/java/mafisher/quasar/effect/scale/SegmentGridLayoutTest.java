@@ -3,14 +3,18 @@ package mafisher.quasar.effect.scale;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import mafisher.quasar.effect.EffectAudience;
-import mafisher.quasar.effect.EffectPoint;
-import mafisher.quasar.effect.EffectTransform;
+import mafisher.quasar.api.audio.EffectAudioSpec;
+import mafisher.quasar.api.effect.EffectAudience;
+import mafisher.quasar.api.effect.EffectPoint;
+import mafisher.quasar.api.effect.EffectPriority;
+import mafisher.quasar.api.effect.EffectTransform;
+import mafisher.quasar.api.scale.SegmentGridLayout;
+import mafisher.quasar.api.scale.SegmentHeightProfile;
+import mafisher.quasar.api.scale.SegmentTerrainConform;
+import mafisher.quasar.api.scale.SegmentedVisualEffectSpec;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
-import mafisher.quasar.effect.EffectPriority;
-import mafisher.quasar.effect.audio.EffectAudioSpec;
 
 class SegmentGridLayoutTest {
     private static final ResourceLocation EFFECT_ID = ResourceLocation.fromNamespaceAndPath("quasar_lib", "test");

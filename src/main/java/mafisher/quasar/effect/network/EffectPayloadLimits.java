@@ -5,12 +5,14 @@ import io.netty.buffer.Unpooled;
 import java.util.Objects;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.resources.ResourceLocation;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Explicit bounds for the largest effect payloads. The clientbound custom-payload packet enforces
  * a one-megabyte body limit; these caps keep QuasarLib well below it and reject pathological
  * resource identifiers before they can reach the wire.
  */
+@ApiStatus.Internal
 public final class EffectPayloadLimits {
     /** Maximum characters in an effect or dimension ID carried by a start or resume payload. */
     public static final int MAX_IDENTIFIER_LENGTH = 256;
@@ -29,7 +31,7 @@ public final class EffectPayloadLimits {
     }
 
     /** Rejects identifiers that would make a start or resume payload unbounded. */
-    static void requireIdentifier(ResourceLocation identifier, String label) {
+    public static void requireIdentifier(ResourceLocation identifier, String label) {
         Objects.requireNonNull(identifier, label);
         if (identifier.toString().length() > MAX_IDENTIFIER_LENGTH) {
             throw new IllegalArgumentException(

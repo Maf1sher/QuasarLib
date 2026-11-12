@@ -7,8 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.util.UUID;
-import mafisher.quasar.effect.EffectPoint;
-import mafisher.quasar.effect.EffectTransform;
+import mafisher.quasar.api.effect.EffectPoint;
+import mafisher.quasar.api.effect.EffectTransform;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 

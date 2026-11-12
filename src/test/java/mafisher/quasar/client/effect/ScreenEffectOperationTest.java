@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.Set;
+import mafisher.quasar.api.client.ScreenEffectOperation;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 

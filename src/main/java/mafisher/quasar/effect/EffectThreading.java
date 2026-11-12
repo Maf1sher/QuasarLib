@@ -3,8 +3,10 @@ package mafisher.quasar.effect;
 import java.util.Objects;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import org.jetbrains.annotations.ApiStatus;
 
 /** Guards effect runtime state against access from outside the server thread. */
+@ApiStatus.Internal
 public final class EffectThreading {
     private EffectThreading() {
     }

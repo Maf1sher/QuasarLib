@@ -1,7 +1,7 @@
 package mafisher.quasar.client.effect;
 
-import mafisher.quasar.effect.audio.EffectAudioAttenuation;
-import mafisher.quasar.effect.audio.EffectAudioCue;
+import mafisher.quasar.api.audio.EffectAudioAttenuation;
+import mafisher.quasar.api.audio.EffectAudioCue;
 import net.minecraft.client.resources.sounds.TickableSoundInstance;
 
 /** Looping, positionable and envelope-controlled sound instance for continuous effect audio. */

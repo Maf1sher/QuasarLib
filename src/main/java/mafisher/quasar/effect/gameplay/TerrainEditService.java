@@ -12,13 +12,14 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.WeakHashMap;
 import mafisher.quasar.QuasarConfig;
-import mafisher.quasar.effect.EffectBudgets;
+import mafisher.quasar.api.effect.EffectBudgets;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.TicketType;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.levelgen.Heightmap;
+import org.jetbrains.annotations.ApiStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -26,6 +27,7 @@ import org.slf4j.LoggerFactory;
  * Level-wide scheduling for bulk terrain edits: section-edit admission, deferred chunk relighting,
  * and one batched client resend per changed chunk. All work runs on the server thread.
  */
+@ApiStatus.Internal
 public final class TerrainEditService {
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
     private static final int LIGHT_CHUNKS_PER_TICK = 2;
@@ -41,13 +43,13 @@ public final class TerrainEditService {
     }
 
     /** Resets the per-tick section-edit admission counter. */
-    static void beginTick(ServerLevel level) {
+    public static void beginTick(ServerLevel level) {
         Objects.requireNonNull(level, "level");
         state(level).sectionEditsUsed = 0;
     }
 
     /** Reserves one bulk section edit for this level tick, or returns false at the soft cap. */
-    static boolean tryAcquireSection(ServerLevel level) {
+    public static boolean tryAcquireSection(ServerLevel level) {
         Objects.requireNonNull(level, "level");
         LevelState state = state(level);
         int budget = EffectBudgets.sectionEditsPerLevelTick();
@@ -192,7 +194,7 @@ public final class TerrainEditService {
     }
 
     /** Advances the relight and client-sync queues for one level by one tick. */
-    static void tick(ServerLevel level) {
+    public static void tick(ServerLevel level) {
         Objects.requireNonNull(level, "level");
         LevelState state = STATES.get(level);
         if (state == null) {

@@ -3,14 +3,18 @@ package mafisher.quasar.effect.network;
 import io.netty.buffer.ByteBuf;
 import java.util.List;
 import java.util.Objects;
+import mafisher.quasar.api.effect.StartVisualEffectPayload;
+import mafisher.quasar.api.scale.StartSegmentedVisualEffectPayload;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Atomic visual snapshot sent when a player joins or changes dimension. The client replaces its
  * local instances for the dimension, so a reconnect cannot leave stale ghosts behind.
  */
+@ApiStatus.Internal
 public record ResumeEffectsPayload(
     ResourceLocation dimensionId,
     List<StartVisualEffectPayload> effects,

@@ -1,6 +1,8 @@
 package mafisher.quasar.client.effect;
 
 import java.util.Objects;
+import mafisher.quasar.api.client.EffectLod;
+import mafisher.quasar.api.client.EffectLodProfile;
 import net.minecraft.world.phys.Vec3;
 
 /** Pure camera-to-effect LOD selection shared by the client manager and headless tests. */

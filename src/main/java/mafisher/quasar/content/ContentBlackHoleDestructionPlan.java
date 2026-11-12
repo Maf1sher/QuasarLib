@@ -1,6 +1,6 @@
 package mafisher.quasar.content;
 
-import mafisher.quasar.effect.gameplay.EffectBulkBlockEditor;
+import mafisher.quasar.api.gameplay.EffectBulkBlockEditor;
 
 /**
  * Pure, headless destruction plan for the content black hole.

@@ -8,7 +8,9 @@ import io.netty.buffer.Unpooled;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import mafisher.quasar.effect.scale.SegmentHeightProfile;
+import mafisher.quasar.api.effect.StartVisualEffectPayload;
+import mafisher.quasar.api.scale.SegmentHeightProfile;
+import mafisher.quasar.api.scale.StartSegmentedVisualEffectPayload;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 

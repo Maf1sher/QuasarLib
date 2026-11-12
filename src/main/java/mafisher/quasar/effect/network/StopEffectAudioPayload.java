@@ -7,8 +7,10 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
+import org.jetbrains.annotations.ApiStatus;
 
 /** Stops one client-side effect audio plan early. */
+@ApiStatus.Internal
 public record StopEffectAudioPayload(UUID effectId, ResourceLocation dimensionId)
     implements CustomPacketPayload {
     public static final Type<StopEffectAudioPayload> TYPE = new Type<>(

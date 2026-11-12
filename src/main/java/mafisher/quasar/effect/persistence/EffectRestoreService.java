@@ -8,25 +8,28 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.WeakHashMap;
-import mafisher.quasar.effect.EffectPoint;
-import mafisher.quasar.effect.EffectPriority;
-import mafisher.quasar.effect.EffectScope;
-import mafisher.quasar.effect.VisualEffectService;
-import mafisher.quasar.effect.VisualEffectSpec;
-import mafisher.quasar.effect.cinematic.CinematicEffectService;
-import mafisher.quasar.effect.cinematic.CinematicTimeline;
+import mafisher.quasar.api.cinematic.CinematicEffectService;
+import mafisher.quasar.api.cinematic.CinematicTimeline;
+import mafisher.quasar.api.effect.EffectPoint;
+import mafisher.quasar.api.effect.EffectPriority;
+import mafisher.quasar.api.effect.EffectScope;
+import mafisher.quasar.api.effect.VisualEffectService;
+import mafisher.quasar.api.effect.VisualEffectSpec;
+import mafisher.quasar.api.gameplay.GameplayEffectController;
+import mafisher.quasar.api.gameplay.GameplayEffectHandle;
+import mafisher.quasar.api.gameplay.GameplayEffectService;
+import mafisher.quasar.api.gameplay.GameplayEffectSpec;
+import mafisher.quasar.api.persistence.EffectDescriptor;
+import mafisher.quasar.api.persistence.EffectKind;
+import mafisher.quasar.api.scale.SegmentedVisualEffectService;
 import mafisher.quasar.effect.cinematic.CinematicTimelineRegistry;
-import mafisher.quasar.effect.gameplay.GameplayEffectController;
-import mafisher.quasar.effect.gameplay.GameplayEffectHandle;
 import mafisher.quasar.effect.gameplay.GameplayEffectNbt;
-import mafisher.quasar.effect.gameplay.GameplayEffectService;
-import mafisher.quasar.effect.gameplay.GameplayEffectSpec;
 import mafisher.quasar.effect.gameplay.GameplayEffectTypeRegistry;
 import mafisher.quasar.effect.scale.SegmentedEffectNbt;
-import mafisher.quasar.effect.scale.SegmentedVisualEffectService;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.ApiStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,6 +37,7 @@ import org.slf4j.LoggerFactory;
  * Restores persisted effects into their services after a level loads. Restoration is ordered so
  * gameplay scopes exist before their child visuals and never replays past cinematic cues.
  */
+@ApiStatus.Internal
 public final class EffectRestoreService {
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
     private static final Map<ServerLevel, EffectRecoveryReport> REPORTS = new WeakHashMap<>();

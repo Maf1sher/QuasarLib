@@ -1,6 +1,6 @@
 package mafisher.quasar.content;
 
-import mafisher.quasar.effect.gameplay.RegisterGameplayEffectTypesEvent;
+import mafisher.quasar.api.gameplay.RegisterGameplayEffectTypesEvent;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 

@@ -1,5 +1,9 @@
 package mafisher.quasar.client.effect;
 
+
+import mafisher.quasar.api.client.ScreenEffectMedium;
+import org.jetbrains.annotations.ApiStatus;
+
 /**
  * Block-level medium probe used to trace the camera-to-effect path.
  *
@@ -7,6 +11,7 @@ package mafisher.quasar.client.effect;
  * points, so implementations may scan the fluid column there without paying for
  * every sample. Neither method may load chunks.</p>
  */
+@ApiStatus.Internal
 public interface ScreenEffectMediumSampler {
     /** Returns the medium at the given world position. */
     ScreenEffectMedium mediumAt(double x, double y, double z);

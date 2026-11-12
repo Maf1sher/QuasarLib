@@ -1,24 +1,26 @@
 package mafisher.quasar.client.effect;
 
-import mafisher.quasar.effect.EffectQualityTier;
+import mafisher.quasar.api.effect.EffectQualityTier;
+import mafisher.quasar.api.effect.StartVisualEffectPayload;
+import mafisher.quasar.api.scale.StartSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.EffectAudioPlanPayload;
 import mafisher.quasar.effect.network.EffectAudioTriggerPayload;
 import mafisher.quasar.effect.network.EffectDebrisPayload;
 import mafisher.quasar.effect.network.EffectTransformBatchPayload;
 import mafisher.quasar.effect.network.ResumeEffectsPayload;
-import mafisher.quasar.effect.network.StartSegmentedVisualEffectPayload;
-import mafisher.quasar.effect.network.StartVisualEffectPayload;
 import mafisher.quasar.effect.network.StopEffectAudioPayload;
 import mafisher.quasar.effect.network.StopSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.StopVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateVisualEffectPayload;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Narrow, descriptor-safe entry point for payload handlers. Its method signatures use only common
  * types, so a dedicated server may load this class without loading client-only Minecraft types.
  * Client rendering and lifecycle work lives in {@link ClientEffectFrameRuntime}.
  */
+@ApiStatus.Internal
 public final class ClientEffectRuntime {
     private ClientEffectRuntime() {
     }

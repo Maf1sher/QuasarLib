@@ -8,6 +8,10 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.UUID;
+import mafisher.quasar.api.effect.EffectDamageShape;
+import mafisher.quasar.api.effect.EffectHitResult;
+import mafisher.quasar.api.effect.EffectHitbox;
+import mafisher.quasar.api.effect.EffectPoint;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.LivingEntity;

@@ -5,17 +5,22 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.ToIntFunction;
-import mafisher.quasar.effect.audio.EffectAudioService;
-import mafisher.quasar.effect.cinematic.CinematicEffectService;
-import mafisher.quasar.effect.gameplay.GameplayEffectService;
-import mafisher.quasar.effect.scale.SegmentedVisualEffectService;
+import mafisher.quasar.api.audio.EffectAudioService;
+import mafisher.quasar.api.cinematic.CinematicEffectService;
+import mafisher.quasar.api.effect.EffectBudgetReport;
+import mafisher.quasar.api.effect.EffectBudgets;
+import mafisher.quasar.api.effect.VisualEffectService;
+import mafisher.quasar.api.gameplay.GameplayEffectService;
+import mafisher.quasar.api.scale.SegmentedVisualEffectService;
 import net.minecraft.server.level.ServerLevel;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Per-level soft capacity accounting. Every service reports culls, deferrals, dropped spawns,
  * and audio evictions here so operators can inspect degradation from one place.
  */
 @SuppressWarnings("PMD.TooManyMethods")
+@ApiStatus.Internal
 public final class EffectBudgetService {
     private static final LevelStateSlot<BudgetState> STATE = LevelStateSlot.create(BudgetState::new);
 

@@ -7,8 +7,14 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import mafisher.quasar.effect.gameplay.EffectPhase;
-import mafisher.quasar.effect.gameplay.EffectPhasePlan;
+import mafisher.quasar.api.audio.EffectAudioAttenuation;
+import mafisher.quasar.api.audio.EffectAudioCue;
+import mafisher.quasar.api.audio.EffectAudioEnvelope;
+import mafisher.quasar.api.audio.EffectAudioMotion;
+import mafisher.quasar.api.audio.EffectAudioSpec;
+import mafisher.quasar.api.audio.EffectAudioTrigger;
+import mafisher.quasar.api.gameplay.EffectPhase;
+import mafisher.quasar.api.gameplay.EffectPhasePlan;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;

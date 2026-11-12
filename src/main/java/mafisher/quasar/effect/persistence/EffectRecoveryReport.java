@@ -1,8 +1,10 @@
 package mafisher.quasar.effect.persistence;
 
 import java.util.List;
+import org.jetbrains.annotations.ApiStatus;
 
 /** Summary of one persistence restore attempt for diagnostics and the debug command. */
+@ApiStatus.Internal
 public record EffectRecoveryReport(
     int restored,
     int expired,

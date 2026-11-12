@@ -1,7 +1,7 @@
 package mafisher.quasar.content;
 
 import java.util.Objects;
-import mafisher.quasar.client.effect.ScreenEffectMediumPath;
+import mafisher.quasar.api.client.ScreenEffectMediumPath;
 import org.joml.Vector3d;
 
 /**

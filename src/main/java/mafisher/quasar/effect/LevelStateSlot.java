@@ -7,6 +7,7 @@ import java.util.WeakHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Supplier;
 import net.minecraft.server.level.ServerLevel;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Internal per-level state slot. Every slot is cleared by the effect lifecycle when a level
@@ -15,6 +16,7 @@ import net.minecraft.server.level.ServerLevel;
  * <p>This type is an implementation detail of the effect runtime and is not part of the
  * supported API.
  */
+@ApiStatus.Internal
 public final class LevelStateSlot<T> {
     private static final List<LevelStateSlot<?>> SLOTS = new CopyOnWriteArrayList<>();
 

@@ -5,10 +5,13 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import mafisher.quasar.effect.EffectAudience;
-import mafisher.quasar.effect.EffectPriority;
-import mafisher.quasar.effect.VisualEffectSpec;
-import mafisher.quasar.effect.audio.EffectAudioSpec;
+import mafisher.quasar.api.audio.EffectAudioSpec;
+import mafisher.quasar.api.effect.EffectAudience;
+import mafisher.quasar.api.effect.EffectPriority;
+import mafisher.quasar.api.effect.VisualEffectSpec;
+import mafisher.quasar.api.scale.SegmentHeightSource;
+import mafisher.quasar.api.scale.SegmentTerrainConform;
+import mafisher.quasar.api.scale.SegmentedVisualEffectSpec;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;

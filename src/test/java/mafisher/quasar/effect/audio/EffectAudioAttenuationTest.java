@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import mafisher.quasar.api.audio.EffectAudioAttenuation;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 

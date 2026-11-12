@@ -3,16 +3,23 @@ package mafisher.quasar.effect.gameplay;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import mafisher.quasar.effect.EffectPriority;
-import mafisher.quasar.effect.audio.EffectAudioSpec;
+import mafisher.quasar.api.audio.EffectAudioSpec;
+import mafisher.quasar.api.effect.EffectPriority;
+import mafisher.quasar.api.gameplay.EffectPhase;
+import mafisher.quasar.api.gameplay.EffectPhasePlan;
+import mafisher.quasar.api.gameplay.EffectTickBudget;
+import mafisher.quasar.api.gameplay.GameplayEffectSpec;
+import mafisher.quasar.api.gameplay.OwnerPolicy;
+import mafisher.quasar.api.persistence.EffectDescriptor;
 import mafisher.quasar.effect.persistence.EffectAudioNbt;
-import mafisher.quasar.effect.persistence.EffectDescriptor;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.ApiStatus;
 
 /** NBT helpers that keep a gameplay spec and its consumer state inside an effect descriptor. */
+@ApiStatus.Internal
 public final class GameplayEffectNbt {
     private static final String SPEC_KEY = "spec";
     private static final String STATE_KEY = "state";

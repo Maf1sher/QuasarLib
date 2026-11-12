@@ -2,11 +2,11 @@ package mafisher.quasar.content;
 
 import java.util.ArrayList;
 import java.util.List;
-import mafisher.quasar.effect.audio.EffectAudioAttenuation;
-import mafisher.quasar.effect.audio.EffectAudioCue;
-import mafisher.quasar.effect.audio.EffectAudioEnvelope;
-import mafisher.quasar.effect.audio.EffectAudioMotion;
-import mafisher.quasar.effect.audio.EffectAudioSpec;
+import mafisher.quasar.api.audio.EffectAudioAttenuation;
+import mafisher.quasar.api.audio.EffectAudioCue;
+import mafisher.quasar.api.audio.EffectAudioEnvelope;
+import mafisher.quasar.api.audio.EffectAudioMotion;
+import mafisher.quasar.api.audio.EffectAudioSpec;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.phys.Vec3;

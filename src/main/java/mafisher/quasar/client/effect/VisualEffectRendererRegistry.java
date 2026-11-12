@@ -1,10 +1,11 @@
 package mafisher.quasar.client.effect;
 
-import mafisher.quasar.effect.EffectVisualIds;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import mafisher.quasar.api.client.VisualEffectRenderer;
+import mafisher.quasar.effect.EffectVisualIds;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManager;
 

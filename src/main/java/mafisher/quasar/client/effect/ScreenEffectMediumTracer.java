@@ -3,6 +3,11 @@ package mafisher.quasar.client.effect;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import mafisher.quasar.api.client.ScreenEffectMedium;
+import mafisher.quasar.api.client.ScreenEffectMediumCrossing;
+import mafisher.quasar.api.client.ScreenEffectMediumPath;
+import mafisher.quasar.api.client.ScreenEffectMediumSpan;
+import org.jetbrains.annotations.ApiStatus;
 import org.joml.Vector3d;
 
 /**
@@ -14,6 +19,7 @@ import org.joml.Vector3d;
  * remaining precision limit is a fluid thinner than one step; that is a
  * documented degradation, never a rejected effect.</p>
  */
+@ApiStatus.Internal
 public final class ScreenEffectMediumTracer {
     /** Maximum number of sampled segments per camera-to-effect line. */
     public static final int MAX_SAMPLES = 128;

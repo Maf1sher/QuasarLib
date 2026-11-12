@@ -7,6 +7,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import java.util.UUID;
+import mafisher.quasar.api.block.BlockChange;
+import mafisher.quasar.api.block.BlockProtectionContext;
+import mafisher.quasar.api.block.RegisterBlockProtectionsEvent;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;

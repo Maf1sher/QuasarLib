@@ -1,14 +1,18 @@
 package mafisher.quasar.effect.network;
 
 import mafisher.quasar.QuasarLib;
+import mafisher.quasar.api.effect.StartVisualEffectPayload;
+import mafisher.quasar.api.scale.StartSegmentedVisualEffectPayload;
 import mafisher.quasar.client.effect.ClientEffectRuntime;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
+import org.jetbrains.annotations.ApiStatus;
 
 @EventBusSubscriber(modid = QuasarLib.MOD_ID, bus = EventBusSubscriber.Bus.MOD)
+@ApiStatus.Internal
 public final class EffectNetwork {
     private EffectNetwork() {
     }

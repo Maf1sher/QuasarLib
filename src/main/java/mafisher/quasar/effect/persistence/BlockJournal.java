@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import mafisher.quasar.QuasarConfig;
-import mafisher.quasar.effect.block.BlockChange;
+import mafisher.quasar.api.block.BlockChange;
 import mafisher.quasar.effect.gameplay.TerrainEditService;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
@@ -28,6 +28,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
+import org.jetbrains.annotations.ApiStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,6 +38,7 @@ import org.slf4j.LoggerFactory;
  * Rollback loads chunks through tickets, advances its cursors only after a successful restore, and
  * fails closed on invalid or newer journals instead of replaying restored snapshots.
  */
+@ApiStatus.Internal
 public final class BlockJournal {
     static final int SCHEMA_VERSION = 1;
 

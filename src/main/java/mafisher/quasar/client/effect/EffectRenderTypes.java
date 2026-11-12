@@ -4,13 +4,16 @@ import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import java.util.Objects;
 import java.util.function.Function;
+import mafisher.quasar.api.client.EffectRenderTypeOptions;
+import mafisher.quasar.api.client.EffectShader;
 import net.minecraft.Util;
 import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.resources.ResourceLocation;
 
 /** Built-in render types and the shared shader-backed render-type factory. */
-final class EffectRenderTypes {
+@org.jetbrains.annotations.ApiStatus.Internal
+public final class EffectRenderTypes {
     private static final RenderStateShard.OutputStateShard SCREEN_MASK_TARGET =
         new RenderStateShard.OutputStateShard("quasar_lib_screen_mask_target", () -> { }, () -> { });
     private static final Function<ShaderTypeKey, RenderType> SHADER_TYPES = Util.memoize(
@@ -32,7 +35,7 @@ final class EffectRenderTypes {
     private EffectRenderTypes() {
     }
 
-    static RenderType visual(ResourceLocation texture) {
+    public static RenderType visual(ResourceLocation texture) {
         return VISUAL.apply(texture);
     }
 
@@ -49,11 +52,11 @@ final class EffectRenderTypes {
         return shaderWorld(EffectShaders.BLACK_HOLE_VISUAL, texture, BLACK_HOLE_DISK_OPTIONS);
     }
 
-    static RenderType instancedWorld(ResourceLocation texture) {
+    public static RenderType instancedWorld(ResourceLocation texture) {
         return shaderWorld(EffectShaders.INSTANCED_VISUAL, texture, EffectRenderTypeOptions.WORLD_DEFAULT);
     }
 
-    static RenderType screenMask(ResourceLocation texture) {
+    public static RenderType screenMask(ResourceLocation texture) {
         return shaderMask(EffectShaders.SCREEN_MASK, texture, EffectRenderTypeOptions.MASK_DEFAULT);
     }
 
@@ -65,12 +68,12 @@ final class EffectRenderTypes {
         return ENTITY_UNSORTED.apply(texture);
     }
 
-    static RenderType shaderWorld(EffectShader shader, ResourceLocation texture,
+    public static RenderType shaderWorld(EffectShader shader, ResourceLocation texture,
         EffectRenderTypeOptions options) {
         return SHADER_TYPES.apply(new ShaderTypeKey(shader, texture, options, false));
     }
 
-    static RenderType shaderMask(EffectShader shader, ResourceLocation texture,
+    public static RenderType shaderMask(EffectShader shader, ResourceLocation texture,
         EffectRenderTypeOptions options) {
         return SHADER_TYPES.apply(new ShaderTypeKey(shader, texture, options, true));
     }

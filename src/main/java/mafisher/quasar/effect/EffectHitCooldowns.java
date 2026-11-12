@@ -4,8 +4,10 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import org.jetbrains.annotations.ApiStatus;
 
 /** Per-effect hit history; a zero delay means each target can be hit only once. */
+@ApiStatus.Internal
 public final class EffectHitCooldowns {
     private final Map<UUID, Integer> lastHitTicks = new HashMap<>();
 

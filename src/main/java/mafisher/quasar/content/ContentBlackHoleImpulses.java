@@ -5,9 +5,9 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import mafisher.quasar.QuasarClientConfig;
-import mafisher.quasar.client.effect.CameraShakeImpulse;
-import mafisher.quasar.client.effect.ClientEffectImpulses;
-import mafisher.quasar.client.effect.EffectRenderContext;
+import mafisher.quasar.api.client.CameraShakeImpulse;
+import mafisher.quasar.api.client.ClientEffectImpulses;
+import mafisher.quasar.api.client.EffectRenderContext;
 import net.minecraft.world.phys.Vec3;
 
 /**

@@ -7,7 +7,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import com.mojang.blaze3d.pipeline.RenderTarget;
-import mafisher.quasar.effect.block.BlockProtectionContext;
+import mafisher.quasar.api.block.BlockProtectionContext;
+import mafisher.quasar.api.compat.CompatRegistry;
+import mafisher.quasar.api.compat.FogPolicy;
+import mafisher.quasar.api.compat.HorizonProvider;
+import mafisher.quasar.api.compat.PhysicsBridge;
+import mafisher.quasar.api.compat.ProtectionBridge;
+import mafisher.quasar.api.compat.RenderEnvironment;
+import mafisher.quasar.api.compat.SceneDepthProvider;
+import mafisher.quasar.api.compat.SceneDepthSource;
+import mafisher.quasar.api.compat.ShaderPackProvider;
+import mafisher.quasar.api.compat.ShaderPackState;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;

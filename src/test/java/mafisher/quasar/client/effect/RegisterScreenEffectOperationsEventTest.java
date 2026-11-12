@@ -3,6 +3,8 @@ package mafisher.quasar.client.effect;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import mafisher.quasar.api.client.RegisterScreenEffectOperationsEvent;
+import mafisher.quasar.api.client.ScreenEffectOperation;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 
@@ -14,7 +16,7 @@ class RegisterScreenEffectOperationsEventTest {
     @Test
     void registersThroughEvent() {
         ScreenEffectOperationRegistry registry = new ScreenEffectOperationRegistry();
-        RegisterScreenEffectOperationsEvent event = new RegisterScreenEffectOperationsEvent(registry);
+        RegisterScreenEffectOperationsEvent event = new RegisterScreenEffectOperationsEvent(registry::register);
 
         event.register(CUSTOM, context -> { });
 
@@ -24,7 +26,7 @@ class RegisterScreenEffectOperationsEventTest {
     @Test
     void surfacesDuplicateRegistration() {
         ScreenEffectOperationRegistry registry = new ScreenEffectOperationRegistry();
-        RegisterScreenEffectOperationsEvent event = new RegisterScreenEffectOperationsEvent(registry);
+        RegisterScreenEffectOperationsEvent event = new RegisterScreenEffectOperationsEvent(registry::register);
         event.register(CUSTOM, context -> { });
 
         assertThrows(IllegalStateException.class, () -> event.register(CUSTOM, context -> { }));
@@ -34,7 +36,7 @@ class RegisterScreenEffectOperationsEventTest {
     void surfacesFrozenRegistry() {
         ScreenEffectOperationRegistry registry = new ScreenEffectOperationRegistry();
         registry.freeze();
-        RegisterScreenEffectOperationsEvent event = new RegisterScreenEffectOperationsEvent(registry);
+        RegisterScreenEffectOperationsEvent event = new RegisterScreenEffectOperationsEvent(registry::register);
 
         assertThrows(IllegalStateException.class, () -> event.register(CUSTOM, context -> { }));
     }

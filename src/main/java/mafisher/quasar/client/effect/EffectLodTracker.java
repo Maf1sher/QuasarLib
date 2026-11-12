@@ -1,6 +1,8 @@
 package mafisher.quasar.client.effect;
 
 import java.util.Objects;
+import mafisher.quasar.api.client.EffectLod;
+import mafisher.quasar.api.client.EffectLodProfile;
 
 /**
  * Per-instance client LOD state. Adds hysteresis around profile thresholds so camera motion cannot flicker between

@@ -2,11 +2,13 @@ package mafisher.quasar.effect;
 
 import java.util.Objects;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Shared validation for one positional sound declaration. Engine-internal; used by audio cues,
  * triggers, scopes, and cinematic sound cues so the accepted range cannot drift between them.
  */
+@ApiStatus.Internal
 public final class EffectSoundValidation {
     private EffectSoundValidation() {
     }

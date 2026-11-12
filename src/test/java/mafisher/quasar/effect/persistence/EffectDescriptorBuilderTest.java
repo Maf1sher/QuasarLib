@@ -6,9 +6,13 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.UUID;
-import mafisher.quasar.effect.EffectAudience;
-import mafisher.quasar.effect.EffectPoint;
-import mafisher.quasar.effect.EffectTransform;
+import mafisher.quasar.api.effect.EffectAudience;
+import mafisher.quasar.api.effect.EffectPoint;
+import mafisher.quasar.api.effect.EffectTransform;
+import mafisher.quasar.api.persistence.EffectCapabilities;
+import mafisher.quasar.api.persistence.EffectDescriptor;
+import mafisher.quasar.api.persistence.EffectKind;
+import mafisher.quasar.api.persistence.EffectPersistence;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 

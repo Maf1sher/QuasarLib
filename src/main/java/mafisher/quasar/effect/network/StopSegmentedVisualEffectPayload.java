@@ -7,8 +7,10 @@ import net.minecraft.core.UUIDUtil;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
+import org.jetbrains.annotations.ApiStatus;
 
 /** Server-to-client stop event for every cell of one segmented coordinator. */
+@ApiStatus.Internal
 public record StopSegmentedVisualEffectPayload(
     UUID coordinatorId,
     ResourceLocation dimensionId

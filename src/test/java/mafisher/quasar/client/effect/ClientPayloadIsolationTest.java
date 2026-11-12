@@ -8,7 +8,6 @@ import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-
 import org.junit.jupiter.api.Test;
 
 /** Pins the common network path to types that exist on a dedicated server. */

@@ -2,7 +2,7 @@ package mafisher.quasar.client.effect;
 
 import java.util.Objects;
 import java.util.function.DoubleFunction;
-import mafisher.quasar.compat.RenderEnvironment;
+import mafisher.quasar.api.compat.RenderEnvironment;
 
 /**
  * Caches the compatibility environment for one client frame.

@@ -3,10 +3,14 @@ package mafisher.quasar.effect.persistence;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import mafisher.quasar.api.persistence.EffectDescriptor;
+import mafisher.quasar.api.persistence.EffectPersistence;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.storage.DimensionDataStorage;
+import org.jetbrains.annotations.ApiStatus;
 
 /** Read/write access to the per-level effect store. Injection points are null-safe for tests. */
+@ApiStatus.Internal
 public final class EffectPersistenceService {
     private EffectPersistenceService() {
     }

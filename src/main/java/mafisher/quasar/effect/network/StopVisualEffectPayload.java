@@ -7,8 +7,10 @@ import net.minecraft.core.UUIDUtil;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
+import org.jetbrains.annotations.ApiStatus;
 
 /** Server-to-client cancellation event for a visual effect that has not naturally expired. */
+@ApiStatus.Internal
 public record StopVisualEffectPayload(UUID instanceId, ResourceLocation dimensionId)
     implements CustomPacketPayload {
     public static final Type<StopVisualEffectPayload> TYPE = new Type<>(

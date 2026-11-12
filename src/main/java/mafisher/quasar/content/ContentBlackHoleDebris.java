@@ -1,6 +1,6 @@
 package mafisher.quasar.content;
 
-import mafisher.quasar.effect.EffectDebrisAttractor;
+import mafisher.quasar.api.effect.EffectDebrisAttractor;
 import net.minecraft.world.phys.Vec3;
 
 /** Pure pacing and attractor tuning for the content black-hole debris. */

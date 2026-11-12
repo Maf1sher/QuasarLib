@@ -5,18 +5,20 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
-import mafisher.quasar.effect.EffectPoint;
-import mafisher.quasar.effect.EffectTransform;
+import mafisher.quasar.api.effect.EffectPoint;
+import mafisher.quasar.api.effect.EffectTransform;
 import net.minecraft.core.UUIDUtil;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Coalesced server-to-client transform update for one player. One payload carries every visual and
  * segmented coordinator that moved during the server tick, so update traffic no longer scales with
  * the number of tracked effects. Batches above {@link #MAX_UPDATES} are split by the sender.
  */
+@ApiStatus.Internal
 public record EffectTransformBatchPayload(
     ResourceLocation dimensionId,
     long updateGameTime,

@@ -13,9 +13,17 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import mafisher.quasar.compat.CompatRegistry;
-import mafisher.quasar.compat.RenderEnvironment;
-import mafisher.quasar.effect.EffectQualityTier;
+import mafisher.quasar.api.client.ScreenEffectCameraState;
+import mafisher.quasar.api.client.ScreenEffectFogState;
+import mafisher.quasar.api.client.ScreenEffectInputs;
+import mafisher.quasar.api.client.ScreenEffectMedium;
+import mafisher.quasar.api.client.ScreenEffectMediumPath;
+import mafisher.quasar.api.client.ScreenEffectMediumState;
+import mafisher.quasar.api.client.ScreenEffectOperationContext;
+import mafisher.quasar.api.client.ScreenEffectOperationRenderer;
+import mafisher.quasar.api.compat.CompatRegistry;
+import mafisher.quasar.api.compat.RenderEnvironment;
+import mafisher.quasar.api.effect.EffectQualityTier;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -273,7 +281,7 @@ final class ClientScreenCompositor {
         MediumCapture medium = captureMedium(
             new Vec3(effectPosition.x(), effectPosition.y(), effectPosition.z()),
             frame.camera().position());
-        ScreenEffectOperationContext context = new ScreenEffectOperationContext(
+        ScreenEffectOperationContext context = new ScreenEffectOperationContextImpl(
             batch.settings(),
             batch.operationContext(),
             batch.mask(),

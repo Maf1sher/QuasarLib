@@ -3,11 +3,15 @@ package mafisher.quasar.effect.block;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import mafisher.quasar.api.block.BlockProtection;
+import mafisher.quasar.api.block.BlockProtectionContext;
 import net.minecraft.resources.ResourceLocation;
+import org.jetbrains.annotations.ApiStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /** Registry and query surface for per-change block protection callbacks. */
+@ApiStatus.Internal
 public final class BlockProtectionService {
     private static final Logger LOGGER = LoggerFactory.getLogger("quasar_lib");
     private static final Map<ResourceLocation, BlockProtection> PROTECTIONS = new LinkedHashMap<>();
@@ -16,7 +20,7 @@ public final class BlockProtectionService {
     private BlockProtectionService() {
     }
 
-    static void register(ResourceLocation id, BlockProtection protection) {
+    public static void register(ResourceLocation id, BlockProtection protection) {
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(protection, "protection");
         if (frozen) {
