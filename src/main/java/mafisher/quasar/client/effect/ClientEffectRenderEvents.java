@@ -15,10 +15,16 @@ public final class ClientEffectRenderEvents {
 
     @SubscribeEvent
     public static void renderEffects(RenderLevelStageEvent event) {
-        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_BLOCK_ENTITIES
-            || event.getStage() == RenderLevelStageEvent.Stage.AFTER_PARTICLES
-            || event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
+        if (handles(event.getStage())) {
             ClientEffectFrameRuntime.render(event);
         }
+    }
+
+    /** Stages the client runtime consumes, including the foreground-depth capture. */
+    static boolean handles(RenderLevelStageEvent.Stage stage) {
+        return stage == RenderLevelStageEvent.Stage.AFTER_BLOCK_ENTITIES
+            || stage == RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS
+            || stage == RenderLevelStageEvent.Stage.AFTER_PARTICLES
+            || stage == RenderLevelStageEvent.Stage.AFTER_LEVEL;
     }
 }

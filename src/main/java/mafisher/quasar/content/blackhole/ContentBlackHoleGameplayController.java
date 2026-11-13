@@ -321,7 +321,7 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
             return;
         }
         this.visualStarted = true;
-        context.scope().playVisual(new VisualEffectSpec(
+        UUID visualId = context.scope().playVisual(new VisualEffectSpec(
             ContentEffectIds.BLACK_HOLE,
             this.center,
             this.yaw,
@@ -333,7 +333,20 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
             EffectAudience.dimensionWide(),
             EffectAudioSpec.NONE,
             EffectPriority.CRITICAL
-        ), EffectLifetimePolicy.CANCEL_WITH_SCOPE);
+        ), EffectLifetimePolicy.CANCEL_WITH_SCOPE).orElse(null);
+        if (visualId == null) {
+            LOGGER.warn(
+                "Black-hole visual for gameplay session {} was not started; the visual budget rejected it",
+                context.sessionId()
+            );
+            return;
+        }
+        LOGGER.info(
+            "Started black-hole visual {} for gameplay session {} at scale {}",
+            visualId,
+            context.sessionId(),
+            context.spec().scale()
+        );
     }
 
     private double sampleGroundY(GameplayEffectContext context) {

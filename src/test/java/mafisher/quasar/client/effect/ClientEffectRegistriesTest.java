@@ -6,15 +6,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import com.mojang.blaze3d.pipeline.RenderTarget;
-import mafisher.quasar.api.client.screen.RegisterScreenEffectOperationsEvent;
+import java.util.function.Consumer;
 import mafisher.quasar.api.client.render.RegisterVisualEffectRenderersEvent;
-import mafisher.quasar.api.client.screen.ScreenEffectOperation;
 import mafisher.quasar.api.client.render.VisualEffectRenderer;
+import mafisher.quasar.api.client.screen.RegisterScreenEffectOperationsEvent;
+import mafisher.quasar.api.client.screen.ScreenEffectOperation;
 import mafisher.quasar.api.compat.CompatRegistry;
 import mafisher.quasar.api.compat.CompatTestReset;
 import mafisher.quasar.api.compat.RegisterCompatProvidersEvent;
 import mafisher.quasar.api.compat.SceneDepthProvider;
 import mafisher.quasar.api.compat.SceneDepthSource;
+import mafisher.quasar.content.ContentClientEffects;
+import mafisher.quasar.content.ContentEffectIds;
+import mafisher.quasar.content.ContentScreenOperations;
 import mafisher.quasar.testing.GlobalStateTest;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -61,6 +65,23 @@ class ClientEffectRegistriesTest {
             () -> registries.renderers().register(EFFECT_ID, new VisualEffectRenderer() { }));
         assertThrows(IllegalStateException.class,
             () -> CompatRegistry.registerSceneDepthProvider(depthProvider()));
+    }
+
+    @Test
+    void includesContentListenersRegisteredOnTheGameBus() {
+        Consumer<RegisterScreenEffectOperationsEvent> operations = ContentClientEffects::registerOperations;
+        Consumer<RegisterVisualEffectRenderersEvent> renderers = ContentClientEffects::registerRenderers;
+        NeoForge.EVENT_BUS.addListener(operations);
+        NeoForge.EVENT_BUS.addListener(renderers);
+        try {
+            ClientEffectRegistries registries = ClientEffectRegistries.initialize();
+
+            assertTrue(registries.operations().find(ContentScreenOperations.BLACK_HOLE).isPresent());
+            assertTrue(registries.renderers().find(ContentEffectIds.BLACK_HOLE).isPresent());
+        } finally {
+            NeoForge.EVENT_BUS.unregister(operations);
+            NeoForge.EVENT_BUS.unregister(renderers);
+        }
     }
 
     private static SceneDepthProvider depthProvider() {

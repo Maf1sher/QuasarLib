@@ -45,6 +45,12 @@ public final class VisualEffectRendererRegistry {
         }
     }
 
+    /** Number of registered renderers, used by startup diagnostics. */
+    public int size() {
+        Map<ResourceLocation, VisualEffectRenderer> current = this.frozenRenderers;
+        return current != null ? current.size() : this.renderers.size();
+    }
+
     void onResourceReload(ResourceManager resourceManager) {
         Map<ResourceLocation, VisualEffectRenderer> current = this.frozenRenderers;
         Iterable<VisualEffectRenderer> registeredRenderers = current != null

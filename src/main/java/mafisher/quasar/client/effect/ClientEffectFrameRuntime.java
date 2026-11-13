@@ -46,14 +46,6 @@ final class ClientEffectFrameRuntime {
     private ClientEffectFrameRuntime() {
     }
 
-    /**
-     * Closes client registration before the first effect frame. Called from the client load-complete
-     * hook; {@link #manager()} keeps an idempotent lazy fallback for tests and unusual call orders.
-     */
-    static void initialize() {
-        ClientEffectRegistries.shared();
-    }
-
     private static ClientVisualEffectManager manager() {
         ClientVisualEffectManager current = manager;
         if (current != null) {

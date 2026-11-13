@@ -71,4 +71,10 @@ public final class ScreenEffectOperationRegistry {
             this.frozenOperations = Map.copyOf(this.operations);
         }
     }
+
+    /** Number of registered operations, used by startup diagnostics. */
+    public int size() {
+        Map<ResourceLocation, ScreenEffectOperationRenderer> current = this.frozenOperations;
+        return current != null ? current.size() : this.operations.size();
+    }
 }

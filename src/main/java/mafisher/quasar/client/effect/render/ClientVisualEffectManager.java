@@ -107,6 +107,12 @@ public final class ClientVisualEffectManager {
         }
         VisualEffectRenderer renderer = this.rendererRegistry.find(payload.effectId()).orElse(null);
         if (renderer == null) {
+            LOGGER.warn(
+                "No client renderer is registered for effect {} (instance {}); dropping the start payload. "
+                    + "Check that RegisterVisualEffectRenderersEvent registration runs before the first effect.",
+                payload.effectId(),
+                payload.instanceId()
+            );
             return;
         }
         ClientEffectClock.observe(payload.serverGameTime(), level.getGameTime());
