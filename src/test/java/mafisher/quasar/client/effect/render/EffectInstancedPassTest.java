@@ -5,9 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import mafisher.quasar.api.client.EffectInstancedPass;
-import mafisher.quasar.api.client.EffectMeshes;
-import mafisher.quasar.api.client.QuasarRenderTypes;
+import mafisher.quasar.api.client.render.EffectInstancedPass;
+import mafisher.quasar.api.client.render.EffectMeshes;
+import mafisher.quasar.api.client.render.QuasarRenderTypes;
 import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.EffectTransform;
 import net.minecraft.client.renderer.RenderType;

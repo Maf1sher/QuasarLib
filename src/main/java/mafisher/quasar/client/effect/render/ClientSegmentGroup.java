@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Consumer;
-import mafisher.quasar.api.client.VisualEffectInstance;
+import mafisher.quasar.api.client.render.VisualEffectInstance;
 import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.EffectTransform;
 import mafisher.quasar.api.effect.StartVisualEffectPayload;

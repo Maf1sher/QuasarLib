@@ -11,7 +11,7 @@ import java.util.UUID;
 import mafisher.quasar.api.audio.EffectAudioService;
 import mafisher.quasar.api.effect.EffectAudience;
 import mafisher.quasar.api.effect.EffectPoint;
-import mafisher.quasar.api.effect.EffectPriority;
+import mafisher.quasar.api.effect.budget.EffectPriority;
 import mafisher.quasar.api.effect.EffectRemovalPolicy;
 import mafisher.quasar.api.effect.EffectScope;
 import mafisher.quasar.api.effect.EffectTransform;

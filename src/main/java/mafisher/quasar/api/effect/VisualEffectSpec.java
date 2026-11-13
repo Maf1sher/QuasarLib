@@ -1,6 +1,8 @@
 package mafisher.quasar.api.effect;
 
 import mafisher.quasar.api.audio.EffectAudioSpec;
+import mafisher.quasar.api.effect.budget.EffectLimits;
+import mafisher.quasar.api.effect.budget.EffectPriority;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 

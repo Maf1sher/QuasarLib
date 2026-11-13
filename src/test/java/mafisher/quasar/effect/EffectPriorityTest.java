@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import mafisher.quasar.api.effect.EffectPriority;
+import mafisher.quasar.api.effect.budget.EffectPriority;
 import org.junit.jupiter.api.Test;
 
 class EffectPriorityTest {

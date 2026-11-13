@@ -1,6 +1,6 @@
 package mafisher.quasar.effect.runtime;
 
-import mafisher.quasar.api.effect.EffectBudgets;
+import mafisher.quasar.api.effect.budget.EffectBudgets;
 import org.jetbrains.annotations.ApiStatus;
 
 /** Budget source that reads the loaded, validated server configuration on every query. */

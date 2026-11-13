@@ -3,7 +3,7 @@ package mafisher.quasar.client.effect;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import mafisher.quasar.api.client.BloomSettings;
+import mafisher.quasar.api.client.screen.BloomSettings;
 import org.junit.jupiter.api.Test;
 
 class BloomSettingsTest {

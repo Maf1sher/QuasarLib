@@ -3,7 +3,7 @@ package mafisher.quasar.content.blackhole;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.UUID;
-import mafisher.quasar.api.client.ClientEffectImpulses;
+import mafisher.quasar.api.client.impulse.ClientEffectImpulses;
 import mafisher.quasar.content.ContentEffectIds;
 import mafisher.quasar.testing.GlobalStateTest;
 import mafisher.quasar.testing.TestVisualEffects;

@@ -16,7 +16,7 @@ import mafisher.quasar.api.block.BlockChange;
 import mafisher.quasar.api.block.BlockProtectionContext;
 import mafisher.quasar.api.gameplay.EffectPhase;
 import mafisher.quasar.api.gameplay.EffectPhasePlan;
-import mafisher.quasar.api.gameplay.EffectTickBudget;
+import mafisher.quasar.api.gameplay.tick.EffectTickBudget;
 import mafisher.quasar.api.gameplay.GameplayEffectContext;
 import mafisher.quasar.api.gameplay.GameplayEffectController;
 import mafisher.quasar.api.gameplay.GameplayEffectEndReason;

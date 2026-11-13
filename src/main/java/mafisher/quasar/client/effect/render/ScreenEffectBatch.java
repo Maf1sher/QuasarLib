@@ -7,10 +7,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import mafisher.quasar.api.client.EffectRenderContext;
-import mafisher.quasar.api.client.ScreenEffectMask;
-import mafisher.quasar.api.client.ScreenEffectRenderer;
-import mafisher.quasar.api.client.ScreenEffectSettings;
+import mafisher.quasar.api.client.render.EffectRenderContext;
+import mafisher.quasar.api.client.screen.ScreenEffectMask;
+import mafisher.quasar.api.client.screen.ScreenEffectRenderer;
+import mafisher.quasar.api.client.screen.ScreenEffectSettings;
 import net.minecraft.client.renderer.RenderType;
 import org.jetbrains.annotations.ApiStatus;
 

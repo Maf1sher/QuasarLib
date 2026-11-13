@@ -1,7 +1,7 @@
 package mafisher.quasar.content.blackhole;
 
 import java.util.Objects;
-import mafisher.quasar.api.client.ScreenEffectMediumPath;
+import mafisher.quasar.api.client.screen.ScreenEffectMediumPath;
 import org.joml.Vector3d;
 
 /**

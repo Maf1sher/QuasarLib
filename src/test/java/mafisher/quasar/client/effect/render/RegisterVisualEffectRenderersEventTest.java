@@ -3,8 +3,8 @@ package mafisher.quasar.client.effect.render;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import mafisher.quasar.api.client.RegisterVisualEffectRenderersEvent;
-import mafisher.quasar.api.client.VisualEffectRenderer;
+import mafisher.quasar.api.client.render.RegisterVisualEffectRenderersEvent;
+import mafisher.quasar.api.client.render.VisualEffectRenderer;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 

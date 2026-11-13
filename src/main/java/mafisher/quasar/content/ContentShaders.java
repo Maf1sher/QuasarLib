@@ -1,7 +1,7 @@
 package mafisher.quasar.content;
 
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
-import mafisher.quasar.api.client.EffectShader;
+import mafisher.quasar.api.client.render.EffectShader;
 import net.minecraft.resources.ResourceLocation;
 
 /** Content-owned shader handles. */

@@ -3,10 +3,10 @@ package mafisher.quasar.apicheck;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import mafisher.quasar.api.client.CameraShakeImpulse;
-import mafisher.quasar.api.client.ClientEffectImpulses;
-import mafisher.quasar.api.client.ScreenEffectCameraState;
-import mafisher.quasar.api.client.ScreenFlashImpulse;
+import mafisher.quasar.api.client.impulse.CameraShakeImpulse;
+import mafisher.quasar.api.client.impulse.ClientEffectImpulses;
+import mafisher.quasar.api.client.screen.ScreenEffectCameraState;
+import mafisher.quasar.api.client.impulse.ScreenFlashImpulse;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.junit.jupiter.api.Test;

@@ -1,7 +1,7 @@
 package mafisher.quasar.content;
 
-import mafisher.quasar.api.client.RegisterScreenEffectOperationsEvent;
-import mafisher.quasar.api.client.RegisterVisualEffectRenderersEvent;
+import mafisher.quasar.api.client.render.RegisterVisualEffectRenderersEvent;
+import mafisher.quasar.api.client.screen.RegisterScreenEffectOperationsEvent;
 import mafisher.quasar.content.blackhole.ContentBlackHoleImpulses;
 import mafisher.quasar.content.blackhole.ContentBlackHoleMeshRenderer;
 import mafisher.quasar.content.blackhole.ContentBlackHoleOperation;

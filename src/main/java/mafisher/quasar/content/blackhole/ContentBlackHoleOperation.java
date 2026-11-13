@@ -1,14 +1,14 @@
 package mafisher.quasar.content.blackhole;
 
 import com.mojang.blaze3d.pipeline.TextureTarget;
-import mafisher.quasar.api.client.ScreenEffectInputs;
-import mafisher.quasar.api.client.ScreenEffectMedium;
-import mafisher.quasar.api.client.ScreenEffectMediumPath;
-import mafisher.quasar.api.client.ScreenEffectMediumState;
-import mafisher.quasar.api.client.ScreenEffectOperationContext;
-import mafisher.quasar.api.client.ScreenEffectOperationRenderer;
+import mafisher.quasar.api.client.screen.ScreenEffectInputs;
+import mafisher.quasar.api.client.screen.ScreenEffectMedium;
+import mafisher.quasar.api.client.screen.ScreenEffectMediumPath;
+import mafisher.quasar.api.client.screen.ScreenEffectMediumState;
+import mafisher.quasar.api.client.screen.ScreenEffectOperationContext;
+import mafisher.quasar.api.client.screen.ScreenEffectOperationRenderer;
 import mafisher.quasar.api.compat.FogPolicy;
-import mafisher.quasar.api.effect.EffectQualityTier;
+import mafisher.quasar.api.effect.budget.EffectQualityTier;
 import mafisher.quasar.content.ContentShaders;
 import net.minecraft.client.renderer.ShaderInstance;
 import org.joml.Vector3f;

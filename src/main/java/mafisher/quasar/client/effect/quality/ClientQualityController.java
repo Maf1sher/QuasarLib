@@ -1,7 +1,7 @@
 package mafisher.quasar.client.effect.quality;
 
 import mafisher.quasar.QuasarClientConfig;
-import mafisher.quasar.api.effect.EffectQualityTier;
+import mafisher.quasar.api.effect.budget.EffectQualityTier;
 import org.jetbrains.annotations.ApiStatus;
 
 /**

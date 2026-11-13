@@ -3,10 +3,10 @@ package mafisher.quasar.client.effect.screen;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import mafisher.quasar.api.client.ScreenEffectMedium;
-import mafisher.quasar.api.client.ScreenEffectMediumCrossing;
-import mafisher.quasar.api.client.ScreenEffectMediumPath;
-import mafisher.quasar.api.client.ScreenEffectMediumSpan;
+import mafisher.quasar.api.client.screen.ScreenEffectMedium;
+import mafisher.quasar.api.client.screen.ScreenEffectMediumCrossing;
+import mafisher.quasar.api.client.screen.ScreenEffectMediumPath;
+import mafisher.quasar.api.client.screen.ScreenEffectMediumSpan;
 import org.jetbrains.annotations.ApiStatus;
 import org.joml.Vector3d;
 

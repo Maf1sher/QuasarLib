@@ -9,7 +9,7 @@ import java.util.Set;
 import java.util.UUID;
 import mafisher.quasar.api.cinematic.CinematicTimeline;
 import mafisher.quasar.api.effect.EffectPoint;
-import mafisher.quasar.api.effect.EffectPriority;
+import mafisher.quasar.api.effect.budget.EffectPriority;
 import mafisher.quasar.api.effect.EffectScope;
 import mafisher.quasar.api.effect.VisualEffectSpec;
 import mafisher.quasar.api.gameplay.GameplayEffectController;

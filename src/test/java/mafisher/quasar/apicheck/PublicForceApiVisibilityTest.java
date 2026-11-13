@@ -4,9 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.util.function.Predicate;
-import mafisher.quasar.api.effect.EffectDebrisSpec;
-import mafisher.quasar.api.effect.EffectForceField;
-import mafisher.quasar.api.effect.EffectForceResult;
+import mafisher.quasar.api.effect.debris.EffectDebrisSpec;
+import mafisher.quasar.api.effect.force.EffectForceField;
+import mafisher.quasar.api.effect.force.EffectForceResult;
 import mafisher.quasar.api.gameplay.GameplayEffectContext;
 import org.junit.jupiter.api.Test;
 

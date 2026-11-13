@@ -3,7 +3,7 @@ package mafisher.quasar.content.blackhole;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import mafisher.quasar.api.client.BlackHoleScreenSettings;
+import mafisher.quasar.api.client.screen.BlackHoleScreenSettings;
 import org.junit.jupiter.api.Test;
 
 class ContentBlackHoleLightingTest {

@@ -6,8 +6,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import mafisher.quasar.api.effect.EffectAudience;
-import mafisher.quasar.api.effect.EffectDebrisSpawn;
-import mafisher.quasar.api.effect.EffectDebrisSpec;
+import mafisher.quasar.api.effect.debris.EffectDebrisSpawn;
+import mafisher.quasar.api.effect.debris.EffectDebrisSpec;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;

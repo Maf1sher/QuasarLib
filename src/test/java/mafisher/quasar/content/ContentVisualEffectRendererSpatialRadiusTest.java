@@ -5,9 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.UUID;
-import mafisher.quasar.api.client.EffectLodProfile;
-import mafisher.quasar.api.client.EffectRenderContext;
-import mafisher.quasar.api.client.VisualEffectRenderer;
+import mafisher.quasar.api.client.render.EffectLodProfile;
+import mafisher.quasar.api.client.render.EffectRenderContext;
+import mafisher.quasar.api.client.render.VisualEffectRenderer;
 import mafisher.quasar.api.effect.StartVisualEffectPayload;
 import mafisher.quasar.content.blackhole.ContentBlackHoleMeshRenderer;
 import mafisher.quasar.content.blackhole.ContentBlackHoleRenderer;

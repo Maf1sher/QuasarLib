@@ -6,7 +6,7 @@ public final class ContentFixture {
     }
 
     public static Object apiReference() {
-        return mafisher.quasar.api.client.EffectMeshes.horizontalQuad();
+        return mafisher.quasar.api.client.render.EffectMeshes.horizontalQuad();
     }
 
     public static Object engineReference() {

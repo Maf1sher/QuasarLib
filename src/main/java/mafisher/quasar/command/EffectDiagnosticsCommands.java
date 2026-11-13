@@ -7,7 +7,7 @@ import mafisher.quasar.api.cinematic.CinematicEffectHandle;
 import mafisher.quasar.api.cinematic.CinematicEffectService;
 import mafisher.quasar.api.cinematic.CinematicEffectStartResult;
 import mafisher.quasar.api.cinematic.CinematicTimeline;
-import mafisher.quasar.api.effect.EffectBudgetReport;
+import mafisher.quasar.api.effect.budget.EffectBudgetReport;
 import mafisher.quasar.effect.EffectBudgetService;
 import mafisher.quasar.effect.cinematic.CinematicTimelineRegistry;
 import mafisher.quasar.effect.persistence.EffectRecoveryReport;

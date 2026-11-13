@@ -9,7 +9,7 @@ import mafisher.quasar.api.cinematic.CinematicTimeline;
 import mafisher.quasar.api.cinematic.EffectEasing;
 import mafisher.quasar.api.effect.EffectAudience;
 import mafisher.quasar.api.effect.EffectPoint;
-import mafisher.quasar.api.effect.EffectPriority;
+import mafisher.quasar.api.effect.budget.EffectPriority;
 import mafisher.quasar.api.effect.EffectTransform;
 import mafisher.quasar.api.effect.VisualEffectSpec;
 import mafisher.quasar.api.scale.SegmentHeightSource;

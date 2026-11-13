@@ -2,7 +2,7 @@ package mafisher.quasar.client.effect.render;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import mafisher.quasar.api.client.RegisterVisualEffectRenderersEvent;
+import mafisher.quasar.api.client.render.RegisterVisualEffectRenderersEvent;
 import mafisher.quasar.content.ContentClientEffects;
 import mafisher.quasar.content.ContentEffectIds;
 import org.junit.jupiter.api.Test;

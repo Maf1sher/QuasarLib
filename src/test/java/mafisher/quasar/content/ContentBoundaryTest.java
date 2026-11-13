@@ -94,10 +94,10 @@ class ContentBoundaryTest {
             classFile(ContentFixture.class)
         );
 
-        assertTrue(result.types().contains("mafisher.quasar.api.client.EffectMeshes"));
+        assertTrue(result.types().contains("mafisher.quasar.api.client.render.EffectMeshes"));
         assertTrue(result.types().contains("mafisher.quasar.client.effect.render.EffectRenderTypes"));
         assertTrue(isForbiddenContentReference("mafisher.quasar.client.effect.render.EffectRenderTypes"));
-        assertFalse(isForbiddenContentReference("mafisher.quasar.api.client.EffectMeshes"));
+        assertFalse(isForbiddenContentReference("mafisher.quasar.api.client.render.EffectMeshes"));
     }
 
     @Test
@@ -111,7 +111,7 @@ class ContentBoundaryTest {
 
     @Test
     void scannerAllowsApiReferences() {
-        assertFalse(isForbiddenContentReference("mafisher.quasar.api.client.EffectMeshes"));
+        assertFalse(isForbiddenContentReference("mafisher.quasar.api.client.render.EffectMeshes"));
     }
 
     private static boolean isForbiddenContentReference(String reference) {

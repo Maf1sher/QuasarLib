@@ -6,10 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import com.mojang.blaze3d.pipeline.RenderTarget;
-import mafisher.quasar.api.client.RegisterScreenEffectOperationsEvent;
-import mafisher.quasar.api.client.RegisterVisualEffectRenderersEvent;
-import mafisher.quasar.api.client.ScreenEffectOperation;
-import mafisher.quasar.api.client.VisualEffectRenderer;
+import mafisher.quasar.api.client.screen.RegisterScreenEffectOperationsEvent;
+import mafisher.quasar.api.client.render.RegisterVisualEffectRenderersEvent;
+import mafisher.quasar.api.client.screen.ScreenEffectOperation;
+import mafisher.quasar.api.client.render.VisualEffectRenderer;
 import mafisher.quasar.api.compat.CompatRegistry;
 import mafisher.quasar.api.compat.CompatTestReset;
 import mafisher.quasar.api.compat.RegisterCompatProvidersEvent;

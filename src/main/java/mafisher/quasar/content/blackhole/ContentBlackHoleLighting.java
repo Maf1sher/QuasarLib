@@ -1,7 +1,7 @@
 package mafisher.quasar.content.blackhole;
 
-import mafisher.quasar.api.client.BlackHoleScreenSettings;
-import mafisher.quasar.api.client.BloomSettings;
+import mafisher.quasar.api.client.screen.BlackHoleScreenSettings;
+import mafisher.quasar.api.client.screen.BloomSettings;
 
 /** Content-owned daylight compensation for black-hole emission and bloom, without weakening its lensing. */
 final class ContentBlackHoleLighting {

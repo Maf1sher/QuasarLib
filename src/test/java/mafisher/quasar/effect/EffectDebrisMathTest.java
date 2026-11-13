@@ -3,7 +3,7 @@ package mafisher.quasar.effect;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import mafisher.quasar.api.effect.EffectDebrisAttractor;
+import mafisher.quasar.api.effect.debris.EffectDebrisAttractor;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 

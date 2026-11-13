@@ -3,6 +3,8 @@ package mafisher.quasar.api.gameplay;
 import java.util.Objects;
 import java.util.UUID;
 import mafisher.quasar.api.effect.EffectScope;
+import mafisher.quasar.api.gameplay.policy.DestructiveEffectPolicies;
+import mafisher.quasar.api.gameplay.policy.DestructiveEffectPolicyContext;
 import mafisher.quasar.api.persistence.EffectCapabilities;
 import mafisher.quasar.effect.persistence.BlockJournal;
 import net.minecraft.nbt.CompoundTag;

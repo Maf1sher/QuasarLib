@@ -6,12 +6,12 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.UUID;
-import mafisher.quasar.api.client.EffectLod;
-import mafisher.quasar.api.client.EffectLodProfile;
-import mafisher.quasar.api.client.EffectRenderContext;
-import mafisher.quasar.api.client.ScreenEffectInputs;
-import mafisher.quasar.api.client.ScreenEffectMask;
-import mafisher.quasar.api.client.ScreenEffectSettings;
+import mafisher.quasar.api.client.render.EffectLod;
+import mafisher.quasar.api.client.render.EffectLodProfile;
+import mafisher.quasar.api.client.render.EffectRenderContext;
+import mafisher.quasar.api.client.screen.ScreenEffectInputs;
+import mafisher.quasar.api.client.screen.ScreenEffectMask;
+import mafisher.quasar.api.client.screen.ScreenEffectSettings;
 import mafisher.quasar.api.effect.StartVisualEffectPayload;
 import mafisher.quasar.content.ContentEffectIds;
 import mafisher.quasar.content.ContentScreenOperations;

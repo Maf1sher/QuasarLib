@@ -8,7 +8,7 @@ import java.util.HashSet;
 import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
-import mafisher.quasar.api.client.VisualEffectInstance;
+import mafisher.quasar.api.client.render.VisualEffectInstance;
 import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.EffectTransform;
 import mafisher.quasar.api.effect.StartVisualEffectPayload;

@@ -5,7 +5,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import mafisher.quasar.api.client.EffectStaticMeshPass;
+import mafisher.quasar.api.client.render.EffectStaticMeshPass;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.ShaderInstance;
 import org.joml.Matrix4f;

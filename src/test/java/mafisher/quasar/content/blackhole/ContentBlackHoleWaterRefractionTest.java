@@ -5,9 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
-import mafisher.quasar.api.client.ScreenEffectMedium;
-import mafisher.quasar.api.client.ScreenEffectMediumPath;
-import mafisher.quasar.api.client.ScreenEffectMediumSpan;
+import mafisher.quasar.api.client.screen.ScreenEffectMedium;
+import mafisher.quasar.api.client.screen.ScreenEffectMediumPath;
+import mafisher.quasar.api.client.screen.ScreenEffectMediumSpan;
 import org.joml.Vector3d;
 import org.junit.jupiter.api.Test;
 

@@ -5,9 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
-import mafisher.quasar.api.gameplay.DestructiveEffectPolicy;
-import mafisher.quasar.api.gameplay.DestructiveEffectPolicyContext;
-import mafisher.quasar.api.gameplay.RegisterDestructiveEffectPoliciesEvent;
+import mafisher.quasar.api.gameplay.policy.DestructiveEffectPolicy;
+import mafisher.quasar.api.gameplay.policy.DestructiveEffectPolicyContext;
+import mafisher.quasar.api.gameplay.policy.RegisterDestructiveEffectPoliciesEvent;
 import mafisher.quasar.api.persistence.EffectCapabilities;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;

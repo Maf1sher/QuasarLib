@@ -8,12 +8,18 @@ import mafisher.quasar.api.audio.EffectAudioService;
 import mafisher.quasar.api.block.BlockChange;
 import mafisher.quasar.api.block.BlockProtectionContext;
 import mafisher.quasar.api.compat.CompatRegistry;
-import mafisher.quasar.api.effect.EffectDebrisSpec;
-import mafisher.quasar.api.effect.EffectForceField;
-import mafisher.quasar.api.effect.EffectForceResult;
-import mafisher.quasar.api.effect.EffectHitResult;
-import mafisher.quasar.api.effect.EffectHitbox;
+import mafisher.quasar.api.effect.debris.EffectDebrisSpec;
+import mafisher.quasar.api.effect.force.EffectForceField;
+import mafisher.quasar.api.effect.force.EffectForceResult;
+import mafisher.quasar.api.effect.damage.EffectHitResult;
+import mafisher.quasar.api.effect.damage.EffectHitbox;
 import mafisher.quasar.api.effect.EffectScope;
+import mafisher.quasar.api.gameplay.block.BlockJournalMode;
+import mafisher.quasar.api.gameplay.tick.EffectTickBudget;
+import mafisher.quasar.api.gameplay.tick.EffectTickBudgetState;
+import mafisher.quasar.api.gameplay.tick.EffectTickCounters;
+import mafisher.quasar.api.gameplay.world.EffectBlockSample;
+import mafisher.quasar.api.gameplay.world.EffectWorldQuery;
 import mafisher.quasar.api.persistence.EffectCapabilities;
 import mafisher.quasar.effect.EffectBudgetService;
 import mafisher.quasar.effect.block.BlockProtectionService;
@@ -27,7 +33,10 @@ import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.ApiStatus;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -360,13 +369,30 @@ public final class GameplayEffectContext {
         return this.blockJournal;
     }
 
+    /**
+     * Records one section snapshot for a bulk edit. A full journal keeps applying edits without
+     * rollback; an unreadable block entity vetoes the snapshot.
+     */
+    @ApiStatus.Internal
+    public boolean recordSectionSnapshot(
+        ServerLevel level,
+        LevelChunk chunk,
+        int sectionY,
+        LevelChunkSection section
+    ) {
+        boolean recorded = this.blockJournal.recordSection(level, chunk, sectionY, section);
+        return recorded || this.blockJournal.isTruncated();
+    }
+
     /** Whether any native or compat protection must be consulted for this session. */
-    boolean hasBlockProtection() {
+    @ApiStatus.Internal
+    public boolean hasBlockProtection() {
         return BlockProtectionService.hasProtections() || CompatRegistry.hasProtectionBridge();
     }
 
     /** Queries the active protection bridge, including the registered native fallback. */
-    boolean allowsBlockChange(BlockChange change, BlockState currentState) {
+    @ApiStatus.Internal
+    public boolean allowsBlockChange(BlockChange change, BlockState currentState) {
         return CompatRegistry.protection().allows(new BlockProtectionContext(
             this.level,
             change,
@@ -395,7 +421,8 @@ public final class GameplayEffectContext {
      * Reserves one bulk section edit against both the session budget and the level-wide section
      * budget. Returns {@code false} when either soft budget is exhausted for this tick.
      */
-    boolean tryAcquireSectionEdit() {
+    @ApiStatus.Internal
+    public boolean tryAcquireSectionEdit() {
         this.ensureOpen();
         if (this.budgetState.remainingSectionEdits() <= 0) {
             return false;
@@ -407,7 +434,8 @@ public final class GameplayEffectContext {
     }
 
     /** Records the block changes produced by one bulk section edit. */
-    void recordBulkSection(int applied, int vetoed) {
+    @ApiStatus.Internal
+    public void recordBulkSection(int applied, int vetoed) {
         this.budgetState.recordBlockChangesApplied(applied);
         this.budgetState.recordBlockChangesVetoed(vetoed);
     }

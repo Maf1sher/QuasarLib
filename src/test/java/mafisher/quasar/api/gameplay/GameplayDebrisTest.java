@@ -9,9 +9,10 @@ import static org.mockito.Mockito.when;
 
 import java.util.UUID;
 import mafisher.quasar.api.effect.EffectAudience;
-import mafisher.quasar.api.effect.EffectDebrisSpec;
+import mafisher.quasar.api.effect.debris.EffectDebrisSpec;
 import mafisher.quasar.api.effect.EffectScope;
 import mafisher.quasar.api.gameplay.GameplayEffectContext;
+import mafisher.quasar.api.gameplay.tick.EffectTickBudget;
 import mafisher.quasar.api.persistence.EffectCapabilities;
 import mafisher.quasar.effect.persistence.BlockJournal;
 import net.minecraft.network.protocol.Packet;

@@ -7,7 +7,7 @@ import static org.mockito.Mockito.when;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import mafisher.quasar.api.effect.EffectScope;
-import mafisher.quasar.api.gameplay.EffectTickBudget;
+import mafisher.quasar.api.gameplay.tick.EffectTickBudget;
 import mafisher.quasar.api.gameplay.GameplayEffectContext;
 import mafisher.quasar.api.gameplay.GameplayEffectSpec;
 import mafisher.quasar.api.persistence.EffectCapabilities;

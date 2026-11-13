@@ -10,17 +10,17 @@ import com.mojang.blaze3d.vertex.BufferUploader;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import java.util.Objects;
-import mafisher.quasar.api.client.EffectRenderContext;
-import mafisher.quasar.api.client.ScreenEffectCameraState;
-import mafisher.quasar.api.client.ScreenEffectFogState;
-import mafisher.quasar.api.client.ScreenEffectMask;
-import mafisher.quasar.api.client.ScreenEffectMediumPath;
-import mafisher.quasar.api.client.ScreenEffectMediumState;
-import mafisher.quasar.api.client.ScreenEffectOperation;
-import mafisher.quasar.api.client.ScreenEffectOperationContext;
-import mafisher.quasar.api.client.ScreenEffectSettings;
+import mafisher.quasar.api.client.render.EffectRenderContext;
+import mafisher.quasar.api.client.screen.ScreenEffectCameraState;
+import mafisher.quasar.api.client.screen.ScreenEffectFogState;
+import mafisher.quasar.api.client.screen.ScreenEffectMask;
+import mafisher.quasar.api.client.screen.ScreenEffectMediumPath;
+import mafisher.quasar.api.client.screen.ScreenEffectMediumState;
+import mafisher.quasar.api.client.screen.ScreenEffectOperation;
+import mafisher.quasar.api.client.screen.ScreenEffectOperationContext;
+import mafisher.quasar.api.client.screen.ScreenEffectSettings;
 import mafisher.quasar.api.compat.RenderEnvironment;
-import mafisher.quasar.api.effect.EffectQualityTier;
+import mafisher.quasar.api.effect.budget.EffectQualityTier;
 import mafisher.quasar.client.effect.render.EffectRenderState;
 import mafisher.quasar.client.effect.render.ShaderUniformCache;
 import net.minecraft.client.renderer.ShaderInstance;
@@ -30,7 +30,7 @@ import org.joml.Matrix4f;
 
 /**
  * Per-frame inputs and draw helpers available to a registered
- * {@link mafisher.quasar.api.client.ScreenEffectOperationRenderer}.
+ * {@link mafisher.quasar.api.client.screen.ScreenEffectOperationRenderer}.
  *
  * <p>The operation reads the current composition from {@link #sourceColor()},
  * the untouched captured scene from {@link #rawSceneColor()}, mask coverage and

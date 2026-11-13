@@ -9,11 +9,12 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.util.UUID;
-import mafisher.quasar.api.effect.EffectBudgetReport;
-import mafisher.quasar.api.effect.EffectBudgets;
+import mafisher.quasar.api.effect.budget.EffectBudgetReport;
+import mafisher.quasar.api.effect.budget.EffectBudgets;
 import mafisher.quasar.api.effect.EffectScope;
 import mafisher.quasar.api.gameplay.GameplayEffectContext;
 import mafisher.quasar.api.gameplay.GameplayEffectSpec;
+import mafisher.quasar.api.gameplay.tick.EffectTickBudget;
 import mafisher.quasar.api.persistence.EffectCapabilities;
 import mafisher.quasar.effect.EffectBudgetService;
 import mafisher.quasar.effect.persistence.BlockJournal;

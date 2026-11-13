@@ -19,6 +19,7 @@ import mafisher.quasar.api.effect.EffectTransform;
 import mafisher.quasar.api.gameplay.GameplayEffectContext;
 import mafisher.quasar.api.gameplay.GameplayEffectController;
 import mafisher.quasar.api.gameplay.GameplayEffectSpec;
+import mafisher.quasar.api.gameplay.tick.EffectTickBudget;
 import mafisher.quasar.api.persistence.EffectCapabilities;
 import mafisher.quasar.api.persistence.EffectDescriptor;
 import mafisher.quasar.api.persistence.EffectKind;

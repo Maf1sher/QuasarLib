@@ -1,6 +1,6 @@
 package mafisher.quasar.content;
 
-import mafisher.quasar.api.client.ScreenEffectOperation;
+import mafisher.quasar.api.client.screen.ScreenEffectOperation;
 import net.minecraft.resources.ResourceLocation;
 
 /** Stable handles for operations owned by the demo content. */

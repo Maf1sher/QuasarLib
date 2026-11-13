@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.UUID;
 import mafisher.quasar.api.gameplay.EffectPhasePlan;
-import mafisher.quasar.api.gameplay.EffectTickBudget;
+import mafisher.quasar.api.gameplay.tick.EffectTickBudget;
 import mafisher.quasar.api.gameplay.GameplayEffectSpec;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
@@ -29,14 +29,14 @@ class GameplayEffectSpecTest {
         GameplayEffectSpec scaled = new GameplayEffectSpec(
             id(), UUID.randomUUID(), Vec3.ZERO, plan(), 42L, budget(),
             OwnerPolicy.CONTINUE, mafisher.quasar.api.audio.EffectAudioSpec.NONE,
-            mafisher.quasar.api.effect.EffectPriority.HIGH, 12.0F
+            mafisher.quasar.api.effect.budget.EffectPriority.HIGH, 12.0F
         );
         assertEquals(12.0F, scaled.scale(), 1.0E-6F);
 
         assertThrows(IllegalArgumentException.class, () -> new GameplayEffectSpec(
             id(), UUID.randomUUID(), Vec3.ZERO, plan(), 42L, budget(),
             OwnerPolicy.CONTINUE, mafisher.quasar.api.audio.EffectAudioSpec.NONE,
-            mafisher.quasar.api.effect.EffectPriority.HIGH, 0.0F
+            mafisher.quasar.api.effect.budget.EffectPriority.HIGH, 0.0F
         ));
     }
 

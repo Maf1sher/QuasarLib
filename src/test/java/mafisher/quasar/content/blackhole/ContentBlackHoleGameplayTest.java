@@ -4,8 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import mafisher.quasar.api.effect.EffectAudience;
-import mafisher.quasar.api.effect.EffectBudgets;
-import mafisher.quasar.api.effect.EffectDebrisAttractor;
+import mafisher.quasar.api.effect.budget.EffectBudgets;
+import mafisher.quasar.api.effect.debris.EffectDebrisAttractor;
 import mafisher.quasar.api.effect.VisualEffectSpec;
 import mafisher.quasar.api.gameplay.GameplayEffectSpec;
 import mafisher.quasar.content.ContentEffectIds;

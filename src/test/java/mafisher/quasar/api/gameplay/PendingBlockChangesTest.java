@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import mafisher.quasar.api.block.BlockChange;
+import mafisher.quasar.api.gameplay.block.BlockJournalMode;
 import mafisher.quasar.effect.persistence.BlockJournal;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerChunkCache;

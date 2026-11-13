@@ -1,8 +1,8 @@
 package mafisher.quasar.testing;
 
 import java.util.UUID;
-import mafisher.quasar.api.client.EffectRenderContext;
-import mafisher.quasar.api.client.VisualEffectInstance;
+import mafisher.quasar.api.client.render.EffectRenderContext;
+import mafisher.quasar.api.client.render.VisualEffectInstance;
 import mafisher.quasar.api.effect.StartVisualEffectPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;

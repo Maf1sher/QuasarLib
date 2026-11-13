@@ -2,13 +2,13 @@ package mafisher.quasar.apicheck;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import mafisher.quasar.api.client.RegisterScreenEffectOperationsEvent;
-import mafisher.quasar.api.client.ScreenEffectCameraState;
-import mafisher.quasar.api.client.ScreenEffectInputs;
-import mafisher.quasar.api.client.ScreenEffectOperation;
-import mafisher.quasar.api.client.ScreenEffectOperationContext;
-import mafisher.quasar.api.client.ScreenEffectOperationRenderer;
-import mafisher.quasar.api.client.ScreenEffectSettings;
+import mafisher.quasar.api.client.screen.RegisterScreenEffectOperationsEvent;
+import mafisher.quasar.api.client.screen.ScreenEffectCameraState;
+import mafisher.quasar.api.client.screen.ScreenEffectInputs;
+import mafisher.quasar.api.client.screen.ScreenEffectOperation;
+import mafisher.quasar.api.client.screen.ScreenEffectOperationContext;
+import mafisher.quasar.api.client.screen.ScreenEffectOperationRenderer;
+import mafisher.quasar.api.client.screen.ScreenEffectSettings;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;

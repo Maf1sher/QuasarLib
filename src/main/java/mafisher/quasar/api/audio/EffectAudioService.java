@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import mafisher.quasar.api.effect.EffectAudience;
-import mafisher.quasar.api.effect.EffectPriority;
+import mafisher.quasar.api.effect.budget.EffectPriority;
 import mafisher.quasar.effect.runtime.EffectAudioRuntime;
 import mafisher.quasar.effect.runtime.EffectRuntimeRegistry;
 import mafisher.quasar.effect.runtime.LevelEffectRuntime;

@@ -1,6 +1,6 @@
 package mafisher.quasar.client.effect;
 
-import mafisher.quasar.api.effect.EffectQualityTier;
+import mafisher.quasar.api.effect.budget.EffectQualityTier;
 import mafisher.quasar.api.effect.StartVisualEffectPayload;
 import mafisher.quasar.api.scale.StartSegmentedVisualEffectPayload;
 import mafisher.quasar.client.effect.quality.ClientQualityController;

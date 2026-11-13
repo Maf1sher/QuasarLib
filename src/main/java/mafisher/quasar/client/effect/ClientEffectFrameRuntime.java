@@ -3,7 +3,7 @@ package mafisher.quasar.client.effect;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Consumer;
-import mafisher.quasar.api.client.ClientEffectImpulses;
+import mafisher.quasar.api.client.impulse.ClientEffectImpulses;
 import mafisher.quasar.api.compat.CompatRegistry;
 import mafisher.quasar.api.compat.RenderEnvironment;
 import mafisher.quasar.api.effect.StartVisualEffectPayload;

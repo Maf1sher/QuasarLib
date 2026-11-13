@@ -1,8 +1,8 @@
 package mafisher.quasar.client.effect.quality;
 
 import java.util.Objects;
-import mafisher.quasar.api.client.EffectLod;
-import mafisher.quasar.api.client.EffectLodProfile;
+import mafisher.quasar.api.client.render.EffectLod;
+import mafisher.quasar.api.client.render.EffectLodProfile;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.ApiStatus;
 

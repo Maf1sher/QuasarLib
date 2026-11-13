@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import mafisher.quasar.api.effect.EffectBounds;
-import mafisher.quasar.api.effect.EffectDamageShape;
+import mafisher.quasar.api.effect.damage.EffectDamageShape;
 import mafisher.quasar.api.effect.EffectPoint;
 import org.junit.jupiter.api.Test;
 

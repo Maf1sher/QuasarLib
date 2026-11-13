@@ -7,7 +7,7 @@ import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.BufferUploader;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.VertexFormat;
-import mafisher.quasar.api.client.ClientEffectImpulses;
+import mafisher.quasar.api.client.impulse.ClientEffectImpulses;
 import mafisher.quasar.client.effect.render.EffectRenderState;
 import mafisher.quasar.client.effect.render.EffectShaders;
 import net.minecraft.client.Minecraft;

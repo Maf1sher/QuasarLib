@@ -9,7 +9,7 @@ import mafisher.quasar.api.audio.EffectAudioCue;
 import mafisher.quasar.api.audio.EffectAudioSpec;
 import mafisher.quasar.api.effect.EffectAudience;
 import mafisher.quasar.api.effect.EffectPoint;
-import mafisher.quasar.api.effect.EffectPriority;
+import mafisher.quasar.api.effect.budget.EffectPriority;
 import mafisher.quasar.api.effect.EffectTransform;
 import mafisher.quasar.api.persistence.EffectCapabilities;
 import mafisher.quasar.api.persistence.EffectDescriptor;

@@ -1,11 +1,11 @@
 package mafisher.quasar.content.blackhole;
 
-import mafisher.quasar.api.effect.EffectBudgets;
-import mafisher.quasar.api.effect.EffectPriority;
+import mafisher.quasar.api.effect.budget.EffectBudgets;
+import mafisher.quasar.api.effect.budget.EffectPriority;
 import mafisher.quasar.api.effect.VisualEffectSpec;
 import mafisher.quasar.api.gameplay.EffectPhase;
 import mafisher.quasar.api.gameplay.EffectPhasePlan;
-import mafisher.quasar.api.gameplay.EffectTickBudget;
+import mafisher.quasar.api.gameplay.tick.EffectTickBudget;
 import mafisher.quasar.api.gameplay.GameplayEffectSpec;
 import mafisher.quasar.api.gameplay.OwnerPolicy;
 import mafisher.quasar.content.ContentEffectIds;

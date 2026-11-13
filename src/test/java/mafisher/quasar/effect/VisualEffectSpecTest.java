@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import mafisher.quasar.api.audio.EffectAudioSpec;
 import mafisher.quasar.api.effect.EffectAudience;
-import mafisher.quasar.api.effect.EffectPriority;
+import mafisher.quasar.api.effect.budget.EffectPriority;
 import mafisher.quasar.api.effect.VisualEffectSpec;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;

@@ -5,8 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.List;
-import mafisher.quasar.api.client.EffectLod;
-import mafisher.quasar.api.client.EffectLodProfile;
+import mafisher.quasar.api.client.render.EffectLod;
+import mafisher.quasar.api.client.render.EffectLodProfile;
 import org.junit.jupiter.api.Test;
 
 class EffectLodProfileTest {

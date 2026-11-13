@@ -1,7 +1,7 @@
 package mafisher.quasar.client.effect.screen;
 
 
-import mafisher.quasar.api.client.ScreenEffectMedium;
+import mafisher.quasar.api.client.screen.ScreenEffectMedium;
 import org.jetbrains.annotations.ApiStatus;
 
 /**

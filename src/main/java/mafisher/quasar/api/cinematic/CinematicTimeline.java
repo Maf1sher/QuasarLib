@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import mafisher.quasar.api.effect.EffectPoint;
-import mafisher.quasar.api.effect.EffectPriority;
+import mafisher.quasar.api.effect.budget.EffectPriority;
 import mafisher.quasar.api.effect.EffectTimeline;
 import mafisher.quasar.api.effect.EffectTransform;
 import mafisher.quasar.api.effect.VisualEffectSpec;

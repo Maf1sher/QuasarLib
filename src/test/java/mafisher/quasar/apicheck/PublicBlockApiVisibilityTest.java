@@ -5,9 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.mock;
 
 import mafisher.quasar.api.block.BlockChange;
-import mafisher.quasar.api.gameplay.BlockJournalMode;
-import mafisher.quasar.api.gameplay.EffectTickBudget;
-import mafisher.quasar.api.gameplay.EffectTickCounters;
+import mafisher.quasar.api.gameplay.block.BlockJournalMode;
+import mafisher.quasar.api.gameplay.tick.EffectTickBudget;
+import mafisher.quasar.api.gameplay.tick.EffectTickCounters;
 import mafisher.quasar.api.gameplay.GameplayEffectContext;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;

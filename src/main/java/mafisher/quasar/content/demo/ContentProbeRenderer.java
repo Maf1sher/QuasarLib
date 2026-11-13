@@ -3,7 +3,7 @@ package mafisher.quasar.content.demo;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
-import mafisher.quasar.api.client.EffectMeshes;
+import mafisher.quasar.api.client.render.EffectMeshes;
 import mafisher.quasar.api.effect.EffectTimeline;
 import mafisher.quasar.content.ContentBootstrap;
 import net.minecraft.client.renderer.LightTexture;

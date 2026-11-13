@@ -1,8 +1,8 @@
 package mafisher.quasar.content.rune;
 
-import mafisher.quasar.api.client.ScreenEffectInputs;
-import mafisher.quasar.api.client.ScreenEffectOperationContext;
-import mafisher.quasar.api.client.ScreenEffectOperationRenderer;
+import mafisher.quasar.api.client.screen.ScreenEffectInputs;
+import mafisher.quasar.api.client.screen.ScreenEffectOperationContext;
+import mafisher.quasar.api.client.screen.ScreenEffectOperationRenderer;
 import mafisher.quasar.content.ContentShaders;
 import net.minecraft.client.renderer.ShaderInstance;
 

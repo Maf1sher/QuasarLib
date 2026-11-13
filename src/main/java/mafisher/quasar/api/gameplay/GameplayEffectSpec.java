@@ -3,8 +3,9 @@ package mafisher.quasar.api.gameplay;
 import java.util.Objects;
 import java.util.UUID;
 import mafisher.quasar.api.audio.EffectAudioSpec;
-import mafisher.quasar.api.effect.EffectLimits;
-import mafisher.quasar.api.effect.EffectPriority;
+import mafisher.quasar.api.effect.budget.EffectLimits;
+import mafisher.quasar.api.effect.budget.EffectPriority;
+import mafisher.quasar.api.gameplay.tick.EffectTickBudget;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 

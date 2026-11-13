@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import java.util.UUID;
 import mafisher.quasar.api.audio.EffectAudioSpec;
 import mafisher.quasar.api.effect.EffectAudience;
-import mafisher.quasar.api.effect.EffectPriority;
+import mafisher.quasar.api.effect.budget.EffectPriority;
 import mafisher.quasar.api.scale.SegmentTerrainConform;
 import mafisher.quasar.api.scale.SegmentedVisualEffectService;
 import mafisher.quasar.api.scale.SegmentedVisualEffectSpec;

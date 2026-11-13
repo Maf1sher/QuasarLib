@@ -5,8 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import mafisher.quasar.api.client.EffectLod;
-import mafisher.quasar.api.client.EffectLodProfile;
+import mafisher.quasar.api.client.render.EffectLod;
+import mafisher.quasar.api.client.render.EffectLodProfile;
 import org.junit.jupiter.api.Test;
 
 class EffectLodTrackerTest {

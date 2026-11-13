@@ -12,11 +12,12 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.UUID;
-import mafisher.quasar.api.effect.EffectForceField;
-import mafisher.quasar.api.effect.EffectForceResult;
+import mafisher.quasar.api.effect.force.EffectForceField;
+import mafisher.quasar.api.effect.force.EffectForceResult;
 import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.EffectScope;
 import mafisher.quasar.api.gameplay.GameplayEffectContext;
+import mafisher.quasar.api.gameplay.tick.EffectTickBudget;
 import mafisher.quasar.api.persistence.EffectCapabilities;
 import mafisher.quasar.effect.persistence.BlockJournal;
 import net.minecraft.resources.ResourceLocation;

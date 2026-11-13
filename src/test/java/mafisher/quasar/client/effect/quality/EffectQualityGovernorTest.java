@@ -2,7 +2,7 @@ package mafisher.quasar.client.effect.quality;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import mafisher.quasar.api.effect.EffectQualityTier;
+import mafisher.quasar.api.effect.budget.EffectQualityTier;
 import org.junit.jupiter.api.Test;
 
 class EffectQualityGovernorTest {

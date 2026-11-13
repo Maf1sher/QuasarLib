@@ -1,7 +1,7 @@
 package mafisher.quasar.client.effect;
 
-import mafisher.quasar.api.client.RegisterScreenEffectOperationsEvent;
-import mafisher.quasar.api.client.RegisterVisualEffectRenderersEvent;
+import mafisher.quasar.api.client.screen.RegisterScreenEffectOperationsEvent;
+import mafisher.quasar.api.client.render.RegisterVisualEffectRenderersEvent;
 import mafisher.quasar.api.compat.CompatRegistry;
 import mafisher.quasar.api.compat.RegisterCompatProvidersEvent;
 import mafisher.quasar.client.effect.render.VisualEffectRendererRegistry;

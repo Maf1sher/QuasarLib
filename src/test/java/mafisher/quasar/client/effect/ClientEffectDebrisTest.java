@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
-import mafisher.quasar.api.effect.EffectDebrisSpawn;
+import mafisher.quasar.api.effect.debris.EffectDebrisSpawn;
 import mafisher.quasar.effect.network.EffectDebrisPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;

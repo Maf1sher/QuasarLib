@@ -4,8 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import mafisher.quasar.api.effect.EffectBudgets;
-import mafisher.quasar.api.gameplay.EffectBulkBlockEditor;
+import mafisher.quasar.api.effect.budget.EffectBudgets;
+import mafisher.quasar.api.gameplay.block.EffectBulkBlockEditor;
 import mafisher.quasar.testing.GlobalStateTest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import mafisher.quasar.api.audio.EffectAudioSpec;
-import mafisher.quasar.api.effect.EffectPriority;
+import mafisher.quasar.api.effect.budget.EffectPriority;
 import mafisher.quasar.api.persistence.EffectDescriptor;
 import mafisher.quasar.api.scale.SegmentHeightProfile;
 import mafisher.quasar.api.scale.SegmentHeightSource;

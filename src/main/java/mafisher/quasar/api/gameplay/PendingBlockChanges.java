@@ -6,6 +6,8 @@ import java.util.Objects;
 import java.util.function.BiPredicate;
 import java.util.function.Consumer;
 import mafisher.quasar.api.block.BlockChange;
+import mafisher.quasar.api.gameplay.block.BlockJournalMode;
+import mafisher.quasar.api.gameplay.world.EffectBlockSample;
 import mafisher.quasar.effect.persistence.BlockJournal;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;

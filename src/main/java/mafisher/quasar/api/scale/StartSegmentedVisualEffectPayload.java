@@ -3,7 +3,7 @@ package mafisher.quasar.api.scale;
 import io.netty.buffer.ByteBuf;
 import java.util.Objects;
 import java.util.UUID;
-import mafisher.quasar.api.effect.EffectLimits;
+import mafisher.quasar.api.effect.budget.EffectLimits;
 import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.EffectTimeline;
 import mafisher.quasar.api.effect.EffectTransform;

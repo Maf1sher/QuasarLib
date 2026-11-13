@@ -5,8 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import mafisher.quasar.api.client.EffectMesh;
-import mafisher.quasar.api.client.EffectMeshes;
+import mafisher.quasar.api.client.render.EffectMesh;
+import mafisher.quasar.api.client.render.EffectMeshes;
 import org.junit.jupiter.api.Test;
 
 class EffectMeshesTest {

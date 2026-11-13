@@ -3,7 +3,7 @@ package mafisher.quasar.client.effect.screen;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
-import mafisher.quasar.api.client.ScreenEffectInputs;
+import mafisher.quasar.api.client.screen.ScreenEffectInputs;
 import org.junit.jupiter.api.Test;
 
 class ScreenEffectCapturePolicyTest {

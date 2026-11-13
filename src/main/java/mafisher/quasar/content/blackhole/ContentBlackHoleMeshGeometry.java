@@ -1,7 +1,7 @@
 package mafisher.quasar.content.blackhole;
 
-import mafisher.quasar.api.client.EffectMesh;
-import mafisher.quasar.api.client.EffectMeshes;
+import mafisher.quasar.api.client.render.EffectMesh;
+import mafisher.quasar.api.client.render.EffectMeshes;
 
 /** Content-owned black-hole mesh templates built on the shared effect mesh representation. */
 final class ContentBlackHoleMeshGeometry {

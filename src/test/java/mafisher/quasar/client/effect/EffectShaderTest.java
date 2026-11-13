@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
-import mafisher.quasar.api.client.EffectShader;
+import mafisher.quasar.api.client.render.EffectShader;
 import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;

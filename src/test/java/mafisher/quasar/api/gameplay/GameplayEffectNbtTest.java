@@ -2,8 +2,8 @@ package mafisher.quasar.api.gameplay;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import mafisher.quasar.api.effect.EffectPriority;
-import mafisher.quasar.api.gameplay.EffectTickBudget;
+import mafisher.quasar.api.effect.budget.EffectPriority;
+import mafisher.quasar.api.gameplay.tick.EffectTickBudget;
 import mafisher.quasar.api.gameplay.GameplayEffectSpec;
 import mafisher.quasar.api.persistence.EffectDescriptor;
 import mafisher.quasar.effect.gameplay.GameplayEffectNbt;

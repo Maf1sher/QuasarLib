@@ -1,6 +1,6 @@
 package mafisher.quasar.effect.runtime;
 
-import mafisher.quasar.api.effect.EffectBudgets;
+import mafisher.quasar.api.effect.budget.EffectBudgets;
 
 /** Mutable test budget source that starts from the configured defaults. */
 public final class TestBudgetSource implements EffectBudgetSource {

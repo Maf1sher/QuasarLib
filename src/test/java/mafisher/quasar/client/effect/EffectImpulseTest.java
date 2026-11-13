@@ -5,9 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import mafisher.quasar.api.client.CameraShakeImpulse;
-import mafisher.quasar.api.client.ClientEffectImpulses;
-import mafisher.quasar.api.client.ScreenFlashImpulse;
+import mafisher.quasar.api.client.impulse.CameraShakeImpulse;
+import mafisher.quasar.api.client.impulse.ClientEffectImpulses;
+import mafisher.quasar.api.client.impulse.ScreenFlashImpulse;
 import mafisher.quasar.testing.GlobalStateTest;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;

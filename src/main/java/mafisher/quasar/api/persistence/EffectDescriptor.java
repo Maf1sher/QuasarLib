@@ -3,7 +3,7 @@ package mafisher.quasar.api.persistence;
 import java.util.Objects;
 import java.util.UUID;
 import mafisher.quasar.api.effect.EffectAudience;
-import mafisher.quasar.api.effect.EffectLimits;
+import mafisher.quasar.api.effect.budget.EffectLimits;
 import mafisher.quasar.api.effect.EffectTimeline;
 import mafisher.quasar.api.effect.EffectTransform;
 import net.minecraft.nbt.CompoundTag;

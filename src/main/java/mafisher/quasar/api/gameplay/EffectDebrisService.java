@@ -2,7 +2,7 @@ package mafisher.quasar.api.gameplay;
 
 import java.util.Objects;
 import mafisher.quasar.api.effect.EffectAudience;
-import mafisher.quasar.api.effect.EffectDebrisSpec;
+import mafisher.quasar.api.effect.debris.EffectDebrisSpec;
 import mafisher.quasar.effect.network.EffectDebrisPayload;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Block;
