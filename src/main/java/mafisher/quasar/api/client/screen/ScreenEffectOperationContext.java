@@ -4,6 +4,8 @@ import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.pipeline.TextureTarget;
 import mafisher.quasar.api.client.render.EffectRenderContext;
 import mafisher.quasar.api.compat.RenderEnvironment;
+import mafisher.quasar.api.effect.EffectPoint;
+import mafisher.quasar.api.effect.EffectSpace;
 import mafisher.quasar.api.effect.budget.EffectQualityTier;
 import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.world.phys.Vec3;
@@ -40,6 +42,22 @@ public interface ScreenEffectOperationContext {
 
     /** Returns immutable camera position, matrices, viewport, and partial tick. */
     ScreenEffectCameraState camera();
+
+    /**
+     * Builds the effect space from the camera snapshot and the effect transform.
+     *
+     * <p>This is the same camera-relative frame used by world passes in the same frame.</p>
+     */
+    default EffectSpace effectSpace() {
+        Vec3 position = this.camera().position();
+        return EffectSpace.from(this.effect().transform(), this.effect().scale(),
+            new EffectPoint(position.x, position.y, position.z));
+    }
+
+    /** Returns the clamped ambient daylight factor for this effect. */
+    default float daylight() {
+        return this.effect().daylight();
+    }
 
     /** Returns the quality tier selected for this frame. */
     EffectQualityTier quality();

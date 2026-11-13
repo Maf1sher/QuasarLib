@@ -1,6 +1,7 @@
 package mafisher.quasar.content.blackhole;
 
 import com.mojang.blaze3d.pipeline.TextureTarget;
+import mafisher.quasar.api.client.render.EffectUniforms;
 import mafisher.quasar.api.client.screen.ScreenEffectInputs;
 import mafisher.quasar.api.client.screen.ScreenEffectMedium;
 import mafisher.quasar.api.client.screen.ScreenEffectMediumPath;
@@ -11,7 +12,6 @@ import mafisher.quasar.api.compat.FogPolicy;
 import mafisher.quasar.api.effect.budget.EffectQualityTier;
 import mafisher.quasar.content.ContentShaders;
 import net.minecraft.client.renderer.ShaderInstance;
-import org.joml.Vector3f;
 
 /** Content-owned raymarched black hole with a cheap bloom composite. */
 public final class ContentBlackHoleOperation implements ScreenEffectOperationRenderer {
@@ -97,23 +97,10 @@ public final class ContentBlackHoleOperation implements ScreenEffectOperationRen
         context.setSampler(shader, "BloomSampler", context.sourceColor().getColorTextureId());
         context.bindForegroundInputs(shader);
 
-        context.setUniform(shader, "ViewMat", context.camera().modelViewMatrix());
-        context.setUniform(shader, "WorldProjMat", context.camera().projectionMatrix());
-        context.setUniform(shader, "InvProjMat", context.camera().inverseProjectionMatrix());
-        context.setUniform(shader, "InvViewMat", context.camera().inverseViewMatrix());
-        context.setUniform(shader, "ViewportWidth", (float)context.destination().width);
-        context.setUniform(shader, "ViewportHeight", (float)context.destination().height);
+        EffectUniforms.from(context).bind(context, shader,
+            EffectUniforms.Group.CAMERA, EffectUniforms.Group.SPACE,
+            EffectUniforms.Group.EFFECT, EffectUniforms.Group.LIGHT);
         context.setUniform(shader, "MaskStrength", context.mask().strength());
-
-        var camera = context.camera().position();
-        var effect = context.effect().transform().position();
-        context.setUniform(
-            shader,
-            "BlackHoleOffset",
-            (float)(effect.x() - camera.x),
-            (float)(effect.y() - camera.y),
-            (float)(effect.z() - camera.z)
-        );
 
         float baseScale = context.effect().scale();
         ContentBlackHoleCinematics.Frame cinematics =
@@ -132,21 +119,12 @@ public final class ContentBlackHoleOperation implements ScreenEffectOperationRen
         context.setUniform(shader, "DiskThickness",
             baseScale * settings.diskThicknessFactor() * cinematics.diskScale());
 
-        ContentBlackHoleGeometry.Basis basis = ContentBlackHoleGeometry.basis(
-            context.effect().transform().yaw(),
-            context.effect().transform().pitch(),
-            context.effect().transform().roll()
-        );
-        setVector(context, shader, "DiskRight", basis.right());
-        setVector(context, shader, "DiskForward", basis.forward());
-        setVector(context, shader, "DiskNormal", basis.normal());
-
+        // The standard EFFECT group binds raw AgeTicks, Progress, and Seed. The black
+        // hole overrides AgeTicks with its cinematic age because it fast-forwards the
+        // cinematic clock inside the effect window.
         context.setUniform(shader, "AgeTicks",
             ContentBlackHoleCinematics.cinematicAge(
                 context.effect().ageTicks(), context.effect().progress()));
-        context.setUniform(shader, "Progress", context.effect().progress());
-        context.setUniform(shader, "Seed",
-            (float)((context.effect().seed() & 0xFFFFL) / 65535.0));
         context.setUniform(shader, "Charge",
             ContentBlackHoleGeometry.chargeForSeed(context.effect().seed(), settings.charge()));
         context.setUniform(shader, "Fade", cinematics.fade());
@@ -233,10 +211,5 @@ public final class ContentBlackHoleOperation implements ScreenEffectOperationRen
     static boolean suppressAboveWater(ScreenEffectMediumState medium) {
         return medium.cameraMedium() == ScreenEffectMedium.WATER
             && medium.effectMedium() != ScreenEffectMedium.WATER;
-    }
-
-    private static void setVector(ScreenEffectOperationContext context, ShaderInstance shader,
-        String name, Vector3f value) {
-        context.setUniform(shader, name, value.x, value.y, value.z);
     }
 }

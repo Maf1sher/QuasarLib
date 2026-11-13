@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import mafisher.quasar.api.client.render.EffectCameraSnapshot;
 import mafisher.quasar.api.client.render.EffectInstancedPass;
 import mafisher.quasar.api.client.render.EffectLod;
 import mafisher.quasar.api.client.render.EffectLodProfile;
@@ -91,6 +92,7 @@ public final class ClientVisualEffectManager {
     private List<ScreenEffectBatch> screenBatches = List.of();
     private int screenBatchTick = Integer.MIN_VALUE;
     private ClientLevel currentLevel;
+    private EffectCameraSnapshot frameCamera;
 
     public ClientVisualEffectManager(VisualEffectRendererRegistry rendererRegistry) {
         this.rendererRegistry = rendererRegistry;
@@ -460,6 +462,13 @@ public final class ClientVisualEffectManager {
         }
 
         if (!this.frameCache.shouldBuild(event.getRenderTick())) {
+            return;
+        }
+        this.frameCamera = captureCamera(event);
+        if (this.frameCamera == null) {
+            this.visibleEffects.clear();
+            this.screenBatches = List.of();
+            this.screenBatchTick = Integer.MIN_VALUE;
             return;
         }
         long gameTime = ClientEffectClock.estimate(level.getGameTime());
@@ -835,8 +844,29 @@ public final class ClientVisualEffectManager {
         float age = (float)EffectTimeline.ageTicks(gameTime, partialTick, payload.startGameTime());
         float progress = EffectTimeline.progress(gameTime, partialTick, payload.startGameTime(),
             payload.durationTicks());
+        float daylight = EffectLighting.daylight(this.currentLevel, transform.position());
         return new EffectRenderContext(effect, transform, age, progress, partialTick,
-            EffectLod.FULL, quality, this.frameEnvironment);
+            EffectLod.FULL, quality, this.frameEnvironment, this.frameCamera, daylight);
+    }
+
+    private static EffectCameraSnapshot captureCamera(
+        net.neoforged.neoforge.client.event.RenderLevelStageEvent event
+    ) {
+        Matrix4f modelView = new Matrix4f(event.getModelViewMatrix());
+        Matrix4f projection = new Matrix4f(event.getProjectionMatrix());
+        if (!EffectCameraSnapshot.isUsable(modelView, projection)) {
+            return null;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        int width = Math.max(1, minecraft.getMainRenderTarget().width);
+        int height = Math.max(1, minecraft.getMainRenderTarget().height);
+        return new EffectCameraSnapshot(
+            event.getCamera().getPosition(),
+            modelView,
+            projection,
+            width,
+            height
+        );
     }
 
     private InstancedBatchBuilder instancedBatchBuilder(Vec3 cameraPosition) {
@@ -887,6 +917,7 @@ public final class ClientVisualEffectManager {
 
     private void clearState() {
         this.invalidateFrame();
+        this.frameCamera = null;
         ClientEffectClock.reset();
         this.activeEffects.clear();
         this.segmentedGroups.clear();

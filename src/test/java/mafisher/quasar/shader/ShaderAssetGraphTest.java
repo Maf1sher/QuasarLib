@@ -133,6 +133,14 @@ class ShaderAssetGraphTest {
     }
 
     @Test
+    void blackHoleUsesTheEffectSpaceInclude() {
+        Set<String> imports = importsOf(ShaderTestResources.ShaderResource.parse(
+            "quasar_content:shaders/core/black_hole.fsh"));
+        assertTrue(imports.contains("quasar_lib:shaders/include/effect_space.glsl"),
+            () -> "black_hole.fsh must import the shared effect-space frame: " + imports);
+    }
+
+    @Test
     void sharedNoiseIsImportedByItsUsers() {
         Set<String> users = Set.of(
             "quasar_lib:shaders/core/effect_visual.fsh",

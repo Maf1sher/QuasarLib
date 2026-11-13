@@ -1,6 +1,7 @@
 #version 150
 
 #moj_import <quasar_lib:noise.glsl>
+#moj_import <quasar_lib:effect_space.glsl>
 #moj_import <quasar_content:black_hole_optics.glsl>
 
 uniform sampler2D SceneSampler;
@@ -21,20 +22,17 @@ uniform float ViewportWidth;
 uniform float ViewportHeight;
 uniform float MaskStrength;
 
-uniform vec3 BlackHoleOffset;
 uniform float BlackHoleRadius;
 uniform float LensRadius;
 uniform float LensWarpRadius;
 uniform float DiskInnerRadius;
 uniform float DiskOuterRadius;
 uniform float DiskThickness;
-uniform vec3 DiskRight;
-uniform vec3 DiskForward;
-uniform vec3 DiskNormal;
 
 uniform float AgeTicks;
 uniform float Progress;
 uniform float Seed;
+uniform float Daylight;
 uniform float Charge;
 uniform float Fade;
 uniform float RingFormation;
@@ -79,6 +77,30 @@ out vec4 fragColor;
 const int MAX_STEPS = 256;
 const float PI = 3.14159265359;
 const float DISK_OPACITY = 2.4;
+const float DAY_EMISSION_SCALE = 0.55;
+const float DAY_BLOOM_THRESHOLD = 0.50;
+const float DAY_BLOOM_STRENGTH_SCALE = 0.35;
+const float DAY_BLOOM_RADIUS_SCALE = 0.75;
+
+float daylightFactor() {
+    return clamp(Daylight, 0.0, 1.0);
+}
+
+float daylightEmissionScale() {
+    return mix(1.0, DAY_EMISSION_SCALE, daylightFactor());
+}
+
+float daylightBloomThreshold() {
+    return mix(BloomThreshold, DAY_BLOOM_THRESHOLD, daylightFactor());
+}
+
+float daylightBloomStrengthScale() {
+    return mix(1.0, DAY_BLOOM_STRENGTH_SCALE, daylightFactor());
+}
+
+float daylightBloomRadiusScale() {
+    return mix(1.0, DAY_BLOOM_RADIUS_SCALE, daylightFactor());
+}
 const float DISK_BODY_OCCLUSION = 0.98;
 const float DISK_BODY_EMISSION = 0.20;
 
@@ -190,7 +212,7 @@ bool projectDirection(vec3 direction, out vec2 uv) {
 /**
  * Projects a point given as a camera-relative offset (camera to point); returns a
  * negative UV when it is behind the camera. Pass the camera-to-effect vector
- * (BlackHoleOffset), never the effect-relative camera origin used for tracing.
+ * (EffectOrigin), never the effect-relative camera origin used for tracing.
  */
 vec2 projectPoint(vec3 point) {
     vec4 clip = WorldProjMat * vec4(mat3(ViewMat) * point, 1.0);
@@ -202,7 +224,7 @@ vec2 projectPoint(vec3 point) {
 
 /** Screen-space falloff of the drill around the effect centre; 1 at the core. */
 float drillFalloff(vec2 uv, float radius, float holeDistance) {
-    vec2 holeUv = projectPoint(BlackHoleOffset);
+    vec2 holeUv = projectPoint(EffectOrigin);
     if (holeUv.x < 0.0) {
         return 0.0;
     }
@@ -223,7 +245,7 @@ vec2 drillUv(vec2 uv, float strength, float radius, float holeDistance) {
     if (falloff <= 0.0) {
         return uv;
     }
-    vec2 holeUv = projectPoint(BlackHoleOffset);
+    vec2 holeUv = projectPoint(EffectOrigin);
     vec2 delta = uv - holeUv;
     float spiral = falloff * falloff * (3.0 - 2.0 * falloff);
     float angle = strength * 3.0 * spiral;
@@ -248,7 +270,7 @@ float lensSampleWeight(vec2 sourceUv, vec2 destinationUv) {
 
 /** Fades the effect out for rays pointing away from the hole. */
 float frontFacing(vec3 direction) {
-    vec3 toHole = BlackHoleOffset / max(length(BlackHoleOffset), 0.001);
+    vec3 toHole = EffectOrigin / max(length(EffectOrigin), 0.001);
     return smoothstep(-0.02, 0.05, dot(toHole, direction));
 }
 
@@ -261,8 +283,8 @@ float cameraInsideDisk(vec3 cameraRelative) {
     if (DiskOuterRadius <= DiskInnerRadius + 0.001 || DiskThickness <= 0.001) {
         return 0.0;
     }
-    float height = dot(cameraRelative, DiskNormal);
-    vec3 radialVector = cameraRelative - DiskNormal * height;
+    float height = dot(cameraRelative, EffectUp);
+    vec3 radialVector = cameraRelative - EffectUp * height;
     float radial = length(radialVector);
     float insideAnnulus = smoothstep(
             DiskInnerRadius * 0.85, DiskInnerRadius * 1.05, radial)
@@ -294,16 +316,16 @@ float diskBodyCoverage(float radial) {
  * projected disk body opaque in the final composite as well.
  */
 float diskScreenCoverage(vec3 origin, vec3 direction) {
-    float denominator = dot(direction, DiskNormal);
+    float denominator = dot(direction, EffectUp);
     if (abs(denominator) < 0.0001) {
         return 0.0;
     }
-    float distance = dot(-origin, DiskNormal) / denominator;
+    float distance = dot(-origin, EffectUp) / denominator;
     if (distance <= 0.0) {
         return 0.0;
     }
     vec3 hit = origin + direction * distance;
-    float radial = length(hit - DiskNormal * dot(hit, DiskNormal));
+    float radial = length(hit - EffectUp * dot(hit, EffectUp));
     return diskBodyCoverage(radial) * clamp(DiskBrightness, 0.0, 1.0);
 }
 
@@ -404,8 +426,8 @@ vec3 paletteColor(vec3 gold, vec3 amber, vec3 neon, float charge) {
  * over the disk thickness at a plane crossing.
  */
 vec4 sampleDisk(vec3 point, vec3 cameraRelative) {
-    float height = dot(point, DiskNormal);
-    vec3 radialVector = point - DiskNormal * height;
+    float height = dot(point, EffectUp);
+    vec3 radialVector = point - EffectUp * height;
     float radial = length(radialVector);
     if (radial < DiskInnerRadius || radial > DiskOuterRadius) {
         return vec4(0.0);
@@ -425,7 +447,7 @@ vec4 sampleDisk(vec3 point, vec3 cameraRelative) {
     }
 
     vec3 radialDir = radialVector / max(radial, 0.001);
-    float phi = atan(dot(radialDir, DiskForward), dot(radialDir, DiskRight));
+    float phi = atan(dot(radialDir, EffectForward), dot(radialDir, EffectRight));
     float spin = AgeTicks * 0.035
         * pow(max(DiskInnerRadius, 0.001) / max(radial, 0.001), 1.5);
     phi -= spin;
@@ -453,10 +475,10 @@ vec4 sampleDisk(vec3 point, vec3 cameraRelative) {
     density *= wrap;
     knots += stream * 0.4;
 
-    vec3 tangent = normalize(cross(DiskNormal, radialDir));
+    vec3 tangent = normalize(cross(EffectUp, radialDir));
     vec3 toCamera = cameraRelative - point;
     float viewLength = length(toCamera);
-    vec3 viewDir = viewLength > 0.0001 ? toCamera / viewLength : DiskNormal;
+    vec3 viewDir = viewLength > 0.0001 ? toCamera / viewLength : EffectUp;
     float approach = dot(tangent, viewDir);
     float doppler = clamp(1.0 + 0.85 * approach, 0.35, 1.9);
 
@@ -484,7 +506,8 @@ vec4 sampleDisk(vec3 point, vec3 cameraRelative) {
     color = mix(color, color * vec3(1.20, 0.82, 0.65), max(-approach, 0.0) * 0.25);
     color = mix(color, vec3(1.0, 0.97, 0.90), (1.0 - smoothstep(0.0, 0.16, t)) * 0.7);
 
-    vec3 emission = color * (0.72 + 1.4 * knots) * doppler * DiskBrightness;
+    vec3 emission = color * (0.72 + 1.4 * knots) * doppler * DiskBrightness
+        * daylightEmissionScale();
     return vec4(emission, density);
 }
 
@@ -513,14 +536,14 @@ float geodesicStep(float radius, float horizonRadius) {
 void accumulateDisk(vec3 before, vec3 after, vec3 cameraRelative, vec3 rayVelocity,
     inout vec3 emission, inout float transmittance, inout float nearestDiskEntry,
     inout float diskCoverage) {
-    float beforeHeight = dot(before, DiskNormal);
-    float afterHeight = dot(after, DiskNormal);
+    float beforeHeight = dot(before, EffectUp);
+    float afterHeight = dot(after, EffectUp);
     float segmentLength = length(after - before);
     // Coplanar / slab rays never change the sign of the disk-plane distance. Sample
     // the volume while the segment is inside the slab instead of dropping the disk.
     if (abs(beforeHeight) <= DiskThickness && abs(afterHeight) <= DiskThickness) {
         vec3 midpoint = mix(before, after, 0.5);
-        float radial = length(midpoint - DiskNormal * dot(midpoint, DiskNormal));
+        float radial = length(midpoint - EffectUp * dot(midpoint, EffectUp));
         vec4 slabDisk = sampleDisk(midpoint, cameraRelative);
         float slabOpacity = 1.0 - exp(-max(slabDisk.a, 0.0) * segmentLength * DISK_OPACITY);
         // The body is optically thick even where the procedural density is low;
@@ -544,15 +567,15 @@ void accumulateDisk(vec3 before, vec3 after, vec3 cameraRelative, vec3 rayVeloci
     }
     float t = clamp(beforeHeight / (beforeHeight - afterHeight), 0.0, 1.0);
     vec3 hit = mix(before, after, t);
-    float radial = length(hit - DiskNormal * dot(hit, DiskNormal));
+    float radial = length(hit - EffectUp * dot(hit, EffectUp));
     if (radial < DiskInnerRadius || radial > DiskOuterRadius) {
         return;
     }
 
     vec4 disk = sampleDisk(hit, cameraRelative);
     float velocityLength = length(rayVelocity);
-    vec3 rayDirection = velocityLength > 0.000001 ? rayVelocity / velocityLength : DiskNormal;
-    float cosTheta = abs(dot(rayDirection, DiskNormal));
+    vec3 rayDirection = velocityLength > 0.000001 ? rayVelocity / velocityLength : EffectUp;
+    float cosTheta = abs(dot(rayDirection, EffectUp));
     float thickness = max(DiskThickness, 0.001);
     float pathLength = clamp(2.0 * thickness / max(cosTheta, 0.15), 0.02, 8.0 * thickness);
     float opacity = 1.0 - exp(-max(disk.a, 0.0) * pathLength * DISK_OPACITY);
@@ -580,7 +603,7 @@ vec4 renderBlackHole(vec2 uv) {
 
     vec3 direction = rayDirection(uv);
     float facing = frontFacing(direction);
-    vec3 cameraRelative = -BlackHoleOffset;
+    vec3 cameraRelative = -EffectOrigin;
     SceneRay ray = refractAtWater(cameraRelative, direction);
     if (ray.totalInternalReflection) {
         // The water surface mirrors the underwater scene; an above-water hole
@@ -589,7 +612,7 @@ vec4 renderBlackHole(vec2 uv) {
     }
     vec3 traceOrigin = ray.origin;
     vec3 traceDirection = ray.direction;
-    float holeDistance = length(BlackHoleOffset);
+    float holeDistance = length(EffectOrigin);
     float radius = max(BlackHoleRadius, 0.001);
     float insideDisk = cameraInsideDisk(cameraRelative);
     // Check the horizon before any footprint or facing gate: inside the core the
@@ -856,7 +879,7 @@ vec4 renderBlackHole(vec2 uv) {
     // Polar jets at the moment the horizon disappears. The exponent keeps them
     // as two narrow beams instead of a full-screen wash.
     if (OutroJet > 0.001) {
-        float axis = abs(dot(direction, DiskNormal));
+        float axis = abs(dot(direction, EffectUp));
         float jet = pow(axis, 32.0)
             * (0.35 + 0.65 * exp(-pow(impact / max(radius * 2.5, 0.001), 2.0)));
         float knot = exp(-pow((impact - radius * 0.35) / max(radius * 0.6, 0.001), 2.0));
@@ -895,8 +918,8 @@ void main() {
         return;
     }
 
-    vec3 cameraRelative = -BlackHoleOffset;
-    float holeDistance = length(BlackHoleOffset);
+    vec3 cameraRelative = -EffectOrigin;
+    float holeDistance = length(EffectOrigin);
     bool insideHorizon = holeDistance <= max(BlackHoleRadius, 0.001) * BH_HORIZON_EPSILON;
     vec3 direction = rayDirection(texCoord);
     SceneRay ray = refractAtWater(cameraRelative, direction);
@@ -998,17 +1021,19 @@ void main() {
     vec3 bloom = vec3(0.0);
     for (int x = -1; x <= 1; x++) {
         for (int y = -1; y <= 1; y++) {
-            vec2 offset = vec2(float(x), float(y)) * texel * BloomRadiusPixels;
+            vec2 offset = vec2(float(x), float(y)) * texel * BloomRadiusPixels
+                * daylightBloomRadiusScale();
             vec3 sampleColor = texture(
                 BloomSampler,
                 clamp(texCoord + offset, vec2(0.0), vec2(1.0))
             ).rgb;
-            bloom += max(sampleColor - vec3(BloomThreshold), vec3(0.0));
+            bloom += max(sampleColor - vec3(daylightBloomThreshold()), vec3(0.0));
         }
     }
     bloom /= 9.0;
     // The glow is emissive too; it must fade with the water surface. Medium fog is
     // already applied to the emissive pass, so the background stays untouched.
     float bloomFade = surfaceTransmittance;
-    fragColor = vec4(center + bloom * BloomStrength * alpha * bloomFade, 1.0);
+    fragColor = vec4(center + bloom * BloomStrength * daylightBloomStrengthScale()
+        * alpha * bloomFade, 1.0);
 }

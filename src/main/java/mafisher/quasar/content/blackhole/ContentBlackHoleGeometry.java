@@ -1,9 +1,6 @@
 package mafisher.quasar.content.blackhole;
 
-import org.joml.Matrix4f;
-import org.joml.Vector3f;
-
-/** Pure orientation, timeline, and quality math for the content black hole. */
+/** Pure timeline and quality math for the content black hole. */
 public final class ContentBlackHoleGeometry {
     public static final int VARIANT_AMBER = 0;
     public static final int VARIANT_GOLD = 1;
@@ -43,32 +40,6 @@ public final class ContentBlackHoleGeometry {
     }
 
     /**
-     * Returns the disk basis in the same yaw/pitch/roll order as the engine's visual transform. The disk lies in the
-     * plane spanned by {@code right} and {@code forward}; {@code normal} points along the disk axis.
-     */
-    static Basis basis(float yaw, float pitch, float roll) {
-        Matrix4f rotation = rotation(yaw, pitch, roll);
-        return new Basis(
-            rotation.transformDirection(new Vector3f(1.0F, 0.0F, 0.0F)),
-            rotation.transformDirection(new Vector3f(0.0F, 0.0F, 1.0F)),
-            rotation.transformDirection(new Vector3f(0.0F, 1.0F, 0.0F))
-        );
-    }
-
-    /**
-     * Returns the effect rotation in the engine's yaw/pitch/roll order.
-     *
-     * <p>Use the composing {@code rotate*} methods, not the {@code rotation*} setters: those replace the whole
-     * matrix, so chaining them would keep only the final roll and silently drop yaw and pitch.</p>
-     */
-    static Matrix4f rotation(float yaw, float pitch, float roll) {
-        return new Matrix4f()
-            .rotateY((float)Math.toRadians(yaw))
-            .rotateX((float)Math.toRadians(pitch))
-            .rotateZ((float)Math.toRadians(roll));
-    }
-
-    /**
      * Selects a raymarch step budget from the quality tier and engine LOD. The march starts at the
      * black-hole bounding sphere, so traversal no longer scales with camera distance; LOD may trim
      * cosmetic work but never starves the disk/shadow traversal.
@@ -81,29 +52,5 @@ public final class ContentBlackHoleGeometry {
             default -> 192;
         };
         return Math.max(MIN_STEPS, base - Math.max(0, lodLevel) * LOD_STEP_REDUCTION);
-    }
-
-    /** Immutable orthonormal disk frame. */
-    record Basis(Vector3f right, Vector3f forward, Vector3f normal) {
-        Basis {
-            right = new Vector3f(right).normalize();
-            forward = new Vector3f(forward).normalize();
-            normal = new Vector3f(normal).normalize();
-        }
-
-        @Override
-        public Vector3f right() {
-            return new Vector3f(this.right);
-        }
-
-        @Override
-        public Vector3f forward() {
-            return new Vector3f(this.forward);
-        }
-
-        @Override
-        public Vector3f normal() {
-            return new Vector3f(this.normal);
-        }
     }
 }

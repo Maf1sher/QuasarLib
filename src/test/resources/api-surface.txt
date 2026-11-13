@@ -28,6 +28,7 @@ mafisher.quasar.api.client.screen.BlackHoleScreenSettings
 mafisher.quasar.api.client.screen.BloomSettings
 mafisher.quasar.api.client.impulse.CameraShakeImpulse
 mafisher.quasar.api.client.impulse.ClientEffectImpulses
+mafisher.quasar.api.client.render.EffectCameraSnapshot
 mafisher.quasar.api.client.render.EffectInstancedPass
 mafisher.quasar.api.client.render.EffectLod
 mafisher.quasar.api.client.render.EffectLodProfile
@@ -38,6 +39,7 @@ mafisher.quasar.api.client.render.EffectRenderPass
 mafisher.quasar.api.client.render.EffectRenderTypeOptions
 mafisher.quasar.api.client.render.EffectShader
 mafisher.quasar.api.client.render.EffectStaticMeshPass
+mafisher.quasar.api.client.render.EffectUniforms
 mafisher.quasar.api.client.render.InstancedVisualEffectRenderer
 mafisher.quasar.api.client.render.QuasarRenderTypes
 mafisher.quasar.api.client.screen.RegisterScreenEffectOperationsEvent
@@ -95,6 +97,7 @@ mafisher.quasar.api.effect.budget.EffectPriority
 mafisher.quasar.api.effect.budget.EffectQualityTier
 mafisher.quasar.api.effect.EffectRemovalPolicy
 mafisher.quasar.api.effect.EffectScope
+mafisher.quasar.api.effect.EffectSpace
 mafisher.quasar.api.effect.EffectStartStatus
 mafisher.quasar.api.effect.EffectTimeline
 mafisher.quasar.api.effect.EffectTransform

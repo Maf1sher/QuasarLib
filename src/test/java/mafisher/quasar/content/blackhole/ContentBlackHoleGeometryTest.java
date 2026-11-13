@@ -4,54 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import org.joml.Matrix4f;
-import org.joml.Vector3f;
 import org.junit.jupiter.api.Test;
 
 class ContentBlackHoleGeometryTest {
-    @Test
-    void identityBasisIsTheWorldAlignedDiskFrame() {
-        ContentBlackHoleGeometry.Basis basis = ContentBlackHoleGeometry.basis(0.0F, 0.0F, 0.0F);
-
-        assertVector(1.0F, 0.0F, 0.0F, basis.right());
-        assertVector(0.0F, 0.0F, 1.0F, basis.forward());
-        assertVector(0.0F, 1.0F, 0.0F, basis.normal());
-    }
-
-    @Test
-    void basisStaysOrthonormalAndFiniteAtArbitraryAngles() {
-        ContentBlackHoleGeometry.Basis basis = ContentBlackHoleGeometry.basis(37.0F, 8.0F, -12.0F);
-
-        assertUnit(basis.right());
-        assertUnit(basis.forward());
-        assertUnit(basis.normal());
-        assertEquals(0.0F, basis.right().dot(basis.forward()), 1.0E-5F);
-        assertEquals(0.0F, basis.right().dot(basis.normal()), 1.0E-5F);
-        assertEquals(0.0F, basis.forward().dot(basis.normal()), 1.0E-5F);
-    }
-
-    @Test
-    void rotationComposesYawPitchAndRollInTheEngineOrder() {
-        Matrix4f expected = new Matrix4f()
-            .rotateY((float)Math.toRadians(37.0))
-            .rotateX((float)Math.toRadians(8.0))
-            .rotateZ((float)Math.toRadians(-12.0));
-
-        assertMatrix(expected, ContentBlackHoleGeometry.rotation(37.0F, 8.0F, -12.0F), 1.0E-5F);
-    }
-
-    @Test
-    void basisFollowsTheEffectYawAndPitch() {
-        ContentBlackHoleGeometry.Basis yawed = ContentBlackHoleGeometry.basis(90.0F, 0.0F, 0.0F);
-        assertVector(0.0F, 0.0F, -1.0F, yawed.right());
-        assertVector(1.0F, 0.0F, 0.0F, yawed.forward());
-        assertVector(0.0F, 1.0F, 0.0F, yawed.normal());
-
-        ContentBlackHoleGeometry.Basis pitched = ContentBlackHoleGeometry.basis(0.0F, 8.0F, 0.0F);
-        assertVector(0.0F, (float)Math.cos(Math.toRadians(8.0)),
-            (float)Math.sin(Math.toRadians(8.0)), pitched.normal());
-    }
-
     @Test
     void stepBudgetKeepsATraversalFloorAndScalesWithQuality() {
         int fullQualityBase = ContentBlackHoleGeometry.stepCount(0, 0);
@@ -100,24 +55,5 @@ class ContentBlackHoleGeometryTest {
         assertEquals(0.55F, ContentBlackHoleGeometry.chargeForSeed(payload, 0.55F), 0.0001F);
         assertThrows(IllegalArgumentException.class,
             () -> ContentBlackHoleGeometry.withVariant(payload, 3));
-    }
-
-    private static void assertUnit(Vector3f value) {
-        assertEquals(1.0F, value.length(), 1.0E-5F);
-    }
-
-    private static void assertVector(float x, float y, float z, Vector3f value) {
-        assertEquals(x, value.x, 1.0E-5F);
-        assertEquals(y, value.y, 1.0E-5F);
-        assertEquals(z, value.z, 1.0E-5F);
-    }
-
-    private static void assertMatrix(Matrix4f expected, Matrix4f actual, float epsilon) {
-        for (int column = 0; column < 4; column++) {
-            for (int row = 0; row < 4; row++) {
-                assertEquals(expected.get(column, row), actual.get(column, row), epsilon,
-                    "matrix element [" + row + ", " + column + "]");
-            }
-        }
     }
 }

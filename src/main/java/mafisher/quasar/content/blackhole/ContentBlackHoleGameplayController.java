@@ -20,6 +20,7 @@ import mafisher.quasar.api.effect.force.EffectForceField;
 import mafisher.quasar.api.effect.damage.EffectHitbox;
 import mafisher.quasar.api.effect.EffectLifetimePolicy;
 import mafisher.quasar.api.effect.EffectPoint;
+import mafisher.quasar.api.effect.EffectSpace;
 import mafisher.quasar.api.effect.budget.EffectPriority;
 import mafisher.quasar.api.effect.VisualEffectSpec;
 import mafisher.quasar.api.gameplay.block.BlockJournalMode;
@@ -966,7 +967,7 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
     }
 
     private static Vec3 diskAxis(float yaw, float pitch, float roll) {
-        Vector3f normal = ContentBlackHoleGeometry.basis(yaw, pitch, roll).normal();
+        Vector3f normal = EffectSpace.Basis.fromEuler(yaw, pitch, roll).up();
         return new Vec3(normal.x, normal.y, normal.z).normalize();
     }
 }

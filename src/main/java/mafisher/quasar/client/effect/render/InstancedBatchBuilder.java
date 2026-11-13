@@ -11,6 +11,7 @@ import java.util.Set;
 import mafisher.quasar.api.client.render.EffectInstancedPass;
 import mafisher.quasar.api.client.render.EffectMesh;
 import mafisher.quasar.api.client.render.EffectRenderContext;
+import mafisher.quasar.api.effect.EffectSpace;
 import mafisher.quasar.api.effect.EffectTransform;
 import net.minecraft.client.renderer.RenderType;
 import org.joml.Matrix4f;
@@ -114,9 +115,8 @@ final class InstancedBatchBuilder {
                 (float)transform.position().y(),
                 (float)transform.position().z()
             )
-            .rotateY((float)Math.toRadians(transform.yaw()))
-            .rotateX((float)Math.toRadians(transform.pitch()))
-            .rotateZ((float)Math.toRadians(transform.roll()))
+            .mul(EffectSpace.Basis.fromEuler(
+                transform.yaw(), transform.pitch(), transform.roll()).rotation())
             .mul(localTransform);
     }
 

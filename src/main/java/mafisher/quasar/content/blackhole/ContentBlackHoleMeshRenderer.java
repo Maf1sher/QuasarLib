@@ -20,13 +20,10 @@ import mafisher.quasar.api.effect.budget.EffectQualityTier;
 import mafisher.quasar.api.effect.EffectTimeline;
 import mafisher.quasar.content.ContentBootstrap;
 import mafisher.quasar.content.ContentShaders;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.OverlayTexture;
-import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.phys.AABB;
 import org.joml.Matrix4f;
 
@@ -92,7 +89,7 @@ public final class ContentBlackHoleMeshRenderer implements ScreenEffectRenderer,
         if (DISK_PASS.equals(pass.id())) {
             renderDisk(poseStack, bufferSource.getBuffer(DISK_RENDER_TYPE), context,
                 scale, EffectTimeline.fadeEnvelope(context.progress(), 0.08F, 0.12F),
-                ContentBlackHoleLighting.emissionScale(daylightFactor(context)), shaderData);
+                ContentBlackHoleLighting.emissionScale(context.daylight()), shaderData);
         } else {
             throw new IllegalArgumentException("Unknown black-hole render pass: " + pass.id());
         }
@@ -114,9 +111,7 @@ public final class ContentBlackHoleMeshRenderer implements ScreenEffectRenderer,
 
     @Override
     public ScreenEffectSettings screenEffectSettings(EffectRenderContext context) {
-        BlackHoleScreenSettings adaptedSettings = ContentBlackHoleLighting.screenSettings(
-            SCREEN_SETTINGS, daylightFactor(context));
-        return ScreenEffectSettings.blackHole(adaptedSettings);
+        return ScreenEffectSettings.blackHole(SCREEN_SETTINGS);
     }
 
     @Override
@@ -180,22 +175,6 @@ public final class ContentBlackHoleMeshRenderer implements ScreenEffectRenderer,
         } finally {
             poseStack.popPose();
         }
-    }
-
-    private static float daylightFactor(EffectRenderContext context) {
-        var level = Minecraft.getInstance().level;
-        if (level == null) {
-            return 0.0F;
-        }
-
-        var position = context.transform().position();
-        BlockPos blockPosition = BlockPos.containing(position.x(), position.y(), position.z());
-        float skyBrightness = level.getBrightness(LightLayer.SKY, blockPosition) / 15.0F;
-        float skyDarkening = Math.min(1.0F, level.getSkyDarken() / 15.0F);
-        float blockBrightness = level.getBrightness(LightLayer.BLOCK, blockPosition) / 15.0F;
-        float ambientBrightness = Math.max(skyBrightness * (1.0F - skyDarkening), blockBrightness * 0.35F);
-        float normalized = Math.max(0.0F, Math.min(1.0F, (ambientBrightness - 0.12F) / 0.78F));
-        return normalized * normalized * (3.0F - 2.0F * normalized);
     }
 
     private static float animatedScale(EffectRenderContext context) {
