@@ -103,7 +103,11 @@ public final class ClientScreenCompositor {
             this.captureInputs = ScreenEffectInputs.ALL;
             this.unavailableWidth = -1;
             this.unavailableHeight = -1;
-            this.releaseTargetsSafely();
+            // A live effect that is merely outside the frustum still owns its capture targets. Releasing them
+            // here would force a target allocation on the next frame, and target allocation binds framebuffer 0.
+            if (manager == null || !manager.hasActiveScreenEffects()) {
+                this.releaseTargetsSafely();
+            }
             return;
         }
         if (!this.hadScreenEffects) {
@@ -475,41 +479,49 @@ public final class ClientScreenCompositor {
         this.captureInputs = forceAll ? ScreenEffectInputs.ALL : this.captureInputs;
         this.frameCaptureInputs = this.captureInputs;
         Minecraft minecraft = Minecraft.getInstance();
-        // Iris batches entity and block-entity geometry and flushes it only when the
-        // translucent stage starts, which is after this copy. Flush the deferred source
-        // once here so the opaque depth copy contains entities without submitting the
-        // chunk translucent layers: glass and water must still not hide screen effects.
-        MultiBufferSource.BufferSource bufferSource = minecraft.renderBuffers().bufferSource();
-        if (bufferSource.getClass() != MultiBufferSource.BufferSource.class) {
-            bufferSource.endBatch();
-            if (!this.loggedDeferredBufferFlush) {
-                this.loggedDeferredBufferFlush = true;
-                LOGGER.debug("Flushed deferred {} buffers before the opaque depth copy",
-                    bufferSource.getClass().getSimpleName());
-            }
-        }
         RenderTarget mainTarget = minecraft.getMainRenderTarget();
         int width = mainTarget.width;
         int height = mainTarget.height;
         if (width <= 0 || height <= 0 || mainTarget.getDepthTextureId() <= 0) {
             return;
         }
-        // The pre-translucent depth copy is mandatory for mask visibility (D3), independent of the operation.
-        this.opaqueDepthTarget = this.ensureTarget(this.opaqueDepthTarget, width, height, true);
-        if (this.opaqueDepthTarget.getDepthTextureId() <= 0) {
-            return;
-        }
-        if (this.frameCaptureInputs.opaqueColor()) {
-            this.opaqueColorTarget = this.ensureTarget(this.opaqueColorTarget, width, height, false);
-            if (this.opaqueColorTarget.getColorTextureId() > 0) {
-                ScreenTargetBlit.color(mainTarget, this.opaqueColorTarget);
+        // TextureTarget construction and resize bind framebuffer 0, and the main target is itself a texture
+        // target with a non-zero framebuffer. Snapshot before any allocation so the rest of the level keeps
+        // rendering into the main target instead of the default framebuffer.
+        ScreenGlState previousState = ScreenGlState.capture();
+        try {
+            // Iris batches entity and block-entity geometry and flushes it only when the
+            // translucent stage starts, which is after this copy. Flush the deferred source
+            // once here so the opaque depth copy contains entities without submitting the
+            // chunk translucent layers: glass and water must still not hide screen effects.
+            MultiBufferSource.BufferSource bufferSource = minecraft.renderBuffers().bufferSource();
+            if (bufferSource.getClass() != MultiBufferSource.BufferSource.class) {
+                bufferSource.endBatch();
+                if (!this.loggedDeferredBufferFlush) {
+                    this.loggedDeferredBufferFlush = true;
+                    LOGGER.debug("Flushed deferred {} buffers before the opaque depth copy",
+                        bufferSource.getClass().getSimpleName());
+                }
             }
-        } else if (this.opaqueColorTarget != null) {
-            this.releaseTarget(this.opaqueColorTarget);
-            this.opaqueColorTarget = null;
+            // The pre-translucent depth copy is mandatory for mask visibility (D3), independent of the operation.
+            this.opaqueDepthTarget = this.ensureTarget(this.opaqueDepthTarget, width, height, true);
+            if (this.opaqueDepthTarget.getDepthTextureId() <= 0) {
+                return;
+            }
+            if (this.frameCaptureInputs.opaqueColor()) {
+                this.opaqueColorTarget = this.ensureTarget(this.opaqueColorTarget, width, height, false);
+                if (this.opaqueColorTarget.getColorTextureId() > 0) {
+                    ScreenTargetBlit.color(mainTarget, this.opaqueColorTarget);
+                }
+            } else if (this.opaqueColorTarget != null) {
+                this.releaseTarget(this.opaqueColorTarget);
+                this.opaqueColorTarget = null;
+            }
+            ScreenTargetBlit.depth(mainTarget, this.opaqueDepthTarget);
+            this.opaqueDepthCaptured = true;
+        } finally {
+            previousState.restore();
         }
-        ScreenTargetBlit.depth(mainTarget, this.opaqueDepthTarget);
-        this.opaqueDepthCaptured = true;
     }
 
     /**
@@ -526,34 +538,40 @@ public final class ClientScreenCompositor {
         if (manager == null || !manager.hasActiveScreenEffects()) {
             return;
         }
-        if (!this.frameCaptureInputs.foregroundDepth()) {
-            if (this.foregroundDepthTarget != null) {
-                this.releaseTarget(this.foregroundDepthTarget);
-                this.foregroundDepthTarget = null;
+        // Allocating or releasing a target binds framebuffer 0, but the level may be drawing into a
+        // non-zero target here (the main target in Fancy, the translucent target in Fabulous).
+        ScreenGlState previousState = ScreenGlState.capture();
+        try {
+            if (!this.frameCaptureInputs.foregroundDepth()) {
+                if (this.foregroundDepthTarget != null) {
+                    this.releaseTarget(this.foregroundDepthTarget);
+                    this.foregroundDepthTarget = null;
+                }
+                return;
             }
-            return;
-        }
-        Minecraft minecraft = Minecraft.getInstance();
-        RenderTarget source = minecraft.getMainRenderTarget();
-        if (Minecraft.useShaderTransparency() && minecraft.levelRenderer != null) {
-            RenderTarget translucent = minecraft.levelRenderer.getTranslucentTarget();
-            if (translucent != null && translucent.getDepthTextureId() > 0) {
-                source = translucent;
+            Minecraft minecraft = Minecraft.getInstance();
+            RenderTarget source = minecraft.getMainRenderTarget();
+            if (Minecraft.useShaderTransparency() && minecraft.levelRenderer != null) {
+                RenderTarget translucent = minecraft.levelRenderer.getTranslucentTarget();
+                if (translucent != null && translucent.getDepthTextureId() > 0) {
+                    source = translucent;
+                }
             }
+            int width = source.width;
+            int height = source.height;
+            if (width <= 0 || height <= 0 || source.getDepthTextureId() <= 0) {
+                return;
+            }
+            this.foregroundDepthTarget = this.ensureTarget(this.foregroundDepthTarget, width, height, true);
+            if (this.foregroundDepthTarget.getDepthTextureId() <= 0) {
+                return;
+            }
+            // The translucent layer pass continues on this target in Fabulous mode.
+            ScreenTargetBlit.depth(source, this.foregroundDepthTarget);
+            this.foregroundDepthCaptured = true;
+        } finally {
+            previousState.restore();
         }
-        int width = source.width;
-        int height = source.height;
-        if (width <= 0 || height <= 0 || source.getDepthTextureId() <= 0) {
-            return;
-        }
-        this.foregroundDepthTarget = this.ensureTarget(this.foregroundDepthTarget, width, height, true);
-        if (this.foregroundDepthTarget.getDepthTextureId() <= 0) {
-            return;
-        }
-        // The translucent layer pass continues on this target in Fabulous mode; the
-        // blit helper restores the previous framebuffer and viewport.
-        ScreenTargetBlit.depth(source, this.foregroundDepthTarget);
-        this.foregroundDepthCaptured = true;
     }
 
     private void renderMask(RenderLevelStageEvent event, ClientVisualEffectManager manager, RenderTarget depthTarget,
