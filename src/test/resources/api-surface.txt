@@ -77,7 +77,9 @@ mafisher.quasar.api.compat.SceneDepthProvider
 mafisher.quasar.api.compat.SceneDepthSource
 mafisher.quasar.api.compat.ShaderPackProvider
 mafisher.quasar.api.compat.ShaderPackState
+mafisher.quasar.api.compat.SubLevelProvider
 mafisher.quasar.api.effect.EffectAudience
+mafisher.quasar.api.effect.EffectAttachment
 mafisher.quasar.api.effect.EffectBounds
 mafisher.quasar.api.effect.budget.EffectBudgetReport
 mafisher.quasar.api.effect.budget.EffectBudgets

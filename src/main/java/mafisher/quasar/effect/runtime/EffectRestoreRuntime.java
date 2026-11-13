@@ -2,12 +2,15 @@ package mafisher.quasar.effect.runtime;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import mafisher.quasar.api.cinematic.CinematicTimeline;
+import mafisher.quasar.api.effect.EffectAttachment;
 import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.budget.EffectPriority;
 import mafisher.quasar.api.effect.EffectScope;
@@ -38,6 +41,7 @@ import org.slf4j.LoggerFactory;
  * gameplay scopes exist before their child visuals, and never replays past cinematic cues.
  */
 @ApiStatus.Internal
+@SuppressWarnings("PMD.TooManyMethods")
 public final class EffectRestoreRuntime {
     private static final Logger LOGGER = LoggerFactory.getLogger(EffectRestoreRuntime.class);
     private static final List<EffectKind> RESTORE_ORDER = List.of(
@@ -89,7 +93,11 @@ public final class EffectRestoreRuntime {
         }
 
         List<EffectDescriptor> descriptors = new ArrayList<>(this.store.descriptors());
-        descriptors.sort(Comparator.comparingInt(descriptor -> RESTORE_ORDER.indexOf(descriptor.kind())));
+        descriptors = orderDescriptors(descriptors);
+        Map<UUID, EffectDescriptor> descriptorsById = new HashMap<>();
+        for (EffectDescriptor descriptor : descriptors) {
+            descriptorsById.put(descriptor.instanceId(), descriptor);
+        }
         int restored = 0;
         int expired = 0;
         int quarantined = 0;
@@ -138,6 +146,12 @@ public final class EffectRestoreRuntime {
                 this.store.quarantine(descriptor.instanceId());
                 quarantined++;
                 messages.add("Wrong dimension for " + descriptor.instanceId() + ": " + descriptor.dimensionId());
+                continue;
+            }
+            if (hasAttachmentCycle(descriptor, descriptorsById)) {
+                this.store.quarantine(descriptor.instanceId());
+                quarantined++;
+                messages.add("Attachment cycle at " + descriptor.kind() + " " + descriptor.instanceId());
                 continue;
             }
             try {
@@ -234,7 +248,8 @@ public final class EffectRestoreRuntime {
             descriptor.seed(),
             descriptor.audience(),
             EffectAudioNbt.loadFrom(state),
-            priority(state, descriptor)
+            priority(state, descriptor),
+            descriptor.attachment()
         );
         var result = this.visuals.restore(
             spec,
@@ -259,6 +274,75 @@ public final class EffectRestoreRuntime {
             }
         }
         return true;
+    }
+
+    private static boolean hasAttachmentCycle(
+        EffectDescriptor descriptor,
+        Map<UUID, EffectDescriptor> descriptorsById
+    ) {
+        Set<UUID> visited = new HashSet<>();
+        UUID currentId = descriptor.instanceId();
+        while (visited.add(currentId)) {
+            EffectDescriptor current = descriptorsById.get(currentId);
+            if (current == null || !(current.attachment() instanceof EffectAttachment attachment)
+                || !(attachment.parent() instanceof EffectAttachment.Parent.Effect parent)) {
+                return false;
+            }
+            currentId = parent.id();
+        }
+        return true;
+    }
+
+    private static List<EffectDescriptor> orderDescriptors(List<EffectDescriptor> source) {
+        List<EffectDescriptor> sorted = new ArrayList<>(source);
+        sorted.sort(Comparator.comparingInt(descriptor -> RESTORE_ORDER.indexOf(descriptor.kind())));
+        Map<UUID, EffectDescriptor> byId = new HashMap<>();
+        for (EffectDescriptor descriptor : sorted) {
+            byId.put(descriptor.instanceId(), descriptor);
+        }
+        List<EffectDescriptor> visualOrder = new ArrayList<>();
+        Set<UUID> visiting = new HashSet<>();
+        Set<UUID> done = new HashSet<>();
+        for (EffectDescriptor descriptor : sorted) {
+            if (descriptor.kind() == EffectKind.VISUAL) {
+                visitVisual(descriptor, byId, visiting, done, visualOrder);
+            }
+        }
+        List<EffectDescriptor> result = new ArrayList<>(sorted.size());
+        int visualIndex = 0;
+        for (EffectDescriptor descriptor : sorted) {
+            if (descriptor.kind() == EffectKind.VISUAL) {
+                result.add(visualOrder.get(visualIndex++));
+            } else {
+                result.add(descriptor);
+            }
+        }
+        return result;
+    }
+
+    private static void visitVisual(
+        EffectDescriptor descriptor,
+        Map<UUID, EffectDescriptor> byId,
+        Set<UUID> visiting,
+        Set<UUID> done,
+        List<EffectDescriptor> ordered
+    ) {
+        UUID instanceId = descriptor.instanceId();
+        if (done.contains(instanceId) || !visiting.add(instanceId)) {
+            return;
+        }
+        EffectAttachment attachment = descriptor.attachment();
+        if (attachment != null
+            && attachment.parent() instanceof EffectAttachment.Parent.Effect effect) {
+            EffectDescriptor parent = byId.get(effect.id());
+            if (parent != null && parent.kind() == EffectKind.VISUAL) {
+                visitVisual(parent, byId, visiting, done, ordered);
+            }
+        }
+        visiting.remove(instanceId);
+        if (done.add(instanceId)) {
+            ordered.add(descriptor);
+        }
     }
 
     private static Vec3 transformPosition(EffectDescriptor descriptor) {

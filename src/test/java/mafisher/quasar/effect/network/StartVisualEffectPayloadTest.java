@@ -8,6 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.util.UUID;
+import mafisher.quasar.api.effect.EffectAttachment;
+import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.StartVisualEffectPayload;
 import mafisher.quasar.api.scale.SegmentGridLayout;
 import mafisher.quasar.api.scale.SegmentLink;
@@ -26,7 +28,29 @@ class StartVisualEffectPayloadTest {
 
         assertEquals(payload, decoded);
         assertNull(decoded.segmentLink());
+        assertNull(decoded.attachment());
         assertEquals(140L, decoded.serverGameTime());
+    }
+
+    @Test
+    void roundTripsAnAttachment() {
+        EffectAttachment attachment = EffectAttachment.toEntity(
+            UUID.fromString("00000000-0000-0000-0000-000000000002"),
+            new EffectPoint(1.0, 2.0, 3.0),
+            4.0F,
+            5.0F,
+            6.0F
+        ).withRotationInheritance(EffectAttachment.RotationInheritance.YAW_ONLY)
+            .withParentLossPolicy(EffectAttachment.ParentLossPolicy.FREEZE_AT_LAST);
+        StartVisualEffectPayload payload = new StartVisualEffectPayload(
+            EFFECT_ID, UUID.randomUUID(), DIMENSION, 1.0, 64.0, 2.0,
+            0.0F, 0.0F, 0.0F, 2.0F, 200, 100L, 140L, 42L, null, attachment
+        );
+
+        StartVisualEffectPayload decoded = roundTrip(payload);
+
+        assertEquals(payload, decoded);
+        assertEquals(attachment, decoded.attachment());
     }
 
     @Test
@@ -85,7 +109,14 @@ class StartVisualEffectPayloadTest {
             100L,
             140L,
             42L,
-            new SegmentLink(UUID.randomUUID(), 127, new SegmentGridLayout(8, 8, 2, 8.0, 4.0))
+            new SegmentLink(UUID.randomUUID(), 127, new SegmentGridLayout(8, 8, 2, 8.0, 4.0)),
+            EffectAttachment.toEntity(
+                UUID.randomUUID(),
+                new EffectPoint(1.0, 2.0, 3.0),
+                4.0F,
+                5.0F,
+                6.0F
+            )
         );
 
         assertTrue(encodedSize(payload) <= EffectPayloadLimits.MAX_VISUAL_START_BYTES,

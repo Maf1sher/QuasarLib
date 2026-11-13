@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import com.mojang.blaze3d.pipeline.RenderTarget;
+import java.util.Optional;
+import java.util.UUID;
 import mafisher.quasar.api.block.BlockProtectionContext;
 import mafisher.quasar.api.compat.CompatRegistry;
 import mafisher.quasar.api.compat.FogPolicy;
@@ -18,13 +20,18 @@ import mafisher.quasar.api.compat.SceneDepthProvider;
 import mafisher.quasar.api.compat.SceneDepthSource;
 import mafisher.quasar.api.compat.ShaderPackProvider;
 import mafisher.quasar.api.compat.ShaderPackState;
+import mafisher.quasar.api.compat.SubLevelProvider;
+import mafisher.quasar.api.effect.EffectPoint;
+import mafisher.quasar.api.effect.EffectTransform;
 import mafisher.quasar.testing.GlobalStateTest;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 @GlobalStateTest
 class CompatRegistryTest {
+    @BeforeEach
     @AfterEach
     void reset() {
         CompatRegistry.clearForTesting();
@@ -246,6 +253,76 @@ class CompatRegistryTest {
         assertTrue(CompatRegistry.hasProtectionBridge());
         assertTrue(CompatRegistry.environment(256.0).protectionAvailable());
         assertFalse(CompatRegistry.protection().allows(mock(BlockProtectionContext.class)));
+    }
+
+    @Test
+    void subLevelProviderIsOptionalAndGuardsFailures() {
+        assertFalse(CompatRegistry.hasSubLevelProvider());
+        assertFalse(CompatRegistry.subLevels().available());
+        assertTrue(CompatRegistry.subLevels().pose(UUID.randomUUID()).isEmpty());
+
+        CompatRegistry.registerSubLevelProvider(new SubLevelProvider() {
+            @Override
+            public ResourceLocation id() {
+                return ResourceLocation.fromNamespaceAndPath("test", "sable");
+            }
+
+            @Override
+            public boolean available() {
+                return true;
+            }
+
+            @Override
+            public Optional<EffectTransform> pose(UUID subLevelId) {
+                return Optional.of(new EffectTransform(
+                    new EffectPoint(1.0, 2.0, 3.0), 10.0F, 20.0F, 30.0F
+                ));
+            }
+        });
+
+        assertTrue(CompatRegistry.hasSubLevelProvider());
+        assertTrue(CompatRegistry.subLevels().available());
+        assertEquals(1.0, CompatRegistry.subLevels().pose(UUID.randomUUID())
+            .orElseThrow().position().x(), 0.0);
+        assertThrows(IllegalStateException.class, () -> CompatRegistry.registerSubLevelProvider(
+            new SubLevelProvider() {
+                @Override
+                public ResourceLocation id() {
+                    return ResourceLocation.fromNamespaceAndPath("test", "second");
+                }
+
+                @Override
+                public boolean available() {
+                    return true;
+                }
+
+                @Override
+                public Optional<EffectTransform> pose(UUID subLevelId) {
+                    return Optional.empty();
+                }
+            }));
+    }
+
+    @Test
+    void throwingSubLevelProviderReadsAsAbsent() {
+        CompatRegistry.registerSubLevelProvider(new SubLevelProvider() {
+            @Override
+            public ResourceLocation id() {
+                return ResourceLocation.fromNamespaceAndPath("test", "broken_sable");
+            }
+
+            @Override
+            public boolean available() {
+                return true;
+            }
+
+            @Override
+            public Optional<EffectTransform> pose(UUID subLevelId) {
+                throw new IllegalStateException("pose failed");
+            }
+        });
+
+        assertTrue(CompatRegistry.subLevels().pose(UUID.randomUUID()).isEmpty());
     }
 
     @Test

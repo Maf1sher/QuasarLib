@@ -4,6 +4,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexSorting;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -26,6 +27,7 @@ import mafisher.quasar.api.client.screen.ScreenEffectSettings;
 import mafisher.quasar.api.client.render.StaticMeshVisualEffectRenderer;
 import mafisher.quasar.api.client.render.VisualEffectInstance;
 import mafisher.quasar.api.client.render.VisualEffectRenderer;
+import mafisher.quasar.api.compat.CompatRegistry;
 import mafisher.quasar.api.compat.RenderEnvironment;
 import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.budget.EffectQualityTier;
@@ -52,9 +54,12 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManager;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.ApiStatus;
+import org.jspecify.annotations.Nullable;
 import org.joml.Matrix4f;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -87,6 +92,10 @@ public final class ClientVisualEffectManager {
     private final List<InstancedBatchBuilder.InstancedDraw> instancedDraws = new ArrayList<>();
     private final List<UUID> finishedEffects = new ArrayList<>();
     private final FrameSnapshotCache frameCache = new FrameSnapshotCache();
+    private final ClientAttachmentResolver attachmentResolver;
+    private final Map<UUID, Entity> frameEntities = new HashMap<>();
+    private boolean frameEntitiesBuilt;
+    private long frameEntitiesGameTime = Long.MIN_VALUE;
     private boolean screenEffectStateChanged;
     private RenderEnvironment frameEnvironment = RenderEnvironment.VANILLA;
     private InstancedBatchBuilder instancedBatchBuilder;
@@ -97,6 +106,23 @@ public final class ClientVisualEffectManager {
 
     public ClientVisualEffectManager(VisualEffectRendererRegistry rendererRegistry) {
         this.rendererRegistry = rendererRegistry;
+        this.attachmentResolver = new ClientAttachmentResolver(this.activeEffects,
+            new ClientAttachmentResolver.ParentFrames() {
+                @Override
+                public EffectTransform entity(UUID entityId, float partialTick) {
+                    return ClientVisualEffectManager.this.entityFrame(entityId, partialTick);
+                }
+
+                @Override
+                public EffectTransform subLevel(UUID subLevelId, float partialTick) {
+                    return CompatRegistry.subLevels().pose(subLevelId).orElse(null);
+                }
+
+                @Override
+                public boolean subLevelAvailable() {
+                    return CompatRegistry.subLevels().available();
+                }
+            });
     }
 
     public void start(StartVisualEffectPayload payload) {
@@ -244,7 +270,8 @@ public final class ClientVisualEffectManager {
             return;
         }
         VisualEffectInstance effect = this.activeEffects.get(payload.instanceId());
-        if (effect != null && effect.payload().segmentLink() == null) {
+        if (effect != null && effect.payload().segmentLink() == null
+            && effect.payload().attachment() == null) {
             ClientEffectClock.observe(payload.updateGameTime(), level.getGameTime());
             this.activeEffects.put(payload.instanceId(),
                 effect.withTransform(payload.transform(), payload.updateGameTime()));
@@ -489,6 +516,7 @@ public final class ClientVisualEffectManager {
             this.screenBatchTick = Integer.MIN_VALUE;
             return;
         }
+        this.beginAttachmentFrame();
         long gameTime = ClientEffectClock.estimate(level.getGameTime());
         this.removeFinishedEffects(level, gameTime);
         this.visibleEffects.clear();
@@ -548,8 +576,14 @@ public final class ClientVisualEffectManager {
         if (renderer == null) {
             return;
         }
+        EffectTransform transform = this.attachmentResolver.resolve(effect, gameTime, partialTick);
+        if (transform == null) {
+            return;
+        }
         EffectQualityTier quality = ClientQualityController.tier();
-        EffectRenderContext context = this.createRenderContext(effect, gameTime, partialTick, quality);
+        EffectRenderContext context = this.createRenderContext(
+            effect, transform, gameTime, partialTick, quality
+        );
         double radius = this.instanceSpatialRadii.getOrDefault(instanceId, Double.POSITIVE_INFINITY);
         if (!this.isVisible(renderer, context, event, radius)) {
             return;
@@ -656,6 +690,11 @@ public final class ClientVisualEffectManager {
         }
         ClientEffectSpatialIndex.Key key = ClientEffectSpatialIndex.Key.instance(instanceId);
         this.removeIndexEntry(key);
+        if (effect.payload().attachment() != null) {
+            // Parent movement invalidates stored bounds; visit attached instances every frame.
+            this.unindexedInstances.add(key);
+            return;
+        }
         if (ClientEffectSpatialIndex.isIndexableRadius(radius)) {
             AABB bounds = this.instanceBounds(effect, radius);
             if (ClientEffectSpatialIndex.isIndexableBounds(bounds)) {
@@ -765,6 +804,7 @@ public final class ClientVisualEffectManager {
         }
         this.instanceSpatialRadii.remove(instanceId);
         this.lodStates.remove(instanceId);
+        this.attachmentResolver.forget(instanceId);
         this.removeIndexEntry(ClientEffectSpatialIndex.Key.instance(instanceId));
 
         SegmentLink link = removed.payload().segmentLink();
@@ -795,6 +835,7 @@ public final class ClientVisualEffectManager {
             this.activeEffects.remove(instanceId);
             this.instanceSpatialRadii.remove(instanceId);
             this.lodStates.remove(instanceId);
+            this.attachmentResolver.forget(instanceId);
             this.removeIndexEntry(ClientEffectSpatialIndex.Key.instance(instanceId));
         }
     }
@@ -844,7 +885,14 @@ public final class ClientVisualEffectManager {
         }
         VisualEffectInstance instance = this.activeEffects.get(effectId);
         if (instance != null) {
-            EffectPoint position = instance.interpolatedTransform(level.getGameTime(), 0.0F).position();
+            this.beginAttachmentFrame();
+            EffectTransform resolved = this.attachmentResolver.resolve(
+                instance, level.getGameTime(), 0.0F
+            );
+            if (resolved == null) {
+                return null;
+            }
+            EffectPoint position = resolved.position();
             return new Vec3(position.x(), position.y(), position.z());
         }
         ClientSegmentGroup group = this.segmentedGroups.get(effectId);
@@ -857,14 +905,68 @@ public final class ClientVisualEffectManager {
 
     private EffectRenderContext createRenderContext(VisualEffectInstance effect, long gameTime, float partialTick,
         EffectQualityTier quality) {
+        return this.createRenderContext(
+            effect, effect.interpolatedTransform(gameTime, partialTick), gameTime, partialTick, quality
+        );
+    }
+
+    private EffectRenderContext createRenderContext(
+        VisualEffectInstance effect,
+        EffectTransform transform,
+        long gameTime,
+        float partialTick,
+        EffectQualityTier quality
+    ) {
         StartVisualEffectPayload payload = effect.payload();
-        EffectTransform transform = effect.interpolatedTransform(gameTime, partialTick);
         float age = (float)EffectTimeline.ageTicks(gameTime, partialTick, payload.startGameTime());
         float progress = EffectTimeline.progress(gameTime, partialTick, payload.startGameTime(),
             payload.durationTicks());
         float daylight = EffectLighting.daylight(this.currentLevel, transform.position());
         return new EffectRenderContext(effect, transform, age, progress, partialTick,
             EffectLod.FULL, quality, this.frameEnvironment, this.frameCamera, daylight);
+    }
+
+    private void beginAttachmentFrame() {
+        this.attachmentResolver.beginFrame();
+    }
+
+    @Nullable
+    private EffectTransform entityFrame(UUID entityId, float partialTick) {
+        ClientLevel level = this.currentLevel;
+        if (level == null) {
+            return null;
+        }
+        Entity entity = this.entityById(level, entityId);
+        if (entity == null) {
+            return null;
+        }
+        return new EffectTransform(
+            new EffectPoint(
+                Mth.lerp(partialTick, entity.xOld, entity.getX()),
+                Mth.lerp(partialTick, entity.yOld, entity.getY()),
+                Mth.lerp(partialTick, entity.zOld, entity.getZ())
+            ),
+            Mth.rotLerp(partialTick, entity.yRotO, entity.getYRot()),
+            Mth.lerp(partialTick, entity.xRotO, entity.getXRot()),
+            0.0F
+        );
+    }
+
+    @Nullable
+    private Entity entityById(ClientLevel level, UUID entityId) {
+        long gameTime = level.getGameTime();
+        if (!this.frameEntitiesBuilt || this.frameEntitiesGameTime != gameTime) {
+            this.frameEntities.clear();
+            for (Entity entity : level.players()) {
+                this.frameEntities.put(entity.getUUID(), entity);
+            }
+            for (Entity entity : level.entitiesForRendering()) {
+                this.frameEntities.put(entity.getUUID(), entity);
+            }
+            this.frameEntitiesBuilt = true;
+            this.frameEntitiesGameTime = gameTime;
+        }
+        return this.frameEntities.get(entityId);
     }
 
     private static EffectCameraSnapshot captureCamera(
@@ -941,6 +1043,10 @@ public final class ClientVisualEffectManager {
         this.segmentedGroups.clear();
         this.instanceSpatialRadii.clear();
         this.lodStates.clear();
+        this.attachmentResolver.clear();
+        this.frameEntities.clear();
+        this.frameEntitiesBuilt = false;
+        this.frameEntitiesGameTime = Long.MIN_VALUE;
         this.spatialIndex.clear();
         this.unindexedInstances.clear();
         this.unindexedGroups.clear();

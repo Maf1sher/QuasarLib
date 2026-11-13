@@ -27,6 +27,11 @@ import org.slf4j.LoggerFactory;
 public final class CompatRegistry {
     private static final Logger LOGGER = LoggerFactory.getLogger(CompatRegistry.class);
     private static final Object LOCK = new Object();
+    private static final List<ResourceLocation> RESERVED_FALLBACK_IDS = List.of(
+        PhysicsBridge.VANILLA_ID,
+        ProtectionBridge.VANILLA_ID,
+        SubLevelProvider.VANILLA_ID
+    );
     private static final Map<ResourceLocation, DepthEntry> DEPTH_PROVIDERS = new LinkedHashMap<>();
     private static final Map<ResourceLocation, ShaderPackEntry> SHADER_PACK_PROVIDERS = new LinkedHashMap<>();
     private static final AtomicBoolean LOGGED_DEPTH_FAILURE = new AtomicBoolean();
@@ -35,8 +40,10 @@ public final class CompatRegistry {
     private static HorizonEntry horizonProvider;
     private static PhysicsBridge physicsBridge = PhysicsBridge.vanilla();
     private static ProtectionBridge protectionBridge = ProtectionBridge.vanilla();
+    private static SubLevelProvider subLevelProvider = SubLevelProvider.unavailable();
     private static boolean physicsRegistered;
     private static boolean protectionRegistered;
+    private static boolean subLevelRegistered;
     private static boolean clientFrozen;
     private static boolean bridgesFrozen;
 
@@ -119,6 +126,23 @@ public final class CompatRegistry {
         }
     }
 
+    /** Registers the optional sub-level pose provider. Must run before bridges are frozen. */
+    public static void registerSubLevelProvider(SubLevelProvider provider) {
+        Objects.requireNonNull(provider, "provider");
+        synchronized (LOCK) {
+            requireBridgesOpen();
+            if (subLevelRegistered) {
+                throw new IllegalStateException(
+                    "A sub-level provider is already registered: " + subLevelProvider.id()
+                );
+            }
+            ResourceLocation id = Objects.requireNonNull(provider.id(), "provider id");
+            requireUnusedId(id);
+            subLevelProvider = new GuardedSubLevelProvider(id, provider);
+            subLevelRegistered = true;
+        }
+    }
+
     /** Closes client provider registration. */
     public static void freezeClientProviders() {
         synchronized (LOCK) {
@@ -166,10 +190,24 @@ public final class CompatRegistry {
         }
     }
 
+    /** Returns the active sub-level pose provider; the unavailable fallback when absent. */
+    public static SubLevelProvider subLevels() {
+        synchronized (LOCK) {
+            return subLevelProvider;
+        }
+    }
+
     /** Whether a custom protection bridge is registered; {@code false} for the vanilla fallback. */
     public static boolean hasProtectionBridge() {
         synchronized (LOCK) {
             return protectionRegistered;
+        }
+    }
+
+    /** Whether a sub-level pose provider is registered. */
+    public static boolean hasSubLevelProvider() {
+        synchronized (LOCK) {
+            return subLevelRegistered;
         }
     }
 
@@ -323,7 +361,7 @@ public final class CompatRegistry {
     }
 
     private static void requireUnusedId(ResourceLocation id) {
-        if (id.equals(PhysicsBridge.VANILLA_ID) || id.equals(ProtectionBridge.VANILLA_ID)) {
+        if (RESERVED_FALLBACK_IDS.contains(id)) {
             throw new IllegalStateException("The compat fallback ID is reserved: " + id);
         }
         if (idInUse(id)) {
@@ -338,8 +376,13 @@ public final class CompatRegistry {
         if (horizonProvider != null && horizonProvider.id().equals(id)) {
             return true;
         }
-        return (physicsRegistered && physicsBridge.id().equals(id))
-            || (protectionRegistered && protectionBridge.id().equals(id));
+        if (physicsRegistered && physicsBridge.id().equals(id)) {
+            return true;
+        }
+        if (protectionRegistered && protectionBridge.id().equals(id)) {
+            return true;
+        }
+        return subLevelRegistered && subLevelProvider.id().equals(id);
     }
 
     private static double sanitizeDistance(double value) {
@@ -374,8 +417,10 @@ public final class CompatRegistry {
             horizonProvider = null;
             physicsBridge = PhysicsBridge.vanilla();
             protectionBridge = ProtectionBridge.vanilla();
+            subLevelProvider = SubLevelProvider.unavailable();
             physicsRegistered = false;
             protectionRegistered = false;
+            subLevelRegistered = false;
             clientFrozen = false;
             bridgesFrozen = false;
             LOGGED_DEPTH_FAILURE.set(false);

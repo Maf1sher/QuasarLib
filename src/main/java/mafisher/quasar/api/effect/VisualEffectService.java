@@ -148,7 +148,8 @@ public final class VisualEffectService {
 
     /**
      * Updates the world transform of an active visual. The change is applied immediately and
-     * delivered to trackers in the next per-tick transform batch.
+     * delivered to trackers in the next per-tick transform batch. Attached visuals follow their
+     * parent and reject explicit world transforms.
      */
     public static void update(ServerLevel level, VisualEffectHandle handle, EffectTransform transform) {
         Objects.requireNonNull(level, "level");

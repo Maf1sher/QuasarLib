@@ -106,7 +106,10 @@ public final class EffectScope implements AutoCloseable {
         this.visuals.stop(instanceId, EffectRemovalPolicy.DELETE);
     }
 
-    /** Updates a visual created by this scope without changing its lifetime or ownership. */
+    /**
+     * Updates a visual created by this scope without changing its lifetime or ownership.
+     * Attached visuals follow their parent and reject explicit world transforms.
+     */
     public void updateVisual(UUID instanceId, EffectTransform transform) {
         this.ensureOpen();
         Objects.requireNonNull(instanceId, "instanceId");

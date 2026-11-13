@@ -27,6 +27,24 @@ class VisualEffectSpecTest {
         assertEquals(1.0F, spec.scale());
         assertEquals(EffectAudioSpec.NONE, spec.audio());
         assertEquals(EffectPriority.NORMAL, spec.priority());
+        assertEquals(null, spec.attachment());
+    }
+
+    @Test
+    void builderKeepsAnAttachment() {
+        var attachment = mafisher.quasar.api.effect.EffectAttachment.toEntity(
+            java.util.UUID.randomUUID(),
+            mafisher.quasar.api.effect.EffectPoint.ZERO,
+            0.0F,
+            0.0F,
+            0.0F
+        );
+
+        VisualEffectSpec spec = VisualEffectSpec.builder(
+            EFFECT_ID, Vec3.ZERO, 100, 7L, EffectAudience.dimensionWide()
+        ).attachment(attachment).build();
+
+        assertEquals(attachment, spec.attachment());
     }
 
     @Test

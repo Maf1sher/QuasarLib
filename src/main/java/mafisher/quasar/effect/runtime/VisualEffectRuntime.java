@@ -2,6 +2,7 @@ package mafisher.quasar.effect.runtime;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -11,6 +12,9 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import mafisher.quasar.api.audio.EffectAudioPlan;
+import mafisher.quasar.api.compat.CompatRegistry;
+import mafisher.quasar.api.compat.SubLevelProvider;
+import mafisher.quasar.api.effect.EffectAttachment;
 import mafisher.quasar.api.effect.EffectAudience;
 import mafisher.quasar.api.effect.EffectParameterState;
 import mafisher.quasar.api.effect.EffectPoint;
@@ -37,18 +41,22 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.ApiStatus;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /** Per-level replication state for standalone visuals. */
 @ApiStatus.Internal
+@SuppressWarnings("PMD.TooManyMethods")
 public final class VisualEffectRuntime {
     private static final Logger LOGGER = LoggerFactory.getLogger(VisualEffectRuntime.class);
 
     private static final int GRID_MIN_PLAYERS = 8;
     private static final long GRID_MIN_QUERIES = 256L;
+    private static final int PARENT_LOSS_GRACE_TICKS = 20;
 
     private final ServerLevel level;
     private final EffectStore store;
@@ -58,6 +66,10 @@ public final class VisualEffectRuntime {
     private final ParameterUpdates parameterUpdates;
     private final EffectAudioRuntime audio;
     private final Map<UUID, ActiveEffect> effects = new LinkedHashMap<>();
+    private final Map<UUID, EffectTransform> resolvedFrames = new HashMap<>();
+    private final Set<UUID> unresolvedFrames = new HashSet<>();
+    private final Set<UUID> resolvingFrames = new HashSet<>();
+    private long resolvedFrameGameTime = Long.MIN_VALUE;
 
     public VisualEffectRuntime(
         ServerLevel level,
@@ -118,6 +130,7 @@ public final class VisualEffectRuntime {
             .capabilities(options.capabilities())
             .persistence(options.persistence())
             .ownerSessionId(options.ownerSessionId())
+            .attachment(spec.attachment())
             .state(descriptorState(options, spec))
             .build() : null;
         return activate(spec, instanceId, startGameTime, segmentLink, descriptor, true);
@@ -136,6 +149,13 @@ public final class VisualEffectRuntime {
         EffectDescriptor descriptor,
         boolean recordStart
     ) {
+        EffectStartStatus rejection = this.attachmentRejection(
+            instanceId, spec.attachment(), recordStart
+        );
+        if (rejection != null) {
+            return new VisualEffectStartResult(new VisualEffectHandle(instanceId), rejection);
+        }
+        this.invalidateResolutionFrame();
         EffectTransform transform = spec.transform();
         Vec3 position = spec.position();
         StartVisualEffectPayload payload = new StartVisualEffectPayload(
@@ -153,13 +173,14 @@ public final class VisualEffectRuntime {
             startGameTime,
             this.level.getGameTime(),
             spec.seed(),
-            segmentLink
+            segmentLink,
+            spec.attachment()
         );
         EffectParameterState parameters = descriptor == null
             ? EffectParameterState.EMPTY
             : EffectParameterNbt.loadFrom(descriptor);
         ActiveEffect active = new ActiveEffect(payload, spec.audience(), transform, descriptor,
-            spec.priority(), parameters);
+            spec.priority(), parameters, spec.attachment());
         this.effects.put(instanceId, active);
         if (!enforceBudget(this.effects, instanceId)) {
             EffectStartStatus status = recordStart
@@ -168,7 +189,7 @@ public final class VisualEffectRuntime {
             return new VisualEffectStartResult(new VisualEffectHandle(instanceId), status);
         }
         Map<UUID, ServerPlayer> audience = new LinkedHashMap<>();
-        collectAudience(active, null, audience);
+        collectAudience(active, this.resolveForAudience(active, this.level.getGameTime()), null, audience);
         for (ServerPlayer player : audience.values()) {
             sendStart(player, active);
         }
@@ -182,6 +203,55 @@ public final class VisualEffectRuntime {
             ? EffectStartStatus.ACTIVE
             : EffectStartStatus.RESTORED_ACTIVE;
         return new VisualEffectStartResult(new VisualEffectHandle(instanceId), status);
+    }
+
+    @Nullable
+    private EffectStartStatus attachmentRejection(
+        UUID instanceId,
+        @Nullable EffectAttachment attachment,
+        boolean recordStart
+    ) {
+        if (attachment == null) {
+            return null;
+        }
+        if (attachment.parent() instanceof EffectAttachment.Parent.Entity entity) {
+            if (recordStart && this.level.getEntity(entity.id()) == null) {
+                return EffectStartStatus.REJECTED_PARENT;
+            }
+            return null;
+        }
+        if (attachment.parent() instanceof EffectAttachment.Parent.Effect effect) {
+            if (recordStart && this.effects.get(effect.id()) == null) {
+                return EffectStartStatus.REJECTED_PARENT;
+            }
+            return this.hasAttachmentCycle(instanceId, attachment)
+                ? EffectStartStatus.REJECTED_CYCLE : null;
+        }
+        // Optional sub-level providers may be absent; the effect still starts at its authored
+        // transform and keeps working without the provider.
+        return null;
+    }
+
+    private boolean hasAttachmentCycle(UUID childId, EffectAttachment attachment) {
+        Set<UUID> visited = new HashSet<>();
+        visited.add(childId);
+        UUID current = childId;
+        EffectAttachment currentAttachment = attachment;
+        while (currentAttachment != null
+            && currentAttachment.parent() instanceof EffectAttachment.Parent.Effect effect) {
+            UUID parentId = effect.id();
+            if (parentId.equals(current) || !visited.add(parentId)
+                || visited.size() > EffectAttachment.MAX_CHAIN_DEPTH) {
+                return true;
+            }
+            ActiveEffect parent = this.effects.get(parentId);
+            if (parent == null) {
+                return false;
+            }
+            current = parentId;
+            currentAttachment = parent.attachment();
+        }
+        return false;
     }
 
     /**
@@ -266,6 +336,11 @@ public final class VisualEffectRuntime {
         if (active == null) {
             return;
         }
+        if (active.attachment() != null) {
+            throw new IllegalStateException(
+                "Attached visual effects follow their parent; stop and restart the effect to change placement"
+            );
+        }
 
         active.setTransform(transform);
         if (active.descriptor() != null) {
@@ -335,8 +410,38 @@ public final class VisualEffectRuntime {
             if (policy.deletesDescriptor()) {
                 this.store.recordStop(handle.instanceId());
             }
+            applyParentLossToChildren(handle.instanceId(), policy);
         }
         this.audio.stop(handle.instanceId());
+    }
+
+    private void applyParentLossToChildren(
+        UUID parentId,
+        EffectRemovalPolicy policy
+    ) {
+        List<UUID> stoppedChildren = new ArrayList<>();
+        for (ActiveEffect child : this.effects.values()) {
+            EffectAttachment attachment = child.attachment();
+            if (attachment == null
+                || !(attachment.parent() instanceof EffectAttachment.Parent.Effect effect)
+                || !effect.id().equals(parentId)) {
+                continue;
+            }
+            if (attachment.parentLossPolicy() == EffectAttachment.ParentLossPolicy.STOP_WITH_PARENT) {
+                stoppedChildren.add(child.payload().instanceId());
+                continue;
+            }
+            EffectTransform frozen = child.lastResolvedTransform();
+            child.setLastResolvedTransform(frozen);
+            EffectDescriptor descriptor = child.descriptor();
+            if (descriptor != null && !frozen.equals(descriptor.transform())) {
+                child.setDescriptor(descriptor.withTransform(frozen));
+                this.store.recordUpdate(child.descriptor());
+            }
+        }
+        for (UUID childId : stoppedChildren) {
+            this.stop(new VisualEffectHandle(childId), policy);
+        }
     }
 
     /** Keeps active visual state in sync with players who enter or leave its audience. */
@@ -346,6 +451,7 @@ public final class VisualEffectRuntime {
         }
 
         long gameTime = this.level.getGameTime();
+        this.beginResolutionFrame(gameTime);
         List<ServerPlayer> players = this.level.players();
         long directQueries = (long) players.size() * this.effects.size();
         SpatialGrid<ServerPlayer> index = players.size() > GRID_MIN_PLAYERS
@@ -354,6 +460,8 @@ public final class VisualEffectRuntime {
             ? buildPlayerIndex(players)
             : null;
         Map<UUID, ServerPlayer> nearby = new LinkedHashMap<>();
+        List<UUID> parentLost = new ArrayList<>();
+        List<UUID> expiredParents = new ArrayList<>();
 
         Iterator<Map.Entry<UUID, ActiveEffect>> iterator = this.effects.entrySet().iterator();
         while (iterator.hasNext()) {
@@ -365,28 +473,45 @@ public final class VisualEffectRuntime {
                 iterator.remove();
                 this.store.recordStop(active.payload().instanceId());
                 this.audio.stop(active.payload().instanceId());
+                expiredParents.add(active.payload().instanceId());
                 continue;
             }
 
+            EffectTransform audienceTransform = this.resolveForAudience(active, gameTime);
             nearby.clear();
-            collectAudience(active, index, nearby);
-            Iterator<UUID> trackers = active.trackingPlayers().iterator();
-            while (trackers.hasNext()) {
-                UUID playerId = trackers.next();
-                if (!nearby.containsKey(playerId)) {
-                    ServerPlayer player = this.level.getServer() == null
-                        ? null
-                        : this.level.getServer().getPlayerList().getPlayer(playerId);
-                    if (player != null && player.level() == this.level) {
-                        this.packets.sendToPlayer(player, stopPayload(active));
-                    }
-                    trackers.remove();
-                }
+            collectAudience(active, audienceTransform, index, nearby);
+            this.reconcileTrackers(active, nearby);
+            if (this.shouldStopForParentLoss(active, gameTime)) {
+                parentLost.add(active.payload().instanceId());
             }
-            for (ServerPlayer player : nearby.values()) {
-                if (!active.trackingPlayers().contains(player.getUUID())) {
-                    sendStart(player, active);
+        }
+        for (UUID instanceId : expiredParents) {
+            this.applyParentLossToChildren(instanceId, EffectRemovalPolicy.DELETE);
+        }
+        for (UUID instanceId : parentLost) {
+            if (this.effects.containsKey(instanceId)) {
+                this.stop(new VisualEffectHandle(instanceId));
+            }
+        }
+    }
+
+    private void reconcileTrackers(ActiveEffect active, Map<UUID, ServerPlayer> nearby) {
+        Iterator<UUID> trackers = active.trackingPlayers().iterator();
+        while (trackers.hasNext()) {
+            UUID playerId = trackers.next();
+            if (!nearby.containsKey(playerId)) {
+                ServerPlayer player = this.level.getServer() == null
+                    ? null
+                    : this.level.getServer().getPlayerList().getPlayer(playerId);
+                if (player != null && player.level() == this.level) {
+                    this.packets.sendToPlayer(player, stopPayload(active));
                 }
+                trackers.remove();
+            }
+        }
+        for (ServerPlayer player : nearby.values()) {
+            if (!active.trackingPlayers().contains(player.getUUID())) {
+                sendStart(player, active);
             }
         }
     }
@@ -412,7 +537,7 @@ public final class VisualEffectRuntime {
         Map<UUID, ServerPlayer> audience = new LinkedHashMap<>();
         for (ActiveEffect active : this.effects.values()) {
             audience.clear();
-            collectAudience(active, null, audience);
+            collectAudience(active, this.resolveForAudience(active, serverGameTime), null, audience);
             if (audience.containsKey(player.getUUID())) {
                 payloads.add(active.currentPayload(serverGameTime));
                 active.trackingPlayers().add(player.getUUID());
@@ -437,6 +562,10 @@ public final class VisualEffectRuntime {
     public void clear() {
         this.effects.clear();
         this.parameterUpdates.clear();
+        this.resolvedFrames.clear();
+        this.unresolvedFrames.clear();
+        this.resolvingFrames.clear();
+        this.resolvedFrameGameTime = Long.MIN_VALUE;
     }
 
     private static CompoundTag descriptorState(EffectPersistenceOptions options, VisualEffectSpec spec) {
@@ -469,12 +598,121 @@ public final class VisualEffectRuntime {
         return index;
     }
 
+    private void beginResolutionFrame(long gameTime) {
+        if (this.resolvedFrameGameTime == gameTime) {
+            return;
+        }
+        this.resolvedFrameGameTime = gameTime;
+        this.resolvedFrames.clear();
+        this.unresolvedFrames.clear();
+        this.resolvingFrames.clear();
+    }
+
+    private void invalidateResolutionFrame() {
+        this.resolvedFrameGameTime = Long.MIN_VALUE;
+        this.resolvedFrames.clear();
+        this.unresolvedFrames.clear();
+        this.resolvingFrames.clear();
+    }
+
+    private EffectTransform resolveForAudience(ActiveEffect active, long gameTime) {
+        this.beginResolutionFrame(gameTime);
+        EffectTransform resolved = this.resolveAttachment(active, gameTime);
+        return resolved == null ? active.lastResolvedTransform() : resolved;
+    }
+
+    @Nullable
+    private EffectTransform resolveAttachment(ActiveEffect active, long gameTime) {
+        if (active.attachment() == null) {
+            return active.transform();
+        }
+        UUID instanceId = active.payload().instanceId();
+        EffectTransform cached = this.resolvedFrames.get(instanceId);
+        if (cached != null) {
+            return cached;
+        }
+        if (this.unresolvedFrames.contains(instanceId)) {
+            return null;
+        }
+        if (!this.resolvingFrames.add(instanceId)) {
+            this.unresolvedFrames.add(instanceId);
+            return null;
+        }
+        try {
+            EffectAttachment attachment = active.attachment();
+            if (attachment == null) {
+                return active.transform();
+            }
+            if (attachment.parent() instanceof EffectAttachment.Parent.SubLevel subLevel
+                && !CompatRegistry.subLevels().available()) {
+                EffectTransform fallback = active.lastResolvedTransform();
+                this.resolvedFrames.put(instanceId, fallback);
+                return fallback;
+            }
+            EffectTransform parentFrame = this.resolveParentFrame(attachment.parent(), gameTime);
+            if (parentFrame == null) {
+                this.unresolvedFrames.add(instanceId);
+                return null;
+            }
+            EffectTransform resolved = attachment.resolve(parentFrame);
+            this.resolvedFrames.put(instanceId, resolved);
+            active.setLastResolvedTransform(resolved);
+            return resolved;
+        } finally {
+            this.resolvingFrames.remove(instanceId);
+        }
+    }
+
+    @Nullable
+    private EffectTransform resolveParentFrame(EffectAttachment.Parent parent, long gameTime) {
+        if (parent instanceof EffectAttachment.Parent.Entity entityParent) {
+            Entity entity = this.level.getEntity(entityParent.id());
+            if (entity == null) {
+                return null;
+            }
+            return new EffectTransform(
+                new EffectPoint(entity.getX(), entity.getY(), entity.getZ()),
+                entity.getYRot(),
+                entity.getXRot(),
+                0.0F
+            );
+        }
+        if (parent instanceof EffectAttachment.Parent.Effect effectParent) {
+            ActiveEffect parentEffect = this.effects.get(effectParent.id());
+            if (parentEffect == null || EffectTimeline.isFinished(
+                gameTime, parentEffect.payload().startGameTime(), parentEffect.payload().durationTicks()
+            )) {
+                return null;
+            }
+            return this.resolveAttachment(parentEffect, gameTime);
+        }
+        SubLevelProvider provider = CompatRegistry.subLevels();
+        if (!provider.available()) {
+            return null;
+        }
+        return provider.pose(((EffectAttachment.Parent.SubLevel) parent).id()).orElse(null);
+    }
+
+    private boolean shouldStopForParentLoss(ActiveEffect active, long gameTime) {
+        if (active.attachment() == null || !this.unresolvedFrames.contains(active.payload().instanceId())) {
+            active.setParentMissingSince(Long.MIN_VALUE);
+            return false;
+        }
+        if (active.parentMissingSince() == Long.MIN_VALUE) {
+            active.setParentMissingSince(gameTime);
+        }
+        return active.attachment().parentLossPolicy()
+            == EffectAttachment.ParentLossPolicy.STOP_WITH_PARENT
+            && gameTime - active.parentMissingSince() >= PARENT_LOSS_GRACE_TICKS;
+    }
+
     private void collectAudience(
         ActiveEffect active,
+        EffectTransform transform,
         SpatialGrid<ServerPlayer> index,
         Map<UUID, ServerPlayer> audience
     ) {
-        EffectPoint position = active.transform().position();
+        EffectPoint position = transform.position();
         Vec3 center = new Vec3(position.x(), position.y(), position.z());
         if (active.audience() instanceof EffectAudience.Nearby nearby && index != null) {
             index.forEachNear(center, nearby.radius(), player -> {
@@ -531,9 +769,12 @@ public final class VisualEffectRuntime {
         private final EffectAudience audience;
         private final Set<UUID> trackingPlayers = new HashSet<>();
         private final EffectPriority priority;
+        private final EffectAttachment attachment;
         private EffectTransform transform;
+        private EffectTransform lastResolvedTransform;
         private EffectDescriptor descriptor;
         private EffectParameterState parameters;
+        private long parentMissingSince = Long.MIN_VALUE;
 
         private ActiveEffect(
             StartVisualEffectPayload payload,
@@ -541,14 +782,17 @@ public final class VisualEffectRuntime {
             EffectTransform transform,
             EffectDescriptor descriptor,
             EffectPriority priority,
-            EffectParameterState parameters
+            EffectParameterState parameters,
+            @Nullable EffectAttachment attachment
         ) {
             this.payload = payload;
             this.audience = audience;
             this.transform = transform;
+            this.lastResolvedTransform = transform;
             this.descriptor = descriptor;
             this.priority = priority;
             this.parameters = parameters;
+            this.attachment = attachment;
         }
 
         private StartVisualEffectPayload payload() {
@@ -565,6 +809,27 @@ public final class VisualEffectRuntime {
 
         private EffectTransform transform() {
             return this.transform;
+        }
+
+        @Nullable
+        private EffectAttachment attachment() {
+            return this.attachment;
+        }
+
+        private EffectTransform lastResolvedTransform() {
+            return this.lastResolvedTransform;
+        }
+
+        private void setLastResolvedTransform(EffectTransform transform) {
+            this.lastResolvedTransform = Objects.requireNonNull(transform, "transform");
+        }
+
+        private long parentMissingSince() {
+            return this.parentMissingSince;
+        }
+
+        private void setParentMissingSince(long gameTime) {
+            this.parentMissingSince = gameTime;
         }
 
         private EffectDescriptor descriptor() {
@@ -592,7 +857,9 @@ public final class VisualEffectRuntime {
         }
 
         private StartVisualEffectPayload currentPayload(long serverGameTime) {
-            EffectPoint position = this.transform.position();
+            EffectTransform current = this.attachment == null
+                ? this.transform : this.lastResolvedTransform;
+            EffectPoint position = current.position();
             return new StartVisualEffectPayload(
                 this.payload.effectId(),
                 this.payload.instanceId(),
@@ -600,15 +867,16 @@ public final class VisualEffectRuntime {
                 position.x(),
                 position.y(),
                 position.z(),
-                this.transform.yaw(),
-                this.transform.pitch(),
-                this.transform.roll(),
+                current.yaw(),
+                current.pitch(),
+                current.roll(),
                 this.payload.scale(),
                 this.payload.durationTicks(),
                 this.payload.startGameTime(),
                 serverGameTime,
                 this.payload.seed(),
-                this.payload.segmentLink()
+                this.payload.segmentLink(),
+                this.attachment
             );
         }
     }

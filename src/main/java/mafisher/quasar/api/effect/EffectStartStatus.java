@@ -9,5 +9,9 @@ public enum EffectStartStatus {
     /** A persisted effect was restored and is active. */
     RESTORED_ACTIVE,
     /** A persisted effect was restored but culled by the soft budget. */
-    RESTORED_INACTIVE
+    RESTORED_INACTIVE,
+    /** The parent entity or effect was missing when a new attachment start was requested. */
+    REJECTED_PARENT,
+    /** The requested effect parent would create an attachment cycle. */
+    REJECTED_CYCLE
 }

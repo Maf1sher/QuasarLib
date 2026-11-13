@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Set;
 import java.util.UUID;
+import mafisher.quasar.api.effect.EffectAttachment;
 import mafisher.quasar.api.effect.EffectAudience;
 import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.EffectTransform;
@@ -38,6 +39,37 @@ class EffectDescriptorNbtTest {
         assertEquals(EffectKind.VISUAL, decoded.kind());
         assertEquals(EffectPersistence.RESUMABLE, decoded.persistence());
         assertEquals("strike", decoded.state().getString("phase"));
+    }
+
+    @Test
+    void roundTripsAnAttachmentAndKeepsOldSavesStandalone() {
+        EffectDescriptor descriptor = EffectDescriptor.builder(
+                UUID.fromString("00000000-0000-0000-0000-000000000001"),
+                EffectKind.VISUAL,
+                TYPE,
+                DIMENSION
+            )
+            .placement(new EffectTransform(new EffectPoint(1.0, 64.0, -2.0), 10.0F, 20.0F, 30.0F), 2.5F)
+            .timing(1234L, 42L, 200)
+            .audience(EffectAudience.dimensionWide())
+            .attachment(EffectAttachment.toEntity(
+                UUID.fromString("00000000-0000-0000-0000-000000000002"),
+                new EffectPoint(0.5, 1.0, -0.5),
+                1.0F,
+                2.0F,
+                3.0F
+            ))
+            .state(new CompoundTag())
+            .build();
+
+        EffectDescriptor decoded = EffectDescriptorNbt.load(EffectDescriptorNbt.save(descriptor));
+
+        assertEquals(descriptor, decoded);
+        assertEquals(descriptor.attachment(), decoded.attachment());
+
+        CompoundTag oldTag = EffectDescriptorNbt.save(descriptor(new CompoundTag()));
+        oldTag.remove("attachment");
+        assertEquals(null, EffectDescriptorNbt.load(oldTag).attachment());
     }
 
     @Test

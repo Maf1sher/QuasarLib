@@ -20,6 +20,7 @@ import mafisher.quasar.api.audio.EffectAudioService;
 import mafisher.quasar.api.audio.EffectAudioSpec;
 import mafisher.quasar.api.block.BlockChange;
 import mafisher.quasar.api.effect.EffectAudience;
+import mafisher.quasar.api.effect.EffectAttachment;
 import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.budget.EffectPriority;
 import mafisher.quasar.api.effect.EffectRemovalPolicy;
@@ -117,6 +118,42 @@ class EffectRestoreServiceTest {
         assertEquals(1, report.restored());
         assertEquals(1, VisualEffectService.activeCount(this.level));
         assertEquals(1, this.store.descriptors().size());
+    }
+
+    @Test
+    void restoresAttachedVisualsWithTheirParent() {
+        UUID parentId = UUID.randomUUID();
+        UUID childId = UUID.randomUUID();
+        this.store.put(visualDescriptor(
+            childId,
+            EffectAttachment.toEffect(parentId, EffectPoint.ZERO, 0.0F, 0.0F, 0.0F)
+        ));
+        this.store.put(visualDescriptor(parentId, null));
+
+        EffectRecoveryReport report = EffectRestoreService.restoreLevel(this.level);
+
+        assertEquals(2, report.restored());
+        assertEquals(2, VisualEffectService.activeCount(this.level));
+    }
+
+    @Test
+    void quarantinesAttachmentCycles() {
+        UUID firstId = UUID.randomUUID();
+        UUID secondId = UUID.randomUUID();
+        this.store.put(visualDescriptor(
+            firstId,
+            EffectAttachment.toEffect(secondId, EffectPoint.ZERO, 0.0F, 0.0F, 0.0F)
+        ));
+        this.store.put(visualDescriptor(
+            secondId,
+            EffectAttachment.toEffect(firstId, EffectPoint.ZERO, 0.0F, 0.0F, 0.0F)
+        ));
+
+        EffectRecoveryReport report = EffectRestoreService.restoreLevel(this.level);
+
+        assertEquals(2, report.quarantined());
+        assertEquals(0, VisualEffectService.activeCount(this.level));
+        assertEquals(2, this.store.quarantineCount());
     }
 
     @Test
@@ -464,6 +501,21 @@ class EffectRestoreServiceTest {
             .audience(EffectAudience.nearby(64.0))
             .capabilities(EffectCapabilities.NONE)
             .persistence(EffectPersistence.RESUMABLE)
+            .state(new CompoundTag())
+            .build();
+    }
+
+    private static EffectDescriptor visualDescriptor(
+        UUID instanceId,
+        EffectAttachment attachment
+    ) {
+        return EffectDescriptor.builder(instanceId, EffectKind.VISUAL, EFFECT, DIMENSION)
+            .placement(new EffectTransform(new EffectPoint(1.0, 64.0, 2.0), 0.0F, 0.0F, 0.0F), 1.0F)
+            .timing(11L, 0L, 200)
+            .audience(EffectAudience.nearby(64.0))
+            .capabilities(EffectCapabilities.NONE)
+            .persistence(EffectPersistence.RESUMABLE)
+            .attachment(attachment)
             .state(new CompoundTag())
             .build();
     }

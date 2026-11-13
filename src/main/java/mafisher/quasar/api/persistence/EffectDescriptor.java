@@ -3,11 +3,13 @@ package mafisher.quasar.api.persistence;
 import java.util.Objects;
 import java.util.UUID;
 import mafisher.quasar.api.effect.EffectAudience;
+import mafisher.quasar.api.effect.EffectAttachment;
 import mafisher.quasar.api.effect.budget.EffectLimits;
 import mafisher.quasar.api.effect.EffectTimeline;
 import mafisher.quasar.api.effect.EffectTransform;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Serializable identity and current state of one active effect. A descriptor is persisted with
@@ -88,6 +90,12 @@ public final class EffectDescriptor {
         return this.fields.ownerSessionId();
     }
 
+    /** Optional parent attachment; {@code null} for a standalone effect. */
+    @Nullable
+    public EffectAttachment attachment() {
+        return this.fields.attachment();
+    }
+
     /** A defensive copy of the consumer state. */
     public CompoundTag state() {
         return this.state.copy();
@@ -150,6 +158,8 @@ public final class EffectDescriptor {
         private EffectCapabilities capabilities = EffectCapabilities.NONE;
         private EffectPersistence persistence = EffectPersistence.COSMETIC;
         private UUID ownerSessionId;
+        @Nullable
+        private EffectAttachment attachment;
         private CompoundTag state = new CompoundTag();
         private boolean timingSet;
 
@@ -199,6 +209,12 @@ public final class EffectDescriptor {
             return this;
         }
 
+        /** Sets or clears the effect's parent attachment. */
+        public Builder attachment(@Nullable EffectAttachment attachment) {
+            this.attachment = attachment;
+            return this;
+        }
+
         public Builder state(CompoundTag state) {
             this.state = Objects.requireNonNull(state, "state");
             return this;
@@ -222,7 +238,8 @@ public final class EffectDescriptor {
                     this.audience,
                     this.capabilities,
                     this.persistence,
-                    this.ownerSessionId
+                    this.ownerSessionId,
+                    this.attachment
                 ),
                 Objects.requireNonNull(this.state, "state").copy()
             );
@@ -242,7 +259,8 @@ public final class EffectDescriptor {
         EffectAudience audience,
         EffectCapabilities capabilities,
         EffectPersistence persistence,
-        UUID ownerSessionId
+        UUID ownerSessionId,
+        @Nullable EffectAttachment attachment
     ) {
         private Fields {
             Objects.requireNonNull(instanceId, "instanceId");
@@ -277,7 +295,8 @@ public final class EffectDescriptor {
                 this.audience,
                 this.capabilities,
                 this.persistence,
-                this.ownerSessionId
+                this.ownerSessionId,
+                this.attachment
             );
         }
 
@@ -295,7 +314,8 @@ public final class EffectDescriptor {
                 this.audience,
                 this.capabilities,
                 this.persistence,
-                this.ownerSessionId
+                this.ownerSessionId,
+                this.attachment
             );
         }
 
@@ -313,7 +333,8 @@ public final class EffectDescriptor {
                 this.audience,
                 this.capabilities,
                 this.persistence,
-                ownerSessionId
+                ownerSessionId,
+                this.attachment
             );
         }
     }

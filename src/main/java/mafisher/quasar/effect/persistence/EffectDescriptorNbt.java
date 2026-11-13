@@ -4,6 +4,7 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.UUID;
 import mafisher.quasar.api.effect.EffectAudience;
+import mafisher.quasar.api.effect.EffectAttachment;
 import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.EffectTransform;
 import mafisher.quasar.api.persistence.EffectCapabilities;
@@ -19,6 +20,7 @@ import org.jetbrains.annotations.ApiStatus;
 
 /** Stable NBT representation shared by save data and persistence tests. */
 @ApiStatus.Internal
+@SuppressWarnings("PMD.TooManyMethods")
 public final class EffectDescriptorNbt {
     private EffectDescriptorNbt() {
     }
@@ -39,6 +41,9 @@ public final class EffectDescriptorNbt {
         tag.putString("persistence", descriptor.persistence().name());
         if (descriptor.ownerSessionId() != null) {
             tag.putUUID("owner_session", descriptor.ownerSessionId());
+        }
+        if (descriptor.attachment() != null) {
+            tag.put("attachment", saveAttachment(descriptor.attachment()));
         }
         tag.put("state", descriptor.stateView().copy());
         return tag;
@@ -63,6 +68,7 @@ public final class EffectDescriptorNbt {
                 .capabilities(loadCapabilities(tag.getCompound("capabilities")))
                 .persistence(EffectPersistence.valueOf(tag.getString("persistence")))
                 .ownerSessionId(ownerSession)
+                .attachment(tag.contains("attachment") ? loadAttachment(tag.getCompound("attachment")) : null)
                 .state(tag.getCompound("state"))
                 .build();
         } catch (RuntimeException exception) {
@@ -127,6 +133,41 @@ public final class EffectDescriptorNbt {
             ids.add(resourceLocation(custom.getString(index), "capability"));
         }
         return new EffectCapabilities(tag.getBoolean("destructive"), ids);
+    }
+
+    private static CompoundTag saveAttachment(EffectAttachment attachment) {
+        CompoundTag tag = new CompoundTag();
+        EffectAttachment.Parent parent = attachment.parent();
+        if (parent instanceof EffectAttachment.Parent.Entity entity) {
+            tag.putString("parent_kind", "entity");
+            tag.putUUID("parent_id", entity.id());
+        } else if (parent instanceof EffectAttachment.Parent.Effect effect) {
+            tag.putString("parent_kind", "effect");
+            tag.putUUID("parent_id", effect.id());
+        } else {
+            tag.putString("parent_kind", "sub_level");
+            tag.putUUID("parent_id", ((EffectAttachment.Parent.SubLevel) parent).id());
+        }
+        tag.put("local", saveTransform(attachment.localTransform()));
+        tag.putString("rotation", attachment.rotationInheritance().name());
+        tag.putString("loss_policy", attachment.parentLossPolicy().name());
+        return tag;
+    }
+
+    private static EffectAttachment loadAttachment(CompoundTag tag) {
+        UUID parentId = tag.getUUID("parent_id");
+        EffectAttachment.Parent parent = switch (tag.getString("parent_kind")) {
+            case "entity" -> new EffectAttachment.Parent.Entity(parentId);
+            case "effect" -> new EffectAttachment.Parent.Effect(parentId);
+            case "sub_level" -> new EffectAttachment.Parent.SubLevel(parentId);
+            default -> throw new IllegalArgumentException("Unknown effect attachment parent kind");
+        };
+        return new EffectAttachment(
+            parent,
+            loadTransform(tag.getCompound("local")),
+            EffectAttachment.RotationInheritance.valueOf(tag.getString("rotation")),
+            EffectAttachment.ParentLossPolicy.valueOf(tag.getString("loss_policy"))
+        );
     }
 
     private static ResourceLocation resourceLocation(String value, String field) {

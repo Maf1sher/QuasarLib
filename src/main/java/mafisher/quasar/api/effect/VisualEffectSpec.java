@@ -5,8 +5,10 @@ import mafisher.quasar.api.effect.budget.EffectLimits;
 import mafisher.quasar.api.effect.budget.EffectPriority;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
+import org.jspecify.annotations.Nullable;
 
 /** Immutable server-authored start parameters for one client-rendered world effect. */
+@SuppressWarnings("checkstyle:ParameterNumber")
 public record VisualEffectSpec(
     ResourceLocation effectId,
     Vec3 position,
@@ -18,8 +20,29 @@ public record VisualEffectSpec(
     long seed,
     EffectAudience audience,
     EffectAudioSpec audio,
-    EffectPriority priority
+    EffectPriority priority,
+    @Nullable EffectAttachment attachment
 ) {
+    /**
+     * Source-compatible constructor for an effect without a parent attachment.
+     */
+    public VisualEffectSpec(
+        ResourceLocation effectId,
+        Vec3 position,
+        float yaw,
+        float pitch,
+        float roll,
+        float scale,
+        int durationTicks,
+        long seed,
+        EffectAudience audience,
+        EffectAudioSpec audio,
+        EffectPriority priority
+    ) {
+        this(effectId, position, yaw, pitch, roll, scale, durationTicks, seed, audience, audio,
+            priority, null);
+    }
+
     public VisualEffectSpec {
         if (effectId == null || position == null || audience == null || audio == null || priority == null) {
             throw new NullPointerException("Effect ID, position, audience, audio, and priority are required");
@@ -62,6 +85,8 @@ public record VisualEffectSpec(
         private float scale = 1.0F;
         private EffectAudioSpec audio = EffectAudioSpec.NONE;
         private EffectPriority priority = EffectPriority.NORMAL;
+        @Nullable
+        private EffectAttachment attachment;
 
         private Builder(
             ResourceLocation effectId,
@@ -99,6 +124,12 @@ public record VisualEffectSpec(
             return this;
         }
 
+        /** Attaches this visual to a parent; {@code null} keeps it standalone. */
+        public Builder attachment(@Nullable EffectAttachment attachment) {
+            this.attachment = attachment;
+            return this;
+        }
+
         public VisualEffectSpec build() {
             return new VisualEffectSpec(
                 this.effectId,
@@ -111,7 +142,8 @@ public record VisualEffectSpec(
                 this.seed,
                 this.audience,
                 this.audio,
-                this.priority
+                this.priority,
+                this.attachment
             );
         }
     }
