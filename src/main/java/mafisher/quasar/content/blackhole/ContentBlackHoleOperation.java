@@ -1,7 +1,9 @@
 package mafisher.quasar.content.blackhole;
 
 import com.mojang.blaze3d.pipeline.TextureTarget;
+import mafisher.quasar.api.client.render.EffectParameterBinding;
 import mafisher.quasar.api.client.render.EffectUniforms;
+import mafisher.quasar.api.effect.EffectParameterSet;
 import mafisher.quasar.api.client.screen.ScreenEffectInputs;
 import mafisher.quasar.api.client.screen.ScreenEffectMedium;
 import mafisher.quasar.api.client.screen.ScreenEffectMediumPath;
@@ -22,6 +24,17 @@ public final class ContentBlackHoleOperation implements ScreenEffectOperationRen
      * resolution. Scaling it again compounds the reduction and turns the disk into a blocky smear.
      */
     private static final float RAYMARCH_SCALE = 1.0F;
+    private static final EffectParameterBinding CURVE_UNIFORMS = EffectParameterBinding
+        .builder(ContentBlackHoleCinematics.parameters())
+        .uniform("Fade", "Fade")
+        .uniform("RingFormation", "RingFormation")
+        .uniform("ShockStrength", "ShockStrength")
+        .uniform("ShockAbsorb", "ShockAbsorb")
+        .uniform("VortexStrength", "VortexStrength")
+        .uniform("CoreFlash", "CoreFlash")
+        .uniform("OutroJet", "OutroJet")
+        .uniform("Darkness", "Darkness")
+        .build();
 
     /** The full-screen lens/disk must not sample a downscaled scene. */
     @Override
@@ -102,11 +115,18 @@ public final class ContentBlackHoleOperation implements ScreenEffectOperationRen
             EffectUniforms.Group.EFFECT, EffectUniforms.Group.LIGHT);
         context.setUniform(shader, "MaskStrength", context.mask().strength());
 
+        float progress = context.effect().progress();
+        EffectParameterSet parameters = ContentBlackHoleCinematics.parameters();
+        float horizonScale = parameters.sampleFloat("HorizonScale", progress);
+        float diskScale = parameters.sampleFloat("DiskScale", progress);
+        float lensWarpScale = parameters.sampleFloat("LensWarpScale", progress);
+        float ringFormation = parameters.sampleFloat("RingFormation", progress);
+        float turbulenceScale = parameters.sampleFloat("TurbulenceScale", progress);
+        float shockRadiusScale = parameters.sampleFloat("ShockRadius", progress);
+        float vortexRadiusScale = parameters.sampleFloat("VortexRadiusScale", progress);
         float baseScale = context.effect().scale();
-        ContentBlackHoleCinematics.Frame cinematics =
-            ContentBlackHoleCinematics.frame(context.effect().progress());
-        float horizonRadius = baseScale * cinematics.horizonScale();
-        float diskOuterRadius = baseScale * settings.diskOuterFactor() * cinematics.diskScale();
+        float horizonRadius = baseScale * horizonScale;
+        float diskOuterRadius = baseScale * settings.diskOuterFactor() * diskScale;
         float lensRadius = Math.max(
             baseScale * settings.diskOuterFactor() * 1.1F,
             baseScale * 3.0F
@@ -114,40 +134,31 @@ public final class ContentBlackHoleOperation implements ScreenEffectOperationRen
         context.setUniform(shader, "BlackHoleRadius", horizonRadius);
         context.setUniform(shader, "LensRadius", lensRadius);
         context.setUniform(shader, "DiskInnerRadius",
-            baseScale * settings.diskInnerFactor() * cinematics.diskScale());
+            baseScale * settings.diskInnerFactor() * diskScale);
         context.setUniform(shader, "DiskOuterRadius", diskOuterRadius);
         context.setUniform(shader, "DiskThickness",
-            baseScale * settings.diskThicknessFactor() * cinematics.diskScale());
+            baseScale * settings.diskThicknessFactor() * diskScale);
 
         // The standard EFFECT group binds raw AgeTicks, Progress, and Seed. The black
         // hole overrides AgeTicks with its cinematic age because it fast-forwards the
         // cinematic clock inside the effect window.
         context.setUniform(shader, "AgeTicks",
-            ContentBlackHoleCinematics.cinematicAge(
-                context.effect().ageTicks(), context.effect().progress()));
+            ContentBlackHoleCinematics.cinematicAge(context.effect().ageTicks(), progress));
         context.setUniform(shader, "Charge",
             ContentBlackHoleGeometry.chargeForSeed(context.effect().seed(), settings.charge()));
-        context.setUniform(shader, "Fade", cinematics.fade());
-        context.setUniform(shader, "RingFormation", cinematics.ringFormation());
-        context.setUniform(shader, "ShockRadius", baseScale * cinematics.shockRadius());
-        context.setUniform(shader, "ShockStrength", cinematics.shockStrength());
-        context.setUniform(shader, "ShockAbsorb", cinematics.shockAbsorb());
-        context.setUniform(shader, "VortexStrength", cinematics.vortexStrength());
-        context.setUniform(shader, "VortexRadius",
-            baseScale * cinematics.vortexRadiusScale());
-        context.setUniform(shader, "CoreFlash", cinematics.coreFlash());
+        CURVE_UNIFORMS.bind(context, shader, progress, null);
+        context.setUniform(shader, "ShockRadius", baseScale * shockRadiusScale);
+        context.setUniform(shader, "VortexRadius", baseScale * vortexRadiusScale);
         context.setUniform(shader, "FlashRadius", baseScale * 1.5F);
-        context.setUniform(shader, "OutroJet", cinematics.outroJet());
-        context.setUniform(shader, "Darkness", cinematics.darkness());
         context.setUniform(shader, "LensStrength", settings.lensStrength());
         context.setUniform(shader, "LensWarpRadius",
-            baseScale * settings.lensWarpFactor() * cinematics.lensWarpScale());
+            baseScale * settings.lensWarpFactor() * lensWarpScale);
         context.setUniform(shader, "RingStrength",
-            settings.ringBrightness() * cinematics.ringStrengthScale());
+            settings.ringBrightness() * ringFormation);
         context.setUniform(shader, "DiskBrightness",
-            settings.diskBrightness() * cinematics.diskBrightnessScale());
+            settings.diskBrightness() * ringFormation);
         context.setUniform(shader, "Turbulence",
-            settings.turbulence() * cinematics.turbulenceScale());
+            settings.turbulence() * turbulenceScale);
         context.setUniform(shader, "StepCount", (float)ContentBlackHoleGeometry.stepCount(
             context.effect().lod().level(), context.quality().level()
         ));

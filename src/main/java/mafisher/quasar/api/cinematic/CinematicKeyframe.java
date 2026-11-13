@@ -1,6 +1,7 @@
 package mafisher.quasar.api.cinematic;
 
 import java.util.Objects;
+import mafisher.quasar.api.effect.EffectEasing;
 import mafisher.quasar.api.effect.EffectTransform;
 
 /**

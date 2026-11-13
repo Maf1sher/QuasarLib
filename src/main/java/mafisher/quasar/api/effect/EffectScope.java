@@ -114,6 +114,14 @@ public final class EffectScope implements AutoCloseable {
         this.visuals.update(instanceId, transform);
     }
 
+    /** Replaces the parameter overrides of a visual created by this scope. */
+    public void updateVisualParameters(UUID instanceId, EffectParameterState parameters) {
+        this.ensureOpen();
+        Objects.requireNonNull(instanceId, "instanceId");
+        Objects.requireNonNull(parameters, "parameters");
+        this.visuals.updateParameters(instanceId, parameters);
+    }
+
     /** Spawns a registered entity and optionally binds its removal to this scope. */
     public <T extends Entity> T spawnEntity(T entity) {
         return this.spawnEntity(entity, EffectLifetimePolicy.CANCEL_WITH_SCOPE);

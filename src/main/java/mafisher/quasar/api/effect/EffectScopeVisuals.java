@@ -67,6 +67,14 @@ final class EffectScopeVisuals {
         }
     }
 
+    void updateParameters(UUID instanceId, EffectParameterState parameters) {
+        this.prune();
+        VisualEffectHandle handle = this.activeVisuals.get(instanceId);
+        if (handle != null) {
+            VisualEffectService.updateParameters(this.level, handle, parameters);
+        }
+    }
+
     int size() {
         return this.activeVisuals.size();
     }

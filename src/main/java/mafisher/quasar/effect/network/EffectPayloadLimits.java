@@ -26,6 +26,10 @@ public final class EffectPayloadLimits {
     public static final int MAX_BATCH_UPDATES = 256;
     /** Maximum encoded body of one transform batch payload. */
     public static final int MAX_BATCH_BYTES = 16 * 1_024;
+    /** Maximum parameter entries in one batch payload. */
+    public static final int MAX_PARAMETER_UPDATES = 256;
+    /** Maximum encoded body of one parameter batch payload. */
+    public static final int MAX_PARAMETER_BATCH_BYTES = 16 * 1_024;
 
     private EffectPayloadLimits() {
     }

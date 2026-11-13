@@ -20,6 +20,7 @@ public final class LevelEffectRuntime {
     private final EffectBudgetSource budgets;
     private final EffectBudgetRuntime budget;
     private final TransformUpdates transforms;
+    private final ParameterUpdates parameterUpdates;
     private final EffectAudioRuntime audio;
     private final VisualEffectRuntime visuals;
     private final SegmentedEffectRuntime segmented;
@@ -52,9 +53,11 @@ public final class LevelEffectRuntime {
         this.budgets = Objects.requireNonNull(budgets, "budgets");
         this.budget = new EffectBudgetRuntime(this.level, this.budgets);
         this.transforms = new TransformUpdates(this.level, this.packets);
+        this.parameterUpdates = new ParameterUpdates(this.level, this.packets);
         this.audio = new EffectAudioRuntime(this.level, this.packets);
         this.visuals = new VisualEffectRuntime(
-            this.level, this.store, this.packets, this.budgets, this.transforms, this.audio
+            this.level, this.store, this.packets, this.budgets, this.transforms,
+            this.parameterUpdates, this.audio
         );
         this.segmented = new SegmentedEffectRuntime(
             this.level, this.store, this.packets, this.budgets, this.transforms, this.audio
@@ -108,6 +111,10 @@ public final class LevelEffectRuntime {
         return this.transforms;
     }
 
+    public ParameterUpdates parameterUpdates() {
+        return this.parameterUpdates;
+    }
+
     public EffectAudioRuntime audio() {
         return this.audio;
     }
@@ -140,9 +147,10 @@ public final class LevelEffectRuntime {
         return this.recovery;
     }
 
-    /** Flushes per-level transform batches; domain ticks run through their facades for now. */
+    /** Flushes per-level transform and parameter batches. */
     public void tick() {
         this.transforms.flush();
+        this.parameterUpdates.flush();
     }
 
     /**
@@ -183,5 +191,6 @@ public final class LevelEffectRuntime {
         this.rollbacks.clear();
         this.budget.clear();
         this.transforms.clear();
+        this.parameterUpdates.clear();
     }
 }

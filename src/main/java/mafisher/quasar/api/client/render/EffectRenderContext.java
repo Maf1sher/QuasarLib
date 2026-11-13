@@ -134,6 +134,11 @@ public record EffectRenderContext(
             this.partialTick, this.lod, this.quality, environment, this.camera, this.daylight);
     }
 
+    /** Returns the server-authored parameter overrides for this instance. */
+    public mafisher.quasar.api.effect.EffectParameterState parameters() {
+        return this.effect.parameters();
+    }
+
     public float scale() {
         return this.effect.payload().scale();
     }

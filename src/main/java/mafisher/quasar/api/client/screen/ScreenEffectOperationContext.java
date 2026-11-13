@@ -31,6 +31,11 @@ public interface ScreenEffectOperationContext {
     /** Returns the effect instance, transform, age, progress, and partial tick. */
     EffectRenderContext effect();
 
+    /** Returns the server-authored parameter overrides for this effect instance. */
+    default mafisher.quasar.api.effect.EffectParameterState parameters() {
+        return this.effect().parameters();
+    }
+
     /** Returns mask color and strength for this effect. */
     ScreenEffectMask mask();
 
@@ -159,6 +164,9 @@ public interface ScreenEffectOperationContext {
 
     /** Sets a three-component uniform, failing when the shader does not declare it. */
     void setUniform(ShaderInstance shader, String name, float x, float y, float z);
+
+    /** Sets a four-component uniform, failing when the shader does not declare it. */
+    void setUniform(ShaderInstance shader, String name, float x, float y, float z, float w);
 
     /** Sets a three-component uniform from a world position, failing when undeclared. */
     void setUniform(ShaderInstance shader, String name, Vec3 value);

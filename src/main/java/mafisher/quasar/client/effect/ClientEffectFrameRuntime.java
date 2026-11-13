@@ -20,6 +20,7 @@ import mafisher.quasar.client.effect.screen.ScreenFlashRenderer;
 import mafisher.quasar.effect.network.EffectAudioPlanPayload;
 import mafisher.quasar.effect.network.EffectAudioTriggerPayload;
 import mafisher.quasar.effect.network.EffectDebrisPayload;
+import mafisher.quasar.effect.network.EffectParameterBatchPayload;
 import mafisher.quasar.effect.network.EffectTransformBatchPayload;
 import mafisher.quasar.effect.network.ResumeEffectsPayload;
 import mafisher.quasar.effect.network.StopEffectAudioPayload;
@@ -109,6 +110,10 @@ final class ClientEffectFrameRuntime {
                 ));
             }
         }
+    }
+
+    static void updateParameters(EffectParameterBatchPayload payload) {
+        manager().updateParameters(payload);
     }
 
     static void startSegmented(StartSegmentedVisualEffectPayload payload) {

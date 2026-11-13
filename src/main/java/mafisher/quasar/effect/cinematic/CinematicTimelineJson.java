@@ -8,7 +8,7 @@ import java.util.Locale;
 import mafisher.quasar.api.audio.EffectAudioSpec;
 import mafisher.quasar.api.cinematic.CinematicAudioMode;
 import mafisher.quasar.api.cinematic.CinematicTimeline;
-import mafisher.quasar.api.cinematic.EffectEasing;
+import mafisher.quasar.api.effect.EffectEasing;
 import mafisher.quasar.api.effect.EffectAudience;
 import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.budget.EffectPriority;

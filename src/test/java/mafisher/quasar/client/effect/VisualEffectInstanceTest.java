@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 
 import java.util.UUID;
 import mafisher.quasar.api.client.render.VisualEffectInstance;
+import mafisher.quasar.api.effect.EffectCurve;
+import mafisher.quasar.api.effect.EffectParameterState;
 import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.EffectTransform;
 import mafisher.quasar.api.effect.StartVisualEffectPayload;
@@ -47,6 +49,21 @@ class VisualEffectInstanceTest {
         EffectTransform interpolated = updated.interpolatedTransform(105L, 0.5F);
 
         assertEquals(9.0, interpolated.position().x(), 1.0E-5);
+    }
+
+    @Test
+    void parametersSurviveTransformUpdatesAndCanBeReplaced() {
+        VisualEffectInstance instance = new VisualEffectInstance(payload(100L, 0.0));
+        EffectParameterState state = EffectParameterState.of(
+            "fade", EffectCurve.Value.scalar(0.5F)
+        );
+
+        VisualEffectInstance withParameters = instance.withParameters(state);
+        VisualEffectInstance moved = withParameters.withTransform(transform(12.0), 106L);
+
+        assertSame(state, moved.parameters());
+        assertSame(state, withParameters.parameters());
+        assertEquals(0.5F, moved.parameters().value("fade").x(), 0.0F);
     }
 
     @Test

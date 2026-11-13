@@ -249,7 +249,8 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
     public void onTick(GameplayEffectContext context) {
         int duration = context.spec().phases().totalDurationTicks();
         float progress = Math.min(1.0F, Math.max(0.0F, context.ageTicks() / (float)duration));
-        ContentBlackHoleCinematics.Frame frame = ContentBlackHoleCinematics.frame(progress);
+        float horizonScale = ContentBlackHoleCinematics.parameters()
+            .sampleFloat("HorizonScale", progress);
         this.tearBurstsEmitted = 0;
 
         if (!this.coreDone) {
@@ -277,7 +278,7 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
         }
         if (progress >= ContentBlackHoleCinematics.HORIZON_END
             && progress < ContentBlackHoleCinematics.IMPLOSION) {
-            this.tickForces(context, frame);
+            this.tickForces(context, horizonScale);
         }
         if (progress >= ContentBlackHoleCinematics.IMPLOSION) {
             this.releaseCraterSync(context);
@@ -762,10 +763,10 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
         return Math.max(0, implosionTick - context.ageTicks());
     }
 
-    private void tickForces(GameplayEffectContext context, ContentBlackHoleCinematics.Frame frame) {
-        double radius = this.attractionRadius * Math.max(0.0, frame.horizonScale());
+    private void tickForces(GameplayEffectContext context, float horizonScale) {
+        double radius = this.attractionRadius * Math.max(0.0, horizonScale);
         if (radius >= 0.5) {
-            double collapse = frame.horizonScale() < 1.0F ? 1.5 : 1.0;
+            double collapse = horizonScale < 1.0F ? 1.5 : 1.0;
             EffectForceField field = EffectForceField.accretion(
                 new EffectPoint(this.center.x, this.center.y, this.center.z),
                 this.diskAxis,
@@ -779,7 +780,7 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
             context.applyForceField(field, this::mayAffect);
         }
 
-        double consumeRadius = Math.max(0.75, this.coreRadius * Math.max(0.05, frame.horizonScale()));
+        double consumeRadius = Math.max(0.75, this.coreRadius * Math.max(0.05, horizonScale));
         EffectDamageShape.Sphere horizon = new EffectDamageShape.Sphere(
             new EffectPoint(this.center.x, this.center.y, this.center.z),
             consumeRadius

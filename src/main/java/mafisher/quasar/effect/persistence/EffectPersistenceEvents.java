@@ -65,6 +65,7 @@ public final class EffectPersistenceEvents {
             player,
             new ResumeEffectsPayload(level.dimension().location(), effects, segmentedEffects)
         );
+        VisualEffectService.sendParameterSnapshots(level, player);
         for (EffectAudioPlan plan : EffectAudioService.resumePlans(level, player)) {
             PacketDistributor.sendToPlayer(player, new EffectAudioPlanPayload(plan, level.getGameTime()));
         }

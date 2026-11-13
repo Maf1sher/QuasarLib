@@ -160,6 +160,35 @@ public final class VisualEffectService {
         }
     }
 
+    /**
+     * Replaces the server-authored parameter overrides of an active visual. The change is
+     * persisted and delivered to tracking players in the next coalesced batch. Curves are sampled
+     * on the client from progress; only overrides are sent.
+     */
+    public static void updateParameters(
+        ServerLevel level,
+        VisualEffectHandle handle,
+        EffectParameterState parameters
+    ) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(handle, "handle");
+        Objects.requireNonNull(parameters, "parameters");
+        LevelEffectRuntime runtime = EffectRuntimeRegistry.peek(level);
+        if (runtime != null) {
+            runtime.visuals().updateParameters(handle, parameters);
+        }
+    }
+
+    /** Sends current parameter overrides to a player who already tracks the matching visuals. */
+    public static void sendParameterSnapshots(ServerLevel level, ServerPlayer player) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(player, "player");
+        LevelEffectRuntime runtime = EffectRuntimeRegistry.peek(level);
+        if (runtime != null) {
+            runtime.visuals().sendParameterSnapshots(player);
+        }
+    }
+
     /** Player IDs currently tracking one effect; empty for unknown, finished, or untracked handles. */
     public static List<UUID> trackingPlayers(ServerLevel level, VisualEffectHandle handle) {
         List<UUID> players = new ArrayList<>();

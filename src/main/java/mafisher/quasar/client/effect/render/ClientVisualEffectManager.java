@@ -39,6 +39,7 @@ import mafisher.quasar.client.effect.frame.ClientEffectClock;
 import mafisher.quasar.client.effect.quality.ClientFarPlane;
 import mafisher.quasar.client.effect.quality.EffectLodSelection;
 import mafisher.quasar.client.effect.quality.EffectLodTracker;
+import mafisher.quasar.effect.network.EffectParameterBatchPayload;
 import mafisher.quasar.effect.network.ResumeEffectsPayload;
 import mafisher.quasar.effect.network.StopSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.StopVisualEffectPayload;
@@ -248,6 +249,23 @@ public final class ClientVisualEffectManager {
             this.activeEffects.put(payload.instanceId(),
                 effect.withTransform(payload.transform(), payload.updateGameTime()));
             this.indexInstance(payload.instanceId());
+        }
+    }
+
+    /** Replaces parameter overrides for standalone visual instances. */
+    public void updateParameters(EffectParameterBatchPayload payload) {
+        this.invalidateFrame();
+        Minecraft minecraft = Minecraft.getInstance();
+        ClientLevel level = minecraft.level;
+        this.synchronizeLevel(level);
+        if (level == null || !level.dimension().location().equals(payload.dimensionId())) {
+            return;
+        }
+        for (EffectParameterBatchPayload.Entry update : payload.updates()) {
+            VisualEffectInstance effect = this.activeEffects.get(update.instanceId());
+            if (effect != null && effect.payload().segmentLink() == null) {
+                this.activeEffects.put(update.instanceId(), effect.withParameters(update.state()));
+            }
         }
     }
 

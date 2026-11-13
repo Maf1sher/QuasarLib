@@ -306,6 +306,12 @@ final class ScreenEffectOperationContextImpl implements ScreenEffectOperationCon
         uniform.set(x, y, z);
     }
 
+    /** Sets a four-component uniform, failing when the shader does not declare it. */
+    public void setUniform(ShaderInstance shader, String name, float x, float y, float z, float w) {
+        AbstractUniform uniform = uniform(shader, name);
+        uniform.set(x, y, z, w);
+    }
+
     /** Sets a three-component uniform from a world position, failing when undeclared. */
     public void setUniform(ShaderInstance shader, String name, Vec3 value) {
         Objects.requireNonNull(value, "value");

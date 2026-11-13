@@ -1,13 +1,16 @@
 package mafisher.quasar.content.blackhole;
 
+import mafisher.quasar.api.effect.EffectCurve;
+import mafisher.quasar.api.effect.EffectEasing;
+import mafisher.quasar.api.effect.EffectParameterSet;
+
 /**
- * Pure cinematic timeline for the content black hole.
+ * Duration-independent curve definition for the content black hole.
  *
- * <p>The show has three acts: a core-sized space drill that snaps into a dark
- * horizon, an accretion ring that only forms after the horizon exists, and a
- * reverse drill that drains the ring before the horizon collapses. Every value
- * is a multiplier or an absolute factor derived only from the effect progress,
- * so the timeline is deterministic, duration independent, and headless-testable.</p>
+ * <p>The show has three acts: a core-sized space drill that snaps into a dark horizon, an
+ * accretion ring that only forms after the horizon exists, and a reverse drill that drains the
+ * ring before the horizon collapses. Every channel is a named curve sampled from normalized
+ * progress, so the same definition works at every authored duration.</p>
  */
 final class ContentBlackHoleCinematics {
     /** Progress at which the intro vortex ends and the steady phase begins. */
@@ -35,198 +38,160 @@ final class ContentBlackHoleCinematics {
     /** Progress at which the echo wave starts. */
     static final float ECHO = 0.968F;
 
-    /**
-     * Drill radius as a multiple of the effect scale. The visible shadow is
-     * {@code B_CRITICAL} (~2.6x) the horizon, so 4.0 keeps the drill about 1.5x
-     * the black core instead of hiding it inside the shadow.
-     */
-    private static final float DEFAULT_VORTEX_RADIUS = 4.0F;
+    static final EffectParameterSet PARAMETERS = buildParameters();
 
     private ContentBlackHoleCinematics() {
     }
 
-    static Frame frame(float progress) {
-        float p = clamp01(progress);
-        if (p < INTRO_END) {
-            return intro(p);
-        }
-        if (p < DESTABILISE) {
-            return steady();
-        }
-        return outro(p);
+    static EffectParameterSet parameters() {
+        return PARAMETERS;
     }
 
-    /** Multiplies the authored disk spin and procedural time. */
+    /** Multiplies the authored disk spin and procedural time by the cinematic age curve. */
     static float cinematicAge(float ageTicks, float progress) {
-        return Math.max(0.0F, ageTicks) * frame(progress).ageScale();
+        return Math.max(0.0F, ageTicks) * PARAMETERS.sampleFloat("AgeScale", progress);
     }
 
-    private static Frame intro(float p) {
-        float fade = smooth(0.0F, 0.004F, p);
-        float rise = smooth(0.0F, VORTEX_END, p);
-        float snap = easeOutCubic(smooth(VORTEX_HOLD_END, SNAP_END, p));
-        float decay = smooth(SNAP_END, HORIZON_END, p);
-        float vortex = rise * 2.2F * (1.0F - snap) - 0.5F * snap * (1.0F - decay);
-
-        float ignite = easeOutCubic(smooth(VORTEX_HOLD_END, 0.075F, p));
-        float settle = smooth(0.075F, HORIZON_END, p);
-        float horizon = lerp(lerp(0.05F, 1.06F, ignite), 1.0F, settle);
-        float ringFormation = smooth(RING_START, RING_END, p);
-        float disk = lerp(0.50F, 1.0F, easeOutCubic(ringFormation));
-        float turbulence = 1.0F + 0.5F * (1.0F - smooth(0.020F, 0.100F, p));
-        float age = lerp(0.20F, 1.0F, easeOutCubic(smooth(0.010F, 0.080F, p)));
-
-        float expand = smooth(0.070F, 0.130F, p);
-        float shockRadius = 8.0F * easeOutCubic(expand);
-        float shockAbsorb = (1.0F - expand) * smooth(0.066F, 0.074F, p);
-        float coreFlash = 0.16F * bump(p, 0.070F, 0.010F);
-        float darkness = 0.30F * bump(p, 0.072F, 0.012F);
-        return new Frame(
-            horizon,
-            disk,
-            lerp(0.70F, 1.0F, smooth(0.0F, 0.035F, p)),
-            ringFormation,
-            ringFormation,
-            ringFormation,
-            turbulence,
-            age,
-            vortex,
-            DEFAULT_VORTEX_RADIUS,
-            shockRadius,
-            0.08F * shockAbsorb,
-            shockAbsorb,
-            coreFlash,
-            0.0F,
-            darkness,
-            fade
-        );
+    private static EffectParameterSet buildParameters() {
+        return EffectParameterSet.builder()
+            .anchor("intro_end", INTRO_END)
+            .anchor("vortex_end", VORTEX_END)
+            .anchor("vortex_hold_end", VORTEX_HOLD_END)
+            .anchor("snap_end", SNAP_END)
+            .anchor("ignition", IGNITION)
+            .anchor("horizon_end", HORIZON_END)
+            .anchor("ring_start", RING_START)
+            .anchor("ring_end", RING_END)
+            .anchor("destabilise", DESTABILISE)
+            .anchor("collapse", COLLAPSE)
+            .anchor("implosion", IMPLOSION)
+            .anchor("echo", ECHO)
+            .curve("HorizonScale", curve(
+                key(0.000F, 0.0500F), key(0.060F, 0.0500F), key(0.066F, 0.7852F),
+                key(0.070F, 1.0424F), key(0.072F, 1.0589F), key(0.075F, 1.0600F),
+                key(0.085F, 1.0000F), key(0.175F, 1.0000F), key(0.860F, 1.0000F),
+                key(0.905F, 1.0000F), key(0.920F, 0.9747F), key(0.940F, 0.2988F),
+                key(0.945F, 0.2000F), key(0.950F, 0.1992F), key(0.955F, 0.1750F),
+                key(0.960F, 0.0799F), key(0.965F, 0.0000F), key(1.000F, 0.0000F)))
+            .curve("DiskScale", curve(
+                key(0.000F, 0.5000F), key(0.090F, 0.5000F), key(0.100F, 0.5786F),
+                key(0.125F, 0.9375F), key(0.130F, 0.9695F), key(0.160F, 1.0000F),
+                key(0.860F, 1.0000F), key(0.905F, 1.0000F), key(0.920F, 0.9753F),
+                key(0.940F, 0.3163F), key(0.945F, 0.2200F), key(0.950F, 0.2192F),
+                key(0.955F, 0.1925F), key(0.960F, 0.0879F), key(0.965F, 0.0000F),
+                key(1.000F, 0.0000F)))
+            .curve("LensWarpScale", curve(
+                key(0.000F, 0.7000F), key(0.035F, 1.0000F), key(0.945F, 1.0000F),
+                key(0.995F, 0.0000F), key(1.000F, 0.0000F)))
+            .curve("RingFormation", curve(
+                key(0.000F, 0.0000F), key(0.090F, 0.0000F), key(0.100F, 0.0554F),
+                key(0.125F, 0.5000F), key(0.130F, 0.6064F), key(0.160F, 1.0000F),
+                key(0.860F, 1.0000F), key(0.905F, 1.0000F), key(0.920F, 0.9747F),
+                key(0.940F, 0.2988F), key(0.945F, 0.2000F), key(0.950F, 0.1992F),
+                key(0.955F, 0.1750F), key(0.960F, 0.0799F), key(0.965F, 0.0000F),
+                key(1.000F, 0.0000F)))
+            .curve("TurbulenceScale", curve(
+                key(0.000F, 1.5000F), key(0.020F, 1.5000F), key(0.045F, 1.3840F),
+                key(0.080F, 1.0781F), key(0.100F, 1.0000F), key(0.860F, 1.0000F),
+                key(0.880F, 1.4170F, EffectEasing.LINEAR), key(0.905F, 2.0000F, EffectEasing.LINEAR),
+                key(0.920F, 2.0317F, EffectEasing.LINEAR), key(0.940F, 2.8766F, EffectEasing.LINEAR),
+                key(0.945F, 3.0000F, EffectEasing.LINEAR), key(1.000F, 3.0000F, EffectEasing.LINEAR)))
+            .curve("AgeScale", curve(
+                key(0.000F, 0.2000F), key(0.010F, 0.2000F), key(0.020F, 0.3257F),
+                key(0.045F, 0.9000F), key(0.080F, 1.0000F), key(0.860F, 1.0000F),
+                key(0.880F, 1.5838F, EffectEasing.LINEAR), key(0.905F, 2.4000F, EffectEasing.LINEAR),
+                key(0.920F, 2.4380F, EffectEasing.LINEAR), key(0.940F, 3.4519F, EffectEasing.LINEAR),
+                key(0.945F, 3.6000F, EffectEasing.LINEAR), key(0.950F, 3.9125F, EffectEasing.LINEAR),
+                key(0.955F, 4.6000F, EffectEasing.LINEAR), key(0.965F, 5.6000F, EffectEasing.LINEAR),
+                key(1.000F, 5.6000F, EffectEasing.LINEAR)))
+            .curve("VortexStrength", curve(
+                key(0.000F, 0.0000F), key(0.002F, 0.0085F), key(0.004F, 0.0332F),
+                key(0.010F, 0.1917F), key(0.020F, 0.6612F), key(0.035F, 1.5388F),
+                key(0.045F, 2.0083F), key(0.055F, 2.2000F), key(0.060F, 2.2000F),
+                key(0.066F, -0.1625F), key(0.070F, -0.4989F), key(0.072F, -0.5000F),
+                key(0.074F, -0.4681F), key(0.075F, -0.4324F), key(0.080F, -0.1650F),
+                key(0.085F, 0.0000F), key(0.175F, 0.0000F), key(0.860F, 0.0000F),
+                key(0.880F, 0.5838F), key(0.905F, 1.4000F), key(0.920F, 1.6531F),
+                key(0.940F, 2.1656F), key(0.945F, 2.2000F), key(0.950F, 1.7469F),
+                key(0.955F, 0.7500F), key(0.960F, -0.2469F), key(0.965F, -0.7000F),
+                key(0.968F, -0.6804F), key(0.975F, -0.5185F), key(0.980F, -0.3500F),
+                key(0.990F, -0.0519F), key(0.995F, 0.0000F), key(1.000F, 0.0000F)))
+            .curve("VortexRadiusScale", curve(
+                key(0.000F, 4.0000F, EffectEasing.LINEAR),
+                key(1.000F, 4.0000F, EffectEasing.LINEAR)))
+            .curve("ShockRadius", curve(
+                key(0.000F, 0.0000F), key(0.070F, 0.0000F), key(0.080F, 1.6493F),
+                key(0.085F, 3.1946F), key(0.090F, 4.7485F), key(0.100F, 7.0000F),
+                key(0.125F, 8.0000F), key(0.130F, 8.0000F), key(0.175F, 0.0000F),
+                key(0.860F, 0.0000F), key(0.905F, 0.0000F), key(0.920F, 7.7466F),
+                key(0.940F, 0.9876F), key(0.945F, 0.0000F), key(0.950F, 0.5461F),
+                key(0.955F, 1.9147F), key(0.960F, 3.6304F), key(0.965F, 5.2622F),
+                key(0.968F, 6.0783F), key(0.975F, 7.3550F), key(0.980F, 7.7829F),
+                key(0.990F, 7.9947F), key(0.995F, 8.0000F), key(1.000F, 0.0000F)))
+            .curve("ShockStrength", curve(
+                key(0.000F, 0.0000F), key(0.070F, 0.0000F), key(0.072F, 0.0673F),
+                key(0.074F, 0.0790F), key(0.075F, 0.0784F), key(0.080F, 0.0741F),
+                key(0.085F, 0.0675F), key(0.090F, 0.0593F), key(0.100F, 0.0400F),
+                key(0.125F, 0.0016F), key(0.130F, 0.0000F), key(0.905F, 0.0000F),
+                key(0.920F, 0.0600F, EffectEasing.LINEAR),
+                key(0.940F, 0.0600F, EffectEasing.LINEAR),
+                key(0.945F, 0.0000F), key(0.950F, 0.0586F), key(0.952F, 0.0573F),
+                key(0.955F, 0.0548F), key(0.960F, 0.0490F), key(0.965F, 0.0420F),
+                key(0.968F, 0.0373F), key(0.975F, 0.0259F), key(0.980F, 0.0180F),
+                key(0.990F, 0.0052F), key(0.995F, 0.0014F), key(1.000F, 0.0000F)))
+            .curve("ShockAbsorb", curve(
+                key(0.000F, 0.0000F), key(0.070F, 0.5000F), key(0.072F, 0.8410F),
+                key(0.074F, 0.9873F), key(0.075F, 0.9803F), key(0.080F, 0.9259F),
+                key(0.085F, 0.8438F), key(0.090F, 0.7407F), key(0.100F, 0.5000F),
+                key(0.125F, 0.0197F), key(0.130F, 0.0000F), key(0.905F, 0.0000F),
+                key(0.920F, 1.0000F, EffectEasing.LINEAR),
+                key(0.940F, 1.0000F, EffectEasing.LINEAR),
+                key(0.945F, 0.0000F), key(0.950F, 0.8790F), key(0.952F, 0.8600F),
+                key(0.955F, 0.8216F), key(0.960F, 0.7357F), key(0.965F, 0.6295F),
+                key(0.968F, 0.5595F), key(0.975F, 0.3888F), key(0.980F, 0.2705F),
+                key(0.990F, 0.0784F), key(0.995F, 0.0210F), key(1.000F, 0.0000F)))
+            .curve("CoreFlash", curve(
+                key(0.000F, 0.0000F), key(0.060F, 0.0589F), key(0.066F, 0.1363F),
+                key(0.070F, 0.1600F), key(0.072F, 0.1537F), key(0.080F, 0.0589F),
+                key(0.090F, 0.0029F), key(0.100F, 0.0000F), key(0.175F, 0.0000F),
+                key(0.945F, 0.0930F), key(0.950F, 0.1879F), key(0.952F, 0.2000F),
+                key(0.955F, 0.1738F), key(0.960F, 0.0736F), key(0.965F, 0.0143F),
+                key(0.968F, 0.0037F), key(0.975F, 0.0000F), key(1.000F, 0.0000F)))
+            .curve("OutroJet", curve(
+                key(0.000F, 0.0000F), key(0.905F, 0.0000F), key(0.920F, 0.3403F),
+                key(0.940F, 0.5000F), key(0.945F, 0.5000F), key(0.950F, 0.4219F),
+                key(0.955F, 0.2500F), key(0.960F, 0.0781F), key(0.965F, 0.0000F),
+                key(1.000F, 0.0000F)))
+            .curve("Darkness", curve(
+                key(0.000F, 0.0000F), key(0.060F, 0.1104F), key(0.066F, 0.2336F),
+                key(0.070F, 0.2918F), key(0.072F, 0.3000F), key(0.074F, 0.2918F),
+                key(0.080F, 0.1924F), key(0.090F, 0.0316F), key(0.100F, 0.0013F),
+                key(0.175F, 0.0000F), key(0.945F, 0.4623F), key(0.950F, 0.5500F),
+                key(0.952F, 0.5349F), key(0.955F, 0.4623F), key(0.960F, 0.2746F),
+                key(0.965F, 0.1153F), key(0.968F, 0.0580F), key(0.975F, 0.0072F),
+                key(1.000F, 0.0000F)))
+            .curve("Fade", curve(
+                key(0.000F, 0.0000F), key(0.004F, 1.0000F), key(0.990F, 1.0000F),
+                key(1.000F, 0.0000F)))
+            .build();
     }
 
-    private static Frame steady() {
-        return new Frame(1.0F, 1.0F, 1.0F, 1.0F, 1.0F, 1.0F, 1.0F, 1.0F,
-            0.0F, DEFAULT_VORTEX_RADIUS, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F);
-    }
-
-    private static Frame outro(float p) {
-        float destabilise = smooth(DESTABILISE, COLLAPSE, p);
-        float collapse = easeInCubic(smooth(COLLAPSE, IMPLOSION, p));
-        float implosion = smooth(IMPLOSION, 0.965F, p);
-        float wave = smooth(IMPLOSION, 1.0F, p);
-        float fade = 1.0F - smooth(0.990F, 1.0F, p);
-
-        float vortex;
-        if (p < IMPLOSION) {
-            vortex = 1.4F * destabilise + 0.8F * smooth(COLLAPSE, IMPLOSION, p);
-        } else if (p < 0.965F) {
-            vortex = lerp(2.2F, -0.7F, smooth(IMPLOSION, 0.965F, p));
-        } else {
-            vortex = lerp(-0.7F, 0.0F, smooth(0.965F, 0.995F, p));
+    private static EffectCurve curve(Key... keys) {
+        EffectCurve.Builder builder = EffectCurve.scalar();
+        for (Key key : keys) {
+            builder.keyframe(key.time(), key.value(), key.easing());
         }
-
-        float horizon = lerp(1.0F, 0.20F, collapse) * (1.0F - easeInCubic(implosion));
-        float disk = lerp(1.0F, 0.22F, collapse) * (1.0F - easeInCubic(implosion));
-        float ringFormation = horizon;
-        float warp = 1.0F - smooth(0.945F, 0.995F, p);
-        float turbulence = 1.0F + 1.0F * destabilise + 1.0F * collapse;
-        float age = 1.0F + 1.4F * destabilise + 1.2F * collapse + 2.0F * implosion;
-
-        float shockRadius;
-        float shockStrength;
-        float shockAbsorb;
-        if (p < IMPLOSION) {
-            shockRadius = 8.0F * (1.0F - collapse);
-            shockAbsorb = smooth(0.905F, 0.920F, p)
-                * (1.0F - smooth(0.940F, IMPLOSION, p));
-            shockStrength = 0.06F * shockAbsorb;
-        } else {
-            shockRadius = 8.0F * easeOutCubic(wave);
-            float ramp = smooth(IMPLOSION, IMPLOSION + 0.002F, p);
-            shockAbsorb = 0.90F * (1.0F - wave) * ramp;
-            shockStrength = 0.06F * (1.0F - wave) * ramp;
-        }
-        if (shockAbsorb <= 0.001F) {
-            shockRadius = 0.0F;
-            shockStrength = 0.0F;
-        }
-
-        float coreFlash = 0.20F * bump(p, 0.952F, 0.008F);
-        float darkness = 0.55F * bump(p, 0.950F, 0.012F);
-        float jet = 0.50F * easeOutCubic(smooth(COLLAPSE, IMPLOSION, p)) * (1.0F - implosion);
-        return new Frame(
-            horizon,
-            disk,
-            warp,
-            ringFormation,
-            ringFormation,
-            ringFormation,
-            turbulence,
-            age,
-            vortex,
-            DEFAULT_VORTEX_RADIUS,
-            shockRadius,
-            shockStrength,
-            shockAbsorb,
-            coreFlash,
-            jet,
-            darkness,
-            fade
-        );
+        return builder.build();
     }
 
-    private static float clamp01(float value) {
-        return Math.max(0.0F, Math.min(1.0F, value));
+    private static Key key(float time, float value) {
+        return new Key(time, value, EffectEasing.EASE_IN_OUT);
     }
 
-    private static float lerp(float from, float to, float t) {
-        return from + (to - from) * clamp01(t);
+    private static Key key(float time, float value, EffectEasing easing) {
+        return new Key(time, value, easing);
     }
 
-    private static float smooth(float from, float to, float value) {
-        if (to <= from) {
-            return value >= to ? 1.0F : 0.0F;
-        }
-        float t = clamp01((value - from) / (to - from));
-        return t * t * (3.0F - 2.0F * t);
-    }
-
-    private static float easeOutCubic(float value) {
-        float t = 1.0F - clamp01(value);
-        return 1.0F - t * t * t;
-    }
-
-    private static float easeInCubic(float value) {
-        float t = clamp01(value);
-        return t * t * t;
-    }
-
-    private static float bump(float value, float center, float halfWidth) {
-        float offset = (value - center) / halfWidth;
-        return (float)Math.exp(-offset * offset);
-    }
-
-    /**
-     * One evaluated frame. All scale fields are multipliers around the authored
-     * settings; {@code shockRadius} and {@code vortexRadiusScale} are in
-     * multiples of the effect scale.
-     */
-    record Frame(
-        float horizonScale,
-        float diskScale,
-        float lensWarpScale,
-        float ringFormation,
-        float diskBrightnessScale,
-        float ringStrengthScale,
-        float turbulenceScale,
-        float ageScale,
-        float vortexStrength,
-        float vortexRadiusScale,
-        float shockRadius,
-        float shockStrength,
-        float shockAbsorb,
-        float coreFlash,
-        float outroJet,
-        float darkness,
-        float fade
-    ) {
+    private record Key(float time, float value, EffectEasing easing) {
     }
 }

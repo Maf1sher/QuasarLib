@@ -6,7 +6,7 @@ import mafisher.quasar.api.cinematic.CinematicEffectHandle;
 import mafisher.quasar.api.cinematic.CinematicEffectService;
 import mafisher.quasar.api.cinematic.CinematicEffectStartResult;
 import mafisher.quasar.api.cinematic.CinematicTimeline;
-import mafisher.quasar.api.cinematic.EffectEasing;
+import mafisher.quasar.api.effect.EffectEasing;
 import mafisher.quasar.api.effect.EffectAudience;
 import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.EffectTransform;

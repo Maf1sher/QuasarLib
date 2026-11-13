@@ -1,7 +1,8 @@
 /**
  * Effect API.
  *
- * Effect lifecycle, audience, scope, timeline, transforms, visual specs, and service handles.
+ * Effect lifecycle, audience, scope, timeline, transforms, curves, parameter
+ * sets, visual specs, and service handles.
  *
  * <p>Types in this package are part of the supported consumer contract.
  * Implementation packages outside {@code mafisher.quasar.api} are internal.</p>

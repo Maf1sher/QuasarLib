@@ -12,6 +12,7 @@ import java.util.Set;
 import java.util.UUID;
 import mafisher.quasar.api.audio.EffectAudioPlan;
 import mafisher.quasar.api.effect.EffectAudience;
+import mafisher.quasar.api.effect.EffectParameterState;
 import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.budget.EffectPriority;
 import mafisher.quasar.api.effect.EffectRemovalPolicy;
@@ -28,8 +29,10 @@ import mafisher.quasar.api.persistence.EffectKind;
 import mafisher.quasar.api.persistence.EffectPersistenceOptions;
 import mafisher.quasar.api.scale.SegmentLink;
 import mafisher.quasar.effect.EffectBudgetService;
+import mafisher.quasar.effect.network.EffectParameterBatchPayload;
 import mafisher.quasar.effect.network.StopVisualEffectPayload;
 import mafisher.quasar.effect.persistence.EffectAudioNbt;
+import mafisher.quasar.effect.persistence.EffectParameterNbt;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.level.ServerLevel;
@@ -52,6 +55,7 @@ public final class VisualEffectRuntime {
     private final EffectPacketSink packets;
     private final EffectBudgetSource budgets;
     private final TransformUpdates transforms;
+    private final ParameterUpdates parameterUpdates;
     private final EffectAudioRuntime audio;
     private final Map<UUID, ActiveEffect> effects = new LinkedHashMap<>();
 
@@ -61,6 +65,7 @@ public final class VisualEffectRuntime {
         EffectPacketSink packets,
         EffectBudgetSource budgets,
         TransformUpdates transforms,
+        ParameterUpdates parameterUpdates,
         EffectAudioRuntime audio
     ) {
         this.level = Objects.requireNonNull(level, "level");
@@ -68,6 +73,7 @@ public final class VisualEffectRuntime {
         this.packets = Objects.requireNonNull(packets, "packets");
         this.budgets = Objects.requireNonNull(budgets, "budgets");
         this.transforms = Objects.requireNonNull(transforms, "transforms");
+        this.parameterUpdates = Objects.requireNonNull(parameterUpdates, "parameterUpdates");
         this.audio = Objects.requireNonNull(audio, "audio");
     }
 
@@ -149,8 +155,11 @@ public final class VisualEffectRuntime {
             spec.seed(),
             segmentLink
         );
+        EffectParameterState parameters = descriptor == null
+            ? EffectParameterState.EMPTY
+            : EffectParameterNbt.loadFrom(descriptor);
         ActiveEffect active = new ActiveEffect(payload, spec.audience(), transform, descriptor,
-            spec.priority());
+            spec.priority(), parameters);
         this.effects.put(instanceId, active);
         if (!enforceBudget(this.effects, instanceId)) {
             EffectStartStatus status = recordStart
@@ -264,6 +273,30 @@ public final class VisualEffectRuntime {
             this.store.recordUpdate(active.descriptor());
         }
         this.transforms.queueVisual(handle.instanceId(), transform, active.trackingPlayers());
+    }
+
+    /**
+     * Replaces the authoritative parameter overrides of an active visual. The change is persisted
+     * with the descriptor and delivered to trackers in the next per-tick parameter batch.
+     */
+    public void updateParameters(VisualEffectHandle handle, EffectParameterState parameters) {
+        Objects.requireNonNull(handle, "handle");
+        Objects.requireNonNull(parameters, "parameters");
+        ActiveEffect active = findActive(handle);
+        if (active == null || active.parameters().equals(parameters)) {
+            return;
+        }
+        active.setParameters(parameters);
+        EffectDescriptor descriptor = active.descriptor();
+        if (descriptor != null) {
+            CompoundTag state = descriptor.stateView().copy();
+            EffectParameterNbt.saveInto(state, parameters);
+            active.setDescriptor(descriptor.withState(state));
+            this.store.recordUpdate(active.descriptor());
+        }
+        this.parameterUpdates.queueVisual(
+            handle.instanceId(), parameters, active.trackingPlayers()
+        );
     }
 
     /** Player IDs currently tracking one effect; empty for unknown, finished, or untracked handles. */
@@ -390,9 +423,20 @@ public final class VisualEffectRuntime {
         return List.copyOf(payloads);
     }
 
+    /** Sends the current parameter overrides for every visual this player already tracks. */
+    public void sendParameterSnapshots(ServerPlayer player) {
+        Objects.requireNonNull(player, "player");
+        for (ActiveEffect active : this.effects.values()) {
+            if (active.trackingPlayers().contains(player.getUUID())) {
+                sendParameterSnapshot(player, active);
+            }
+        }
+    }
+
     /** Drops transient visual state without deleting persisted descriptors. */
     public void clear() {
         this.effects.clear();
+        this.parameterUpdates.clear();
     }
 
     private static CompoundTag descriptorState(EffectPersistenceOptions options, VisualEffectSpec spec) {
@@ -457,6 +501,20 @@ public final class VisualEffectRuntime {
     private void sendStart(ServerPlayer player, ActiveEffect active) {
         this.packets.sendToPlayer(player, active.currentPayload(this.level.getGameTime()));
         active.trackingPlayers().add(player.getUUID());
+        sendParameterSnapshot(player, active);
+    }
+
+    private void sendParameterSnapshot(ServerPlayer player, ActiveEffect active) {
+        if (active.parameters().isEmpty()) {
+            return;
+        }
+        this.packets.sendToPlayer(player, new EffectParameterBatchPayload(
+            this.level.dimension().location(),
+            this.level.getGameTime(),
+            List.of(new EffectParameterBatchPayload.Entry(
+                active.payload().instanceId(), active.parameters()
+            ))
+        ));
     }
 
     private void sendStop(ActiveEffect active) {
@@ -475,19 +533,22 @@ public final class VisualEffectRuntime {
         private final EffectPriority priority;
         private EffectTransform transform;
         private EffectDescriptor descriptor;
+        private EffectParameterState parameters;
 
         private ActiveEffect(
             StartVisualEffectPayload payload,
             EffectAudience audience,
             EffectTransform transform,
             EffectDescriptor descriptor,
-            EffectPriority priority
+            EffectPriority priority,
+            EffectParameterState parameters
         ) {
             this.payload = payload;
             this.audience = audience;
             this.transform = transform;
             this.descriptor = descriptor;
             this.priority = priority;
+            this.parameters = parameters;
         }
 
         private StartVisualEffectPayload payload() {
@@ -520,6 +581,14 @@ public final class VisualEffectRuntime {
 
         private void setTransform(EffectTransform transform) {
             this.transform = transform;
+        }
+
+        private EffectParameterState parameters() {
+            return this.parameters;
+        }
+
+        private void setParameters(EffectParameterState parameters) {
+            this.parameters = parameters;
         }
 
         private StartVisualEffectPayload currentPayload(long serverGameTime) {
