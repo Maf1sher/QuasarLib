@@ -64,17 +64,6 @@ public final class EffectBulkBlockEditor {
     /** Minimum normalized front advance before a column is revealed again. */
     private static final double REVEAL_STEP = 0.15;
     private static final int[] NEIGHBOR_OFFSETS = {-1, 1, -16, 16, -256, 256};
-    private static final Set<Block> INDESTRUCTIBLE = Set.of(
-        Blocks.BEDROCK,
-        Blocks.BARRIER,
-        Blocks.COMMAND_BLOCK,
-        Blocks.CHAIN_COMMAND_BLOCK,
-        Blocks.REPEATING_COMMAND_BLOCK,
-        Blocks.STRUCTURE_BLOCK,
-        Blocks.JIGSAW,
-        Blocks.END_PORTAL_FRAME,
-        Blocks.END_PORTAL
-    );
 
     public enum SyncPolicy {
         IMMEDIATE,
@@ -286,7 +275,7 @@ public final class EffectBulkBlockEditor {
             if (section == null
                 || section.hasOnlyAir()
                 || !section.maybeHas(state -> !state.isAir()
-                    && !INDESTRUCTIBLE.contains(state.getBlock()))) {
+                    && !BlockEditRules.INDESTRUCTIBLE.contains(state.getBlock()))) {
                 this.passSection(entry);
                 this.sectionIndex++;
                 this.stalledTicks = 0;
@@ -438,7 +427,7 @@ public final class EffectBulkBlockEditor {
                 continue;
             }
             if (!section.hasOnlyAir() && section.maybeHas(state -> !state.isAir()
-                && !INDESTRUCTIBLE.contains(state.getBlock()))) {
+                && !BlockEditRules.INDESTRUCTIBLE.contains(state.getBlock()))) {
                 return true;
             }
         }
@@ -659,7 +648,7 @@ public final class EffectBulkBlockEditor {
             && key.sectionY() > this.level.getMinSection()
             && this.spec.replacement().isAir()
             && !protectedWorld
-            && !section.maybeHas(state -> INDESTRUCTIBLE.contains(state.getBlock()));
+            && !section.maybeHas(state -> BlockEditRules.INDESTRUCTIBLE.contains(state.getBlock()));
     }
 
     private SectionEdit clearWholeSection(
@@ -733,8 +722,7 @@ public final class EffectBulkBlockEditor {
         int worldZ,
         boolean fullyInside
     ) {
-        if (worldY <= this.level.getMinBuildHeight()) {
-            // Keep the bottom layer so a large carve never opens a see-through void floor.
+        if (BlockEditRules.isFloor(this.level, worldY)) {
             return true;
         }
         if (!fullyInside && !this.spec.volume().contains(
@@ -742,9 +730,7 @@ public final class EffectBulkBlockEditor {
         )) {
             return true;
         }
-        return current.isAir()
-            || current.equals(this.spec.replacement())
-            || INDESTRUCTIBLE.contains(current.getBlock());
+        return BlockEditRules.isUneditable(current, this.spec.replacement());
     }
 
     private SectionEdit clearByBlock(
