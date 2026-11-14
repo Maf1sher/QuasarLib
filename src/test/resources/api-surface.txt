@@ -48,7 +48,9 @@ mafisher.quasar.api.client.screen.SceneBlurSettings
 mafisher.quasar.api.client.screen.ScreenEffectCameraState
 mafisher.quasar.api.client.screen.ScreenEffectFogState
 mafisher.quasar.api.client.screen.ScreenEffectInputs
+mafisher.quasar.api.client.screen.ScreenEffectLayer
 mafisher.quasar.api.client.screen.ScreenEffectMask
+mafisher.quasar.api.client.screen.ScreenEffectMasks
 mafisher.quasar.api.client.screen.ScreenEffectMedium
 mafisher.quasar.api.client.screen.ScreenEffectMediumCrossing
 mafisher.quasar.api.client.screen.ScreenEffectMediumPath
@@ -59,6 +61,7 @@ mafisher.quasar.api.client.screen.ScreenEffectOperationContext
 mafisher.quasar.api.client.screen.ScreenEffectOperationRenderer
 mafisher.quasar.api.client.screen.ScreenEffectRenderer
 mafisher.quasar.api.client.screen.ScreenEffectSettings
+mafisher.quasar.api.client.screen.ScreenEffectVisibility
 mafisher.quasar.api.client.impulse.ScreenFlashImpulse
 mafisher.quasar.api.client.render.StaticMeshVisualEffectRenderer
 mafisher.quasar.api.client.render.VisualEffectInstance

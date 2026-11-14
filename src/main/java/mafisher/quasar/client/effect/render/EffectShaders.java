@@ -17,6 +17,9 @@ public final class EffectShaders {
     public static final EffectShader SCREEN_MASK = EffectShader.create(
         id("screen_mask"), DefaultVertexFormat.BLOCK
     );
+    public static final EffectShader SCREEN_FULLSCREEN_MASK = EffectShader.create(
+        id("screen_fullscreen_mask"), DefaultVertexFormat.BLOCK
+    );
     public static final EffectShader SCREEN_COMPOSITE = EffectShader.create(
         id("screen_composite"), DefaultVertexFormat.POSITION
     );
@@ -36,6 +39,7 @@ public final class EffectShaders {
     public static void registerAll(RegisterShadersEvent event) throws IOException {
         INSTANCED_VISUAL.register(event);
         SCREEN_MASK.register(event);
+        SCREEN_FULLSCREEN_MASK.register(event);
         SCREEN_COMPOSITE.register(event);
         SCREEN_BLOOM.register(event);
         SCREEN_FLASH.register(event);

@@ -3,21 +3,15 @@ package mafisher.quasar.content.blackhole;
 import com.mojang.blaze3d.vertex.PoseStack;
 import java.util.List;
 import mafisher.quasar.api.client.render.EffectLodProfile;
-import mafisher.quasar.api.client.render.EffectMesh;
-import mafisher.quasar.api.client.render.EffectMeshes;
 import mafisher.quasar.api.client.render.EffectRenderContext;
 import mafisher.quasar.api.client.render.EffectRenderPass;
-import mafisher.quasar.api.client.render.EffectRenderTypeOptions;
-import mafisher.quasar.api.client.render.QuasarRenderTypes;
 import mafisher.quasar.api.client.screen.ScreenEffectMask;
+import mafisher.quasar.api.client.screen.ScreenEffectMasks;
 import mafisher.quasar.api.client.screen.ScreenEffectRenderer;
 import mafisher.quasar.api.client.screen.ScreenEffectSettings;
 import mafisher.quasar.content.ContentScreenOperations;
-import mafisher.quasar.content.ContentShaders;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
-import net.minecraft.client.renderer.texture.OverlayTexture;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.AABB;
 
 /**
@@ -27,24 +21,7 @@ import net.minecraft.world.phys.AABB;
  */
 public final class ContentBlackHoleRenderer implements ScreenEffectRenderer {
     private static final ContentBlackHoleSettings SETTINGS = ContentBlackHoleSettings.DEFAULT;
-    private static final ResourceLocation MASK_TEXTURE =
-        ResourceLocation.withDefaultNamespace("textures/misc/white.png");
-    // Screen-space coverage; the mask must never be a depth-tested world proxy that clips the effect.
-    private static final EffectRenderTypeOptions MASK_OPTIONS = new EffectRenderTypeOptions(
-        EffectRenderTypeOptions.Transparency.TRANSLUCENT,
-        false,
-        true,
-        false,
-        false,
-        false,
-        true
-    );
-    private static final RenderType MASK_RENDER_TYPE = QuasarRenderTypes.screenEffectMask(
-        ContentShaders.BLACK_HOLE_MASK, MASK_TEXTURE, MASK_OPTIONS
-    );
-    private static final EffectMesh MASK_QUAD = EffectMeshes.verticalPlane();
     private static final EffectLodProfile LOD_PROFILE = EffectLodProfile.of(1.5, 4.0, 9.0);
-    private static final int FULLBRIGHT_LIGHT = 0x00F000F0;
     private static final float MASK_STRENGTH = 1.0F;
 
     @Override
@@ -85,22 +62,14 @@ public final class ContentBlackHoleRenderer implements ScreenEffectRenderer {
 
     @Override
     public RenderType screenMaskRenderType(EffectRenderContext context) {
-        return MASK_RENDER_TYPE;
+        return ScreenEffectMasks.fullscreen();
     }
 
     @Override
     public void renderScreenMask(EffectRenderContext context, RenderType maskRenderType,
         PoseStack poseStack, MultiBufferSource bufferSource) {
-        // The mask vertex shader emits a screen-space quad from UV0, so the pose is irrelevant.
-        MASK_QUAD.emit(
-            bufferSource.getBuffer(maskRenderType),
-            poseStack.last(),
-            1.0F,
-            1.0F,
-            1.0F,
-            1.0F,
-            OverlayTexture.NO_OVERLAY,
-            FULLBRIGHT_LIGHT
-        );
+        // Coverage-only screen-space quad; the full-screen helper owns the
+        // no-depth-test render type and the quad emission.
+        ScreenEffectMasks.drawFullscreen(maskRenderType, poseStack, bufferSource);
     }
 }

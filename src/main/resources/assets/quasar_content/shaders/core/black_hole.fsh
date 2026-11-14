@@ -2,6 +2,7 @@
 
 #moj_import <quasar_lib:noise.glsl>
 #moj_import <quasar_lib:effect_space.glsl>
+#moj_import <quasar_lib:screen_visibility.glsl>
 #moj_import <quasar_content:black_hole_optics.glsl>
 
 uniform sampler2D SceneSampler;
@@ -126,21 +127,24 @@ float viewDistance(float depth, vec2 uv) {
     return clamp(length(view.xyz), 0.01, 1000000.0);
 }
 
+bool foregroundColorDelta(vec2 uv) {
+    return OpaqueColorValid > 0.5
+        && distance(texture(RawSceneSampler, uv).rgb,
+            texture(OpaqueColorSampler, uv).rgb) > 0.02;
+}
+
 /**
- * Detects a translucent layer at a pixel. Post-translucent depth is preferred,
- * but a color delta between the scene before and after translucency catches
- * glass/water whose depth write was skipped by the pipeline or a shaderpack.
+ * Samples the translucent foreground inputs at one pixel. The shared include
+ * owns the predicate; the black hole only supplies the sampled depth and the
+ * pre/post-translucent color delta.
  */
-bool foregroundLayer(vec2 uv, float entryDistance, float tolerance) {
-    if (ForegroundDepthValid > 0.5) {
-        float foreground = viewDistance(texture(ForegroundDepthSampler, uv).r, uv);
-        if (foreground < entryDistance - tolerance) {
-            return true;
-        }
+bool foregroundAt(vec2 uv, float entryDistance, float tolerance) {
+    float foreground = viewDistance(texture(ForegroundDepthSampler, uv).r, uv);
+    if (quasarForegroundLayerDepth(foreground, ForegroundDepthValid > 0.5,
+        entryDistance, tolerance)) {
+        return true;
     }
-    vec3 opaque = texture(OpaqueColorSampler, uv).rgb;
-    vec3 seen = texture(RawSceneSampler, uv).rgb;
-    return distance(seen, opaque) > 0.02;
+    return foregroundColorDelta(uv);
 }
 
 /**
@@ -149,39 +153,13 @@ bool foregroundLayer(vec2 uv, float entryDistance, float tolerance) {
  * already sees through the glass, and tinting it produces a dark halo.
  */
 vec3 foregroundTintAt(vec2 uv, float entryDistance, float tolerance) {
-    if (!foregroundLayer(uv, entryDistance, tolerance)) {
-        return vec3(1.0);
-    }
-    vec3 ratio = vec3(1.0);
-    if (OpaqueColorValid > 0.5) {
-        vec3 opaque = texture(OpaqueColorSampler, uv).rgb;
-        vec3 seen = texture(RawSceneSampler, uv).rgb;
-        ratio = clamp(seen / max(opaque, vec3(0.02)), vec3(0.0), vec3(1.0));
-    }
-    // A detected layer always attenuates a little; bright stained glass can
-    // return 1.0 per channel and would otherwise never darken the effect.
-    return ratio * 0.80;
+    bool foreground = foregroundAt(uv, entryDistance, tolerance);
+    return quasarForegroundTint(foreground,
+        texture(RawSceneSampler, uv).rgb,
+        texture(OpaqueColorSampler, uv).rgb,
+        OpaqueColorValid > 0.5);
 }
 
-/** Upper bound for the per-pixel effect entry stored in the raymarch alpha channel. */
-float effectDepthScale(float holeDistance, float lensRadius) {
-    return max(holeDistance + 2.0 * lensRadius, 1.0);
-}
-
-/**
- * The raymarch pass stores the nearest traced entry distance in alpha. A logarithmic
- * mapping keeps sub-block precision across both close and horizon-distance effects;
- * linear 8-bit storage loses too much accuracy for effects hundreds of blocks away.
- */
-float encodeEffectDepth(float entry, float depthScale) {
-    float scale = max(depthScale, 1.0);
-    return clamp(log2(1.0 + max(entry, 0.0)) / log2(1.0 + scale), 0.0, 1.0);
-}
-
-float decodeEffectDepth(float encoded, float depthScale) {
-    float scale = max(depthScale, 1.0);
-    return max(exp2(clamp(encoded, 0.0, 1.0) * log2(1.0 + scale)) - 1.0, 0.0);
-}
 
 /** Distance from the camera to the entry point of a sphere, or -1 when the ray misses it. */
 float raySphereEntry(vec3 origin, vec3 direction, float sphereRadius) {
@@ -621,7 +599,7 @@ vec4 renderBlackHole(vec2 uv) {
         return EmissiveOnly > 0.5 ? vec4(0.0) : vec4(vec3(0.02, 0.01, 0.03), 0.0);
     }
     float lensRadius = max(LensRadius, radius * 3.0);
-    float depthScale = effectDepthScale(holeDistance, lensRadius);
+    float depthScale = quasarLayerScale(QUASAR_LAYER_FILL, holeDistance, lensRadius);
     float tEntry = raySphereEntry(traceOrigin, traceDirection, lensRadius);
     bool insideLens = length(traceOrigin) <= lensRadius
         || length(cameraRelative) <= lensRadius;
@@ -749,8 +727,10 @@ vec4 renderBlackHole(vec2 uv) {
         float tintEntry = nearestEntry + max(ray.surfaceDistance, 0.0);
         float tintDepth = viewDistance(
             texture(ForegroundDepthSampler, uv).r, uv);
-        bool layerInFront = ForegroundDepthValid > 0.5
-            && tintDepth < tintEntry - 0.5;
+        // Background water/ice must not print its colors onto an opaque surface;
+        // only a depth-confirmed layer in front may tint the emission.
+        bool layerInFront = quasarForegroundLayer(
+            tintDepth, ForegroundDepthValid > 0.5, tintEntry, 0.5, false);
         if (!layerInFront) {
             emissionTint = mix(emissionTint, vec3(1.0), opaqueCoverage);
         }
@@ -770,7 +750,7 @@ vec4 renderBlackHole(vec2 uv) {
         // Looking through a translucent layer must not replace that layer with a
         // bent background. Check the current pixel and the source sample; the color
         // delta catches glass/water even when the depth copy misses it.
-        bool currentForeground = foregroundLayer(uv, lensEntry, 0.5);
+        bool currentForeground = foregroundAt(uv, lensEntry, 0.5);
         // The background lens is only reliable from outside its own bounding
         // sphere. Inside it, the bent rays resample a tiny part of the frame and
         // read as blur or radial streaks.
@@ -802,7 +782,7 @@ vec4 renderBlackHole(vec2 uv) {
             if (sampleWeight > 0.001) {
                 float sourceDistance = viewDistance(
                     texture(DepthSampler, sourceUv).r, sourceUv);
-                bool sourceForeground = foregroundLayer(sourceUv, lensEntry, 0.5);
+                bool sourceForeground = foregroundAt(sourceUv, lensEntry, 0.5);
                 // Only bend light that is actually behind the traced surface. The old
                 // lens-shell entry accepted samples in front of the hole and dragged
                 // foreground entities into the lens.
@@ -903,7 +883,8 @@ vec4 renderBlackHole(vec2 uv) {
     }
     color += backgroundLight;
 
-    return vec4(color, encodeEffectDepth(nearestEntry, depthScale));
+    return vec4(color,
+        quasarEncodeLayerDepth(QUASAR_LAYER_FILL, nearestEntry, holeDistance, lensRadius));
 }
 
 void main() {
@@ -925,8 +906,9 @@ void main() {
     SceneRay ray = refractAtWater(cameraRelative, direction);
     vec4 effectColor = texture(EffectSampler, texCoord);
     float lensRadius = max(LensRadius, BlackHoleRadius * 3.0);
-    float depthScale = effectDepthScale(holeDistance, lensRadius);
-    float effectEntry = decodeEffectDepth(effectColor.a, depthScale);
+    float depthScale = quasarLayerScale(QUASAR_LAYER_FILL, holeDistance, lensRadius);
+    float effectEntry = quasarDecodeLayerDepth(
+        QUASAR_LAYER_FILL, effectColor.a, holeDistance, lensRadius);
     float sceneDistance = viewDistance(texture(DepthSampler, texCoord).r, texCoord);
     // One quantisation step keeps interpolated alpha from flickering at silhouettes.
     float depthBias = max(0.05, sceneDistance * 0.001)
@@ -936,15 +918,15 @@ void main() {
     float entryDistance = effectEntry + max(ray.surfaceDistance, 0.0);
     float foregroundDistance = viewDistance(
         texture(ForegroundDepthSampler, texCoord).r, texCoord);
-    bool foregroundInFront = foregroundDistance < entryDistance - depthBias;
-    if (!foregroundInFront) {
-        foregroundInFront = foregroundLayer(texCoord, entryDistance, depthBias);
-    }
+    bool foregroundDelta = foregroundColorDelta(texCoord);
+    bool lensBlocked = !quasarLayerVisibleThroughForeground(
+        QUASAR_LAYER_LENS, entryDistance, sceneDistance, foregroundDistance,
+        ForegroundDepthValid > 0.5, foregroundDelta, depthBias);
     vec2 sceneUv = texCoord;
     bool drillActive = !insideHorizon
         && CameraSubmerged < 0.5 && !ray.totalInternalReflection
         && ray.surfaceDistance <= 0.0 && abs(VortexStrength) > 0.001
-        && MediumPathLength <= 0.0 && !foregroundInFront;
+        && MediumPathLength <= 0.0 && !lensBlocked;
     if (drillActive) {
         // Do not pull a foreground glass/water surface into the swirl.
         vec2 candidate = clamp(
@@ -981,7 +963,8 @@ void main() {
             impact)) * frontFacing(direction);
     float opaqueMask = max(diskScreenMask, coreMask);
     bool footprint = insideLens || tEntry >= 0.0;
-    bool visible = footprint && sceneDistance >= entryDistance - depthBias;
+    bool visible = footprint
+        && quasarLayerVisible(QUASAR_LAYER_FILL, entryDistance, sceneDistance, depthBias);
     // The disk and shadow are opaque surfaces: force their pixels over the scene
     // even if the mask coverage is soft, but never over genuine foreground depth.
     float alpha = visible ? max(coverage, opaqueMask) : 0.0;

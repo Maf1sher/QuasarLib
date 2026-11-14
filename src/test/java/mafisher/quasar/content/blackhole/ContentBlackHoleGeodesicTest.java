@@ -4,12 +4,21 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import mafisher.quasar.api.client.screen.ScreenEffectLayer;
+import mafisher.quasar.api.client.screen.ScreenEffectVisibility;
 import org.joml.Vector3d;
 import org.junit.jupiter.api.Test;
 
 class ContentBlackHoleGeodesicTest {
     private static final double HORIZON = 1.0;
     private static final int STEPS = 768;
+    private static final ScreenEffectVisibility VISIBILITY =
+        new ScreenEffectVisibility(160.0F, 10.0F);
+
+    private static boolean visible(double sceneDistance, double effectEntry, double depthBias) {
+        return VISIBILITY.visible(ScreenEffectLayer.FILL,
+            (float)effectEntry, (float)sceneDistance, (float)depthBias);
+    }
 
     @Test
     void capturesRaysBelowTheCriticalImpactParameter() {
@@ -74,9 +83,9 @@ class ContentBlackHoleGeodesicTest {
         double entry = ContentBlackHoleGeodesic.nearestSurfaceEntry(trace, Double.NaN, false);
         assertTrue(entry > distance - 2.0 * horizon,
             "the traced entry must sit at the horizon, not at a bounding sphere: " + entry);
-        assertFalse(ContentBlackHoleGeodesic.isVisibleAtDepth(distance - 10.0, entry, 0.1),
+        assertFalse(visible(distance - 10.0, entry, 0.1),
             "an entity ten blocks in front of the hole must hide the shadow");
-        assertTrue(ContentBlackHoleGeodesic.isVisibleAtDepth(distance + 10.0, entry, 0.1),
+        assertTrue(visible(distance + 10.0, entry, 0.1),
             "geometry behind the hole must not clip the shadow");
     }
 
@@ -90,7 +99,7 @@ class ContentBlackHoleGeodesicTest {
         double entry = ContentBlackHoleGeodesic.nearestSurfaceEntry(trace, Double.NaN, false);
         assertTrue(entry > 150.0,
             "a lens-only pixel must use the closest traced approach, not the lens shell: " + entry);
-        assertFalse(ContentBlackHoleGeodesic.isVisibleAtDepth(150.0, entry, 0.1),
+        assertFalse(visible(150.0, entry, 0.1),
             "an entity in front of the hole must hide the lens warp");
     }
 
@@ -110,9 +119,9 @@ class ContentBlackHoleGeodesicTest {
         double entry = ContentBlackHoleGeodesic.nearestSurfaceEntry(
             diskTrace.trace(), diskTrace.nearestDiskEntry(), true);
         assertTrue(entry < 150.0, "the near disk crossing is in front of the hole: " + entry);
-        assertTrue(ContentBlackHoleGeodesic.isVisibleAtDepth(155.0, entry, 0.1),
+        assertTrue(visible(155.0, entry, 0.1),
             "an entity behind the near disk may still show the disk");
-        assertFalse(ContentBlackHoleGeodesic.isVisibleAtDepth(entry - 20.0, entry, 0.1),
+        assertFalse(visible(entry - 20.0, entry, 0.1),
             "an entity in front of the near disk must hide it");
     }
 
@@ -138,9 +147,9 @@ class ContentBlackHoleGeodesicTest {
             diskTrace.trace(), disk, true);
         assertEquals(disk, entry, 1.0E-6,
             "a visible far-side disk must own the effect depth");
-        assertFalse(ContentBlackHoleGeodesic.isVisibleAtDepth(closest + 4.0, entry, 0.1),
+        assertFalse(visible(closest + 4.0, entry, 0.1),
             "terrain between the hole and the far-side disk must hide the disk");
-        assertTrue(ContentBlackHoleGeodesic.isVisibleAtDepth(disk + 10.0, entry, 0.1),
+        assertTrue(visible(disk + 10.0, entry, 0.1),
             "terrain beyond the far-side disk must not clip it");
     }
 
@@ -150,25 +159,25 @@ class ContentBlackHoleGeodesicTest {
         double diskEntry = 106.0;
         double bias = 0.1;
 
-        assertFalse(ContentBlackHoleGeodesic.isVisibleAtDepth(140.0, ringEntry, bias),
+        assertFalse(visible(140.0, ringEntry, bias),
             "a tree in front of the ring must stay untouched");
-        assertTrue(ContentBlackHoleGeodesic.isVisibleAtDepth(150.0, ringEntry, bias),
+        assertTrue(visible(150.0, ringEntry, bias),
             "a tree behind the ring may still show the ring");
-        assertTrue(ContentBlackHoleGeodesic.isVisibleAtDepth(1000.0, ringEntry, bias),
+        assertTrue(visible(1000.0, ringEntry, bias),
             "terrain beyond the hole must not clip the ring");
-        assertFalse(ContentBlackHoleGeodesic.isVisibleAtDepth(105.0, diskEntry, bias));
-        assertTrue(ContentBlackHoleGeodesic.isVisibleAtDepth(110.0, diskEntry, bias));
+        assertFalse(visible(105.0, diskEntry, bias));
+        assertTrue(visible(110.0, diskEntry, bias));
     }
 
     @Test
     void partialCoverageOnlyHidesCoveredPixels() {
-        assertFalse(ContentBlackHoleGeodesic.isVisibleAtDepth(40.0, 145.0, 0.1));
-        assertTrue(ContentBlackHoleGeodesic.isVisibleAtDepth(900.0, 145.0, 0.1));
+        assertFalse(visible(40.0, 145.0, 0.1));
+        assertTrue(visible(900.0, 145.0, 0.1));
     }
 
     @Test
     void cameraInsideTheHoleStillSeesTheEffect() {
-        assertTrue(ContentBlackHoleGeodesic.isVisibleAtDepth(0.5, 0.0, 0.1));
+        assertTrue(visible(0.5, 0.0, 0.1));
     }
 
     @Test

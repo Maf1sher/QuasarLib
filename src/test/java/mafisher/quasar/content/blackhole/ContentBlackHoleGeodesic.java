@@ -235,16 +235,6 @@ final class ContentBlackHoleGeodesic {
     }
 
     /**
-     * Per-pixel visibility rule mirrored by the shader: the scene must be at least
-     * as far as the nearest traced surface at that pixel (closest approach or the
-     * first emitting disk crossing). Bounding-volume entries are deliberately not
-     * used because they sit in front of the real surface.
-     */
-    static boolean isVisibleAtDepth(double sceneDistance, double effectEntry, double depthBias) {
-        return sceneDistance >= Math.max(0.0, effectEntry) - depthBias;
-    }
-
-    /**
      * Mirrors the shader's layer selection. A near-side disk covers the horizon,
      * while a far-side disk is still the surface the pixel shows outside the
      * shadow. Using the minimum for every layer paints the ring over terrain

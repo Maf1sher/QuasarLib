@@ -1,7 +1,6 @@
 package mafisher.quasar.content.blackhole;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -11,6 +10,7 @@ import mafisher.quasar.api.client.render.EffectLodProfile;
 import mafisher.quasar.api.client.render.EffectRenderContext;
 import mafisher.quasar.api.client.screen.ScreenEffectInputs;
 import mafisher.quasar.api.client.screen.ScreenEffectMask;
+import mafisher.quasar.api.client.screen.ScreenEffectMasks;
 import mafisher.quasar.api.client.screen.ScreenEffectSettings;
 import mafisher.quasar.api.effect.StartVisualEffectPayload;
 import mafisher.quasar.content.ContentEffectIds;
@@ -37,7 +37,7 @@ class ContentBlackHoleRendererTest {
         assertEquals(1.0F, mask.green(), 0.0001F);
         assertEquals(1.0F, mask.blue(), 0.0001F);
         assertTrue(mask.strength() > 0.9F);
-        assertNotNull(renderer.screenMaskRenderType(context()));
+        assertSame(ScreenEffectMasks.fullscreen(), renderer.screenMaskRenderType(context()));
     }
 
     @Test
