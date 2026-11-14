@@ -47,9 +47,40 @@ class ShaderUniformUsageTest {
             + String.join("\n", failures));
     }
 
+    @Test
+    void blackHoleBloomOnlyBindsDeclaredStandardInputs() throws IOException {
+        ShaderTestResources.ShaderProgramAsset program = program("quasar_lib:emissive_composite");
+        String source = Files.readString(sourceRoot().resolve(
+            "mafisher/quasar/content/blackhole/ContentBlackHoleBloom.java"));
+
+        List<String> failures = new ArrayList<>();
+        compare("uniform", names(source, SET_UNIFORM), Set.copyOf(program.uniforms()), failures);
+
+        assertTrue(failures.isEmpty(), () -> "ContentBlackHoleBloom binds undeclared inputs:\n"
+            + String.join("\n", failures));
+    }
+
+    @Test
+    void emissiveCompositeOnlyBindsDeclaredStandardInputs() throws IOException {
+        ShaderTestResources.ShaderProgramAsset program = program("quasar_lib:emissive_composite");
+        String source = Files.readString(sourceRoot().resolve(
+            "mafisher/quasar/api/client/screen/EmissiveComposite.java"));
+
+        List<String> failures = new ArrayList<>();
+        compare("uniform", names(source, SET_UNIFORM), Set.copyOf(program.uniforms()), failures);
+        compare("sampler", names(source, SET_SAMPLER), Set.copyOf(program.samplers()), failures);
+
+        assertTrue(failures.isEmpty(), () -> "EmissiveComposite binds undeclared inputs:\n"
+            + String.join("\n", failures));
+    }
+
     private static ShaderTestResources.ShaderProgramAsset blackHoleProgram() {
+        return program("quasar_content:black_hole");
+    }
+
+    private static ShaderTestResources.ShaderProgramAsset program(String id) {
         return ShaderTestResources.programs().stream()
-            .filter(candidate -> candidate.programId().equals("quasar_content:black_hole"))
+            .filter(candidate -> candidate.programId().equals(id))
             .findFirst()
             .orElseThrow();
     }

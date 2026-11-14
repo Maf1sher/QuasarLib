@@ -58,9 +58,6 @@ uniform float OpaqueColorValid;
 
 uniform float Pass;
 uniform float EmissiveOnly;
-uniform float BloomStrength;
-uniform float BloomThreshold;
-uniform float BloomRadiusPixels;
 
 in vec2 texCoord;
 
@@ -70,9 +67,6 @@ const int MAX_STEPS = 256;
 const float PI = 3.14159265359;
 const float DISK_OPACITY = 2.4;
 const float DAY_EMISSION_SCALE = 0.55;
-const float DAY_BLOOM_THRESHOLD = 0.50;
-const float DAY_BLOOM_STRENGTH_SCALE = 0.35;
-const float DAY_BLOOM_RADIUS_SCALE = 0.75;
 
 float daylightFactor() {
     return clamp(Daylight, 0.0, 1.0);
@@ -80,18 +74,6 @@ float daylightFactor() {
 
 float daylightEmissionScale() {
     return mix(1.0, DAY_EMISSION_SCALE, daylightFactor());
-}
-
-float daylightBloomThreshold() {
-    return mix(BloomThreshold, DAY_BLOOM_THRESHOLD, daylightFactor());
-}
-
-float daylightBloomStrengthScale() {
-    return mix(1.0, DAY_BLOOM_STRENGTH_SCALE, daylightFactor());
-}
-
-float daylightBloomRadiusScale() {
-    return mix(1.0, DAY_BLOOM_RADIUS_SCALE, daylightFactor());
 }
 const float DISK_BODY_OCCLUSION = 0.98;
 const float DISK_BODY_EMISSION = 0.20;
@@ -641,7 +623,9 @@ vec4 renderBlackHole(vec2 uv) {
     float stabilization = smoothstep(0.0, 0.10, Progress)
         * (1.0 - smoothstep(0.86, 1.0, Progress));
     float pixelWorld = max(0.0001,
-        2.0 * max(holeDistance, radius) / max(abs(WorldProjMat[1][1]) * ViewportHeight, 1.0));
+        2.0 * max(holeDistance, radius) / max(max(
+            abs(WorldProjMat[1][1]) * ViewportHeight,
+            abs(WorldProjMat[0][0]) * ViewportWidth), 1.0));
     float ringWidth = max(0.055 * radius, pixelWorld * 1.5);
     float primaryOffset = (impact - shadowImpact) / ringWidth;
     float secondaryOffset = (impact - shadowImpact - 0.35 * radius) / (ringWidth * 1.6);
@@ -921,33 +905,11 @@ void main() {
         float funnel = drill * drill * (3.0 - 2.0 * drill);
         center *= 1.0 - 0.15 * clamp(abs(VortexStrength), 0.0, 1.5) * funnel;
     }
-    if (BloomStrength <= 0.0) {
-        fragColor = vec4(center, 1.0);
-        return;
-    }
-
-    vec2 texel = vec2(
-        1.0 / max(ViewportWidth, 1.0),
-        1.0 / max(ViewportHeight, 1.0)
-    );
-    vec3 bloom = vec3(0.0);
-    for (int x = -1; x <= 1; x++) {
-        for (int y = -1; y <= 1; y++) {
-            vec2 offset = vec2(float(x), float(y)) * texel * BloomRadiusPixels
-                * daylightBloomRadiusScale();
-            vec3 sampleColor = texture(
-                BloomSampler,
-                clamp(texCoord + offset, vec2(0.0), vec2(1.0))
-            ).rgb;
-            bloom += max(sampleColor - vec3(daylightBloomThreshold()), vec3(0.0));
-        }
-    }
-    bloom /= 9.0;
-    // The glow is emissive too; it must fade with the water surface and with
-    // medium fog. Attenuate the additive bloom instead of adding the fog colour
-    // again, so the re-added background stays untouched.
+    // The shared emissive composite already thresholded and blurred the
+    // emission-only target. The glow is emissive too; it must fade with the water
+    // surface and with medium fog. Attenuate the additive bloom instead of adding
+    // the fog colour again, so the re-added background stays untouched.
     float bloomFade = surfaceTransmittance * quasarMediumFogTransmission(
         quasarMediumFogDistance(entryDistance));
-    fragColor = vec4(center + bloom * BloomStrength * daylightBloomStrengthScale()
-        * alpha * bloomFade, 1.0);
+    fragColor = vec4(center + texture(BloomSampler, texCoord).rgb * alpha * bloomFade, 1.0);
 }

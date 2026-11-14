@@ -2,6 +2,7 @@ package mafisher.quasar.apicheck;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import mafisher.quasar.api.client.screen.EmissiveComposite;
 import mafisher.quasar.api.client.screen.RegisterScreenEffectOperationsEvent;
 import mafisher.quasar.api.client.screen.ScreenEffectCameraState;
 import mafisher.quasar.api.client.screen.ScreenEffectInputs;
@@ -33,5 +34,7 @@ class PublicScreenCompositorApiVisibilityTest {
         assertNotNull(ScreenEffectOperationRenderer.class);
         assertNotNull(ScreenEffectInputs.ALL);
         assertNotNull(RegisterScreenEffectOperationsEvent.class);
+        assertNotNull(EmissiveComposite.STANDARD_SHADER);
+        assertNotNull(EmissiveComposite.builder().build());
     }
 }

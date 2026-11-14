@@ -1,21 +1,19 @@
 package mafisher.quasar.content.blackhole;
 
-import com.mojang.blaze3d.pipeline.TextureTarget;
+import com.mojang.blaze3d.pipeline.RenderTarget;
 import mafisher.quasar.api.client.render.EffectParameterBinding;
 import mafisher.quasar.api.client.render.EffectUniforms;
-import mafisher.quasar.api.effect.EffectParameterSet;
+import mafisher.quasar.api.client.screen.EmissiveComposite;
 import mafisher.quasar.api.client.screen.ScreenEffectInputs;
 import mafisher.quasar.api.client.screen.ScreenEffectMediumOptics;
 import mafisher.quasar.api.client.screen.ScreenEffectOperationContext;
 import mafisher.quasar.api.client.screen.ScreenEffectOperationRenderer;
-import mafisher.quasar.api.effect.budget.EffectQualityTier;
+import mafisher.quasar.api.effect.EffectParameterSet;
 import mafisher.quasar.content.ContentShaders;
 import net.minecraft.client.renderer.ShaderInstance;
 
-/** Content-owned raymarched black hole with a cheap bloom composite. */
+/** Content-owned raymarched black hole with a shared emissive composite. */
 public final class ContentBlackHoleOperation implements ScreenEffectOperationRenderer {
-    private static final int LINEAR_FILTER = 0x2601;
-    private static final float BLOOM_THRESHOLD = 0.65F;
     /**
      * The composition is already quality-scaled, so the raymarch pass renders at full composition
      * resolution. Scaling it again compounds the reduction and turns the disk into a blocky smear.
@@ -32,11 +30,25 @@ public final class ContentBlackHoleOperation implements ScreenEffectOperationRen
         .uniform("OutroJet", "OutroJet")
         .uniform("Darkness", "Darkness")
         .build();
+    private static final EmissiveComposite COMPOSITE = EmissiveComposite
+        .builder(ContentShaders.BLACK_HOLE)
+        .emissiveScale(RAYMARCH_SCALE)
+        .bloom(ContentBlackHoleBloom.SETTINGS)
+        .bloomUniforms(ContentBlackHoleBloom::bind)
+        .emissionFog(false)
+        .solidity(1.0F)
+        .compositionFloor(1.0F)
+        .compositeUniforms(ContentBlackHoleOperation::bindCompositeUniforms)
+        .build();
+    private static final EmissiveComposite.LayerPass EFFECT_PASS =
+        ContentBlackHoleOperation::renderEffectLayer;
+    private static final EmissiveComposite.LayerPass EMISSION_PASS =
+        ContentBlackHoleOperation::renderEmissionLayer;
 
     /** The full-screen lens/disk must not sample a downscaled scene. */
     @Override
     public float compositionScaleFloor() {
-        return 1.0F;
+        return COMPOSITE.compositionFloor();
     }
 
     @Override
@@ -46,59 +58,37 @@ public final class ContentBlackHoleOperation implements ScreenEffectOperationRen
 
     @Override
     public void render(ScreenEffectOperationContext context) {
-        ContentBlackHoleSettings settings = context.settings(ContentBlackHoleSettings.class);
-        ShaderInstance shader = ContentShaders.BLACK_HOLE.instance()
-            .orElseThrow(() -> new IllegalStateException("Content black-hole shader is not loaded"));
-        bindCommonInputs(context, shader, settings);
-
-        int beamWidth = Math.max(1, Math.round(context.destination().width * RAYMARCH_SCALE));
-        int beamHeight = Math.max(1, Math.round(context.destination().height * RAYMARCH_SCALE));
-        TextureTarget beam = context.acquireScratchTarget(beamWidth, beamHeight);
-        beam.setFilterMode(LINEAR_FILTER);
-        int glowWidth = Math.max(1, beamWidth / 2);
-        int glowHeight = Math.max(1, beamHeight / 2);
-        TextureTarget glow = context.acquireScratchTarget(glowWidth, glowHeight);
-        glow.setFilterMode(LINEAR_FILTER);
-        try {
-            context.setUniform(shader, "Pass", 0.0F);
-            context.setUniform(shader, "EmissiveOnly", 0.0F);
-            context.setUniform(shader, "ViewportWidth", (float)beamWidth);
-            context.setUniform(shader, "ViewportHeight", (float)beamHeight);
-            context.drawFullscreen(beam, shader);
-
-            // Pass 2 writes only the accretion disk, photon ring, and halo. Blooming
-            // this layer instead of the lensed background removes the bright daytime
-            // halo while keeping the cinematic glow.
-            context.setUniform(shader, "EmissiveOnly", 1.0F);
-            context.setUniform(shader, "ViewportWidth", (float)glowWidth);
-            context.setUniform(shader, "ViewportHeight", (float)glowHeight);
-            context.setSampler(shader, "BloomSampler", context.sourceColor().getColorTextureId());
-            context.drawFullscreen(glow, shader);
-
-            context.setUniform(shader, "Pass", 1.0F);
-            context.setUniform(shader, "EmissiveOnly", 0.0F);
-            context.setUniform(shader, "ViewportWidth", (float)context.destination().width);
-            context.setUniform(shader, "ViewportHeight", (float)context.destination().height);
-            context.setSampler(shader, "EffectSampler", beam.getColorTextureId());
-            context.setSampler(shader, "BloomSampler", glow.getColorTextureId());
-            context.setUniform(shader, "BloomStrength",
-                context.quality().atLeast(EffectQualityTier.MEDIUM) ? settings.bloomStrength() : 0.0F);
-            context.setUniform(shader, "BloomThreshold", BLOOM_THRESHOLD);
-            context.setUniform(shader, "BloomRadiusPixels",
-                context.quality().atLeast(EffectQualityTier.HIGH) ? 4.0F : 2.5F);
-            context.drawFullscreen(context.destination(), shader);
-        } finally {
-            context.releaseScratchTarget(beam);
-            context.releaseScratchTarget(glow);
-        }
+        COMPOSITE.render(context, EFFECT_PASS, EMISSION_PASS);
     }
 
-    private static void bindCommonInputs(ScreenEffectOperationContext context, ShaderInstance shader,
+    private static void renderEffectLayer(ScreenEffectOperationContext context, RenderTarget target) {
+        renderLayer(context, target, false);
+    }
+
+    private static void renderEmissionLayer(ScreenEffectOperationContext context,
+        RenderTarget target) {
+        renderLayer(context, target, true);
+    }
+
+    private static void renderLayer(ScreenEffectOperationContext context, RenderTarget target,
+        boolean emissionOnly) {
+        ContentBlackHoleSettings settings = context.settings(ContentBlackHoleSettings.class);
+        ShaderInstance shader = shader();
+        bindLayerInputs(context, shader, settings);
+        context.setUniform(shader, "Pass", 0.0F);
+        context.setUniform(shader, "EmissiveOnly", emissionOnly ? 1.0F : 0.0F);
+        context.setUniform(shader, "ViewportWidth", (float) target.width);
+        context.setUniform(shader, "ViewportHeight", (float) target.height);
+        context.drawFullscreen(target, shader);
+    }
+
+    private static void bindLayerInputs(ScreenEffectOperationContext context, ShaderInstance shader,
         ContentBlackHoleSettings settings) {
         // The lens bends the accumulated composition, so later black holes see
         // the image of the ones behind them. The pristine scene is not sampled.
         context.setSampler(shader, "SceneSampler", context.sourceColor().getColorTextureId());
-        context.setSampler(shader, "RawSceneSampler", context.rawSceneColor().getColorTextureId());
+        context.setSampler(shader, "RawSceneSampler",
+            context.rawSceneColor().getColorTextureId());
         context.setSampler(shader, "MaskSampler", context.maskTarget().getColorTextureId());
         context.setSampler(shader, "DepthSampler", context.maskTarget().getDepthTextureId());
         // Pass 0 never samples the raymarch texture, but the shader still declares it.
@@ -106,7 +96,25 @@ public final class ContentBlackHoleOperation implements ScreenEffectOperationRen
         context.setSampler(shader, "EffectSampler", context.sourceColor().getColorTextureId());
         context.setSampler(shader, "BloomSampler", context.sourceColor().getColorTextureId());
         context.bindForegroundInputs(shader);
+        bindEffectUniforms(context, shader, settings);
+    }
 
+    private static void bindCompositeUniforms(ScreenEffectOperationContext context,
+        ShaderInstance shader) {
+        ContentBlackHoleSettings settings = context.settings(ContentBlackHoleSettings.class);
+        context.setSampler(shader, "RawSceneSampler",
+            context.rawSceneColor().getColorTextureId());
+        context.setSampler(shader, "DepthSampler", context.maskTarget().getDepthTextureId());
+        context.bindForegroundInputs(shader);
+        context.setUniform(shader, "Pass", 1.0F);
+        context.setUniform(shader, "EmissiveOnly", 0.0F);
+        context.setUniform(shader, "ViewportWidth", (float) context.destination().width);
+        context.setUniform(shader, "ViewportHeight", (float) context.destination().height);
+        bindEffectUniforms(context, shader, settings);
+    }
+
+    private static void bindEffectUniforms(ScreenEffectOperationContext context,
+        ShaderInstance shader, ContentBlackHoleSettings settings) {
         EffectUniforms.from(context).bind(context, shader,
             EffectUniforms.Group.CAMERA, EffectUniforms.Group.SPACE,
             EffectUniforms.Group.EFFECT, EffectUniforms.Group.LIGHT);
@@ -156,12 +164,18 @@ public final class ContentBlackHoleOperation implements ScreenEffectOperationRen
             settings.diskBrightness() * ringFormation);
         context.setUniform(shader, "Turbulence",
             settings.turbulence() * turbulenceScale);
-        context.setUniform(shader, "StepCount", (float)ContentBlackHoleGeometry.stepCount(
+        context.setUniform(shader, "StepCount", (float) ContentBlackHoleGeometry.stepCount(
             context.effect().lod().level(), context.quality().level()
         ));
 
         ScreenEffectMediumOptics.from(context).bind(context, shader);
-        context.setUniform(shader, "ForegroundDepthValid", context.hasForegroundDepth() ? 1.0F : 0.0F);
+        context.setUniform(shader, "ForegroundDepthValid",
+            context.hasForegroundDepth() ? 1.0F : 0.0F);
         context.setUniform(shader, "OpaqueColorValid", context.hasOpaqueColor() ? 1.0F : 0.0F);
+    }
+
+    private static ShaderInstance shader() {
+        return ContentShaders.BLACK_HOLE.instance()
+            .orElseThrow(() -> new IllegalStateException("Content black-hole shader is not loaded"));
     }
 }

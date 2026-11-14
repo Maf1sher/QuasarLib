@@ -25,6 +25,7 @@ mafisher.quasar.api.cinematic.CinematicTimeline
 mafisher.quasar.api.cinematic.CinematicTransformTrack
 mafisher.quasar.api.client.screen.BlackHoleScreenSettings
 mafisher.quasar.api.client.screen.BloomSettings
+mafisher.quasar.api.client.screen.EmissiveComposite
 mafisher.quasar.api.client.impulse.CameraShakeImpulse
 mafisher.quasar.api.client.impulse.ClientEffectImpulses
 mafisher.quasar.api.client.render.EffectCameraSnapshot

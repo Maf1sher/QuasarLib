@@ -1,0 +1,36 @@
+{
+  "vertex": "quasar_lib:screen_quad",
+  "fragment": "quasar_lib:emissive_composite",
+  "samplers": [
+    { "name": "SceneSampler" },
+    { "name": "EffectSampler" },
+    { "name": "EmissionSampler" },
+    { "name": "BloomSampler" },
+    { "name": "MaskSampler" }
+  ],
+  "attributes": [
+    "Position"
+  ],
+  "uniforms": [
+    { "name": "Pass", "type": "float", "count": 1, "values": [ 3.0 ] },
+    { "name": "Threshold", "type": "float", "count": 1, "values": [ 0.35 ] },
+    { "name": "Intensity", "type": "float", "count": 1, "values": [ 1.0 ] },
+    { "name": "RadiusPixels", "type": "float", "count": 1, "values": [ 8.0 ] },
+    { "name": "Horizontal", "type": "float", "count": 1, "values": [ 0.0 ] },
+    { "name": "Solidity", "type": "float", "count": 1, "values": [ 0.0 ] },
+    { "name": "EmissionFog", "type": "float", "count": 1, "values": [ 1.0 ] },
+    { "name": "MaskStrength", "type": "float", "count": 1, "values": [ 1.0 ] },
+    { "name": "ViewportWidth", "type": "float", "count": 1, "values": [ 1920.0 ] },
+    { "name": "ViewportHeight", "type": "float", "count": 1, "values": [ 1080.0 ] },
+    { "name": "MediumSurfaceActive", "type": "float", "count": 1, "values": [ 0.0 ] },
+    { "name": "MediumSurfaceY", "type": "float", "count": 1, "values": [ 0.0 ] },
+    { "name": "MediumWaterIor", "type": "float", "count": 1, "values": [ 1.333 ] },
+    { "name": "MediumSuppressAboveWater", "type": "float", "count": 1, "values": [ 0.0 ] },
+    { "name": "MediumPathLength", "type": "float", "count": 1, "values": [ 0.0 ] },
+    { "name": "MediumCameraSubmerged", "type": "float", "count": 1, "values": [ 0.0 ] },
+    { "name": "MediumFogStart", "type": "float", "count": 1, "values": [ 0.0 ] },
+    { "name": "MediumFogEnd", "type": "float", "count": 1, "values": [ 0.0 ] },
+    { "name": "MediumFogColor", "type": "float", "count": 3, "values": [ 0.0, 0.0, 0.0 ] },
+    { "name": "MediumFogActive", "type": "float", "count": 1, "values": [ 0.0 ] }
+  ]
+}

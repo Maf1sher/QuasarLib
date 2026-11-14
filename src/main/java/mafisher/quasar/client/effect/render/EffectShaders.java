@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import java.io.IOException;
 import mafisher.quasar.QuasarLib;
 import mafisher.quasar.api.client.render.EffectShader;
+import mafisher.quasar.api.client.screen.EmissiveComposite;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.client.event.RegisterShadersEvent;
 import org.jetbrains.annotations.ApiStatus;
@@ -44,6 +45,7 @@ public final class EffectShaders {
         SCREEN_BLOOM.register(event);
         SCREEN_FLASH.register(event);
         SCREEN_PRESENT.register(event);
+        EmissiveComposite.STANDARD_SHADER.register(event);
     }
 
     private static ResourceLocation id(String path) {
