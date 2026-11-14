@@ -132,6 +132,8 @@ mafisher.quasar.api.gameplay.block.EffectBulkBlockEditor
 mafisher.quasar.api.gameplay.block.EffectCarvePlan
 mafisher.quasar.api.gameplay.block.EffectCarveSession
 mafisher.quasar.api.gameplay.block.EffectCarveSpec
+mafisher.quasar.api.gameplay.block.EffectSurfaceTear
+mafisher.quasar.api.gameplay.block.EffectWriteFeedback
 mafisher.quasar.api.gameplay.EffectPhase
 mafisher.quasar.api.gameplay.EffectPhasePlan
 mafisher.quasar.api.gameplay.world.EffectRaycastResult
