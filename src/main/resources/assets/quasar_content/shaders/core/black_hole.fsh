@@ -2,6 +2,7 @@
 
 #moj_import <quasar_lib:noise.glsl>
 #moj_import <quasar_lib:effect_space.glsl>
+#moj_import <quasar_lib:depth_reconstruction.glsl>
 #moj_import <quasar_lib:screen_visibility.glsl>
 #moj_import <quasar_lib:medium_optics.glsl>
 #moj_import <quasar_content:black_hole_optics.glsl>
@@ -17,8 +18,6 @@ uniform sampler2D BloomSampler;
 
 uniform mat4 ViewMat;
 uniform mat4 WorldProjMat;
-uniform mat4 InvProjMat;
-uniform mat4 InvViewMat;
 
 uniform float ViewportWidth;
 uniform float ViewportHeight;
@@ -78,28 +77,6 @@ float daylightEmissionScale() {
 const float DISK_BODY_OCCLUSION = 0.98;
 const float DISK_BODY_EMISSION = 0.20;
 
-vec3 rayDirection(vec2 uv) {
-    vec2 ndc = uv * 2.0 - 1.0;
-    // Sample the far plane, not the near plane. The projection can carry a view-space
-    // bob/hurt translation; inverting it on the 0.05-block near plane amplifies that
-    // translation into a large angular error. A far-plane point keeps the true direction.
-    vec4 clip = vec4(ndc, 1.0, 1.0);
-    vec4 view = InvProjMat * clip;
-    view.xyz /= view.w;
-    return normalize((InvViewMat * vec4(view.xyz, 0.0)).xyz);
-}
-
-float viewDistance(float depth, vec2 uv) {
-    vec2 ndc = uv * 2.0 - 1.0;
-    vec4 clip = vec4(ndc, depth * 2.0 - 1.0, 1.0);
-    vec4 view = InvProjMat * clip;
-    if (abs(view.w) < 0.000001) {
-        return 1000000.0;
-    }
-    view.xyz /= view.w;
-    return clamp(length(view.xyz), 0.01, 1000000.0);
-}
-
 bool foregroundColorDelta(vec2 uv) {
     return OpaqueColorValid > 0.5
         && distance(texture(RawSceneSampler, uv).rgb,
@@ -112,7 +89,7 @@ bool foregroundColorDelta(vec2 uv) {
  * pre/post-translucent color delta.
  */
 bool foregroundAt(vec2 uv, float entryDistance, float tolerance) {
-    float foreground = viewDistance(texture(ForegroundDepthSampler, uv).r, uv);
+    float foreground = quasarViewDistance(texture(ForegroundDepthSampler, uv).r, uv);
     if (quasarForegroundLayerDepth(foreground, ForegroundDepthValid > 0.5,
         entryDistance, tolerance)) {
         return true;
@@ -504,7 +481,7 @@ vec4 renderBlackHole(vec2 uv) {
         return EmissiveOnly > 0.5 ? vec4(0.0) : vec4(sceneColor.rgb, 0.0);
     }
 
-    vec3 direction = rayDirection(uv);
+    vec3 direction = quasarWorldRay(uv);
     float facing = frontFacing(direction);
     vec3 cameraRelative = -EffectOrigin;
     QuasarMediumRay ray = refractAtWater(cameraRelative, direction);
@@ -652,7 +629,7 @@ vec4 renderBlackHole(vec2 uv) {
     // disk/core/ring and read as terrain behind the black hole.
     if (MediumPathLength <= 0.0 && opaqueCoverage > 0.01) {
         float tintEntry = nearestEntry + max(ray.surfaceDistance, 0.0);
-        float tintDepth = viewDistance(
+        float tintDepth = quasarViewDistance(
             texture(ForegroundDepthSampler, uv).r, uv);
         // Background water/ice must not print its colors onto an opaque surface;
         // only a depth-confirmed layer in front may tint the emission.
@@ -706,7 +683,7 @@ vec4 renderBlackHole(vec2 uv) {
             }
             float sampleWeight = lensSampleWeight(sourceUv, uv);
             if (sampleWeight > 0.001) {
-                float sourceDistance = viewDistance(
+                float sourceDistance = quasarViewDistance(
                     texture(DepthSampler, sourceUv).r, sourceUv);
                 bool sourceForeground = foregroundAt(sourceUv, lensEntry, 0.5);
                 // Only bend light that is actually behind the traced surface. The old
@@ -820,21 +797,21 @@ void main() {
     vec3 cameraRelative = -EffectOrigin;
     float holeDistance = length(EffectOrigin);
     bool insideHorizon = holeDistance <= max(BlackHoleRadius, 0.001) * BH_HORIZON_EPSILON;
-    vec3 direction = rayDirection(texCoord);
+    vec3 direction = quasarWorldRay(texCoord);
     QuasarMediumRay ray = refractAtWater(cameraRelative, direction);
     vec4 effectColor = texture(EffectSampler, texCoord);
     float lensRadius = max(LensRadius, BlackHoleRadius * 3.0);
     float depthScale = quasarLayerScale(QUASAR_LAYER_FILL, holeDistance, lensRadius);
     float effectEntry = quasarDecodeLayerDepth(
         QUASAR_LAYER_FILL, effectColor.a, holeDistance, lensRadius);
-    float sceneDistance = viewDistance(texture(DepthSampler, texCoord).r, texCoord);
+    float sceneDistance = quasarViewDistance(texture(DepthSampler, texCoord).r, texCoord);
     // One quantisation step keeps interpolated alpha from flickering at silhouettes.
     float depthBias = max(0.05, sceneDistance * 0.001)
         + (1.0 + effectEntry) * log(1.0 + depthScale) / 255.0;
     // effectEntry is measured from the refracted origin, so add the surface leg
     // before comparing it with the camera-space scene depth.
     float entryDistance = effectEntry + max(ray.surfaceDistance, 0.0);
-    float foregroundDistance = viewDistance(
+    float foregroundDistance = quasarViewDistance(
         texture(ForegroundDepthSampler, texCoord).r, texCoord);
     bool foregroundDelta = foregroundColorDelta(texCoord);
     bool lensBlocked = !quasarLayerVisibleThroughForeground(
@@ -850,7 +827,7 @@ void main() {
         vec2 candidate = clamp(
             drillUv(sceneUv, VortexStrength, VortexRadius, holeDistance),
             vec2(0.0), vec2(1.0));
-        float swirlForeground = viewDistance(
+        float swirlForeground = quasarViewDistance(
             texture(ForegroundDepthSampler, candidate).r, candidate);
         if (swirlForeground >= entryDistance - depthBias) {
             sceneUv = candidate;

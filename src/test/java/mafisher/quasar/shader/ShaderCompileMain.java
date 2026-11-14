@@ -1,5 +1,6 @@
 package mafisher.quasar.shader;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -19,6 +20,7 @@ public final class ShaderCompileMain {
             compile(program, program.vertexSourceId(), "vertex", failures);
             compile(program, program.fragmentSourceId(), "fragment", failures);
         }
+        int moduleCount = compileModules(failures);
 
         ShaderTestCompiler.Result invalid = ShaderTestCompiler.compile(
             "#version 150\nvoid main() { this is not glsl }\n",
@@ -37,23 +39,40 @@ public final class ShaderCompileMain {
             System.exit(1);
         }
         System.out.println("Compiled " + programs.size() + " shader programs");
+        System.out.println("Compiled " + moduleCount + " shader modules");
+    }
+
+    private static int compileModules(List<String> failures) {
+        List<Path> modules = ShaderTestResources.includeSources();
+        for (Path path : modules) {
+            String resourceId = ShaderTestResources.resourceFor(path).id();
+            String source = "#version 150\n"
+                + ShaderTestResources.readShaderSource(resourceId)
+                + "\nvoid main() {}\n";
+            compile(source, ShaderTestCompiler.Stage.FRAGMENT,
+                resourceId, failures);
+        }
+        return modules.size();
     }
 
     private static void compile(ShaderTestResources.ShaderProgramAsset program, String resourceId,
         String stageName, List<String> failures) {
         ShaderTestCompiler.Stage stage = "vertex".equals(stageName)
             ? ShaderTestCompiler.Stage.VERTEX : ShaderTestCompiler.Stage.FRAGMENT;
+        compile(ShaderTestResources.preprocessedShader(resourceId), stage,
+            program.programId() + " (" + resourceId + ", " + stageName + ")", failures);
+    }
+
+    private static void compile(String source, ShaderTestCompiler.Stage stage, String label,
+        List<String> failures) {
         try {
-            String source = ShaderTestResources.preprocessedShader(resourceId);
             ShaderTestCompiler.Result result = ShaderTestCompiler.compile(
-                source, stage, program.programId() + " " + stageName);
+                source, stage, label);
             if (!result.success()) {
-                failures.add(program.programId() + " (" + resourceId + ", " + stageName + ")\n"
-                    + result.messages());
+                failures.add(label + "\n" + result.messages());
             }
         } catch (RuntimeException e) {
-            failures.add(program.programId() + " (" + resourceId + ", " + stageName + ")\n"
-                + e.getMessage());
+            failures.add(label + "\n" + e.getMessage());
         }
     }
 }

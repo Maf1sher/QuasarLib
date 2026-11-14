@@ -40,6 +40,9 @@ class ShaderCompilationTest {
         int expectedPrograms = ShaderTestResources.programs().size();
         assertTrue(output.contains("Compiled " + expectedPrograms + " shader programs"),
             () -> "Shader compilation did not report every program:\n" + output);
+        int expectedModules = ShaderTestResources.includeSources().size();
+        assertTrue(output.contains("Compiled " + expectedModules + " shader modules"),
+            () -> "Shader compilation did not report every module:\n" + output);
     }
 
     private static Path javaExecutable() {

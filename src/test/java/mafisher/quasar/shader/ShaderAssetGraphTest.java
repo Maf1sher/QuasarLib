@@ -1,5 +1,6 @@
 package mafisher.quasar.shader;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
@@ -11,12 +12,18 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
 /** Keeps the shader asset graph reachable and free of orphaned sources. */
 class ShaderAssetGraphTest {
+    /** Public modules that no shipped program imports yet; 4.10 adopts soft particles. */
+    private static final Set<String> LIBRARY_ONLY_INCLUDES = Set.of(
+        "quasar_lib:shaders/include/soft_particles.glsl"
+    );
+
     @Test
     void everyProgramReferencesExistingStages() {
         List<String> failures = new ArrayList<>();
@@ -44,7 +51,7 @@ class ShaderAssetGraphTest {
     }
 
     @Test
-    void everyIncludeIsImported() {
+    void everyIncludeIsImportedOrDeclaredLibraryOnly() {
         Set<String> includeIds = ShaderTestResources.includeSources().stream()
             .map(path -> ShaderTestResources.resourceFor(path).id())
             .collect(Collectors.toCollection(LinkedHashSet::new));
@@ -67,7 +74,18 @@ class ShaderAssetGraphTest {
         }
 
         includeIds.removeAll(visited);
+        includeIds.removeAll(LIBRARY_ONLY_INCLUDES);
         assertTrue(includeIds.isEmpty(), () -> "Unreferenced shader includes: " + includeIds);
+    }
+
+    @Test
+    void libraryOnlyIncludesExist() {
+        Set<String> discovered = ShaderTestResources.includeSources().stream()
+            .map(path -> ShaderTestResources.resourceFor(path).id())
+            .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        assertTrue(discovered.containsAll(LIBRARY_ONLY_INCLUDES),
+            () -> "Library-only includes are missing: " + LIBRARY_ONLY_INCLUDES);
     }
 
     @Test
@@ -105,23 +123,9 @@ class ShaderAssetGraphTest {
 
     @Test
     void sharedNoiseIsDefinedOnlyInTheInclude() {
-        List<String> duplicated = new ArrayList<>();
-        Set<String> names = Set.of("quasarHash21", "quasarValueNoise", "quasarHash13",
-            "quasarValueNoise3", "quasarFbm3");
-        List<Path> sources = new ArrayList<>(ShaderTestResources.coreShaderSources());
-        sources.addAll(ShaderTestResources.includeSources());
-        for (Path path : sources) {
-            String source = ShaderTestResources.readShaderSource(
-                ShaderTestResources.resourceFor(path).id());
-            for (String name : names) {
-                if (!path.getFileName().toString().equals("noise.glsl")
-                    && Pattern.compile("\\bfloat\\s+" + name + "\\s*\\(").matcher(source).find()) {
-                    duplicated.add(name + " is defined in " + path);
-                }
-            }
-        }
-        assertTrue(duplicated.isEmpty(), () -> "Noise helpers must live only in noise.glsl:\n"
-            + String.join("\n", duplicated));
+        assertDefinitionsOnlyIn("noise.glsl", "float", Set.of(
+            "quasarHash21", "quasarValueNoise", "quasarHash13",
+            "quasarValueNoise3", "quasarFbm3"));
     }
 
     @Test
@@ -149,36 +153,51 @@ class ShaderAssetGraphTest {
     }
 
     @Test
+    void blackHoleUsesTheDepthReconstructionInclude() {
+        Set<String> imports = importsOf(ShaderTestResources.ShaderResource.parse(
+            "quasar_content:shaders/core/black_hole.fsh"));
+        assertTrue(imports.contains("quasar_lib:shaders/include/depth_reconstruction.glsl"),
+            () -> "black_hole.fsh must import the shared depth reconstruction: " + imports);
+    }
+
+    @Test
+    void blackHoleHasNoLocalCameraRayOrDepthHelpers() {
+        String source = ShaderTestResources.readShaderSource(
+            "quasar_content:shaders/core/black_hole.fsh");
+        Pattern localHelper = Pattern.compile(
+            "\\b(?:float|vec3)\\s+(?:viewDistance|rayDirection)\\s*\\(");
+
+        assertFalse(localHelper.matcher(source).find(),
+            "black_hole.fsh must use the shared depth reconstruction module");
+    }
+
+    @Test
+    void sharedDepthReconstructionIsDefinedOnlyInTheInclude() {
+        assertDefinitionsOnlyIn("depth_reconstruction.glsl", "float|vec3", Set.of(
+            "quasarWorldRay", "quasarViewDistance"));
+    }
+
+    @Test
+    void sharedSoftParticlesAreDefinedOnlyInTheInclude() {
+        assertDefinitionsOnlyIn("soft_particles.glsl", "float", Set.of(
+            "quasarSoftParticleFade", "quasarParticleNearFade"));
+    }
+
+    @Test
     void sharedMediumOpticsAreDefinedOnlyInTheInclude() {
-        List<String> duplicated = new ArrayList<>();
-        Set<String> names = Set.of(
-            "quasarMediumFresnel",
-            "quasarMediumFromCameraFresnel",
-            "quasarMediumSurfaceTransmittance",
-            "quasarMediumRay",
-            "quasarMediumRefract",
-            "quasarMediumFogDistance",
-            "quasarMediumFogFactor",
-            "quasarMediumFog",
-            "quasarMediumFogTransmission",
-            "quasarMediumWarpAllowed"
-        );
-        List<Path> sources = new ArrayList<>(ShaderTestResources.coreShaderSources());
-        sources.addAll(ShaderTestResources.includeSources());
-        for (Path path : sources) {
-            String source = ShaderTestResources.readShaderSource(
-                ShaderTestResources.resourceFor(path).id());
-            for (String name : names) {
-                if (!path.getFileName().toString().equals("medium_optics.glsl")
-                    && Pattern.compile("\\b(?:float|vec3|bool|QuasarMediumRay)\\s+"
-                        + name + "\\s*\\(").matcher(source).find()) {
-                    duplicated.add(name + " is defined in " + path);
-                }
-            }
-        }
-        assertTrue(duplicated.isEmpty(),
-            () -> "Medium optics helpers must live only in medium_optics.glsl:\n"
-                + String.join("\n", duplicated));
+        assertDefinitionsOnlyIn("medium_optics.glsl",
+            "float|vec3|bool|QuasarMediumRay", Set.of(
+                "quasarMediumFresnel",
+                "quasarMediumFromCameraFresnel",
+                "quasarMediumSurfaceTransmittance",
+                "quasarMediumRay",
+                "quasarMediumRefract",
+                "quasarMediumFogDistance",
+                "quasarMediumFogFactor",
+                "quasarMediumFog",
+                "quasarMediumFogTransmission",
+                "quasarMediumWarpAllowed"
+            ));
     }
 
     @Test
@@ -196,6 +215,30 @@ class ShaderAssetGraphTest {
             }
         }
         assertTrue(missing.isEmpty(), () -> "Shader sources do not import noise.glsl: " + missing);
+    }
+
+    private static void assertDefinitionsOnlyIn(String includeFile, String returnTypes,
+        Set<String> names) {
+        String alternatives = names.stream()
+            .map(Pattern::quote)
+            .collect(Collectors.joining("|"));
+        Pattern definition = Pattern.compile(
+            "\\b(?:" + returnTypes + ")\\s+(" + alternatives + ")\\s*\\(");
+        List<String> duplicated = new ArrayList<>();
+        List<Path> sources = new ArrayList<>(ShaderTestResources.coreShaderSources());
+        sources.addAll(ShaderTestResources.includeSources());
+        for (Path path : sources) {
+            String source = ShaderTestResources.readShaderSource(
+                ShaderTestResources.resourceFor(path).id());
+            Matcher matcher = definition.matcher(source);
+            while (matcher.find()) {
+                if (!path.getFileName().toString().equals(includeFile)) {
+                    duplicated.add(matcher.group(1) + " is defined in " + path);
+                }
+            }
+        }
+        assertTrue(duplicated.isEmpty(), () -> "Shared helpers must live only in "
+            + includeFile + ":\n" + String.join("\n", duplicated));
     }
 
     private static Set<String> importsOf(ShaderTestResources.ShaderResource resource) {
