@@ -29,6 +29,7 @@ mafisher.quasar.api.client.screen.EmissiveComposite
 mafisher.quasar.api.client.impulse.CameraShakeImpulse
 mafisher.quasar.api.client.impulse.ClientEffectImpulses
 mafisher.quasar.api.client.render.EffectCameraSnapshot
+mafisher.quasar.api.client.render.EffectDepthOcclusion
 mafisher.quasar.api.client.render.EffectInstancedPass
 mafisher.quasar.api.client.render.EffectLod
 mafisher.quasar.api.client.render.EffectLodProfile
@@ -83,6 +84,7 @@ mafisher.quasar.api.compat.ProtectionBridge
 mafisher.quasar.api.compat.RegisterCompatBridgesEvent
 mafisher.quasar.api.compat.RegisterCompatProvidersEvent
 mafisher.quasar.api.compat.RenderEnvironment
+mafisher.quasar.api.compat.SceneDepthFrame
 mafisher.quasar.api.compat.SceneDepthProvider
 mafisher.quasar.api.compat.SceneDepthSource
 mafisher.quasar.api.compat.ShaderPackProvider

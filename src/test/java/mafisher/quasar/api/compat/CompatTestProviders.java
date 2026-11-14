@@ -11,6 +11,7 @@ import mafisher.quasar.api.compat.SceneDepthSource;
 import mafisher.quasar.api.compat.ShaderPackProvider;
 import mafisher.quasar.api.compat.ShaderPackState;
 import net.minecraft.resources.ResourceLocation;
+import org.joml.Matrix4f;
 
 /** Small provider fixtures shared by the compat registry tests. */
 final class CompatTestProviders {
@@ -22,6 +23,11 @@ final class CompatTestProviders {
     }
 
     static SceneDepthProvider depth(String path, int priority, RenderTarget target, SceneDepthSource source) {
+        return depth(path, priority, target, source, null);
+    }
+
+    static SceneDepthProvider depth(String path, int priority, RenderTarget target,
+        SceneDepthSource source, Matrix4f projection) {
         return new SceneDepthProvider() {
             @Override
             public ResourceLocation id() {
@@ -41,6 +47,11 @@ final class CompatTestProviders {
             @Override
             public SceneDepthSource source() {
                 return source;
+            }
+
+            @Override
+            public Matrix4f depthProjection(Matrix4f frameProjection) {
+                return projection;
             }
         };
     }

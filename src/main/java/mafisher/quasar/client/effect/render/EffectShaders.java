@@ -36,6 +36,9 @@ public final class EffectShaders {
     public static final EffectShader SCREEN_PRESENT = EffectShader.create(
         id("screen_present"), DefaultVertexFormat.POSITION
     );
+    static final EffectShader DEPTH_PROBE = EffectShader.create(
+        id("depth_probe"), DefaultVertexFormat.POSITION
+    );
 
     private EffectShaders() {
     }
@@ -49,6 +52,7 @@ public final class EffectShaders {
         SCREEN_BLOOM.register(event);
         SCREEN_FLASH.register(event);
         SCREEN_PRESENT.register(event);
+        DEPTH_PROBE.register(event);
         EmissiveComposite.STANDARD_SHADER.register(event);
     }
 

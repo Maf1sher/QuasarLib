@@ -4,6 +4,7 @@ import com.mojang.blaze3d.platform.GlStateManager;
 import java.util.Objects;
 import mafisher.quasar.client.effect.render.EffectRenderState;
 import net.neoforged.neoforge.client.GlStateBackup;
+import org.jetbrains.annotations.ApiStatus;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL30;
 
@@ -14,7 +15,8 @@ import org.lwjgl.opengl.GL30;
  * offset, scissor enable, and color mask. Framebuffer bindings and the viewport are read from GL
  * because NeoForge's backup does not include them.</p>
  */
-final class ScreenGlState {
+@ApiStatus.Internal
+public final class ScreenGlState {
     private final GlStateBackup backup;
     private final int drawFramebuffer;
     private final int readFramebuffer;
@@ -30,7 +32,7 @@ final class ScreenGlState {
         }
     }
 
-    static ScreenGlState capture() {
+    public static ScreenGlState capture() {
         return capture(GlStateAccess.INSTANCE);
     }
 
@@ -40,7 +42,7 @@ final class ScreenGlState {
             access.viewport());
     }
 
-    void restore() {
+    public void restore() {
         restore(GlStateAccess.INSTANCE);
     }
 

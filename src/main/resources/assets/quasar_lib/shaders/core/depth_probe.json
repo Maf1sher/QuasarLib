@@ -1,0 +1,11 @@
+{
+  "vertex": "quasar_lib:depth_probe",
+  "fragment": "quasar_lib:depth_probe",
+  "samplers": [],
+  "attributes": [
+    "Position"
+  ],
+  "uniforms": [
+    { "name": "ProbeMVP", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] }
+  ]
+}

@@ -14,6 +14,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import mafisher.quasar.api.client.render.EffectCameraSnapshot;
+import mafisher.quasar.api.client.render.EffectDepthOcclusion;
 import mafisher.quasar.api.client.render.EffectInstancedPass;
 import mafisher.quasar.api.client.render.EffectLod;
 import mafisher.quasar.api.client.render.EffectLodProfile;
@@ -31,6 +32,7 @@ import mafisher.quasar.api.client.render.VisualEffectInstance;
 import mafisher.quasar.api.client.render.VisualEffectRenderer;
 import mafisher.quasar.api.compat.CompatRegistry;
 import mafisher.quasar.api.compat.RenderEnvironment;
+import mafisher.quasar.api.compat.SceneDepthFrame;
 import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.budget.EffectQualityTier;
 import mafisher.quasar.api.effect.EffectTimeline;
@@ -82,6 +84,7 @@ public final class ClientVisualEffectManager {
     private final Map<UUID, Double> instanceSpatialRadii = new LinkedHashMap<>();
     private final Map<UUID, EffectLodTracker.State> lodStates = new LinkedHashMap<>();
     private final Map<UUID, EffectQualityTracker.State> qualityStates = new LinkedHashMap<>();
+    private final Map<UUID, Boolean> frameGroupOcclusionEnabled = new HashMap<>();
     private final ClientEffectSpatialIndex spatialIndex = new ClientEffectSpatialIndex();
     private final Set<ClientEffectSpatialIndex.Key> unindexedInstances = new LinkedHashSet<>();
     private final Set<ClientEffectSpatialIndex.Key> unindexedGroups = new LinkedHashSet<>();
@@ -101,6 +104,7 @@ public final class ClientVisualEffectManager {
     private final List<UUID> finishedEffects = new ArrayList<>();
     private final FrameSnapshotCache frameCache = new FrameSnapshotCache();
     private final ClientAttachmentResolver attachmentResolver;
+    private final ClientDepthOcclusion depthOcclusion;
     private final Map<UUID, Entity> frameEntities = new HashMap<>();
     private boolean frameEntitiesBuilt;
     private long frameEntitiesGameTime = Long.MIN_VALUE;
@@ -115,7 +119,13 @@ public final class ClientVisualEffectManager {
     private EffectScreenProjection frameProjection;
 
     public ClientVisualEffectManager(VisualEffectRendererRegistry rendererRegistry, ResourceManager resources) {
+        this(rendererRegistry, resources, new ClientDepthOcclusion(new GlDepthProbeBackend()));
+    }
+
+    ClientVisualEffectManager(VisualEffectRendererRegistry rendererRegistry, ResourceManager resources,
+        ClientDepthOcclusion depthOcclusion) {
         this.rendererRegistry = Objects.requireNonNull(rendererRegistry, "rendererRegistry");
+        this.depthOcclusion = Objects.requireNonNull(depthOcclusion, "depthOcclusion");
         this.attachmentResolver = new ClientAttachmentResolver(this.activeEffects,
             new ClientAttachmentResolver.ParentFrames() {
                 @Override
@@ -326,8 +336,9 @@ public final class ClientVisualEffectManager {
     }
 
     public void render(net.neoforged.neoforge.client.event.RenderLevelStageEvent event,
-        RenderEnvironment environment) {
+        RenderEnvironment environment, @Nullable SceneDepthFrame depthFrame) {
         this.ensureFrame(event, environment);
+        this.depthOcclusion.beginFrame(depthFrame, this.frameCamera);
         if (this.visibleEffects.isEmpty()) {
             return;
         }
@@ -368,6 +379,9 @@ public final class ClientVisualEffectManager {
     private void renderWorldPasses(VisibleEffect visible, PoseStack poseStack,
         MultiBufferSource.BufferSource buffers, InstancedBatchBuilder instancedBatches,
         StaticMeshBatchBuilder staticBatches) {
+        if (!this.shouldRenderDepth(visible)) {
+            return;
+        }
         VisualEffectRenderer renderer = visible.renderer();
         EffectRenderContext context = visible.context();
         if (renderer instanceof StaticMeshVisualEffectRenderer staticRenderer) {
@@ -412,6 +426,25 @@ public final class ClientVisualEffectManager {
         }
     }
 
+    private boolean shouldRenderDepth(VisibleEffect visible) {
+        if (visible.occlusionBounds() == null) {
+            return true;
+        }
+        boolean enabled = visible.effect().payload().segmentLink() == null
+            ? visible.depthOcclusionEnabled()
+            : this.frameGroupOcclusionEnabled.getOrDefault(visible.ownerId(), false);
+        return this.shouldRenderDepth(visible.ownerId(), visible.occlusionBounds(), enabled);
+    }
+
+    boolean shouldRenderDepth(UUID ownerId, @Nullable AABB bounds, boolean enabled) {
+        return bounds == null || this.depthOcclusion.shouldDraw(ownerId, bounds, enabled);
+    }
+
+    /** Returns one diagnostic line for the client compatibility command. */
+    public String depthOcclusionStatus() {
+        return this.depthOcclusion.status();
+    }
+
     public List<ScreenEffectBatch> screenEffects(net.neoforged.neoforge.client.event.RenderLevelStageEvent event,
         RenderEnvironment environment) {
         this.ensureFrame(event, environment);
@@ -424,7 +457,8 @@ public final class ClientVisualEffectManager {
 
         this.screenFrames.clear();
         for (VisibleEffect visible : this.visibleEffects) {
-            if (!(visible.renderer() instanceof ScreenEffectRenderer screenRenderer)) {
+            if (!(visible.renderer() instanceof ScreenEffectRenderer screenRenderer)
+                || !this.shouldRenderDepth(visible)) {
                 continue;
             }
             EffectRenderContext context = visible.context();
@@ -512,6 +546,7 @@ public final class ClientVisualEffectManager {
             this.frameCamera = null;
             this.frameProjection = null;
             this.visibleEffects.clear();
+            this.frameGroupOcclusionEnabled.clear();
             this.screenBatches = List.of();
             this.screenBatchTick = Integer.MIN_VALUE;
             return;
@@ -524,6 +559,7 @@ public final class ClientVisualEffectManager {
         this.frameProjection = this.frameCamera == null ? null : EffectScreenProjection.from(this.frameCamera);
         if (this.frameCamera == null) {
             this.visibleEffects.clear();
+            this.frameGroupOcclusionEnabled.clear();
             this.screenBatches = List.of();
             this.screenBatchTick = Integer.MIN_VALUE;
             return;
@@ -532,14 +568,17 @@ public final class ClientVisualEffectManager {
         long gameTime = ClientEffectClock.estimate(level.getGameTime());
         this.removeFinishedEffects(level, gameTime);
         this.visibleEffects.clear();
+        this.frameGroupOcclusionEnabled.clear();
         this.screenBatches = List.of();
         this.screenBatchTick = Integer.MIN_VALUE;
         if (this.activeEffects.isEmpty()) {
             return;
         }
         float partialTick = event.getPartialTick().getGameTimeDeltaPartialTick(false);
-        this.forEachVisibleEffect(event, gameTime, partialTick, (effect, context, renderer) ->
-            this.visibleEffects.add(new VisibleEffect(effect, context, renderer)));
+        this.forEachVisibleEffect(event, gameTime, partialTick, (effect, context, renderer,
+            ownerId, occlusionBounds, depthOcclusionEnabled) ->
+            this.visibleEffects.add(new VisibleEffect(effect, context, renderer, ownerId,
+                occlusionBounds, depthOcclusionEnabled)));
     }
 
     private void forEachVisibleEffect(
@@ -597,14 +636,22 @@ public final class ClientVisualEffectManager {
             effect, transform, gameTime, partialTick, quality
         );
         double radius = this.instanceSpatialRadii.getOrDefault(instanceId, Double.POSITIVE_INFINITY);
-        if (!this.isVisible(renderer, context, event, radius)) {
+        if (!this.coarseVisible(context, event, radius)) {
+            return;
+        }
+        AABB cullingBounds = this.validatedCullingBounds(renderer, context);
+        if (!event.getFrustum().isVisible(cullingBounds)) {
             return;
         }
         EffectScreenMetrics metrics = this.screenMetrics(context, radius);
         EffectQualityTier effective = this.effectiveQuality(instanceId, quality, metrics, gameTime, partialTick);
         context = context.withScreenMetrics(metrics).withEffectiveQuality(effective);
+        EffectDepthOcclusion occlusion = renderer.depthOcclusion();
+        AABB occlusionBounds = occlusion.enabled()
+            ? (occlusion.bounds() == null ? cullingBounds : occlusion.bounds())
+            : null;
         consumer.accept(effect, context.withLod(selectLod(instanceId, renderer, event, context, radius, effective,
-            gameTime, partialTick)), renderer);
+            gameTime, partialTick)), renderer, instanceId, occlusionBounds, occlusion.enabled());
     }
 
     private void visitMember(
@@ -622,15 +669,26 @@ public final class ClientVisualEffectManager {
         VisualEffectInstance effect = group.renderInstance(member);
         EffectQualityTier quality = ClientQualityController.tier();
         EffectRenderContext context = this.createRenderContext(effect, gameTime, partialTick, quality);
-        if (!this.isVisible(renderer, context, event, member.spatialRadius())) {
+        if (!this.coarseVisible(context, event, member.spatialRadius())) {
+            return;
+        }
+        AABB cullingBounds = this.validatedCullingBounds(renderer, context);
+        if (!event.getFrustum().isVisible(cullingBounds)) {
             return;
         }
         EffectScreenMetrics metrics = this.screenMetrics(context, member.spatialRadius());
         EffectQualityTier effective = this.effectiveQuality(member.instanceId(), quality, metrics,
             gameTime, partialTick);
         context = context.withScreenMetrics(metrics).withEffectiveQuality(effective);
+        UUID coordinatorId = member.link().coordinatorId();
+        AABB groupBounds = group.isIndexable() ? group.indexBounds() : null;
+        EffectDepthOcclusion occlusion = renderer.depthOcclusion();
+        boolean occlusionEnabled = occlusion.enabled() && groupBounds != null;
+        this.frameGroupOcclusionEnabled.merge(coordinatorId, occlusionEnabled,
+            (current, next) -> current && next);
         consumer.accept(effect, context.withLod(selectLod(member.instanceId(), renderer, event, context,
-            member.spatialRadius(), effective, gameTime, partialTick)), renderer);
+            member.spatialRadius(), effective, gameTime, partialTick)), renderer, coordinatorId,
+            groupBounds, occlusionEnabled);
     }
 
     private EffectScreenMetrics screenMetrics(EffectRenderContext context, double spatialRadius) {
@@ -714,23 +772,20 @@ public final class ClientVisualEffectManager {
             currentBoundary, previousBoundary, raw.cameraDistance(), gap, renderGameTime);
     }
 
-    private boolean isVisible(
-        VisualEffectRenderer renderer,
+    private boolean coarseVisible(
         EffectRenderContext context,
         net.neoforged.neoforge.client.event.RenderLevelStageEvent event,
         double spatialRadius
     ) {
-        if (Double.isFinite(spatialRadius) && spatialRadius >= 0.0) {
-            EffectPoint position = context.transform().position();
-            AABB coarse = new AABB(
-                position.x() - spatialRadius, position.y() - spatialRadius, position.z() - spatialRadius,
-                position.x() + spatialRadius, position.y() + spatialRadius, position.z() + spatialRadius
-            );
-            if (!event.getFrustum().isVisible(coarse)) {
-                return false;
-            }
+        if (!Double.isFinite(spatialRadius) || spatialRadius < 0.0) {
+            return true;
         }
-        return event.getFrustum().isVisible(this.validatedCullingBounds(renderer, context));
+        EffectPoint position = context.transform().position();
+        AABB coarse = new AABB(
+            position.x() - spatialRadius, position.y() - spatialRadius, position.z() - spatialRadius,
+            position.x() + spatialRadius, position.y() + spatialRadius, position.z() + spatialRadius
+        );
+        return event.getFrustum().isVisible(coarse);
     }
 
     private AABB queryBox(Vec3 cameraPosition) {
@@ -883,8 +938,10 @@ public final class ClientVisualEffectManager {
 
         SegmentLink link = removed.payload().segmentLink();
         if (link == null) {
+            this.depthOcclusion.forget(instanceId);
             return;
         }
+        this.depthOcclusion.forget(link.coordinatorId());
         ClientSegmentGroup group = this.segmentedGroups.get(link.coordinatorId());
         if (group == null) {
             return;
@@ -902,6 +959,7 @@ public final class ClientVisualEffectManager {
     private void removeGroup(UUID coordinatorId) {
         ClientSegmentGroup group = this.segmentedGroups.remove(coordinatorId);
         this.removeIndexEntry(ClientEffectSpatialIndex.Key.group(coordinatorId));
+        this.depthOcclusion.forget(coordinatorId);
         if (group == null) {
             return;
         }
@@ -1103,6 +1161,7 @@ public final class ClientVisualEffectManager {
         this.frameCache.invalidate();
         this.screenBatchTick = Integer.MIN_VALUE;
         this.visibleEffects.clear();
+        this.frameGroupOcclusionEnabled.clear();
         this.screenFrames.clear();
         this.screenBatches = List.of();
     }
@@ -1123,6 +1182,7 @@ public final class ClientVisualEffectManager {
     public void onResourceReload(ResourceManager resourceManager) {
         this.rendererRegistry.onResourceReload(resourceManager);
         this.instancedRenderer.onResourceReload();
+        this.depthOcclusion.reset();
         EffectRenderTypes.onResourceReload();
     }
 
@@ -1150,21 +1210,25 @@ public final class ClientVisualEffectManager {
         this.spatialIndex.clear();
         this.unindexedInstances.clear();
         this.unindexedGroups.clear();
+        this.depthOcclusion.reset();
         this.instancedRenderer.close();
         this.meshCache.close();
     }
 
     private record VisibleEffect(VisualEffectInstance effect, EffectRenderContext context,
-        VisualEffectRenderer renderer) {
+        VisualEffectRenderer renderer, UUID ownerId, @Nullable AABB occlusionBounds,
+        boolean depthOcclusionEnabled) {
         private VisibleEffect {
             Objects.requireNonNull(effect, "effect");
             Objects.requireNonNull(context, "context");
             Objects.requireNonNull(renderer, "renderer");
+            Objects.requireNonNull(ownerId, "ownerId");
         }
     }
 
     @FunctionalInterface
     private interface VisibleEffectConsumer {
-        void accept(VisualEffectInstance effect, EffectRenderContext context, VisualEffectRenderer renderer);
+        void accept(VisualEffectInstance effect, EffectRenderContext context, VisualEffectRenderer renderer,
+            UUID ownerId, @Nullable AABB occlusionBounds, boolean depthOcclusionEnabled);
     }
 }

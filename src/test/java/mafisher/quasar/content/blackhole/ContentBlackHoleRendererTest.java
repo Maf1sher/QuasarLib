@@ -5,10 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.UUID;
+import mafisher.quasar.api.client.render.EffectDepthOcclusion;
 import mafisher.quasar.api.client.render.EffectLod;
 import mafisher.quasar.api.client.render.EffectLodProfile;
 import mafisher.quasar.api.client.render.EffectRenderContext;
 import mafisher.quasar.api.client.render.EffectScreenLodProfile;
+import mafisher.quasar.api.client.screen.BlackHoleScreenSettings;
 import mafisher.quasar.api.client.screen.ScreenEffectInputs;
 import mafisher.quasar.api.client.screen.ScreenEffectMask;
 import mafisher.quasar.api.client.screen.ScreenEffectMasks;
@@ -61,6 +63,22 @@ class ContentBlackHoleRendererTest {
         assertEquals(centerX, (bounds.minX + bounds.maxX) / 2.0, 0.001);
         assertEquals(centerY, (bounds.minY + bounds.maxY) / 2.0, 0.001);
         assertEquals(centerZ, (bounds.minZ + bounds.maxZ) / 2.0, 0.001);
+    }
+
+    @Test
+    void depthOcclusionUsesBoundsThatEncloseTheLensAndMesh() {
+        ContentBlackHoleRenderer screenRenderer = new ContentBlackHoleRenderer();
+        ContentBlackHoleMeshRenderer meshRenderer = new ContentBlackHoleMeshRenderer();
+        EffectRenderContext context = context();
+        double scale = context.scale();
+
+        assertEquals(EffectDepthOcclusion.AUTO, screenRenderer.depthOcclusion());
+        assertEquals(EffectDepthOcclusion.AUTO, meshRenderer.depthOcclusion());
+        assertTrue(screenRenderer.spatialRadius(context)
+            >= scale * ContentBlackHoleSettings.DEFAULT.diskOuterFactor() * 1.1);
+        assertTrue(screenRenderer.spatialRadius(context) >= scale * 3.0);
+        assertTrue(meshRenderer.spatialRadius(context)
+            >= scale * BlackHoleScreenSettings.CINEMATIC_DEFAULT.lensRadiusScale());
     }
 
     @Test

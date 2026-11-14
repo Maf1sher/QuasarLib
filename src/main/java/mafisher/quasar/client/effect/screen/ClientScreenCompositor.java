@@ -22,8 +22,10 @@ import mafisher.quasar.api.client.screen.ScreenEffectOperationContext;
 import mafisher.quasar.api.client.screen.ScreenEffectOperationRenderer;
 import mafisher.quasar.api.compat.CompatRegistry;
 import mafisher.quasar.api.compat.RenderEnvironment;
+import mafisher.quasar.api.compat.SceneDepthFrame;
 import mafisher.quasar.api.effect.budget.EffectQualityTier;
 import mafisher.quasar.client.effect.quality.ClientQualityController;
+import mafisher.quasar.client.effect.render.ClientSceneDepth;
 import mafisher.quasar.client.effect.render.ClientVisualEffectManager;
 import mafisher.quasar.client.effect.render.EffectRenderState;
 import mafisher.quasar.client.effect.render.EffectShaders;
@@ -43,6 +45,7 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import org.joml.Matrix4f;
 import org.joml.Vector3d;
+import org.jspecify.annotations.Nullable;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL30;
 import org.slf4j.Logger;
@@ -522,6 +525,20 @@ public final class ClientScreenCompositor {
         } finally {
             previousState.restore();
         }
+    }
+
+    /**
+     * Resolves the depth frame used by provider-depth occlusion for the current frame.
+     *
+     * <p>This runs between the opaque capture and screen composition, so the
+     * pre-translucent copy is still valid when no provider depth is available.</p>
+     */
+    public @Nullable SceneDepthFrame occlusionDepthFrame(RenderEnvironment environment,
+        Matrix4f frameProjection) {
+        Objects.requireNonNull(environment, "environment");
+        Objects.requireNonNull(frameProjection, "frameProjection");
+        return ClientSceneDepth.resolve(environment, frameProjection,
+            this.opaqueDepthCaptured ? this.opaqueDepthTarget : null);
     }
 
     /**

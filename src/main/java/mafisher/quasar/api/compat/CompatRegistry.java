@@ -8,6 +8,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import net.minecraft.resources.ResourceLocation;
+import org.joml.Matrix4f;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,6 +26,7 @@ import org.slf4j.LoggerFactory;
  * may be active. A missing or failing provider degrades the affected capability
  * instead of failing an effect.</p>
  */
+@SuppressWarnings("PMD.CognitiveComplexity")
 public final class CompatRegistry {
     private static final Logger LOGGER = LoggerFactory.getLogger(CompatRegistry.class);
     private static final Object LOCK = new Object();
@@ -176,6 +179,22 @@ public final class CompatRegistry {
         return depth == null ? fallback : depth.target();
     }
 
+    /**
+     * Resolves the active provider depth together with the projection that produced it.
+     *
+     * <p>Returns {@code null} when no provider currently supplies both a target and a usable
+     * projection. A provider that does not implement {@link SceneDepthProvider#depthProjection}
+     * keeps working for composition but is not used for provider-depth occlusion.</p>
+     *
+     * @param frameProjection the current frame camera projection
+     */
+    public static @Nullable SceneDepthFrame sceneDepthFrame(Matrix4f frameProjection) {
+        Matrix4f frame = new Matrix4f(Objects.requireNonNull(frameProjection, "frameProjection"));
+        DepthResolution depth = resolveDepth(snapshot().depthProviders(), frame);
+        return depth == null || depth.projection() == null ? null
+            : new SceneDepthFrame(depth.target(), depth.source(), depth.projection());
+    }
+
     /** Returns the active physics bridge; the vanilla no-op bridge when absent. */
     public static PhysicsBridge physics() {
         synchronized (LOCK) {
@@ -285,6 +304,11 @@ public final class CompatRegistry {
     }
 
     private static DepthResolution resolveDepth(List<DepthEntry> entries) {
+        return resolveDepth(entries, null);
+    }
+
+    private static DepthResolution resolveDepth(List<DepthEntry> entries,
+        @Nullable Matrix4f frameProjection) {
         List<Prioritized<DepthEntry>> candidates = prioritizeDepth(entries);
         for (Prioritized<DepthEntry> candidate : candidates) {
             DepthEntry entry = candidate.value();
@@ -297,7 +321,22 @@ public final class CompatRegistry {
                 if (source == null || source == SceneDepthSource.MAIN_TARGET) {
                     continue;
                 }
-                return new DepthResolution(entry.id(), target, source);
+                Matrix4f projection = null;
+                if (frameProjection != null) {
+                    projection = entry.provider().depthProjection(new Matrix4f(frameProjection));
+                    if (projection == null) {
+                        // The provider supplies composition depth but cannot guarantee the
+                        // projection needed for a conservative occlusion proxy.
+                        continue;
+                    }
+                    if (!SceneDepthFrame.isUsableProjection(projection)) {
+                        logDepthFailure(entry.id(), new IllegalArgumentException(
+                            "depthProjection returned a non-finite or non-invertible projection"));
+                        continue;
+                    }
+                    projection = new Matrix4f(projection);
+                }
+                return new DepthResolution(entry.id(), target, source, projection);
             } catch (RuntimeException exception) {
                 logDepthFailure(entry.id(), exception);
             }
@@ -449,7 +488,8 @@ public final class CompatRegistry {
         }
     }
 
-    private record DepthResolution(ResourceLocation id, RenderTarget target, SceneDepthSource source) {
+    private record DepthResolution(ResourceLocation id, RenderTarget target, SceneDepthSource source,
+        @Nullable Matrix4f projection) {
     }
 
     private record ShaderPackResolution(ResourceLocation id, ShaderPackState state) {

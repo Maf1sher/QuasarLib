@@ -72,6 +72,7 @@ public final class ClientEffectCommands {
             : "absent (registered block protections only)";
         String report = "Compat providers: " + providers
             + "\ndepth=" + depth
+            + " depth-occlusion=" + ClientEffectFrameRuntime.depthOcclusionStatus()
             + " horizon=" + horizon
             + " shaderpack=" + environment.shaderPackState()
             + " physics=" + physics

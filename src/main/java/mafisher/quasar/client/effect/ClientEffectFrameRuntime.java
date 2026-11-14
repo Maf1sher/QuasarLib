@@ -6,6 +6,7 @@ import java.util.function.Consumer;
 import mafisher.quasar.api.client.impulse.ClientEffectImpulses;
 import mafisher.quasar.api.compat.CompatRegistry;
 import mafisher.quasar.api.compat.RenderEnvironment;
+import mafisher.quasar.api.compat.SceneDepthFrame;
 import mafisher.quasar.api.effect.StartVisualEffectPayload;
 import mafisher.quasar.api.scale.StartSegmentedVisualEffectPayload;
 import mafisher.quasar.client.effect.audio.ClientEffectAudio;
@@ -38,6 +39,7 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
  * Client-only owner of the effect manager and screen compositor. Common payload handlers must
  * never reference this class, so a dedicated server cannot load client-only descriptors.
  */
+@SuppressWarnings({"PMD.GodClass", "PMD.CognitiveComplexity"})
 final class ClientEffectFrameRuntime {
     private static final Object INIT_LOCK = new Object();
     private static final CompatFrameEnvironment FRAME_ENVIRONMENT =
@@ -148,6 +150,11 @@ final class ClientEffectFrameRuntime {
         ClientEffectDebris.accept(payload);
     }
 
+    static String depthOcclusionStatus() {
+        ClientVisualEffectManager current = manager;
+        return current == null ? "not initialized" : current.depthOcclusionStatus();
+    }
+
     /** Current interpolated world origin for one effect, or null when it has no visual instance. */
     static Vec3 effectOrigin(UUID effectId) {
         ClientVisualEffectManager current = manager;
@@ -172,7 +179,10 @@ final class ClientEffectFrameRuntime {
             long start = System.nanoTime();
             ClientVisualEffectManager effectManager = manager();
             RenderEnvironment environment = FRAME_ENVIRONMENT.beginFrame(currentFarPlane());
-            effectManager.render(event, environment);
+            ClientScreenCompositor compositor = screenCompositor;
+            SceneDepthFrame depthFrame = compositor == null ? null
+                : compositor.occlusionDepthFrame(environment, event.getProjectionMatrix());
+            effectManager.render(event, environment, depthFrame);
             ClientQualityController.recordWorldRender(System.nanoTime() - start);
         } else if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
             long start = System.nanoTime();

@@ -73,6 +73,19 @@ public interface VisualEffectRenderer {
     }
 
     /**
+     * Declares whether the engine may skip every pass of this effect when provider depth proves
+     * that its conservative world-space bounds are fully occluded.
+     *
+     * <p>The default uses {@link #cullingBounds(EffectRenderContext)}. A renderer whose visible
+     * screen-space output extends past those bounds, or that intentionally draws through terrain,
+     * must return {@link EffectDepthOcclusion#DISABLED} or declare enclosing bounds. The decision
+     * never affects gameplay or effect lifetime.</p>
+     */
+    default EffectDepthOcclusion depthOcclusion() {
+        return EffectDepthOcclusion.AUTO;
+    }
+
+    /**
      * Returns a conservative world-space bound for culling. The default preserves the old scale-based bound.
      */
     default AABB cullingBounds(EffectRenderContext context) {

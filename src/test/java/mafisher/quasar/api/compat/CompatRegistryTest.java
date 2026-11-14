@@ -2,6 +2,7 @@ package mafisher.quasar.api.compat;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -25,6 +26,7 @@ import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.EffectTransform;
 import mafisher.quasar.testing.GlobalStateTest;
 import net.minecraft.resources.ResourceLocation;
+import org.joml.Matrix4f;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -204,6 +206,59 @@ class CompatRegistryTest {
 
         assertEquals(SceneDepthSource.MAIN_TARGET, environment.depthSource());
         assertEquals(fallback, CompatRegistry.sceneDepthTarget(fallback));
+    }
+
+    @Test
+    void depthFrameRequiresAProviderProjection() {
+        RenderTarget fallback = mock(RenderTarget.class);
+        RenderTarget target = mock(RenderTarget.class);
+        CompatRegistry.registerSceneDepthProvider(CompatTestProviders.depth(
+            "composition-only", 1, target, SceneDepthSource.HORIZON_LOD));
+
+        assertNull(CompatRegistry.sceneDepthFrame(projection()));
+        assertEquals(target, CompatRegistry.sceneDepthTarget(fallback));
+    }
+
+    @Test
+    void depthFramePairsTheTargetWithItsProjection() {
+        RenderTarget target = mock(RenderTarget.class);
+        Matrix4f projection = projection();
+        CompatRegistry.registerSceneDepthProvider(CompatTestProviders.depth(
+            "projected", 1, target, SceneDepthSource.HORIZON_LOD, projection));
+
+        SceneDepthFrame frame = CompatRegistry.sceneDepthFrame(new Matrix4f());
+
+        assertEquals(target, frame.target());
+        assertEquals(SceneDepthSource.HORIZON_LOD, frame.source());
+        assertEquals(projection, frame.projection());
+        projection.identity();
+        assertFalse(frame.projection().equals(projection));
+    }
+
+    @Test
+    void invalidProjectionFallsThroughToTheNextProvider() {
+        RenderTarget invalidTarget = mock(RenderTarget.class);
+        RenderTarget validTarget = mock(RenderTarget.class);
+        Matrix4f invalid = new Matrix4f().zero();
+        Matrix4f valid = projection();
+        CompatRegistry.registerSceneDepthProvider(CompatTestProviders.depth(
+            "invalid", 10, invalidTarget, SceneDepthSource.HORIZON_LOD, invalid));
+        CompatRegistry.registerSceneDepthProvider(CompatTestProviders.depth(
+            "valid", 1, validTarget, SceneDepthSource.HORIZON_LOD, valid));
+
+        SceneDepthFrame frame = CompatRegistry.sceneDepthFrame(new Matrix4f());
+
+        assertEquals(validTarget, frame.target());
+        assertEquals(valid, frame.projection());
+    }
+
+    @Test
+    void noProviderHasNoOcclusionFrame() {
+        assertNull(CompatRegistry.sceneDepthFrame(projection()));
+    }
+
+    private static Matrix4f projection() {
+        return new Matrix4f().perspective((float)Math.toRadians(70.0), 16.0F / 9.0F, 0.05F, 1024.0F);
     }
 
     @Test

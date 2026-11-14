@@ -18,6 +18,7 @@ import mafisher.quasar.api.compat.ProtectionBridge;
 import mafisher.quasar.api.compat.RegisterCompatBridgesEvent;
 import mafisher.quasar.api.compat.RegisterCompatProvidersEvent;
 import mafisher.quasar.api.compat.RenderEnvironment;
+import mafisher.quasar.api.compat.SceneDepthFrame;
 import mafisher.quasar.api.compat.SceneDepthProvider;
 import mafisher.quasar.api.compat.SceneDepthSource;
 import mafisher.quasar.api.compat.ShaderPackProvider;
@@ -88,6 +89,7 @@ class PublicCompatSpiVisibilityTest {
         assertEquals(ShaderPackState.INACTIVE, shaderPack.state());
         assertTrue(protection.available());
         assertNotNull(SceneDepthProvider.class);
+        assertNotNull(SceneDepthFrame.class);
         assertNotNull(PhysicsBridge.class);
         assertNotNull(RegisterCompatProvidersEvent.class);
         assertNotNull(RegisterCompatBridgesEvent.class);

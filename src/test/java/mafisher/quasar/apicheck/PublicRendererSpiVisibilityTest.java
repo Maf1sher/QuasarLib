@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import java.util.List;
 import java.util.UUID;
+import mafisher.quasar.api.client.render.EffectDepthOcclusion;
 import mafisher.quasar.api.client.render.EffectInstancedPass;
 import mafisher.quasar.api.client.render.EffectLod;
 import mafisher.quasar.api.client.render.EffectLodProfile;
@@ -40,6 +41,17 @@ import org.junit.jupiter.api.Test;
 
 /** Compiles from outside the implementation package to pin the public SPI surface. */
 class PublicRendererSpiVisibilityTest {
+    @Test
+    void exposesDepthOcclusionPolicy() {
+        VisualEffectRenderer renderer = new VisualEffectRenderer() {
+        };
+        AABB bounds = new AABB(-1.0, -1.0, -1.0, 1.0, 1.0, 1.0);
+
+        assertEquals(EffectDepthOcclusion.AUTO, renderer.depthOcclusion());
+        assertEquals(bounds, EffectDepthOcclusion.bounds(bounds).bounds());
+        assertThrows(NullPointerException.class, () -> EffectDepthOcclusion.bounds(null));
+    }
+
     @Test
     void exposesStaticMeshLoadingContract() {
         ResourceLocation asset = ResourceLocation.fromNamespaceAndPath(
