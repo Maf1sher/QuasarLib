@@ -604,6 +604,7 @@ public final class EffectBulkBlockEditor {
         if (edit.cleared() == 0) {
             return;
         }
+        this.context.recordBulkBlockEdit();
 
         if (this.spec.removeBlockEntities() && this.spec.replacement().isAir()) {
             if (edit.fullSection()) {

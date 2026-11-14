@@ -1,7 +1,8 @@
 /**
  * Gameplay world-query API.
  *
- * Budgeted block sampling, resumable block cursors, raycasts, scans, and block volumes.
+ * Budgeted block sampling, cached surface columns, resumable block cursors, raycasts, scans, and
+ * block volumes.
  *
  * <p>Types in this package are part of the supported consumer contract.
  * Implementation packages outside {@code mafisher.quasar.api} are internal.</p>

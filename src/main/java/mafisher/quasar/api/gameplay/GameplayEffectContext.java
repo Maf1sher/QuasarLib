@@ -63,6 +63,7 @@ public final class GameplayEffectContext {
     private CompoundTag persistentState;
     private boolean stateDirty;
     private EffectWorldQuery world;
+    private long blockEditVersion;
 
     GameplayEffectContext(
         ServerLevel level,
@@ -345,6 +346,15 @@ public final class GameplayEffectContext {
         return this.blockChanges.size();
     }
 
+    /**
+     * Monotonic per-session stamp that changes after block edits are applied. Derived caches can
+     * compare it to the version they sampled and drop stale data; it is not persisted.
+     */
+    public long blockEditVersion() {
+        this.ensureOpen();
+        return this.blockEditVersion;
+    }
+
     /** Applies up to {@code maxChanges} queued changes; the service owns the per-tick budget. */
     int applyBlockChanges(int maxChanges) {
         this.ensureOpen();
@@ -356,7 +366,17 @@ public final class GameplayEffectContext {
         );
         this.budgetState.recordBlockChangesApplied(result.applied());
         this.budgetState.recordBlockChangesVetoed(result.vetoed());
+        if (result.applied() > 0) {
+            this.blockEditVersion++;
+        }
         return result.processed();
+    }
+
+    /** Marks one applied bulk section edit so derived surface caches are invalidated. */
+    @ApiStatus.Internal
+    public void recordBulkBlockEdit() {
+        this.ensureOpen();
+        this.blockEditVersion++;
     }
 
     /** Whether the engine can restore all recorded changes for this session. */

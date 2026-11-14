@@ -110,6 +110,24 @@ class EffectCarveSessionTest {
     }
 
     @Test
+    void bulkSectionEditsBumpTheBlockEditVersion() {
+        this.world.fillSection(Blocks.STONE.defaultBlockState());
+        GameplayEffectContext context = context(0, new CompoundTag());
+        EffectCarveSpec spec = spec(true);
+        EffectCarvePlan plan = EffectCarvePlan.plan(context, spec);
+        EffectCarveSession session = EffectCarveSession.start(context, spec, plan);
+
+        context.beginTick(Math.round(plan.growthStart() * DURATION) + 2);
+        long before = context.blockEditVersion();
+        session.tick();
+
+        assertTrue(session.progress().completedSections() > 0);
+        assertTrue(context.blockEditVersion() > before);
+        session.close(false);
+        close(context);
+    }
+
+    @Test
     void stopsEditingAtTheDeadlineAndMarksTheCarveIncomplete() {
         this.world.fillSection(Blocks.STONE.defaultBlockState());
         GameplayEffectContext context = context(1_080, new CompoundTag());

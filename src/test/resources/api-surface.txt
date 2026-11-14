@@ -139,6 +139,7 @@ mafisher.quasar.api.gameplay.EffectPhasePlan
 mafisher.quasar.api.gameplay.world.EffectRaycastResult
 mafisher.quasar.api.gameplay.world.EffectRaycastStatus
 mafisher.quasar.api.gameplay.world.EffectScanResult
+mafisher.quasar.api.gameplay.world.EffectSurfaceSampler
 mafisher.quasar.api.gameplay.tick.EffectTickBudget
 mafisher.quasar.api.gameplay.tick.EffectTickCounters
 mafisher.quasar.api.gameplay.world.EffectWorldQuery
