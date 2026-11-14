@@ -25,6 +25,9 @@ public final class ContentEffectIds {
     public static final ResourceLocation RIBBON = ResourceLocation.fromNamespaceAndPath(
         ContentBootstrap.NAMESPACE, "ribbon"
     );
+    public static final ResourceLocation STATIC_MESH = ResourceLocation.fromNamespaceAndPath(
+        ContentBootstrap.NAMESPACE, "static_mesh"
+    );
 
     private ContentEffectIds() {
     }
