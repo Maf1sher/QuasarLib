@@ -8,6 +8,8 @@ import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.budget.EffectPriority;
 import mafisher.quasar.api.effect.EffectTransform;
 import mafisher.quasar.api.effect.VisualEffectSpec;
+import mafisher.quasar.api.gameplay.CompanionSpec;
+import mafisher.quasar.api.gameplay.EffectCompanion;
 import mafisher.quasar.api.gameplay.EffectPhase;
 import mafisher.quasar.api.gameplay.EffectPhasePlan;
 import mafisher.quasar.api.gameplay.tick.EffectTickBudget;
@@ -161,6 +163,46 @@ public final class GameplayEffectFixtures {
 
         @Override
         public void onTick(GameplayEffectContext context) {
+        }
+    }
+
+    public static final class CompanionController implements GameplayEffectController {
+        private final CompanionSpec spec;
+        private final boolean startTwice;
+        public EffectCompanion companion;
+        public EffectCompanion duplicate;
+        public GameplayEffectContext context;
+
+        public CompanionController(CompanionSpec spec) {
+            this(spec, false);
+        }
+
+        public CompanionController(CompanionSpec spec, boolean startTwice) {
+            this.spec = spec;
+            this.startTwice = startTwice;
+        }
+
+        @Override
+        public void onStart(GameplayEffectContext context) {
+            this.context = context;
+            this.companion = EffectCompanion.start(context, this.spec);
+            if (this.startTwice) {
+                this.duplicate = EffectCompanion.start(context, this.spec);
+            }
+        }
+
+        @Override
+        public void onResume(GameplayEffectContext context) {
+            this.context = context;
+            this.companion = EffectCompanion.restore(context, this.spec);
+        }
+
+        @Override
+        public void onTick(GameplayEffectContext context) {
+            this.context = context;
+            if (this.companion != null) {
+                this.companion.tick(context);
+            }
         }
     }
 

@@ -120,6 +120,7 @@ mafisher.quasar.api.effect.VisualEffectSpec
 mafisher.quasar.api.effect.VisualEffectStartResult
 mafisher.quasar.api.entity.TimedEffectEntity
 mafisher.quasar.api.gameplay.block.BlockJournalMode
+mafisher.quasar.api.gameplay.CompanionSpec
 mafisher.quasar.api.gameplay.policy.DestructiveEffectPolicy
 mafisher.quasar.api.gameplay.policy.DestructiveEffectPolicyContext
 mafisher.quasar.api.gameplay.policy.DestructiveEffectPolicyEvents
@@ -134,6 +135,7 @@ mafisher.quasar.api.gameplay.block.EffectCarveSession
 mafisher.quasar.api.gameplay.block.EffectCarveSpec
 mafisher.quasar.api.gameplay.block.EffectSurfaceTear
 mafisher.quasar.api.gameplay.block.EffectWriteFeedback
+mafisher.quasar.api.gameplay.EffectCompanion
 mafisher.quasar.api.gameplay.EffectPhase
 mafisher.quasar.api.gameplay.EffectPhasePlan
 mafisher.quasar.api.gameplay.world.EffectRaycastResult

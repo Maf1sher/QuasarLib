@@ -105,22 +105,36 @@ public record EffectAttachment(
      * local offset and local angles in world axes.</p>
      */
     public EffectTransform resolve(EffectTransform parentFrame) {
+        return resolve(parentFrame, this.localTransform, this.rotationInheritance);
+    }
+
+    /**
+     * Composes a local transform into a parent frame with the same rotation inheritance rules.
+     * Shared by attachments and server-synced effect companions.
+     */
+    public static EffectTransform resolve(
+        EffectTransform parentFrame,
+        EffectTransform localTransform,
+        RotationInheritance rotationInheritance
+    ) {
         Objects.requireNonNull(parentFrame, "parentFrame");
-        EffectPoint local = this.localTransform.position();
+        Objects.requireNonNull(localTransform, "localTransform");
+        Objects.requireNonNull(rotationInheritance, "rotationInheritance");
+        EffectPoint local = localTransform.position();
         double offsetX = local.x();
         double offsetY = local.y();
         double offsetZ = local.z();
-        float yaw = this.localTransform.yaw();
-        float pitch = this.localTransform.pitch();
-        float roll = this.localTransform.roll();
-        if (this.rotationInheritance == RotationInheritance.YAW_ONLY) {
+        float yaw = localTransform.yaw();
+        float pitch = localTransform.pitch();
+        float roll = localTransform.roll();
+        if (rotationInheritance == RotationInheritance.YAW_ONLY) {
             Vector3f rotated = EffectSpace.Basis.fromEuler(parentFrame.yaw(), 0.0F, 0.0F)
                 .transformDirection(new Vector3f((float) offsetX, (float) offsetY, (float) offsetZ));
             offsetX = rotated.x();
             offsetY = rotated.y();
             offsetZ = rotated.z();
             yaw += parentFrame.yaw();
-        } else if (this.rotationInheritance == RotationInheritance.FULL) {
+        } else if (rotationInheritance == RotationInheritance.FULL) {
             Vector3f rotated = EffectSpace.Basis.fromEuler(
                 parentFrame.yaw(), parentFrame.pitch(), parentFrame.roll()
             ).transformDirection(new Vector3f((float) offsetX, (float) offsetY, (float) offsetZ));
