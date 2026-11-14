@@ -1,5 +1,6 @@
 package mafisher.quasar.shader;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -33,6 +34,28 @@ class ShaderAssetGraphTest {
         }
         assertTrue(failures.isEmpty(), () -> "Shader programs reference missing stages:\n\n"
             + String.join("\n\n", failures));
+    }
+
+    @Test
+    void staticBatchProgramsShareTheirBaseFragment() {
+        ShaderTestResources.ShaderProgramAsset instancedTranslucent = program(
+            "quasar_lib:instanced_translucent");
+        assertEquals("minecraft:shaders/core/rendertype_translucent.fsh",
+            instancedTranslucent.fragmentSourceId());
+
+        ShaderTestResources.ShaderProgramAsset base = program("quasar_content:black_hole_mesh");
+        ShaderTestResources.ShaderProgramAsset instanced = program(
+            "quasar_content:black_hole_mesh_instanced");
+        assertEquals(base.fragmentSourceId(), instanced.fragmentSourceId());
+        assertEquals("quasar_lib:shaders/core/instanced_visual.vsh",
+            instanced.vertexSourceId());
+    }
+
+    private static ShaderTestResources.ShaderProgramAsset program(String id) {
+        return ShaderTestResources.programs().stream()
+            .filter(program -> program.programId().equals(id))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Missing shader program: " + id));
     }
 
     @Test
