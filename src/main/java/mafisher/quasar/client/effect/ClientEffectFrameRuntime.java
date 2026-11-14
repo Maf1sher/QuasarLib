@@ -28,6 +28,7 @@ import mafisher.quasar.effect.network.StopSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.StopVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateSegmentedVisualEffectPayload;
 import mafisher.quasar.effect.network.UpdateVisualEffectPayload;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.world.phys.Vec3;
@@ -56,7 +57,10 @@ final class ClientEffectFrameRuntime {
             if (manager == null) {
                 ClientEffectRegistries currentRegistries = ClientEffectRegistries.shared();
                 screenCompositor = new ClientScreenCompositor(currentRegistries.operations());
-                manager = new ClientVisualEffectManager(currentRegistries.renderers());
+                manager = new ClientVisualEffectManager(
+                    currentRegistries.renderers(),
+                    Minecraft.getInstance().getResourceManager()
+                );
             }
             return manager;
         }

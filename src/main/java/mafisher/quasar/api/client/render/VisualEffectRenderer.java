@@ -84,7 +84,10 @@ public interface VisualEffectRenderer {
         throw new UnsupportedOperationException("Renderer must implement renderPasses or the legacy render type");
     }
 
-    /** Refreshes any renderer-owned resources after Minecraft applies a client resource reload. */
+    /**
+     * Refreshes renderer-owned resources. The engine calls this once before the first frame
+     * after the renderer registry initializes and again after every client resource reload.
+     */
     default void onResourceReload(ResourceManager resourceManager) {
     }
 }

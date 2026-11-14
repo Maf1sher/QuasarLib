@@ -104,8 +104,8 @@ public final class ClientVisualEffectManager {
     private ClientLevel currentLevel;
     private EffectCameraSnapshot frameCamera;
 
-    public ClientVisualEffectManager(VisualEffectRendererRegistry rendererRegistry) {
-        this.rendererRegistry = rendererRegistry;
+    public ClientVisualEffectManager(VisualEffectRendererRegistry rendererRegistry, ResourceManager resources) {
+        this.rendererRegistry = Objects.requireNonNull(rendererRegistry, "rendererRegistry");
         this.attachmentResolver = new ClientAttachmentResolver(this.activeEffects,
             new ClientAttachmentResolver.ParentFrames() {
                 @Override
@@ -123,6 +123,7 @@ public final class ClientVisualEffectManager {
                     return CompatRegistry.subLevels().available();
                 }
             });
+        rendererRegistry.onResourceReload(Objects.requireNonNull(resources, "resources"));
     }
 
     public void start(StartVisualEffectPayload payload) {

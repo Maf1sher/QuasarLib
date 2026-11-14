@@ -3,6 +3,8 @@ package mafisher.quasar.apicheck;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
@@ -18,6 +20,7 @@ import mafisher.quasar.api.client.render.EffectRenderContext;
 import mafisher.quasar.api.client.render.EffectRenderTypeOptions;
 import mafisher.quasar.api.client.render.EffectRibbon;
 import mafisher.quasar.api.client.render.EffectShader;
+import mafisher.quasar.api.client.render.EffectStaticMesh;
 import mafisher.quasar.api.client.render.EffectStaticMeshPass;
 import mafisher.quasar.api.client.render.InstancedVisualEffectRenderer;
 import mafisher.quasar.api.client.render.QuasarRenderTypes;
@@ -35,6 +38,23 @@ import org.junit.jupiter.api.Test;
 
 /** Compiles from outside the implementation package to pin the public SPI surface. */
 class PublicRendererSpiVisibilityTest {
+    @Test
+    void exposesStaticMeshLoadingContract() {
+        ResourceLocation asset = ResourceLocation.fromNamespaceAndPath(
+            "test", "quasar/meshes/sample.obj"
+        );
+        EffectStaticMesh mesh = EffectStaticMesh.of(asset);
+
+        assertEquals(asset, mesh.location());
+        assertFalse(mesh.loaded());
+        assertNull(mesh.mesh());
+        assertNull(mesh.localBounds());
+        assertTrue(EffectStaticMesh.MAX_VERTICES >= 4);
+        assertThrows(IllegalArgumentException.class, () -> EffectStaticMesh.of(
+            ResourceLocation.fromNamespaceAndPath("test", "quasar/meshes/sample.txt")
+        ));
+    }
+
     @Test
     void exposesMeshPrimitivesAndRenderTypes() {
         EffectMesh mesh = EffectMesh.builder(4)
