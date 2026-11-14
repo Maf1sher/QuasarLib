@@ -12,6 +12,7 @@ import mafisher.quasar.api.client.render.EffectInstancedPass;
 import mafisher.quasar.api.client.render.EffectLod;
 import mafisher.quasar.api.client.render.EffectLodProfile;
 import mafisher.quasar.api.client.render.EffectMesh;
+import mafisher.quasar.api.client.render.EffectMeshLod;
 import mafisher.quasar.api.client.render.EffectMeshes;
 import mafisher.quasar.api.client.render.EffectRenderContext;
 import mafisher.quasar.api.client.render.EffectRenderTypeOptions;
@@ -27,6 +28,7 @@ import mafisher.quasar.api.effect.budget.EffectQualityTier;
 import mafisher.quasar.api.effect.StartVisualEffectPayload;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.phys.AABB;
 import org.joml.Matrix4f;
 import org.junit.jupiter.api.Test;
 
@@ -49,6 +51,23 @@ class PublicRendererSpiVisibilityTest {
         assertNotNull(EffectMeshes.verticalPlane());
         assertNotNull(EffectMeshes.unitSphere());
         assertNotNull(EffectMeshes.unitSphere(8, 16));
+        assertNotNull(EffectMeshes.cylinder());
+        assertNotNull(EffectMeshes.cylinder(8, 1));
+        assertNotNull(EffectMeshes.cone());
+        assertNotNull(EffectMeshes.cone(8));
+        assertNotNull(EffectMeshes.torus());
+        assertNotNull(EffectMeshes.torus(8, 4));
+        assertNotNull(EffectMeshes.hemisphere());
+        assertNotNull(EffectMeshes.hemisphere(2));
+        assertNotNull(EffectMeshes.icosphere());
+        assertNotNull(EffectMeshes.icosphere(2));
+        assertNotNull(EffectMeshes.disk());
+        assertNotNull(EffectMeshes.disk(2, 8));
+        EffectMeshLod meshLod = EffectMeshLod.of(
+            new AABB(-1.0, -1.0, -1.0, 1.0, 1.0, 1.0),
+            EffectMeshes.icosphere(2), EffectMeshes.icosphere(1)
+        );
+        assertEquals(2, meshLod.levelCount());
         assertNotNull(QuasarRenderTypes.worldVisual(texture));
         assertNotNull(QuasarRenderTypes.screenEffectMask(texture));
         assertNotNull(QuasarRenderTypes.instancedWorldVisual(texture));

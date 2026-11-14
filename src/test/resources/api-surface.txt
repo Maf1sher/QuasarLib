@@ -33,6 +33,7 @@ mafisher.quasar.api.client.render.EffectInstancedPass
 mafisher.quasar.api.client.render.EffectLod
 mafisher.quasar.api.client.render.EffectLodProfile
 mafisher.quasar.api.client.render.EffectMesh
+mafisher.quasar.api.client.render.EffectMeshLod
 mafisher.quasar.api.client.render.EffectMeshes
 mafisher.quasar.api.client.render.EffectParameterBinding
 mafisher.quasar.api.client.render.EffectRenderContext
