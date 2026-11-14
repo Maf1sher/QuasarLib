@@ -19,6 +19,8 @@ public record EffectRenderContext(
     float partialTick,
     EffectLod lod,
     EffectQualityTier quality,
+    EffectScreenMetrics screenMetrics,
+    EffectQualityTier effectiveQuality,
     RenderEnvironment environment,
     @Nullable EffectCameraSnapshot camera,
     float daylight
@@ -28,7 +30,12 @@ public record EffectRenderContext(
         Objects.requireNonNull(transform, "transform");
         Objects.requireNonNull(lod, "lod");
         Objects.requireNonNull(quality, "quality");
+        Objects.requireNonNull(screenMetrics, "screenMetrics");
+        Objects.requireNonNull(effectiveQuality, "effectiveQuality");
         Objects.requireNonNull(environment, "environment");
+        if (effectiveQuality.level() > quality.level()) {
+            throw new IllegalArgumentException("Effective quality cannot exceed the global quality tier");
+        }
         if (!Float.isFinite(ageTicks) || ageTicks < 0.0F
             || !Float.isFinite(progress) || progress < 0.0F || progress > 1.0F
             || !Float.isFinite(partialTick) || partialTick < 0.0F || partialTick > 1.0F) {
@@ -49,7 +56,7 @@ public record EffectRenderContext(
         float partialTick
     ) {
         this(effect, transform, ageTicks, progress, partialTick, EffectLod.FULL, EffectQualityTier.HIGH,
-            RenderEnvironment.VANILLA, null, 0.0F);
+            EffectScreenMetrics.UNKNOWN, EffectQualityTier.HIGH, RenderEnvironment.VANILLA, null, 0.0F);
     }
 
     /** Keeps source compatibility for callers that only supplied a LOD selection. */
@@ -62,7 +69,7 @@ public record EffectRenderContext(
         EffectLod lod
     ) {
         this(effect, transform, ageTicks, progress, partialTick, lod, EffectQualityTier.HIGH,
-            RenderEnvironment.VANILLA, null, 0.0F);
+            EffectScreenMetrics.UNKNOWN, EffectQualityTier.HIGH, RenderEnvironment.VANILLA, null, 0.0F);
     }
 
     /** Keeps source compatibility for callers that supplied LOD and quality only. */
@@ -76,7 +83,7 @@ public record EffectRenderContext(
         EffectQualityTier quality
     ) {
         this(effect, transform, ageTicks, progress, partialTick, lod, quality,
-            RenderEnvironment.VANILLA, null, 0.0F);
+            EffectScreenMetrics.UNKNOWN, quality, RenderEnvironment.VANILLA, null, 0.0F);
     }
 
     /** Keeps source compatibility for callers that supplied an environment. */
@@ -90,7 +97,25 @@ public record EffectRenderContext(
         EffectQualityTier quality,
         RenderEnvironment environment
     ) {
-        this(effect, transform, ageTicks, progress, partialTick, lod, quality, environment, null, 0.0F);
+        this(effect, transform, ageTicks, progress, partialTick, lod, quality,
+            EffectScreenMetrics.UNKNOWN, quality, environment, null, 0.0F);
+    }
+
+    /** Keeps source compatibility for callers that supplied the previous full constructor. */
+    public EffectRenderContext(
+        VisualEffectInstance effect,
+        EffectTransform transform,
+        float ageTicks,
+        float progress,
+        float partialTick,
+        EffectLod lod,
+        EffectQualityTier quality,
+        RenderEnvironment environment,
+        @Nullable EffectCameraSnapshot camera,
+        float daylight
+    ) {
+        this(effect, transform, ageTicks, progress, partialTick, lod, quality,
+            EffectScreenMetrics.UNKNOWN, quality, environment, camera, daylight);
     }
 
     /** Returns whether this context carries the live frame camera snapshot. */
@@ -119,19 +144,41 @@ public record EffectRenderContext(
     /** Returns a copy with the engine-selected level of detail for this frame. */
     public EffectRenderContext withLod(EffectLod lod) {
         return new EffectRenderContext(this.effect, this.transform, this.ageTicks, this.progress,
-            this.partialTick, lod, this.quality, this.environment, this.camera, this.daylight);
+            this.partialTick, lod, this.quality, this.screenMetrics, this.effectiveQuality,
+            this.environment, this.camera, this.daylight);
     }
 
-    /** Returns a copy with the engine-selected quality tier for this frame. */
+    /** Returns a copy with the global quality tier for this frame; the effective tier follows it. */
     public EffectRenderContext withQuality(EffectQualityTier quality) {
         return new EffectRenderContext(this.effect, this.transform, this.ageTicks, this.progress,
-            this.partialTick, this.lod, quality, this.environment, this.camera, this.daylight);
+            this.partialTick, this.lod, quality, this.screenMetrics, quality,
+            this.environment, this.camera, this.daylight);
+    }
+
+    /** Returns a copy with the per-effect effective quality tier for this frame. */
+    public EffectRenderContext withEffectiveQuality(EffectQualityTier effectiveQuality) {
+        return new EffectRenderContext(this.effect, this.transform, this.ageTicks, this.progress,
+            this.partialTick, this.lod, this.quality, this.screenMetrics, effectiveQuality,
+            this.environment, this.camera, this.daylight);
+    }
+
+    /** Returns a copy with the screen-space projection metrics for this frame. */
+    public EffectRenderContext withScreenMetrics(EffectScreenMetrics screenMetrics) {
+        return new EffectRenderContext(this.effect, this.transform, this.ageTicks, this.progress,
+            this.partialTick, this.lod, this.quality, screenMetrics, this.effectiveQuality,
+            this.environment, this.camera, this.daylight);
     }
 
     /** Returns a copy with the resolved compatibility environment for this frame. */
     public EffectRenderContext withEnvironment(RenderEnvironment environment) {
         return new EffectRenderContext(this.effect, this.transform, this.ageTicks, this.progress,
-            this.partialTick, this.lod, this.quality, environment, this.camera, this.daylight);
+            this.partialTick, this.lod, this.quality, this.screenMetrics, this.effectiveQuality,
+            environment, this.camera, this.daylight);
+    }
+
+    /** Returns the per-effect quality score, or zero when the frame had no usable projection. */
+    public double qualityScore() {
+        return this.screenMetrics.score();
     }
 
     /** Returns the server-authored parameter overrides for this instance. */

@@ -29,6 +29,11 @@ public final class EffectLodTracker {
         private int previousLevel;
         private double blendStartGameTime;
         private boolean initialized;
+
+        /** Returns the current stable level, or {@code -1} before the first update. */
+        public int level() {
+            return this.initialized ? this.level : -1;
+        }
     }
 
     /**
@@ -39,6 +44,50 @@ public final class EffectLodTracker {
         double renderGameTime) {
         Objects.requireNonNull(state, "state");
         Objects.requireNonNull(profile, "profile");
+        int target = profile.select(gapInRadii);
+        int current = state.level();
+        if (current < 0) {
+            current = target;
+        }
+        current = Math.min(current, profile.levelCount() - 1);
+        double currentBoundary = current < profile.levelCount() - 1 ? profile.threshold(current) : 0.0;
+        double previousBoundary = current > 0 ? profile.threshold(current - 1) : 0.0;
+        return update(state, profile.levelCount(), target, gapInRadii, currentBoundary, previousBoundary,
+            cameraDistance, gapInRadii, renderGameTime);
+    }
+
+    /**
+     * Metric-agnostic update used by both distance and screen-space profiles. {@code metricValue} grows as detail
+     * gets cheaper, so the hysteresis rules are shared. {@code currentBoundary} is the loss boundary of the current
+     * level and {@code previousBoundary} is the boundary of the level below it.
+     */
+    @SuppressWarnings("checkstyle:ParameterNumber")
+    public static EffectLod update(State state, int levelCount, int targetLevel, double metricValue,
+        double currentBoundary, double previousBoundary, double cameraDistance, double gapInRadii,
+        double renderGameTime) {
+        Objects.requireNonNull(state, "state");
+        requireSelection(levelCount, targetLevel, metricValue, currentBoundary, previousBoundary);
+        requireMeasurement(cameraDistance, gapInRadii, renderGameTime);
+        applySelection(state, levelCount, targetLevel, metricValue, currentBoundary, previousBoundary,
+            renderGameTime);
+        return snapshot(state, cameraDistance, gapInRadii, renderGameTime);
+    }
+
+    private static void requireSelection(int levelCount, int targetLevel, double metricValue,
+        double currentBoundary, double previousBoundary) {
+        if (levelCount < 1 || targetLevel < 0 || targetLevel >= levelCount) {
+            throw new IllegalArgumentException("Invalid LOD level selection");
+        }
+        if (!Double.isFinite(metricValue) || metricValue < 0.0) {
+            throw new IllegalArgumentException("Invalid LOD metric value");
+        }
+        if (!Double.isFinite(currentBoundary) || currentBoundary < 0.0
+            || !Double.isFinite(previousBoundary) || previousBoundary < 0.0) {
+            throw new IllegalArgumentException("Invalid LOD boundary");
+        }
+    }
+
+    private static void requireMeasurement(double cameraDistance, double gapInRadii, double renderGameTime) {
         if (!Double.isFinite(cameraDistance) || cameraDistance < 0.0) {
             throw new IllegalArgumentException("Invalid LOD camera distance");
         }
@@ -48,29 +97,34 @@ public final class EffectLodTracker {
         if (!Double.isFinite(renderGameTime)) {
             throw new IllegalArgumentException("Invalid render game time");
         }
+    }
 
-        int target = profile.select(gapInRadii);
+    private static void applySelection(State state, int levelCount, int targetLevel, double metricValue,
+        double currentBoundary, double previousBoundary, double renderGameTime) {
+        int target = Math.min(targetLevel, levelCount - 1);
         if (!state.initialized) {
             state.level = target;
             state.previousLevel = target;
             state.blendStartGameTime = renderGameTime - BLEND_TICKS;
             state.initialized = true;
-        } else {
-            int levelCount = profile.levelCount();
-            state.level = Math.min(state.level, levelCount - 1);
-            state.previousLevel = Math.min(state.previousLevel, levelCount - 1);
-            int level = state.level;
-            if (target > level && crossesUp(profile, level, gapInRadii)) {
-                state.previousLevel = level;
-                state.level = target;
-                state.blendStartGameTime = renderGameTime;
-            } else if (target < level && crossesDown(profile, level, gapInRadii)) {
-                state.previousLevel = level;
-                state.level = target;
-                state.blendStartGameTime = renderGameTime;
-            }
+            return;
         }
+        state.level = Math.min(state.level, levelCount - 1);
+        state.previousLevel = Math.min(state.previousLevel, levelCount - 1);
+        int level = state.level;
+        if (target > level && metricValue > currentBoundary * (1.0 + HYSTERESIS_FRACTION)) {
+            state.previousLevel = level;
+            state.level = target;
+            state.blendStartGameTime = renderGameTime;
+        } else if (target < level && crossesDown(previousBoundary, metricValue)) {
+            state.previousLevel = level;
+            state.level = target;
+            state.blendStartGameTime = renderGameTime;
+        }
+    }
 
+    private static EffectLod snapshot(State state, double cameraDistance, double gapInRadii,
+        double renderGameTime) {
         double blend = 1.0;
         if (state.previousLevel != state.level) {
             if (renderGameTime < state.blendStartGameTime) {
@@ -86,16 +140,10 @@ public final class EffectLodTracker {
         return new EffectLod(state.level, state.previousLevel, blend, cameraDistance, gapInRadii);
     }
 
-    private static boolean crossesUp(EffectLodProfile profile, int level, double gapInRadii) {
-        double boundary = profile.threshold(level);
-        return gapInRadii > boundary * (1.0 + HYSTERESIS_FRACTION);
-    }
-
-    private static boolean crossesDown(EffectLodProfile profile, int level, double gapInRadii) {
-        double boundary = profile.threshold(level - 1);
-        if (boundary <= 0.0) {
-            return gapInRadii <= 0.0;
+    private static boolean crossesDown(double previousBoundary, double metricValue) {
+        if (previousBoundary <= 0.0) {
+            return metricValue <= 0.0;
         }
-        return gapInRadii < boundary * (1.0 - HYSTERESIS_FRACTION);
+        return metricValue < previousBoundary * (1.0 - HYSTERESIS_FRACTION);
     }
 }

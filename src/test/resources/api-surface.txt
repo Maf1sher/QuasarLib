@@ -40,6 +40,8 @@ mafisher.quasar.api.client.render.EffectRenderContext
 mafisher.quasar.api.client.render.EffectRenderPass
 mafisher.quasar.api.client.render.EffectRenderTypeOptions
 mafisher.quasar.api.client.render.EffectRibbon
+mafisher.quasar.api.client.render.EffectScreenLodProfile
+mafisher.quasar.api.client.render.EffectScreenMetrics
 mafisher.quasar.api.client.render.EffectShader
 mafisher.quasar.api.client.render.EffectStaticMesh
 mafisher.quasar.api.client.render.EffectStaticMeshPass

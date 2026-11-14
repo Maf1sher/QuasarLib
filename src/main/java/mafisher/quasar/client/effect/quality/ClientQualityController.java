@@ -21,6 +21,11 @@ public final class ClientQualityController {
     private ClientQualityController() {
     }
 
+    /** Returns whether the client currently uses automatic per-frame quality selection. */
+    public static boolean automatic() {
+        return QuasarClientConfig.qualityMode().fixedTier() == null;
+    }
+
     /** Returns the tier used by the current frame; call on the render thread. */
     public static EffectQualityTier tier() {
         processPendingReset();
@@ -95,7 +100,7 @@ public final class ClientQualityController {
     }
 
     private static boolean autoQuality() {
-        return QuasarClientConfig.qualityMode().fixedTier() == null;
+        return automatic();
     }
 
     private static void processPendingReset() {

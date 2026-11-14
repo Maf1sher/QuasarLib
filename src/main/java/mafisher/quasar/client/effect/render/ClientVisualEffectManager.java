@@ -19,6 +19,8 @@ import mafisher.quasar.api.client.render.EffectLod;
 import mafisher.quasar.api.client.render.EffectLodProfile;
 import mafisher.quasar.api.client.render.EffectRenderContext;
 import mafisher.quasar.api.client.render.EffectRenderPass;
+import mafisher.quasar.api.client.render.EffectScreenLodProfile;
+import mafisher.quasar.api.client.render.EffectScreenMetrics;
 import mafisher.quasar.api.client.render.EffectStaticMeshPass;
 import mafisher.quasar.api.client.render.InstancedVisualEffectRenderer;
 import mafisher.quasar.api.client.screen.ScreenEffectMask;
@@ -41,6 +43,9 @@ import mafisher.quasar.client.effect.frame.ClientEffectClock;
 import mafisher.quasar.client.effect.quality.ClientFarPlane;
 import mafisher.quasar.client.effect.quality.EffectLodSelection;
 import mafisher.quasar.client.effect.quality.EffectLodTracker;
+import mafisher.quasar.client.effect.quality.EffectQualityScoring;
+import mafisher.quasar.client.effect.quality.EffectQualityTracker;
+import mafisher.quasar.client.effect.quality.EffectScreenProjection;
 import mafisher.quasar.effect.network.EffectParameterBatchPayload;
 import mafisher.quasar.effect.network.ResumeEffectsPayload;
 import mafisher.quasar.effect.network.StopSegmentedVisualEffectPayload;
@@ -76,6 +81,7 @@ public final class ClientVisualEffectManager {
     private final Map<UUID, ClientSegmentGroup> segmentedGroups = new LinkedHashMap<>();
     private final Map<UUID, Double> instanceSpatialRadii = new LinkedHashMap<>();
     private final Map<UUID, EffectLodTracker.State> lodStates = new LinkedHashMap<>();
+    private final Map<UUID, EffectQualityTracker.State> qualityStates = new LinkedHashMap<>();
     private final ClientEffectSpatialIndex spatialIndex = new ClientEffectSpatialIndex();
     private final Set<ClientEffectSpatialIndex.Key> unindexedInstances = new LinkedHashSet<>();
     private final Set<ClientEffectSpatialIndex.Key> unindexedGroups = new LinkedHashSet<>();
@@ -106,6 +112,7 @@ public final class ClientVisualEffectManager {
     private int screenBatchTick = Integer.MIN_VALUE;
     private ClientLevel currentLevel;
     private EffectCameraSnapshot frameCamera;
+    private EffectScreenProjection frameProjection;
 
     public ClientVisualEffectManager(VisualEffectRendererRegistry rendererRegistry, ResourceManager resources) {
         this.rendererRegistry = Objects.requireNonNull(rendererRegistry, "rendererRegistry");
@@ -502,6 +509,8 @@ public final class ClientVisualEffectManager {
         ClientLevel level = minecraft.level;
         this.synchronizeLevel(level);
         if (level == null) {
+            this.frameCamera = null;
+            this.frameProjection = null;
             this.visibleEffects.clear();
             this.screenBatches = List.of();
             this.screenBatchTick = Integer.MIN_VALUE;
@@ -512,6 +521,7 @@ public final class ClientVisualEffectManager {
             return;
         }
         this.frameCamera = captureCamera(event);
+        this.frameProjection = this.frameCamera == null ? null : EffectScreenProjection.from(this.frameCamera);
         if (this.frameCamera == null) {
             this.visibleEffects.clear();
             this.screenBatches = List.of();
@@ -590,7 +600,10 @@ public final class ClientVisualEffectManager {
         if (!this.isVisible(renderer, context, event, radius)) {
             return;
         }
-        consumer.accept(effect, context.withLod(selectLod(instanceId, renderer, event, context, radius, quality,
+        EffectScreenMetrics metrics = this.screenMetrics(context, radius);
+        EffectQualityTier effective = this.effectiveQuality(instanceId, quality, metrics, gameTime, partialTick);
+        context = context.withScreenMetrics(metrics).withEffectiveQuality(effective);
+        consumer.accept(effect, context.withLod(selectLod(instanceId, renderer, event, context, radius, effective,
             gameTime, partialTick)), renderer);
     }
 
@@ -612,14 +625,39 @@ public final class ClientVisualEffectManager {
         if (!this.isVisible(renderer, context, event, member.spatialRadius())) {
             return;
         }
+        EffectScreenMetrics metrics = this.screenMetrics(context, member.spatialRadius());
+        EffectQualityTier effective = this.effectiveQuality(member.instanceId(), quality, metrics,
+            gameTime, partialTick);
+        context = context.withScreenMetrics(metrics).withEffectiveQuality(effective);
         consumer.accept(effect, context.withLod(selectLod(member.instanceId(), renderer, event, context,
-            member.spatialRadius(), quality, gameTime, partialTick)), renderer);
+            member.spatialRadius(), effective, gameTime, partialTick)), renderer);
+    }
+
+    private EffectScreenMetrics screenMetrics(EffectRenderContext context, double spatialRadius) {
+        EffectScreenProjection projection = this.frameProjection;
+        if (projection == null) {
+            return EffectScreenMetrics.UNKNOWN;
+        }
+        EffectPoint position = context.transform().position();
+        return projection.project(position.x(), position.y(), position.z(), spatialRadius);
+    }
+
+    private EffectQualityTier effectiveQuality(UUID key, EffectQualityTier global,
+        EffectScreenMetrics metrics, long gameTime, float partialTick) {
+        boolean automatic = ClientQualityController.automatic();
+        EffectQualityTier target = EffectQualityScoring.effectiveTier(global, metrics, automatic);
+        if (!automatic || !metrics.projected()) {
+            return target;
+        }
+        EffectQualityTracker.State state = this.qualityStates.computeIfAbsent(key,
+            ignored -> new EffectQualityTracker.State());
+        return EffectQualityTracker.update(state, target, gameTime + (double)partialTick);
     }
 
     /**
-     * Selects the LOD for one visible instance or segment cell. Selection uses the interpolated transform and the
-     * renderer's lifetime-conservative spatial radius, so it never needs a per-frame renderer callback. A small
-     * per-instance state adds threshold hysteresis and a transition blend.
+     * Selects the LOD for one visible instance or segment cell. Selection uses the interpolated transform, the
+     * renderer's lifetime-conservative spatial radius, and the frame projection. A small per-instance state adds
+     * threshold hysteresis and a transition blend.
      */
     private EffectLod selectLod(
         UUID key,
@@ -627,20 +665,53 @@ public final class ClientVisualEffectManager {
         net.neoforged.neoforge.client.event.RenderLevelStageEvent event,
         EffectRenderContext context,
         double spatialRadius,
-        EffectQualityTier quality,
+        EffectQualityTier effectiveQuality,
         long gameTime,
         float partialTick
     ) {
         Vec3 cameraPosition = event.getCamera().getPosition();
         EffectPoint position = context.transform().position();
-        EffectLodProfile profile = renderer.lodProfile();
-        EffectLod selected = EffectLodSelection.select(profile, cameraPosition.x, cameraPosition.y,
-            cameraPosition.z, position.x(), position.y(), position.z(), spatialRadius,
-            quality.lodDistanceMultiplier());
+        EffectLodSelection.Raw raw = EffectLodSelection.measure(cameraPosition.x, cameraPosition.y,
+            cameraPosition.z, position.x(), position.y(), position.z(), spatialRadius);
+        double gap = raw.gapInRadii();
+        if (gap != Double.MAX_VALUE) {
+            gap *= effectiveQuality.lodDistanceMultiplier();
+            if (!Double.isFinite(gap)) {
+                gap = Double.MAX_VALUE;
+            }
+        }
         EffectLodTracker.State state = this.lodStates.computeIfAbsent(key,
             ignored -> new EffectLodTracker.State());
-        return EffectLodTracker.update(state, profile, selected.cameraDistance(),
-            selected.gapInRadii(), gameTime + (double)partialTick);
+        double renderGameTime = gameTime + (double)partialTick;
+
+        EffectScreenLodProfile screenProfile = renderer.screenLodProfile();
+        EffectScreenMetrics metrics = context.screenMetrics();
+        if (screenProfile != EffectScreenLodProfile.FULL && metrics.projected()) {
+            double loss = EffectLodSelection.screenLoss(metrics, effectiveQuality);
+            int target = screenProfile.selectLoss(loss);
+            int current = state.level();
+            if (current < 0) {
+                current = target;
+            }
+            current = Math.min(current, screenProfile.levelCount() - 1);
+            double currentBoundary = current < screenProfile.levelCount() - 1
+                ? screenProfile.lossThreshold(current) : 0.0;
+            double previousBoundary = current > 0 ? screenProfile.lossThreshold(current - 1) : 0.0;
+            return EffectLodTracker.update(state, screenProfile.levelCount(), target, loss,
+                currentBoundary, previousBoundary, raw.cameraDistance(), gap, renderGameTime);
+        }
+
+        EffectLodProfile profile = renderer.lodProfile();
+        int target = profile.select(gap);
+        int current = state.level();
+        if (current < 0) {
+            current = target;
+        }
+        current = Math.min(current, profile.levelCount() - 1);
+        double currentBoundary = current < profile.levelCount() - 1 ? profile.threshold(current) : 0.0;
+        double previousBoundary = current > 0 ? profile.threshold(current - 1) : 0.0;
+        return EffectLodTracker.update(state, profile.levelCount(), target, gap,
+            currentBoundary, previousBoundary, raw.cameraDistance(), gap, renderGameTime);
     }
 
     private boolean isVisible(
@@ -806,6 +877,7 @@ public final class ClientVisualEffectManager {
         }
         this.instanceSpatialRadii.remove(instanceId);
         this.lodStates.remove(instanceId);
+        this.qualityStates.remove(instanceId);
         this.attachmentResolver.forget(instanceId);
         this.removeIndexEntry(ClientEffectSpatialIndex.Key.instance(instanceId));
 
@@ -837,6 +909,7 @@ public final class ClientVisualEffectManager {
             this.activeEffects.remove(instanceId);
             this.instanceSpatialRadii.remove(instanceId);
             this.lodStates.remove(instanceId);
+            this.qualityStates.remove(instanceId);
             this.attachmentResolver.forget(instanceId);
             this.removeIndexEntry(ClientEffectSpatialIndex.Key.instance(instanceId));
         }
@@ -925,7 +998,8 @@ public final class ClientVisualEffectManager {
             payload.durationTicks());
         float daylight = EffectLighting.daylight(this.currentLevel, transform.position());
         return new EffectRenderContext(effect, transform, age, progress, partialTick,
-            EffectLod.FULL, quality, this.frameEnvironment, this.frameCamera, daylight);
+            EffectLod.FULL, quality, EffectScreenMetrics.UNKNOWN, quality,
+            this.frameEnvironment, this.frameCamera, daylight);
     }
 
     private void beginAttachmentFrame() {
@@ -1062,11 +1136,13 @@ public final class ClientVisualEffectManager {
     private void clearState() {
         this.invalidateFrame();
         this.frameCamera = null;
+        this.frameProjection = null;
         ClientEffectClock.reset();
         this.activeEffects.clear();
         this.segmentedGroups.clear();
         this.instanceSpatialRadii.clear();
         this.lodStates.clear();
+        this.qualityStates.clear();
         this.attachmentResolver.clear();
         this.frameEntities.clear();
         this.frameEntitiesBuilt = false;

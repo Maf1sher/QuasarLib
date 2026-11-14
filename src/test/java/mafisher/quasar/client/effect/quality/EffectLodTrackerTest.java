@@ -86,6 +86,21 @@ class EffectLodTrackerTest {
     }
 
     @Test
+    void metricAgnosticUpdateUsesTheProvidedBoundaries() {
+        EffectLodTracker.State state = new EffectLodTracker.State();
+
+        EffectLod upgraded = EffectLodTracker.update(state, 2, 1, 0.6, 0.5, 0.1, 64.0, 0.6, 0.0);
+        assertEquals(1, upgraded.level());
+
+        EffectLod inside = EffectLodTracker.update(state, 2, 0, 0.45, 0.0, 0.5, 64.0, 0.45, 1.0);
+        assertEquals(1, inside.level());
+
+        EffectLod downgraded = EffectLodTracker.update(state, 2, 0, 0.4, 0.0, 0.5, 64.0, 0.4, 2.0);
+        assertEquals(0, downgraded.level());
+        assertEquals(1, downgraded.previousLevel());
+    }
+
+    @Test
     void rejectsInvalidSampleValues() {
         EffectLodTracker.State state = new EffectLodTracker.State();
 

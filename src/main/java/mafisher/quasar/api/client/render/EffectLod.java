@@ -2,11 +2,13 @@ package mafisher.quasar.api.client.render;
 
 /**
  * Engine-selected level of detail for one render call. The engine derives the level from the renderer's
- * {@link EffectLodProfile} and the camera distance to the effect. Selection is client-only and cosmetic; it never
- * changes authority, persistence, or the wire format.
+ * {@link EffectScreenLodProfile} when a frame projection is usable, otherwise from {@link EffectLodProfile} and the
+ * camera distance. Selection is client-only and cosmetic; it never changes authority, persistence, or the wire
+ * format.
  *
  * <p>{@code gapInRadii} is the distance from the camera to the surface of the renderer's conservative bounding sphere,
- * divided by the sphere radius. A camera inside the sphere observes a gap of zero.</p>
+ * divided by the sphere radius and scaled by the effective quality multiplier. A camera inside the sphere observes a
+ * gap of zero. The field remains distance telemetry for screen-space selections.</p>
  *
  * <p>{@code previousLevel} and {@code blend} describe an optional transition. {@code blend} runs from {@code 0}
  * (previous representation only) to {@code 1} (selected level only); at rest {@code previousLevel == level} and

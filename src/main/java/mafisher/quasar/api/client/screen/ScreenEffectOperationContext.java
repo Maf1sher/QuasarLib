@@ -3,6 +3,7 @@ package mafisher.quasar.api.client.screen;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.pipeline.TextureTarget;
 import mafisher.quasar.api.client.render.EffectRenderContext;
+import mafisher.quasar.api.client.render.EffectScreenMetrics;
 import mafisher.quasar.api.compat.RenderEnvironment;
 import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.EffectSpace;
@@ -64,8 +65,23 @@ public interface ScreenEffectOperationContext {
         return this.effect().daylight();
     }
 
-    /** Returns the quality tier selected for this frame. */
+    /** Returns the global quality tier selected for this frame. */
     EffectQualityTier quality();
+
+    /** Returns the per-effect effective quality tier after screen-space scoring. */
+    default EffectQualityTier effectiveQuality() {
+        return this.effect().effectiveQuality();
+    }
+
+    /** Returns the screen-space projection metrics for this effect. */
+    default EffectScreenMetrics screenMetrics() {
+        return this.effect().screenMetrics();
+    }
+
+    /** Returns the per-effect quality score, or zero when the frame had no usable projection. */
+    default double qualityScore() {
+        return this.effect().qualityScore();
+    }
 
     /** Returns the resolved compatibility environment for this frame. */
     RenderEnvironment environment();

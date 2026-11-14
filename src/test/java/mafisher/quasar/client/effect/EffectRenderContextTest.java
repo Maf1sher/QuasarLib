@@ -9,6 +9,7 @@ import java.util.UUID;
 import mafisher.quasar.api.client.render.EffectCameraSnapshot;
 import mafisher.quasar.api.client.render.EffectLod;
 import mafisher.quasar.api.client.render.EffectRenderContext;
+import mafisher.quasar.api.client.render.EffectScreenMetrics;
 import mafisher.quasar.api.effect.budget.EffectQualityTier;
 import mafisher.quasar.testing.TestVisualEffects;
 import net.minecraft.world.phys.Vec3;
@@ -47,5 +48,34 @@ class EffectRenderContextTest {
 
         assertFalse(context.hasCamera());
         assertThrows(IllegalStateException.class, context::effectSpace);
+    }
+
+    @Test
+    void carriesScreenMetricsAndPerEffectQuality() {
+        EffectRenderContext context = TestVisualEffects.context(
+            TestVisualEffects.EFFECT_ID, UUID.randomUUID(), Vec3.ZERO, 1.0F, 100, 0.5F);
+        EffectScreenMetrics metrics = EffectScreenMetrics.of(0.4, 0.5);
+
+        EffectRenderContext scored = context
+            .withScreenMetrics(metrics)
+            .withEffectiveQuality(EffectQualityTier.LOW);
+
+        assertEquals(metrics, scored.screenMetrics());
+        assertEquals(EffectQualityTier.LOW, scored.effectiveQuality());
+        assertEquals(0.3, scored.qualityScore(), 0.000001);
+        assertEquals(EffectQualityTier.HIGH, scored.quality());
+        assertEquals(EffectQualityTier.LOW, scored.withLod(new EffectLod(1, 2.0, 3.0)).effectiveQuality());
+        assertEquals(EffectQualityTier.HIGH,
+            scored.withQuality(EffectQualityTier.HIGH).effectiveQuality());
+    }
+
+    @Test
+    void rejectsAnEffectiveTierAboveTheGlobalTier() {
+        EffectRenderContext context = TestVisualEffects.context(
+            TestVisualEffects.EFFECT_ID, UUID.randomUUID(), Vec3.ZERO, 1.0F, 100, 0.5F);
+
+        assertThrows(IllegalArgumentException.class,
+            () -> context.withQuality(EffectQualityTier.LOW)
+                .withEffectiveQuality(EffectQualityTier.HIGH));
     }
 }

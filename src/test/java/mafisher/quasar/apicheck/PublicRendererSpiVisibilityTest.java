@@ -19,6 +19,8 @@ import mafisher.quasar.api.client.render.EffectMeshes;
 import mafisher.quasar.api.client.render.EffectRenderContext;
 import mafisher.quasar.api.client.render.EffectRenderTypeOptions;
 import mafisher.quasar.api.client.render.EffectRibbon;
+import mafisher.quasar.api.client.render.EffectScreenLodProfile;
+import mafisher.quasar.api.client.render.EffectScreenMetrics;
 import mafisher.quasar.api.client.render.EffectShader;
 import mafisher.quasar.api.client.render.EffectStaticMesh;
 import mafisher.quasar.api.client.render.EffectStaticMeshPass;
@@ -197,6 +199,46 @@ class PublicRendererSpiVisibilityTest {
         assertEquals(1, transition.previousLevel());
         assertEquals(0.5, transition.blend());
         assertTrue(transition.isTransitioning());
+    }
+
+    @Test
+    void exposesScreenLodAndPerEffectQuality() {
+        ResourceLocation effectId = ResourceLocation.fromNamespaceAndPath("test", "effect");
+        StartVisualEffectPayload payload = new StartVisualEffectPayload(
+            effectId,
+            UUID.randomUUID(),
+            ResourceLocation.fromNamespaceAndPath("minecraft", "overworld"),
+            0.0,
+            64.0,
+            0.0,
+            0.0F,
+            0.0F,
+            0.0F,
+            1.0F,
+            100,
+            0L,
+            1L
+        );
+        VisualEffectInstance instance = new VisualEffectInstance(payload);
+        VisualEffectRenderer renderer = new VisualEffectRenderer() {
+            @Override
+            public EffectScreenLodProfile screenLodProfile() {
+                return EffectScreenLodProfile.of(0.5, 0.1);
+            }
+        };
+        EffectScreenMetrics metrics = EffectScreenMetrics.of(0.4, 0.5);
+        EffectRenderContext context = new EffectRenderContext(
+            instance, payload.transform(), 0.0F, 0.0F, 0.0F
+        ).withScreenMetrics(metrics).withEffectiveQuality(EffectQualityTier.MEDIUM);
+
+        assertEquals(3, renderer.screenLodProfile().levelCount());
+        assertEquals(1, renderer.screenLodProfile().selectCoverage(0.4));
+        assertEquals(EffectScreenLodProfile.FULL,
+            new VisualEffectRenderer() {
+            }.screenLodProfile());
+        assertEquals(metrics, context.screenMetrics());
+        assertEquals(0.3, context.qualityScore(), 0.000001);
+        assertEquals(EffectQualityTier.MEDIUM, context.effectiveQuality());
     }
 
     @Test

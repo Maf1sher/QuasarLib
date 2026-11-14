@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import mafisher.quasar.api.client.render.EffectLod;
 import mafisher.quasar.api.client.render.EffectLodProfile;
+import mafisher.quasar.api.client.render.EffectScreenMetrics;
+import mafisher.quasar.api.effect.budget.EffectQualityTier;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 
@@ -79,6 +81,31 @@ class EffectLodSelectionTest {
 
         assertEquals(1, lod.level());
         assertTrue(Double.isFinite(lod.gapInRadii()));
+    }
+
+    @Test
+    void measuresTheUnscaledCameraDistanceAndSurfaceGap() {
+        EffectLodSelection.Raw raw = EffectLodSelection.measure(0.0, 0.0, 0.0,
+            60.0, 0.0, 0.0, 10.0);
+
+        assertEquals(60.0, raw.cameraDistance());
+        assertEquals(5.0, raw.gapInRadii());
+        assertEquals(0.0, EffectLodSelection.measure(0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            10.0).gapInRadii());
+        assertEquals(0.0, EffectLodSelection.measure(0.0, 0.0, 0.0, 60.0, 0.0, 0.0,
+            Double.POSITIVE_INFINITY).gapInRadii());
+    }
+
+    @Test
+    void convertsCoverageToDetailLossWithTheQualityMultiplier() {
+        EffectScreenMetrics metrics = EffectScreenMetrics.of(0.4, 0.0);
+
+        assertEquals(0.6, EffectLodSelection.screenLoss(metrics, EffectQualityTier.HIGH), 0.000001);
+        assertEquals(0.8, EffectLodSelection.screenLoss(metrics, EffectQualityTier.LOW), 0.000001);
+        assertEquals(0.0, EffectLodSelection.screenLoss(EffectScreenMetrics.UNKNOWN,
+            EffectQualityTier.HIGH), 0.0);
+        assertEquals(0.5, EffectLodSelection.screenLoss(EffectScreenMetrics.of(1.0, 0.0),
+            EffectQualityTier.LOW), 0.0);
     }
 
     @Test

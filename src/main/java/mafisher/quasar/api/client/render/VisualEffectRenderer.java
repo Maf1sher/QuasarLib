@@ -61,6 +61,18 @@ public interface VisualEffectRenderer {
     }
 
     /**
+     * Declares screen-space level-of-detail coverage bands for this renderer. When the frame has a usable camera
+     * projection, this profile takes precedence over {@link #lodProfile()}; otherwise the distance profile remains
+     * the fallback. Thresholds are minimum viewport coverage values.
+     *
+     * <p>Screen-space LOD requires a finite {@link #spatialRadius(EffectRenderContext)} and must not change the
+     * renderer's silhouette, culling bounds, or transform between levels.</p>
+     */
+    default EffectScreenLodProfile screenLodProfile() {
+        return EffectScreenLodProfile.FULL;
+    }
+
+    /**
      * Returns a conservative world-space bound for culling. The default preserves the old scale-based bound.
      */
     default AABB cullingBounds(EffectRenderContext context) {
