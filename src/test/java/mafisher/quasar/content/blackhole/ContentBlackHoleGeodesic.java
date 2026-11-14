@@ -1,6 +1,7 @@
 package mafisher.quasar.content.blackhole;
 
 import java.util.Objects;
+import mafisher.quasar.api.client.screen.ScreenEffectMediumOptics;
 import mafisher.quasar.api.client.screen.ScreenEffectMediumPath;
 import org.joml.Vector3d;
 
@@ -182,22 +183,10 @@ final class ContentBlackHoleGeodesic {
             slopeZ * BlackHoleOptics.RIPPLE_SLOPE).normalize();
     }
 
-    /** Mirrors {@code fresnelWater} in {@code black_hole.fsh}. */
+    /** Delegates to the shared medium optics CPU mirror. */
     static double fresnelReflectance(double cosIncidence, double incidentIor, double transmittedIor) {
-        double cosI = clamp(Math.abs(cosIncidence), 0.0, 1.0);
-        double sinT2 = (incidentIor * incidentIor) / (transmittedIor * transmittedIor)
-            * (1.0 - cosI * cosI);
-        if (sinT2 >= 1.0) {
-            return 1.0;
-        }
-        double cosT = Math.sqrt(1.0 - sinT2);
-        double rs = (incidentIor * cosI - transmittedIor * cosT)
-            / Math.max(incidentIor * cosI + transmittedIor * cosT,
-                BlackHoleOptics.FRESNEL_FLOOR);
-        double rp = (incidentIor * cosT - transmittedIor * cosI)
-            / Math.max(incidentIor * cosT + transmittedIor * cosI,
-                BlackHoleOptics.FRESNEL_FLOOR);
-        return clamp(0.5 * (rs * rs + rp * rp), 0.0, 1.0);
+        return ScreenEffectMediumOptics.fresnelReflectance(
+            (float)cosIncidence, (float)incidentIor, (float)transmittedIor);
     }
 
     /** Mirrors the composite's surface transmission: TIR is opaque, otherwise Fresnel. */

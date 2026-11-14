@@ -5,12 +5,9 @@ import mafisher.quasar.api.client.render.EffectParameterBinding;
 import mafisher.quasar.api.client.render.EffectUniforms;
 import mafisher.quasar.api.effect.EffectParameterSet;
 import mafisher.quasar.api.client.screen.ScreenEffectInputs;
-import mafisher.quasar.api.client.screen.ScreenEffectMedium;
-import mafisher.quasar.api.client.screen.ScreenEffectMediumPath;
-import mafisher.quasar.api.client.screen.ScreenEffectMediumState;
+import mafisher.quasar.api.client.screen.ScreenEffectMediumOptics;
 import mafisher.quasar.api.client.screen.ScreenEffectOperationContext;
 import mafisher.quasar.api.client.screen.ScreenEffectOperationRenderer;
-import mafisher.quasar.api.compat.FogPolicy;
 import mafisher.quasar.api.effect.budget.EffectQualityTier;
 import mafisher.quasar.content.ContentShaders;
 import net.minecraft.client.renderer.ShaderInstance;
@@ -163,64 +160,8 @@ public final class ContentBlackHoleOperation implements ScreenEffectOperationRen
             context.effect().lod().level(), context.quality().level()
         ));
 
-        var fog = context.fogState();
-        context.setUniform(shader, "MediumFogStart", fog.start());
-        context.setUniform(shader, "MediumFogEnd", fog.end());
-        context.setUniform(shader, "MediumFogColor",
-            (float)fog.color().x, (float)fog.color().y, (float)fog.color().z);
-        boolean fogAllowed = context.environment().fogPolicy() == FogPolicy.RESPECT;
-        context.setUniform(shader, "MediumFogActive", fogAllowed && fog.active() ? 1.0F : 0.0F);
-        var medium = context.medium();
-        var path = context.mediumPath();
-        boolean suppressEffect = suppressAboveWater(medium);
-        context.setUniform(shader, "CameraSubmerged", medium.cameraSubmerged() ? 1.0F : 0.0F);
-        context.setUniform(shader, "EffectSubmerged", medium.effectSubmerged() ? 1.0F : 0.0F);
-        context.setUniform(shader, "SuppressAboveWater", suppressEffect ? 1.0F : 0.0F);
-        // The fog follows every submerged span, so a lake between two air endpoints
-        // still tints the effect. The shader falls back to the traced entry when the
-        // path is empty and an endpoint is submerged (powder snow, missing level).
-        context.setUniform(shader, "MediumPathLength", (float)path.submergedLength());
+        ScreenEffectMediumOptics.from(context).bind(context, shader);
         context.setUniform(shader, "ForegroundDepthValid", context.hasForegroundDepth() ? 1.0F : 0.0F);
         context.setUniform(shader, "OpaqueColorValid", context.hasOpaqueColor() ? 1.0F : 0.0F);
-        MediumSurface surface = mediumSurface(
-            path, context.camera().position().y, suppressEffect);
-        context.setUniform(shader, "SurfaceY", surface.surfaceY());
-        context.setUniform(shader, "SurfaceActive", surface.active() ? 1.0F : 0.0F);
-    }
-
-    /**
-     * Selects the refraction plane from the nearest water crossing instead of the
-     * endpoint blocks. A lake between two air endpoints still changes the image, and
-     * an exiting camera uses the plane it actually crosses.
-     */
-    static MediumSurface mediumSurface(ScreenEffectMediumPath path, double cameraY,
-        boolean suppressed) {
-        if (suppressed || path == null) {
-            return MediumSurface.NONE;
-        }
-        var crossing = path.firstOpenWaterCrossing().orElse(null);
-        if (crossing == null || !Float.isFinite(crossing.surfaceY())) {
-            return MediumSurface.NONE;
-        }
-        float relative = crossing.surfaceY() - (float)cameraY;
-        if (!Float.isFinite(relative)) {
-            return MediumSurface.NONE;
-        }
-        return new MediumSurface(true, relative);
-    }
-
-    /** The active water plane, relative to the camera. */
-    record MediumSurface(boolean active, float surfaceY) {
-        static final MediumSurface NONE = new MediumSurface(false, 0.0F);
-    }
-
-    /**
-     * A screen-space refraction of an above-water effect is not a stable reflection:
-     * it is misplaced by the screen projection and slides with the camera. Hide the
-     * effect instead when the camera is underwater and the effect is in air.
-     */
-    static boolean suppressAboveWater(ScreenEffectMediumState medium) {
-        return medium.cameraMedium() == ScreenEffectMedium.WATER
-            && medium.effectMedium() != ScreenEffectMedium.WATER;
     }
 }

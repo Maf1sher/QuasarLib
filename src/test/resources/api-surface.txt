@@ -53,6 +53,7 @@ mafisher.quasar.api.client.screen.ScreenEffectMask
 mafisher.quasar.api.client.screen.ScreenEffectMasks
 mafisher.quasar.api.client.screen.ScreenEffectMedium
 mafisher.quasar.api.client.screen.ScreenEffectMediumCrossing
+mafisher.quasar.api.client.screen.ScreenEffectMediumOptics
 mafisher.quasar.api.client.screen.ScreenEffectMediumPath
 mafisher.quasar.api.client.screen.ScreenEffectMediumSpan
 mafisher.quasar.api.client.screen.ScreenEffectMediumState

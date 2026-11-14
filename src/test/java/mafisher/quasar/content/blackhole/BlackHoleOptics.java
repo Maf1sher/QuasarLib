@@ -11,13 +11,16 @@ import mafisher.quasar.shader.GlslConstants;
 final class BlackHoleOptics {
     private static final String INCLUDE =
         "quasar_content:shaders/include/black_hole_optics.glsl";
+    private static final String MEDIUM_INCLUDE =
+        "quasar_lib:shaders/include/medium_optics.glsl";
     private static final Map<String, Double> VALUES = GlslConstants.load(INCLUDE);
+    private static final Map<String, Double> MEDIUM = GlslConstants.load(MEDIUM_INCLUDE);
 
     static final double B_CRITICAL = value("BH_B_CRITICAL");
     static final double HORIZON_EPSILON = value("BH_HORIZON_EPSILON");
-    static final double WATER_IOR = value("BH_WATER_IOR");
+    static final double WATER_IOR = mediumValue("QUASAR_MEDIUM_WATER_IOR");
     static final double RIPPLE_SLOPE = value("BH_RIPPLE_SLOPE");
-    static final double FRESNEL_FLOOR = value("BH_FRESNEL_FLOOR");
+    static final double FRESNEL_FLOOR = mediumValue("QUASAR_MEDIUM_FRESNEL_FLOOR");
     static final double STEP_NEAR_LIMIT = value("BH_STEP_NEAR_LIMIT");
     static final double STEP_NEAR_FACTOR = value("BH_STEP_NEAR_FACTOR");
     static final double STEP_NEAR_MIN = value("BH_STEP_NEAR_MIN");
@@ -34,5 +37,9 @@ final class BlackHoleOptics {
 
     private static double value(String name) {
         return GlslConstants.require(VALUES, name);
+    }
+
+    private static double mediumValue(String name) {
+        return GlslConstants.require(MEDIUM, name);
     }
 }

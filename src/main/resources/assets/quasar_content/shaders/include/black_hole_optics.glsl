@@ -5,9 +5,7 @@
 // oracle reads this file directly; change a constant here, not in the shader.
 const float BH_B_CRITICAL = 2.59807621135;
 const float BH_HORIZON_EPSILON = 1.02;
-const float BH_WATER_IOR = 1.333;
 const float BH_RIPPLE_SLOPE = 0.02;
-const float BH_FRESNEL_FLOOR = 0.0001;
 
 const float BH_STEP_NEAR_LIMIT = 6.0;
 const float BH_STEP_NEAR_FACTOR = 0.045;

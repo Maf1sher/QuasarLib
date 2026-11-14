@@ -22,10 +22,7 @@ class ShaderUniformUsageTest {
 
     @Test
     void blackHoleOperationOnlyBindsDeclaredUniformsAndSamplers() throws IOException {
-        ShaderTestResources.ShaderProgramAsset program = ShaderTestResources.programs().stream()
-            .filter(candidate -> candidate.programId().equals("quasar_content:black_hole"))
-            .findFirst()
-            .orElseThrow();
+        ShaderTestResources.ShaderProgramAsset program = blackHoleProgram();
         String source = Files.readString(sourceRoot().resolve(
             "mafisher/quasar/content/blackhole/ContentBlackHoleOperation.java"));
 
@@ -35,6 +32,26 @@ class ShaderUniformUsageTest {
 
         assertTrue(failures.isEmpty(), () -> "ContentBlackHoleOperation binds undeclared inputs:\n"
             + String.join("\n", failures));
+    }
+
+    @Test
+    void mediumOpticsOnlyBindsDeclaredUniforms() throws IOException {
+        ShaderTestResources.ShaderProgramAsset program = blackHoleProgram();
+        String source = Files.readString(sourceRoot().resolve(
+            "mafisher/quasar/api/client/screen/ScreenEffectMediumOptics.java"));
+
+        List<String> failures = new ArrayList<>();
+        compare("uniform", names(source, SET_UNIFORM), Set.copyOf(program.uniforms()), failures);
+
+        assertTrue(failures.isEmpty(), () -> "ScreenEffectMediumOptics binds undeclared inputs:\n"
+            + String.join("\n", failures));
+    }
+
+    private static ShaderTestResources.ShaderProgramAsset blackHoleProgram() {
+        return ShaderTestResources.programs().stream()
+            .filter(candidate -> candidate.programId().equals("quasar_content:black_hole"))
+            .findFirst()
+            .orElseThrow();
     }
 
     private static Path sourceRoot() {

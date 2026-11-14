@@ -21,7 +21,7 @@ import org.junit.jupiter.api.Test;
 class ContentBlackHoleWaterRefractionTest {
     private static final Vector3d UP = new Vector3d(0.0, 1.0, 0.0);
     private static final Vector3d DOWN = new Vector3d(0.0, -1.0, 0.0);
-    private static final double WATER_IOR = 1.333;
+    private static final double WATER_IOR = BlackHoleOptics.WATER_IOR;
 
     @Test
     void noSurfaceLeavesRayUntouched() {

@@ -141,6 +141,47 @@ class ShaderAssetGraphTest {
     }
 
     @Test
+    void blackHoleUsesTheMediumOpticsInclude() {
+        Set<String> imports = importsOf(ShaderTestResources.ShaderResource.parse(
+            "quasar_content:shaders/core/black_hole.fsh"));
+        assertTrue(imports.contains("quasar_lib:shaders/include/medium_optics.glsl"),
+            () -> "black_hole.fsh must import the shared medium optics: " + imports);
+    }
+
+    @Test
+    void sharedMediumOpticsAreDefinedOnlyInTheInclude() {
+        List<String> duplicated = new ArrayList<>();
+        Set<String> names = Set.of(
+            "quasarMediumFresnel",
+            "quasarMediumFromCameraFresnel",
+            "quasarMediumSurfaceTransmittance",
+            "quasarMediumRay",
+            "quasarMediumRefract",
+            "quasarMediumFogDistance",
+            "quasarMediumFogFactor",
+            "quasarMediumFog",
+            "quasarMediumFogTransmission",
+            "quasarMediumWarpAllowed"
+        );
+        List<Path> sources = new ArrayList<>(ShaderTestResources.coreShaderSources());
+        sources.addAll(ShaderTestResources.includeSources());
+        for (Path path : sources) {
+            String source = ShaderTestResources.readShaderSource(
+                ShaderTestResources.resourceFor(path).id());
+            for (String name : names) {
+                if (!path.getFileName().toString().equals("medium_optics.glsl")
+                    && Pattern.compile("\\b(?:float|vec3|bool|QuasarMediumRay)\\s+"
+                        + name + "\\s*\\(").matcher(source).find()) {
+                    duplicated.add(name + " is defined in " + path);
+                }
+            }
+        }
+        assertTrue(duplicated.isEmpty(),
+            () -> "Medium optics helpers must live only in medium_optics.glsl:\n"
+                + String.join("\n", duplicated));
+    }
+
+    @Test
     void sharedNoiseIsImportedByItsUsers() {
         Set<String> users = Set.of(
             "quasar_lib:shaders/core/effect_visual.fsh",

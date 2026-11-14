@@ -3,6 +3,7 @@
 #moj_import <quasar_lib:noise.glsl>
 #moj_import <quasar_lib:effect_space.glsl>
 #moj_import <quasar_lib:screen_visibility.glsl>
+#moj_import <quasar_lib:medium_optics.glsl>
 #moj_import <quasar_content:black_hole_optics.glsl>
 
 uniform sampler2D SceneSampler;
@@ -52,18 +53,8 @@ uniform float DiskBrightness;
 uniform float Turbulence;
 uniform float StepCount;
 
-uniform float MediumFogStart;
-uniform float MediumFogEnd;
-uniform vec3 MediumFogColor;
-uniform float MediumFogActive;
-uniform float CameraSubmerged;
-uniform float EffectSubmerged;
-uniform float MediumPathLength;
 uniform float ForegroundDepthValid;
 uniform float OpaqueColorValid;
-uniform float SurfaceY;
-uniform float SurfaceActive;
-uniform float SuppressAboveWater;
 
 uniform float Pass;
 uniform float EmissiveOnly;
@@ -307,15 +298,6 @@ float diskScreenCoverage(vec3 origin, vec3 direction) {
     return diskBodyCoverage(radial) * clamp(DiskBrightness, 0.0, 1.0);
 }
 
-struct SceneRay {
-    vec3 origin;
-    vec3 direction;
-    vec3 normal;
-    float surfaceDistance;
-    float incidenceCosine;
-    bool totalInternalReflection;
-};
-
 /**
  * World-stable water ripples. The point must be relative to the black hole so the
  * wave phase does not slide when the camera moves.
@@ -334,63 +316,24 @@ vec3 waterSurfaceNormal(vec3 holeRelative) {
     return normalize(vec3(slopeX * BH_RIPPLE_SLOPE, 1.0, slopeZ * BH_RIPPLE_SLOPE));
 }
 
-/** Unpolarised Fresnel reflectance; approaches one at the critical angle. */
-float fresnelWater(float cosIncidence, float incidentIor, float transmittedIor) {
-    float cosI = clamp(abs(cosIncidence), 0.0, 1.0);
-    float sinT2 = (incidentIor * incidentIor) / (transmittedIor * transmittedIor)
-        * max(0.0, 1.0 - cosI * cosI);
-    if (sinT2 >= 1.0) {
-        return 1.0;
-    }
-    float cosT = sqrt(1.0 - sinT2);
-    float rs = (incidentIor * cosI - transmittedIor * cosT)
-        / max(incidentIor * cosI + transmittedIor * cosT, BH_FRESNEL_FLOOR);
-    float rp = (incidentIor * cosT - transmittedIor * cosI)
-        / max(incidentIor * cosT + transmittedIor * cosI, BH_FRESNEL_FLOOR);
-    return clamp(0.5 * (rs * rs + rp * rp), 0.0, 1.0);
-}
-
 /**
  * Bends the view ray at the active water plane. {@code origin} is the camera
- * relative to the black hole while {@code SurfaceY} is relative to the camera;
- * the returned origin is relative to the hole so the geodesic integration stays
- * in one frame. The screen-space lens and vortex are skipped across the surface,
- * because the scene texture was rendered along straight camera rays.
+ * relative to the black hole while {@code MediumSurfaceY} is relative to the
+ * camera; the returned origin stays relative to the hole so the geodesic
+ * integration keeps one frame. The content-side wrapper only supplies the
+ * world-stable ripple normal.
  */
-SceneRay refractAtWater(vec3 origin, vec3 direction) {
-    SceneRay ray;
-    ray.origin = origin;
-    ray.direction = direction;
-    ray.normal = vec3(0.0, 1.0, 0.0);
-    ray.surfaceDistance = -1.0;
-    ray.incidenceCosine = 1.0;
-    ray.totalInternalReflection = false;
-    if (SurfaceActive < 0.5 || abs(direction.y) < 0.001) {
-        return ray;
+QuasarMediumRay refractAtWater(vec3 origin, vec3 direction) {
+    if (MediumSurfaceActive < 0.5
+        || abs(direction.y) < QUASAR_MEDIUM_DIRECTION_EPSILON) {
+        return quasarMediumRay(origin, direction);
     }
-    float surfaceDistance = SurfaceY / direction.y;
+    float surfaceDistance = MediumSurfaceY / direction.y;
     if (surfaceDistance <= 0.0) {
-        return ray;
+        return quasarMediumRay(origin, direction);
     }
     vec3 hit = origin + direction * surfaceDistance;
-    vec3 normal = waterSurfaceNormal(hit);
-    if (dot(normal, direction) > 0.0) {
-        normal = -normal;
-    }
-    ray.normal = normal;
-    ray.incidenceCosine = clamp(abs(dot(direction, normal)), 0.0, 1.0);
-    float eta = CameraSubmerged > 0.5 ? BH_WATER_IOR : 1.0 / BH_WATER_IOR;
-    vec3 bent = refract(direction, normal, eta);
-    ray.surfaceDistance = surfaceDistance;
-    if (dot(bent, bent) < 0.000001) {
-        // Total internal reflection from below the surface: the above-water
-        // effect is not visible in this direction, so the caller hides it.
-        ray.totalInternalReflection = true;
-        return ray;
-    }
-    ray.origin = hit;
-    ray.direction = normalize(bent);
-    return ray;
+    return quasarMediumRefract(origin, direction, waterSurfaceNormal(hit));
 }
 
 vec3 paletteColor(vec3 gold, vec3 amber, vec3 neon, float charge) {
@@ -569,7 +512,7 @@ void accumulateDisk(vec3 before, vec3 after, vec3 cameraRelative, vec3 rayVeloci
 
 vec4 renderBlackHole(vec2 uv) {
     vec4 sceneColor = texture(SceneSampler, uv);
-    if (SuppressAboveWater > 0.5) {
+    if (MediumSuppressAboveWater > 0.5) {
         // An above-water hole seen from below cannot be represented by a
         // screen-space refraction without reading as a floating reflection.
         return EmissiveOnly > 0.5 ? vec4(0.0) : vec4(sceneColor.rgb, 0.0);
@@ -582,7 +525,7 @@ vec4 renderBlackHole(vec2 uv) {
     vec3 direction = rayDirection(uv);
     float facing = frontFacing(direction);
     vec3 cameraRelative = -EffectOrigin;
-    SceneRay ray = refractAtWater(cameraRelative, direction);
+    QuasarMediumRay ray = refractAtWater(cameraRelative, direction);
     if (ray.totalInternalReflection) {
         // The water surface mirrors the underwater scene; an above-water hole
         // cannot contribute here. This removes the floating reflection-like patch.
@@ -756,8 +699,8 @@ vec4 renderBlackHole(vec2 uv) {
         // read as blur or radial streaks.
         float lensProximity = smoothstep(
             lensRadius, lensRadius * 1.5, holeDistance);
-        float lensBlend = (ray.surfaceDistance > 0.0 || CameraSubmerged > 0.5
-            || currentForeground || MediumPathLength > 0.0)
+        float lensBlend = (ray.surfaceDistance > 0.0 || currentForeground
+            || !quasarMediumWarpAllowed())
             ? 0.0 : clamp(LensStrength, 0.0, 1.0) * warpFalloff * skyWarp
                 * facing * lensProximity * (1.0 - insideDisk);
         vec3 lensDirection = normalize(mix(direction, outDirection, lensBlend));
@@ -768,9 +711,8 @@ vec4 renderBlackHole(vec2 uv) {
         vec2 lensUv;
         if (projectDirection(lensDirection, lensUv)) {
             vec2 sourceUv = lensUv;
-            if (ray.surfaceDistance <= 0.0 && CameraSubmerged < 0.5
-                && !currentForeground && MediumPathLength <= 0.0
-                && abs(VortexStrength) > 0.001) {
+            if (ray.surfaceDistance <= 0.0 && quasarMediumWarpAllowed()
+                && !currentForeground && abs(VortexStrength) > 0.001) {
                 vec2 candidate =
                     drillUv(sourceUv, VortexStrength, VortexRadius, holeDistance);
                 if (all(greaterThanEqual(candidate, vec2(0.0)))
@@ -788,7 +730,7 @@ vec4 renderBlackHole(vec2 uv) {
                 // foreground entities into the lens.
                 if (sourceDistance >= lensEntry - 0.5
                     && !sourceForeground && !currentForeground
-                    && MediumPathLength <= 0.0) {
+                    && quasarMediumWarpAllowed()) {
                     float edgeFade = smoothstep(0.0, 0.03, lensUv.x)
                         * smoothstep(0.0, 0.03, 1.0 - lensUv.x)
                         * smoothstep(0.0, 0.03, lensUv.y)
@@ -870,17 +812,9 @@ vec4 renderBlackHole(vec2 uv) {
     // Medium fog belongs to the effect's emission only. The lensed background is
     // the scene the player already sees, already fogged by the world renderer;
     // fogging it again paints a large dark circle over the sky.
-    float fogDistance = max(nearestEntry + max(ray.surfaceDistance, 0.0), 0.0);
-    if (MediumPathLength > 0.0) {
-        fogDistance = MediumPathLength;
-    }
-    if (MediumFogActive > 0.5
-        && (MediumPathLength > 0.0 || CameraSubmerged > 0.5 || EffectSubmerged > 0.5)) {
-        float mediumFog = clamp((fogDistance - MediumFogStart)
-            / max(MediumFogEnd - MediumFogStart, 1.0), 0.0, 1.0);
-        mediumFog = mediumFog * mediumFog * (3.0 - 2.0 * mediumFog);
-        color = mix(color, MediumFogColor, mediumFog);
-    }
+    float fogDistance = quasarMediumFogDistance(
+        max(nearestEntry + max(ray.surfaceDistance, 0.0), 0.0));
+    color = quasarMediumFog(color, fogDistance);
     color += backgroundLight;
 
     return vec4(color,
@@ -892,7 +826,7 @@ void main() {
         fragColor = renderBlackHole(texCoord);
         return;
     }
-    if (SuppressAboveWater > 0.5) {
+    if (MediumSuppressAboveWater > 0.5) {
         vec3 scene = texture(SceneSampler, texCoord).rgb;
         scene *= 1.0 - clamp(Darkness, 0.0, 0.75);
         fragColor = vec4(scene, 1.0);
@@ -903,7 +837,7 @@ void main() {
     float holeDistance = length(EffectOrigin);
     bool insideHorizon = holeDistance <= max(BlackHoleRadius, 0.001) * BH_HORIZON_EPSILON;
     vec3 direction = rayDirection(texCoord);
-    SceneRay ray = refractAtWater(cameraRelative, direction);
+    QuasarMediumRay ray = refractAtWater(cameraRelative, direction);
     vec4 effectColor = texture(EffectSampler, texCoord);
     float lensRadius = max(LensRadius, BlackHoleRadius * 3.0);
     float depthScale = quasarLayerScale(QUASAR_LAYER_FILL, holeDistance, lensRadius);
@@ -924,9 +858,9 @@ void main() {
         ForegroundDepthValid > 0.5, foregroundDelta, depthBias);
     vec2 sceneUv = texCoord;
     bool drillActive = !insideHorizon
-        && CameraSubmerged < 0.5 && !ray.totalInternalReflection
+        && quasarMediumWarpAllowed() && !ray.totalInternalReflection
         && ray.surfaceDistance <= 0.0 && abs(VortexStrength) > 0.001
-        && MediumPathLength <= 0.0 && !lensBlocked;
+        && !lensBlocked;
     if (drillActive) {
         // Do not pull a foreground glass/water surface into the swirl.
         vec2 candidate = clamp(
@@ -970,13 +904,8 @@ void main() {
     float alpha = visible ? max(coverage, opaqueMask) : 0.0;
 
     // Physically motivated surface transmission instead of a fixed blue wash.
-    float surfaceTransmittance = 1.0;
-    if (ray.surfaceDistance > 0.0) {
-        float incidentIor = CameraSubmerged > 0.5 ? BH_WATER_IOR : 1.0;
-        float transmittedIor = CameraSubmerged > 0.5 ? 1.0 : BH_WATER_IOR;
-        surfaceTransmittance = 1.0 - fresnelWater(
-            ray.incidenceCosine, incidentIor, transmittedIor);
-    }
+    float surfaceTransmittance = ray.surfaceDistance > 0.0
+        ? quasarMediumSurfaceTransmittance(ray.incidenceCosine) : 1.0;
 
     vec3 color = effectColor.rgb;
     // At grazing angles the surface reflects the scene already in sceneColor.
@@ -1014,9 +943,11 @@ void main() {
         }
     }
     bloom /= 9.0;
-    // The glow is emissive too; it must fade with the water surface. Medium fog is
-    // already applied to the emissive pass, so the background stays untouched.
-    float bloomFade = surfaceTransmittance;
+    // The glow is emissive too; it must fade with the water surface and with
+    // medium fog. Attenuate the additive bloom instead of adding the fog colour
+    // again, so the re-added background stays untouched.
+    float bloomFade = surfaceTransmittance * quasarMediumFogTransmission(
+        quasarMediumFogDistance(entryDistance));
     fragColor = vec4(center + bloom * BloomStrength * daylightBloomStrengthScale()
         * alpha * bloomFade, 1.0);
 }
