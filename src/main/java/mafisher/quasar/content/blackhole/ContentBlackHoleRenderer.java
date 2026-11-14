@@ -5,6 +5,7 @@ import java.util.List;
 import mafisher.quasar.api.client.render.EffectLodProfile;
 import mafisher.quasar.api.client.render.EffectRenderContext;
 import mafisher.quasar.api.client.render.EffectRenderPass;
+import mafisher.quasar.api.client.render.EffectScreenLodProfile;
 import mafisher.quasar.api.client.screen.ScreenEffectMask;
 import mafisher.quasar.api.client.screen.ScreenEffectMasks;
 import mafisher.quasar.api.client.screen.ScreenEffectRenderer;
@@ -22,6 +23,8 @@ import net.minecraft.world.phys.AABB;
 public final class ContentBlackHoleRenderer implements ScreenEffectRenderer {
     private static final ContentBlackHoleSettings SETTINGS = ContentBlackHoleSettings.DEFAULT;
     private static final EffectLodProfile LOD_PROFILE = EffectLodProfile.of(1.5, 4.0, 9.0);
+    private static final EffectScreenLodProfile SCREEN_LOD_PROFILE =
+        EffectScreenLodProfile.of(0.16, 0.04, 0.01);
     private static final float MASK_STRENGTH = 1.0F;
 
     @Override
@@ -32,6 +35,11 @@ public final class ContentBlackHoleRenderer implements ScreenEffectRenderer {
     @Override
     public EffectLodProfile lodProfile() {
         return LOD_PROFILE;
+    }
+
+    @Override
+    public EffectScreenLodProfile screenLodProfile() {
+        return SCREEN_LOD_PROFILE;
     }
 
     @Override

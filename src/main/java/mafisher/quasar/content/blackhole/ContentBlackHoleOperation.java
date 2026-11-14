@@ -165,7 +165,7 @@ public final class ContentBlackHoleOperation implements ScreenEffectOperationRen
         context.setUniform(shader, "Turbulence",
             settings.turbulence() * turbulenceScale);
         context.setUniform(shader, "StepCount", (float) ContentBlackHoleGeometry.stepCount(
-            context.effect().lod().level(), context.quality().level()
+            context.effect().lod().level(), context.effectiveQuality().level()
         ));
 
         ScreenEffectMediumOptics.from(context).bind(context, shader);

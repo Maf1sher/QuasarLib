@@ -178,10 +178,10 @@ public final class ContentRuneCircleRenderer implements ScreenEffectRenderer, In
     }
 
     private static int fullLayerCount(EffectRenderContext context) {
-        if (context.quality() == EffectQualityTier.LOW) {
+        if (context.effectiveQuality() == EffectQualityTier.LOW) {
             return 1;
         }
-        return context.quality() == EffectQualityTier.MEDIUM ? 2 : 3;
+        return context.effectiveQuality() == EffectQualityTier.MEDIUM ? 2 : 3;
     }
 
     private static boolean reduced(EffectRenderContext context) {

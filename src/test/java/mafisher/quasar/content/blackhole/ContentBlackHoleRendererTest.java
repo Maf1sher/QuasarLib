@@ -8,11 +8,13 @@ import java.util.UUID;
 import mafisher.quasar.api.client.render.EffectLod;
 import mafisher.quasar.api.client.render.EffectLodProfile;
 import mafisher.quasar.api.client.render.EffectRenderContext;
+import mafisher.quasar.api.client.render.EffectScreenLodProfile;
 import mafisher.quasar.api.client.screen.ScreenEffectInputs;
 import mafisher.quasar.api.client.screen.ScreenEffectMask;
 import mafisher.quasar.api.client.screen.ScreenEffectMasks;
 import mafisher.quasar.api.client.screen.ScreenEffectSettings;
 import mafisher.quasar.api.effect.StartVisualEffectPayload;
+import mafisher.quasar.api.effect.budget.EffectQualityTier;
 import mafisher.quasar.content.ContentEffectIds;
 import mafisher.quasar.content.ContentScreenOperations;
 import mafisher.quasar.testing.GlobalStateTest;
@@ -82,6 +84,45 @@ class ContentBlackHoleRendererTest {
             assertTrue(level >= previousLevel, "gap " + gap);
             previousLevel = level;
         }
+    }
+
+    @Test
+    void declaresScreenLodForProjectedCoverage() {
+        ContentBlackHoleRenderer renderer = new ContentBlackHoleRenderer();
+        EffectScreenLodProfile profile = renderer.screenLodProfile();
+
+        assertEquals(4, profile.levelCount());
+        assertEquals(0, profile.selectCoverage(1.0));
+        assertEquals(0, profile.selectCoverage(0.16));
+        assertEquals(1, profile.selectCoverage(0.159));
+        assertEquals(1, profile.selectCoverage(0.04));
+        assertEquals(2, profile.selectCoverage(0.039));
+        assertEquals(3, profile.selectCoverage(0.0));
+    }
+
+    @Test
+    void lodAndEffectiveQualityDoNotChangeTheVisibleBounds() {
+        ContentBlackHoleRenderer renderer = new ContentBlackHoleRenderer();
+        EffectRenderContext full = context();
+        EffectRenderContext reduced = context()
+            .withLod(new EffectLod(3, 400.0, 12.0))
+            .withEffectiveQuality(EffectQualityTier.LOW);
+
+        assertEquals(renderer.spatialRadius(full), renderer.spatialRadius(reduced), 0.0);
+        assertEquals(renderer.cullingBounds(full), renderer.cullingBounds(reduced));
+    }
+
+    @Test
+    void meshBlackHoleUsesTheSameScreenAndDistanceFallbackContract() {
+        ContentBlackHoleMeshRenderer renderer = new ContentBlackHoleMeshRenderer();
+        EffectRenderContext full = context();
+        EffectRenderContext reduced = context()
+            .withLod(new EffectLod(2, 400.0, 12.0))
+            .withEffectiveQuality(EffectQualityTier.LOW);
+
+        assertEquals(3, renderer.screenLodProfile().levelCount());
+        assertEquals(renderer.spatialRadius(full), renderer.spatialRadius(reduced), 0.0);
+        assertEquals(renderer.cullingBounds(full), renderer.cullingBounds(reduced));
     }
 
     @Test

@@ -10,6 +10,7 @@ import mafisher.quasar.api.client.render.EffectMesh;
 import mafisher.quasar.api.client.render.EffectRenderContext;
 import mafisher.quasar.api.client.render.EffectRenderPass;
 import mafisher.quasar.api.client.render.EffectRenderTypeOptions;
+import mafisher.quasar.api.client.render.EffectScreenLodProfile;
 import mafisher.quasar.api.client.render.EffectStaticMeshPass;
 import mafisher.quasar.api.client.render.QuasarRenderTypes;
 import mafisher.quasar.api.client.screen.ScreenEffectMask;
@@ -52,6 +53,8 @@ public final class ContentBlackHoleMeshRenderer implements ScreenEffectRenderer,
         new EffectRenderPass(DISK_PASS, DISK_RENDER_TYPE)
     );
     private static final EffectLodProfile LOD_PROFILE = EffectLodProfile.of(2.0, 8.0);
+    private static final EffectScreenLodProfile SCREEN_LOD_PROFILE =
+        EffectScreenLodProfile.of(0.11, 0.012);
 
     @Override
     public List<EffectRenderPass> renderPasses(EffectRenderContext context) {
@@ -75,6 +78,11 @@ public final class ContentBlackHoleMeshRenderer implements ScreenEffectRenderer,
     @Override
     public EffectLodProfile lodProfile() {
         return LOD_PROFILE;
+    }
+
+    @Override
+    public EffectScreenLodProfile screenLodProfile() {
+        return SCREEN_LOD_PROFILE;
     }
 
     @Override
@@ -135,9 +143,9 @@ public final class ContentBlackHoleMeshRenderer implements ScreenEffectRenderer,
 
     private static int sphereLod(EffectRenderContext context) {
         int sphereLod = context.lod().level();
-        if (context.quality() == EffectQualityTier.LOW) {
+        if (context.effectiveQuality() == EffectQualityTier.LOW) {
             sphereLod = Math.max(sphereLod, 2);
-        } else if (context.quality() == EffectQualityTier.MEDIUM) {
+        } else if (context.effectiveQuality() == EffectQualityTier.MEDIUM) {
             sphereLod = Math.max(sphereLod, 1);
         }
         return sphereLod;
@@ -158,7 +166,7 @@ public final class ContentBlackHoleMeshRenderer implements ScreenEffectRenderer,
         float scale, float alpha, float emissionScale, int shaderData) {
         renderAccretionLayer(poseStack, vertices, ContentBlackHoleMeshGeometry.primaryDisk(), scale,
             context.ageTicks() * 0.018F, alpha, emissionScale, shaderData);
-        if (context.quality().atLeast(EffectQualityTier.MEDIUM)) {
+        if (context.effectiveQuality().atLeast(EffectQualityTier.MEDIUM)) {
             renderAccretionLayer(poseStack, vertices, ContentBlackHoleMeshGeometry.secondaryDisk(), scale,
                 -context.ageTicks() * 0.027F, alpha, emissionScale, shaderData);
         }

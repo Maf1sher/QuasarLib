@@ -22,9 +22,9 @@ final class ContentBlackHoleBloom {
         context.setUniform(shader, "Threshold", lerp(THRESHOLD, DAY_THRESHOLD, daylight));
         context.setUniform(shader, "RadiusPixels",
             lerp(1.0F, DAY_RADIUS_SCALE, daylight)
-                * (context.quality().atLeast(EffectQualityTier.HIGH) ? 4.0F : 2.5F));
+                * (context.effectiveQuality().atLeast(EffectQualityTier.HIGH) ? 4.0F : 2.5F));
         context.setUniform(shader, "Intensity",
-            context.quality().atLeast(EffectQualityTier.MEDIUM)
+            context.effectiveQuality().atLeast(EffectQualityTier.MEDIUM)
                 ? settings.bloomStrength() * lerp(1.0F, DAY_STRENGTH_SCALE, daylight)
                 : 0.0F);
     }
