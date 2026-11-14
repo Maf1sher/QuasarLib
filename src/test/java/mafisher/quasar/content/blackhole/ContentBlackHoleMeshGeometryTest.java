@@ -10,10 +10,10 @@ import org.junit.jupiter.api.Test;
 
 class ContentBlackHoleMeshGeometryTest {
     @Test
-    void cachesAUnitSphereForTheCoreAndScreenMask() {
+    void cachesAPoleFreeSphereForTheCoreAndScreenMask() {
         EffectMesh sphere = ContentBlackHoleMeshGeometry.sphere();
-        assertSame(EffectMeshes.unitSphere(), sphere);
-        assertEquals(32 * 64 * 4, sphere.vertexCount());
+        assertSame(EffectMeshes.icosphere(), sphere);
+        assertEquals(6 * 16 * 16 * 4, sphere.vertexCount());
 
         for (int index = 0; index < sphere.vertexCount(); index++) {
             EffectMesh.Vertex vertex = sphere.vertex(index);
@@ -29,11 +29,14 @@ class ContentBlackHoleMeshGeometryTest {
 
     @Test
     void cachesASmallerSphereForEachLevelOfDetail() {
-        assertSame(EffectMeshes.unitSphere(), ContentBlackHoleMeshGeometry.sphere(0));
-        assertEquals(16 * 32 * 4, ContentBlackHoleMeshGeometry.sphere(1).vertexCount());
-        assertEquals(8 * 16 * 4, ContentBlackHoleMeshGeometry.sphere(2).vertexCount());
+        assertSame(EffectMeshes.icosphere(), ContentBlackHoleMeshGeometry.sphere(0));
+        assertEquals(6 * 8 * 8 * 4, ContentBlackHoleMeshGeometry.sphere(1).vertexCount());
+        assertEquals(6 * 4 * 4 * 4, ContentBlackHoleMeshGeometry.sphere(2).vertexCount());
         assertSame(ContentBlackHoleMeshGeometry.sphere(2), ContentBlackHoleMeshGeometry.sphere(99));
         assertSame(ContentBlackHoleMeshGeometry.sphere(0), ContentBlackHoleMeshGeometry.sphere(-1));
+        assertEquals(3, ContentBlackHoleMeshGeometry.spheres().levelCount());
+        assertEquals(-1.0, ContentBlackHoleMeshGeometry.spheres().localBounds().minY, 0.000001);
+        assertEquals(1.0, ContentBlackHoleMeshGeometry.spheres().localBounds().maxY, 0.000001);
     }
 
     @Test

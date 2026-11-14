@@ -1,20 +1,27 @@
 package mafisher.quasar.content.blackhole;
 
 import mafisher.quasar.api.client.render.EffectMesh;
+import mafisher.quasar.api.client.render.EffectMeshLod;
 import mafisher.quasar.api.client.render.EffectMeshes;
+import net.minecraft.world.phys.AABB;
 
-/** Content-owned black-hole mesh templates built on the shared effect mesh representation. */
+/**
+ * Content-owned black-hole mesh templates built on the shared effect mesh representation. The core and screen mask
+ * use the pole-free shared icosphere; the warped accretion layers remain content-specific.
+ */
 final class ContentBlackHoleMeshGeometry {
     private static final int DISK_ANGULAR_SEGMENTS = 64;
     private static final int DISK_RADIAL_SEGMENTS = 6;
     private static final float DISK_RADIUS = 1.25F;
     private static final float PRIMARY_DISK_INNER_RADIUS = 0.42F;
-    private static final EffectMesh SPHERE = EffectMeshes.unitSphere();
-    private static final EffectMesh[] LOD_SPHERES = {
-        SPHERE,
-        EffectMeshes.unitSphere(16, 32),
-        EffectMeshes.unitSphere(8, 16)
-    };
+    private static final AABB SPHERE_BOUNDS = new AABB(-1.0, -1.0, -1.0, 1.0, 1.0, 1.0);
+    private static final EffectMeshLod SPHERES = EffectMeshLod.of(
+        SPHERE_BOUNDS,
+        EffectMeshes.icosphere(),
+        EffectMeshes.icosphere(8),
+        EffectMeshes.icosphere(4)
+    );
+    private static final EffectMesh SPHERE = SPHERES.mesh(0);
     private static final EffectMesh PRIMARY_DISK = createDiskLayer(
         PRIMARY_DISK_INNER_RADIUS, DISK_RADIUS, DISK_RADIUS,
         DISK_RADIUS * 0.035F, DISK_RADIUS * 0.035F, 1.0F);
@@ -25,13 +32,17 @@ final class ContentBlackHoleMeshGeometry {
     private ContentBlackHoleMeshGeometry() {
     }
 
+    static EffectMeshLod spheres() {
+        return SPHERES;
+    }
+
     static EffectMesh sphere() {
         return SPHERE;
     }
 
     /** Returns the prebuilt sphere for an engine-selected LOD level, clamped to the available variants. */
     static EffectMesh sphere(int lodLevel) {
-        return LOD_SPHERES[Math.max(0, Math.min(lodLevel, LOD_SPHERES.length - 1))];
+        return SPHERES.mesh(lodLevel);
     }
 
     static EffectMesh primaryDisk() {
