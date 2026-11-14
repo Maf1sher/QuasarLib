@@ -11,7 +11,7 @@ import java.util.function.Consumer;
 import mafisher.quasar.api.audio.EffectAudioSpec;
 import mafisher.quasar.api.block.BlockChange;
 import mafisher.quasar.api.effect.EffectAudience;
-import mafisher.quasar.api.effect.budget.EffectBudgets;
+import mafisher.quasar.api.effect.EffectBounds;
 import mafisher.quasar.api.effect.damage.EffectDamageShape;
 import mafisher.quasar.api.effect.debris.EffectDebrisAttractor;
 import mafisher.quasar.api.effect.debris.EffectDebrisSpawn;
@@ -24,6 +24,9 @@ import mafisher.quasar.api.effect.EffectSpace;
 import mafisher.quasar.api.effect.budget.EffectPriority;
 import mafisher.quasar.api.effect.VisualEffectSpec;
 import mafisher.quasar.api.gameplay.block.BlockJournalMode;
+import mafisher.quasar.api.gameplay.block.EffectCarvePlan;
+import mafisher.quasar.api.gameplay.block.EffectCarveSession;
+import mafisher.quasar.api.gameplay.block.EffectCarveSpec;
 import mafisher.quasar.api.gameplay.world.EffectBlockCursor;
 import mafisher.quasar.api.gameplay.world.EffectBlockSample;
 import mafisher.quasar.api.gameplay.world.EffectBlockVolume;
@@ -60,6 +63,7 @@ import org.slf4j.LoggerFactory;
  * by the session scope and uses the same cinematic progress, so pausing, resume, and cleanup stay
  * in one place.
  */
+@SuppressWarnings("PMD.GodClass")
 public final class ContentBlackHoleGameplayController implements GameplayEffectController {
     private static final Logger LOGGER = LoggerFactory.getLogger(ContentBlackHoleGameplayController.class);
     private static final ContentBlackHoleGameplaySettings SETTINGS =
@@ -85,7 +89,6 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
     private static final String YAW = "yaw";
     private static final String PITCH = "pitch";
     private static final String ROLL = "roll";
-    private static final String CORE_STARTED = "core_started";
     private static final String CORE_DONE = "core_done";
     private static final String CORE_CURSOR = EffectBlockCursor.stateKey();
     private static final String CRATER_EDIT = "crater_edit";
@@ -98,6 +101,7 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
     private static final String CRATER_SOLID_SECTIONS = "crater_solid_sections";
     private static final String CRATER_ESTIMATED_SECTIONS = "crater_estimated_sections";
     private static final String CRATER_INCOMPLETE = "crater_incomplete";
+    private static final String CARVE_SESSION = "carve_session";
     private static final int TEAR_CLUSTER_RADIUS = 1;
     private static final int TEAR_CLUSTER_BLOCKS = 27;
 
@@ -112,9 +116,6 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
     private float pitch;
     private float roll;
 
-    private EffectBlockCursor coreCursor;
-    private boolean coreStarted;
-    private boolean coreDone;
     private boolean visualStarted;
     private boolean hasCrater;
     private boolean craterSyncReleased;
@@ -122,15 +123,15 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
     private boolean terrainLogged;
     private boolean craterBudgetWarned;
     private boolean craterEndWarned;
-    private boolean destructionComplete;
-    private boolean destructionIncomplete;
-    private boolean craterEndChecked;
-    private boolean coreDeadlineChecked;
+    private boolean legacyCarveComplete;
+    private boolean legacyCarveIncomplete;
+    private boolean coreDoneReported;
+    private boolean incompleteReported;
     private double craterGroundY;
     private double craterRadius;
     private double frontRadius;
-    private ContentBlackHoleDestructionPlan.Plan destruction;
-    private EffectBulkBlockEditor terrainEditor;
+    private EffectCarvePlan carvePlan;
+    private EffectCarveSession carveSession;
     private int tearBurstsEmitted;
 
     public ContentBlackHoleGameplayController() {
@@ -156,38 +157,25 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
         );
         this.craterGroundY = this.sampleGroundY(context);
         this.planDestruction(context);
-        this.hasCrater = this.destruction != null && ContentBlackHoleDestructionPlan.intersectsTerrain(
-            this.center.y,
-            this.craterRadius,
-            this.craterGroundY,
-            context.level().getMinBuildHeight()
-        );
+        this.hasCrater = this.carvePlan != null
+            && intersectsTerrain(this.carvePlan.volume(), this.craterGroundY, context);
         this.warnIfCratersStayUnderground();
-        if (!this.hasCrater || !ContentBlackHoleDestructionPlan.intersectsTerrain(
-            this.center.y,
-            this.coreRadius,
-            this.craterGroundY,
-            context.level().getMinBuildHeight()
-        )) {
-            // Nothing solid in the ignition sphere; skip the per-block core pass.
-            this.coreDone = true;
+        if (this.hasCrater) {
+            this.carveSession = EffectCarveSession.start(
+                context, this.carveSpec(context), this.carvePlan
+            );
+            this.coreDoneReported = this.carveSession.coreComplete();
+        } else {
+            this.coreDoneReported = true;
         }
-        if (this.terrainEditor == null && this.hasCrater && !this.destructionComplete) {
-            this.terrainEditor = this.createTerrainEditor(context);
-        }
-        if (this.terrainEditor != null) {
-            this.syncCraterVolumeFromEditor();
-            this.frontRadius = this.terrainEditor.frontScale() * this.craterRadius;
-        }
-        if (this.coreStarted && !this.coreDone) {
-            this.coreCursor = this.restoreCursor(context);
-        }
+        this.frontRadius = 0.0;
         context.updatePersistentState(tag -> {
             tag.putFloat(YAW, this.yaw);
             tag.putFloat(PITCH, this.pitch);
             tag.putFloat(ROLL, this.roll);
         });
         context.updatePersistentState(this::putDestructionPlan);
+        context.updatePersistentState(this::putCarveSession);
         this.startVisual(context);
         this.track(context);
     }
@@ -208,40 +196,29 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
         if (!context.persistentState().contains(CRATER_GROUND_Y)) {
             this.craterGroundY = this.sampleGroundY(context);
         }
-        if (this.destruction == null || this.craterRadius <= 0.0) {
-            this.planDestruction(context);
-            context.updatePersistentState(this::putDestructionPlan);
-        }
-        this.hasCrater = this.destruction != null && ContentBlackHoleDestructionPlan.intersectsTerrain(
-            this.center.y,
-            this.craterRadius,
-            this.craterGroundY,
-            context.level().getMinBuildHeight()
-        );
+        this.restoreCarve(context);
+        this.hasCrater = this.carvePlan != null
+            && intersectsTerrain(this.carvePlan.volume(), this.craterGroundY, context);
         this.warnIfCratersStayUnderground();
-        if (!this.hasCrater || !ContentBlackHoleDestructionPlan.intersectsTerrain(
-            this.center.y,
-            this.coreRadius,
-            this.craterGroundY,
-            context.level().getMinBuildHeight()
-        )) {
-            // Nothing solid in the ignition sphere; skip the per-block core pass.
-            this.coreDone = true;
+        if (this.hasCrater && this.carveSession == null
+            && !this.legacyCarveComplete && !this.legacyCarveIncomplete) {
+            this.carveSession = EffectCarveSession.start(
+                context, this.carveSpec(context), this.carvePlan
+            );
+            this.carvePlan = this.carveSession.plan();
+            this.craterRadius = radiusOf(this.carvePlan.volume());
+            this.frontRadius = this.carveSession.frontScale() * this.craterRadius;
         }
-        if (this.terrainEditor == null && this.hasCrater && !this.destructionComplete) {
-            this.terrainEditor = this.createTerrainEditor(context);
-        }
-        if (this.terrainEditor != null) {
-            this.syncCraterVolumeFromEditor();
+        if (this.carveSession != null) {
             this.frontRadius = Math.max(
                 this.frontRadius,
-                this.terrainEditor.frontScale() * this.craterRadius
+                this.carveSession.frontScale() * this.craterRadius
             );
+            this.coreDoneReported = this.carveSession.coreComplete();
+        } else if (this.legacyCarveComplete) {
+            this.frontRadius = this.craterRadius;
         }
         this.visualStarted = true;
-        if (this.coreStarted && !this.coreDone) {
-            this.coreCursor = this.restoreCursor(context);
-        }
         this.track(context);
     }
 
@@ -253,27 +230,14 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
             .sampleFloat("HorizonScale", progress);
         this.tearBurstsEmitted = 0;
 
-        if (!this.coreDone) {
-            if (this.destruction != null
-                && progress >= this.destruction.workEndProgress()) {
-                if (!this.coreDeadlineChecked) {
-                    this.coreDeadlineChecked = true;
-                    this.destructionIncomplete = true;
-                    LOGGER.warn(
-                        "Black-hole core carve did not finish before the block-edit deadline; "
-                            + "the growing crater cannot start"
-                    );
-                    this.releaseCraterSync(context);
-                }
-            } else if (progress >= ContentBlackHoleCinematics.IGNITION) {
-                this.tickCore(context);
-            }
-        }
-        // The terrain front advances before tearing and debris read it.
+        // The terrain front advances before tearing and debris read it. The session owns the
+        // exact core pre-pass, the bulk front, and the no-edits-after-deadline rule.
         this.tickTerrain(context, progress);
         if (progress >= ContentBlackHoleCinematics.HORIZON_END
-            && this.destruction != null
-            && progress < this.destruction.workEndProgress()) {
+            && this.carvePlan != null
+            && this.carveSession != null
+            && progress < this.carvePlan.workEnd()
+            && !this.carveSession.editsFinished()) {
             this.tickSurfaceTear(context);
         }
         if (progress >= ContentBlackHoleCinematics.HORIZON_END
@@ -288,12 +252,11 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
 
     @Override
     public void onEnd(GameplayEffectContext context, GameplayEffectEndReason reason) {
-        this.coreCursor = null;
-        boolean keepChanges = reason == GameplayEffectEndReason.EXPIRED
+        boolean releaseReveal = reason == GameplayEffectEndReason.EXPIRED
             || !context.canRollbackChanges();
-        if (this.terrainEditor != null) {
-            EffectBulkBlockEditor.Progress carved = this.terrainEditor.progress();
-            if (!carved.finished() && !this.destructionComplete) {
+        if (this.carveSession != null) {
+            EffectBulkBlockEditor.Progress carved = this.carveSession.progress();
+            if (!carved.finished() && !this.carveSession.complete()) {
                 LOGGER.warn(
                     "Black-hole destruction stopped early: {} of {} sections, {} blocks",
                     carved.completedSections(),
@@ -301,8 +264,8 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
                     carved.clearedBlocks()
                 );
             }
-            this.terrainEditor.close(keepChanges);
-            this.terrainEditor = null;
+            this.carveSession.close(releaseReveal);
+            this.carveSession = null;
         }
         Set<UUID> sessions = ACTIVE.get(context.level());
         if (sessions != null) {
@@ -373,248 +336,117 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
     }
 
     private void tickTerrain(GameplayEffectContext context, float progress) {
-        if (progress < ContentBlackHoleCinematics.IGNITION
-            || !this.coreDone
-            || !this.hasCrater
-            || this.destruction == null
-            || progress < this.destruction.startProgress()) {
+        if (!this.hasCrater || this.carvePlan == null || this.carveSession == null) {
             return;
         }
-        if (this.destructionComplete) {
-            this.frontRadius = this.craterRadius;
-            return;
-        }
-        if (this.terrainEditor == null) {
-            this.terrainEditor = this.createTerrainEditor(context);
-        }
-        if (!this.terrainLogged) {
+        if (!this.terrainLogged && progress >= this.carvePlan.growthStart()) {
             this.terrainLogged = true;
             LOGGER.info(
                 "Starting black-hole destruction at scale {}: requested radius {}, "
                     + "actual radius {}, core radius {}, window {}..{}, sections {} (solid {}), "
                     + "budget {}/tick, {}/tick needed",
                 context.spec().scale(),
-                this.destruction.requestedRadius(),
-                this.destruction.radius(),
-                this.destruction.coreRadius(),
-                this.destruction.startProgress(),
-                this.destruction.workEndProgress(),
-                this.destruction.estimatedSections(),
-                this.destruction.solidSections(),
-                this.destruction.sectionBudget(),
-                this.destruction.sectionsPerTick()
+                radiusOf(this.carvePlan.requestedVolume()),
+                this.craterRadius,
+                this.coreRadius,
+                this.carvePlan.growthStart(),
+                this.carvePlan.workEnd(),
+                this.carvePlan.estimatedSections(),
+                this.carvePlan.estimatedSolidSections(),
+                this.carvePlan.sectionBudget(),
+                this.carvePlan.sectionsPerTick()
             );
-            if (this.destruction.budgetClamped()) {
+            if (this.carvePlan.budgetClamped() && !this.craterBudgetWarned) {
+                this.craterBudgetWarned = true;
                 LOGGER.warn(
                     "Black-hole destruction scaled down from radius {} to radius {} "
                         + "to fit the effect window and budgets",
-                    this.destruction.requestedRadius(),
-                    this.destruction.radius()
-                );
-            }
-            if (this.destruction.sectionsPerTick() > this.destruction.sectionBudget()
-                && !this.craterBudgetWarned) {
-                this.craterBudgetWarned = true;
-                LOGGER.warn(
-                    "Black-hole destruction needs {} sections/tick but the budget is {}; "
-                        + "the front will finish as early as the budget allows",
-                    this.destruction.sectionsPerTick(),
-                    this.destruction.sectionBudget()
+                    radiusOf(this.carvePlan.requestedVolume()),
+                    this.craterRadius
                 );
             }
         }
-        if (this.terrainEditor.progress().finished()) {
-            this.finishCrater(context);
-            return;
+        this.carveSession.tick();
+        this.frontRadius = this.carveSession.frontScale() * this.craterRadius;
+        if (this.carveSession.coreComplete() && !this.coreDoneReported) {
+            this.coreDoneReported = true;
+            context.updatePersistentState(tag -> tag.putBoolean(CORE_DONE, true));
         }
-        if (progress >= this.destruction.workEndProgress()) {
-            if (!this.craterEndChecked) {
-                this.craterEndChecked = true;
-                // One last catch-up inside the work window, then no block edits in the closing phase.
-                if (progress < ContentBlackHoleCinematics.DESTABILISE) {
-                    if (this.terrainEditor.ordering() == EffectBulkBlockEditor.Ordering.CENTER_OUT) {
-                        this.terrainEditor.tickToScale(1.0, this.destruction.sectionBudget());
-                    } else {
-                        this.terrainEditor.tick(this.destruction.sectionBudget());
-                    }
-                }
-                this.frontRadius = Math.max(
-                    this.frontRadius,
-                    this.terrainEditor.frontScale() * this.craterRadius
-                );
-                if (this.terrainEditor.progress().finished()
-                    || !this.terrainEditor.hasPendingSolidSections()) {
-                    this.finishCrater(context);
-                    return;
-                }
-                if (!this.craterEndWarned) {
-                    this.craterEndWarned = true;
-                    this.destructionIncomplete = true;
-                    EffectBulkBlockEditor.Progress carved = this.terrainEditor.progress();
-                    LOGGER.warn(
-                        "Black-hole destruction stopped at its reveal deadline: {} of {} sections, {} blocks; "
-                            + "no block edits continue into the closing phase",
-                        carved.completedSections(),
-                        carved.totalSections(),
-                        carved.clearedBlocks()
-                    );
-                }
-                this.releaseCraterSync(context);
-            }
-            return;
-        }
-
-        double targetRadius = this.destruction.radiusAt(progress);
-        if (targetRadius <= 0.0 || this.craterRadius <= 0.0) {
-            return;
-        }
-        if (this.terrainEditor.ordering() == EffectBulkBlockEditor.Ordering.CENTER_OUT) {
-            double targetScale = Math.min(1.0, targetRadius / this.craterRadius);
-            this.terrainEditor.tickToScale(targetScale, this.destruction.sectionBudget());
-        } else {
-            // Legacy saves may still hold a TOP_DOWN cursor; keep it resumable.
-            this.terrainEditor.tick(this.destruction.sectionBudget());
-        }
-        this.frontRadius = Math.max(
-            this.frontRadius,
-            this.terrainEditor.frontScale() * this.craterRadius
-        );
-        if (this.terrainEditor.progress().finished()) {
-            this.finishCrater(context);
-        }
-    }
-
-    private void finishCrater(GameplayEffectContext context) {
-        this.frontRadius = this.craterRadius;
-        this.craterEndChecked = true;
-        this.destructionComplete = true;
-        this.destructionIncomplete = false;
-        if (!this.craterLogged && this.terrainEditor != null) {
+        if (this.carveSession.complete() && !this.craterLogged) {
             this.craterLogged = true;
-            EffectBulkBlockEditor.Progress finished = this.terrainEditor.progress();
+            EffectBulkBlockEditor.Progress finished = this.carveSession.progress();
             LOGGER.info(
                 "Finished black-hole destruction: {} sections, {} blocks",
                 finished.completedSections(),
                 finished.clearedBlocks()
             );
         }
-        // Flush any remaining reveals while the horizon is still open.
-        this.releaseCraterSync(context);
-    }
-
-    private EffectBulkBlockEditor createTerrainEditor(GameplayEffectContext context) {
-        EffectBlockVolume volume = EffectBlockVolume.sphere(
-            new EffectPoint(this.center.x, this.center.y, this.center.z),
-            this.craterRadius
-        );
-        return EffectBulkBlockEditor.create(context, new EffectBulkBlockEditor.Spec(
-            volume,
-            Blocks.AIR.defaultBlockState(),
-            true,
-            EffectBulkBlockEditor.SyncPolicy.PROGRESSIVE,
-            0.0,
-            this.settings.craterJournal()
-        ), EffectBulkBlockEditor.Ordering.CENTER_OUT);
+        if (this.carveSession.incomplete() && !this.craterEndWarned) {
+            this.craterEndWarned = true;
+            EffectBulkBlockEditor.Progress carved = this.carveSession.progress();
+            LOGGER.warn(
+                "Black-hole destruction stopped at its reveal deadline: {} of {} sections, "
+                    + "{} blocks; no block edits continue into the closing phase",
+                carved.completedSections(),
+                carved.totalSections(),
+                carved.clearedBlocks()
+            );
+        }
+        if (this.carveSession.syncReleased()
+            || this.carveSession.complete()
+            || progress >= this.carvePlan.workEnd()) {
+            this.releaseCraterSync(context);
+        }
     }
 
     private void releaseCraterSync(GameplayEffectContext context) {
+        boolean incomplete = this.currentIncomplete();
         if (this.craterSyncReleased) {
-            context.updatePersistentState(
-                tag -> tag.putBoolean(CRATER_INCOMPLETE, this.destructionIncomplete)
-            );
+            if (incomplete != this.incompleteReported) {
+                this.incompleteReported = incomplete;
+                context.updatePersistentState(
+                    tag -> tag.putBoolean(CRATER_INCOMPLETE, incomplete)
+                );
+            }
             return;
         }
         this.craterSyncReleased = true;
-        if (this.terrainEditor != null) {
-            this.terrainEditor.releaseSync();
+        this.incompleteReported = incomplete;
+        if (this.carveSession != null) {
+            this.carveSession.releaseSync();
         }
         context.updatePersistentState(tag -> {
             tag.putBoolean(CRATER_RELEASED, true);
-            tag.putBoolean(CRATER_INCOMPLETE, this.destructionIncomplete);
+            tag.putBoolean(CRATER_INCOMPLETE, incomplete);
         });
     }
 
+    private boolean currentIncomplete() {
+        if (this.carveSession != null) {
+            return this.carveSession.incomplete();
+        }
+        return this.legacyCarveIncomplete;
+    }
+
     private void saveEditorState(GameplayEffectContext context) {
-        if (this.terrainEditor == null) {
+        if (this.carveSession == null) {
             return;
         }
         if ((context.ageTicks() & 7) != 0) {
             return;
         }
-        context.updatePersistentState(tag -> {
-            tag.put(CRATER_EDIT, this.terrainEditor.save());
-            tag.putBoolean(CRATER_RELEASED, this.craterSyncReleased);
-        });
+        context.updatePersistentState(this::putCarveSession);
     }
 
-    private void tickCore(GameplayEffectContext context) {
-        if (!this.coreStarted) {
-            this.coreStarted = true;
-            this.coreCursor = this.restoreCursor(context);
-            context.updatePersistentState(tag -> tag.putBoolean(CORE_STARTED, true));
+    private void putCarveSession(CompoundTag tag) {
+        if (this.carveSession != null) {
+            tag.put(CARVE_SESSION, this.carveSession.save());
         }
-        if (this.coreCursor == null) {
-            this.coreCursor = this.restoreCursor(context);
-        }
-        int headroom = (int)Math.max(0.0, MAX_PENDING_HEADROOM - context.pendingBlockChanges());
-        int batch = Math.min(
-            Math.min(
-                Math.min(4_096, EffectBudgets.blockChangesPerLevelTick()),
-                context.spec().budget().maxBlockChanges()
-            ),
-            headroom
-        );
-        if (batch <= 0) {
-            return;
-        }
-        this.coreCursor.visit(
-            batch,
-            state -> !state.isAir(),
-            (position, state) -> this.queueCoreBlock(context, position)
-        );
-        if (!this.coreCursor.finished()) {
-            context.updatePersistentState(tag -> tag.put(CORE_CURSOR, this.coreCursor.save()));
-            return;
-        }
-        this.coreDone = true;
-        this.coreCursor = null;
-        context.updatePersistentState(tag -> {
-            tag.putBoolean(CORE_DONE, true);
-            tag.put(CORE_CURSOR, new CompoundTag());
-        });
-    }
-
-    private void queueCoreBlock(GameplayEffectContext context, BlockPos position) {
-        if (position.getY() <= context.level().getMinBuildHeight()) {
-            return;
-        }
-        double dx = position.getX() + 0.5 - this.center.x;
-        double dy = position.getY() + 0.5 - this.center.y;
-        double dz = position.getZ() + 0.5 - this.center.z;
-        double boundary = Math.max(0.0, this.coreRadius - 1.5);
-        boolean interior = dx * dx + dy * dy + dz * dz <= boundary * boundary;
-        BlockChange change = interior
-            ? BlockChange.airWithoutNeighbourUpdates(position)
-            : new BlockChange(position, Blocks.AIR.defaultBlockState());
-        context.queueBlockChange(change);
-    }
-
-    private EffectBlockCursor restoreCursor(GameplayEffectContext context) {
-        CompoundTag state = context.persistentState();
-        EffectBlockVolume volume = EffectBlockVolume.sphere(
-            new EffectPoint(this.center.x, this.center.y, this.center.z),
-            this.coreRadius
-        );
-        if (state.contains(CORE_CURSOR)) {
-            return EffectBlockCursor.restore(context.world(), volume, state.getCompound(CORE_CURSOR));
-        }
-        return context.world().cursor(volume);
     }
 
     private void tickSurfaceTear(GameplayEffectContext context) {
-        if (this.destructionComplete
-            || this.terrainEditor == null
-            || this.terrainEditor.progress().finished()
+        if (this.carveSession == null
+            || this.carveSession.complete()
             || this.frontRadius <= 0.0) {
             return;
         }
@@ -806,71 +638,123 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
     }
 
     private void planDestruction(GameplayEffectContext context) {
-        int duration = Math.max(1, context.spec().phases().totalDurationTicks());
-        int configuredBudget = EffectBudgets.sectionEditsPerLevelTick();
-        int effectBudget = context.spec().budget().maxSectionEdits();
-        int sectionBudget = Math.max(1, Math.min(
-            effectBudget > 0 ? effectBudget : configuredBudget,
-            configuredBudget
-        ));
-        int coreBlockBudget = Math.max(
-            1,
-            Math.min(
-                Math.min(4_096, EffectBudgets.blockChangesPerLevelTick()),
-                context.spec().budget().maxBlockChanges()
-            )
-        );
-        double coreVolume = ContentBlackHoleDestructionPlan.terrainVolume(
-            this.coreRadius,
-            this.center.y,
-            this.craterGroundY,
-            context.level().getMinBuildHeight()
-        );
-        int coreTicks = (int)Math.ceil(coreVolume / coreBlockBudget);
-        float coreFinish = ContentBlackHoleCinematics.IGNITION
-            + coreTicks / (float)duration;
-        this.destruction = ContentBlackHoleDestructionPlan.plan(
-            this.settings,
-            context.spec().scale(),
-            duration,
-            sectionBudget,
-            coreFinish,
-            this.center.y,
-            this.craterGroundY,
-            context.level().getMinBuildHeight()
-        );
-        this.craterRadius = this.destruction.radius();
+        this.carvePlan = EffectCarvePlan.plan(context, this.carveSpec(context));
+        this.craterRadius = radiusOf(this.carvePlan.volume());
         this.frontRadius = 0.0;
     }
 
-    private void syncCraterVolumeFromEditor() {
-        if (this.terrainEditor == null) {
+    private EffectCarveSpec carveSpec(GameplayEffectContext context) {
+        EffectPoint centerPoint = new EffectPoint(this.center.x, this.center.y, this.center.z);
+        double requestedRadius = this.settings.craterRadius(context.spec().scale());
+        return new EffectCarveSpec(
+            EffectBlockVolume.sphere(centerPoint, requestedRadius),
+            Blocks.AIR.defaultBlockState(),
+            true,
+            this.settings.craterJournal(),
+            EffectBulkBlockEditor.SyncPolicy.PROGRESSIVE,
+            ContentBlackHoleCinematics.HORIZON_END,
+            ContentBlackHoleCinematics.DESTABILISE,
+            EffectBlockVolume.sphere(centerPoint, this.coreRadius),
+            ContentBlackHoleCinematics.IGNITION,
+            this.craterGroundY
+        );
+    }
+
+    private void restoreCarve(GameplayEffectContext context) {
+        CompoundTag state = context.persistentState();
+        EffectCarveSpec spec = this.carveSpec(context);
+        CompoundTag sessionTag = state.getCompound(CARVE_SESSION);
+        if (!sessionTag.isEmpty()) {
+            this.carveSession = EffectCarveSession.restore(context, spec, sessionTag);
+            this.carvePlan = this.carveSession.plan();
+            this.craterRadius = radiusOf(this.carvePlan.volume());
+            this.frontRadius = this.carveSession.frontScale() * this.craterRadius;
+            this.craterSyncReleased = this.carveSession.syncReleased();
+            this.coreDoneReported = this.carveSession.coreComplete();
+            this.incompleteReported = this.carveSession.incomplete();
+            this.craterEndWarned = this.incompleteReported;
             return;
         }
-        if (this.terrainEditor.volume() instanceof EffectBlockVolume.Sphere sphere) {
-            this.craterRadius = sphere.radius();
-        } else if (this.terrainEditor.volume() instanceof EffectBlockVolume.Ellipsoid ellipsoid) {
-            // Legacy saves may still hold the old ellipsoid; treat it as one sphere for debris.
-            this.craterRadius = Math.max(
-                ellipsoid.radiusX(), Math.max(ellipsoid.radiusY(), ellipsoid.radiusZ())
+
+        this.planDestruction(context);
+        this.craterSyncReleased = state.getBoolean(CRATER_RELEASED);
+        this.coreDoneReported = state.getBoolean(CORE_DONE);
+        this.incompleteReported = state.getBoolean(CRATER_INCOMPLETE);
+        this.legacyCarveComplete = this.craterSyncReleased && !this.incompleteReported;
+        this.legacyCarveIncomplete = this.incompleteReported;
+        this.craterEndWarned = this.incompleteReported;
+        if (state.contains(CRATER_RADIUS)) {
+            double storedRadius = Math.max(
+                state.getDouble(CRATER_RADIUS), state.getDouble(CRATER_DEPTH)
             );
+            if (storedRadius > 0.0) {
+                this.craterRadius = storedRadius;
+            }
         }
+        if (!this.legacyCarveComplete
+            && (state.contains(CRATER_EDIT) || state.contains(CORE_CURSOR))) {
+            EffectCarveSession restored = EffectCarveSession.restore(
+                context, spec, legacySessionTag(state)
+            );
+            if (Math.abs(radiusOf(restored.plan().volume()) - this.craterRadius) <= 1.0E-6) {
+                this.carveSession = restored;
+                this.carvePlan = restored.plan();
+                this.craterRadius = radiusOf(this.carvePlan.volume());
+                this.frontRadius = restored.frontScale() * this.craterRadius;
+                this.craterSyncReleased = restored.syncReleased();
+                this.coreDoneReported = restored.coreComplete();
+                this.incompleteReported = restored.incomplete();
+            } else {
+                // The new plan no longer matches the old effective radius. Restarting the carve
+                // is idempotent; keeping the old cursor would write outside the new volume.
+                restored.close(false);
+            }
+        }
+        if (this.legacyCarveComplete) {
+            this.frontRadius = this.craterRadius;
+        }
+    }
+
+    private static CompoundTag legacySessionTag(CompoundTag state) {
+        CompoundTag tag = new CompoundTag();
+        tag.putInt("version", 1);
+        if (state.contains(CRATER_EDIT)) {
+            tag.put("editor", state.getCompound(CRATER_EDIT));
+        }
+        if (state.contains(CORE_CURSOR)) {
+            tag.put("core_cursor", state.getCompound(CORE_CURSOR));
+        }
+        tag.putBoolean("core_done", state.getBoolean(CORE_DONE));
+        tag.putBoolean("sync_released", state.getBoolean(CRATER_RELEASED));
+        tag.putBoolean("deadline_reached", state.getBoolean(CRATER_RELEASED));
+        tag.putBoolean("incomplete", state.getBoolean(CRATER_INCOMPLETE));
+        tag.putBoolean(
+            "complete",
+            state.getBoolean(CRATER_RELEASED) && !state.getBoolean(CRATER_INCOMPLETE)
+        );
+        tag.putFloat("front_scale", 0.0F);
+        return tag;
     }
 
     private void putDestructionPlan(CompoundTag tag) {
+        if (this.carvePlan == null) {
+            return;
+        }
         tag.putDouble(CRATER_RADIUS, this.craterRadius);
         tag.putDouble(CRATER_DEPTH, this.craterRadius);
         tag.putDouble(CRATER_GROUND_Y, this.craterGroundY);
-        tag.putFloat(CRATER_START, this.destruction.startProgress());
-        tag.putFloat(CRATER_WORK_END, this.destruction.workEndProgress());
-        tag.putInt(CRATER_SOLID_SECTIONS, this.destruction.solidSections());
-        tag.putInt(CRATER_ESTIMATED_SECTIONS, this.destruction.estimatedSections());
+        tag.putFloat(CRATER_START, this.carvePlan.growthStart());
+        tag.putFloat(CRATER_WORK_END, this.carvePlan.workEnd());
+        tag.putInt(CRATER_SOLID_SECTIONS, this.carvePlan.estimatedSolidSections());
+        tag.putInt(CRATER_ESTIMATED_SECTIONS, this.carvePlan.estimatedSections());
+        tag.putBoolean(CORE_DONE, this.coreDoneReported);
+        tag.putBoolean(CRATER_RELEASED, this.craterSyncReleased);
+        tag.putBoolean(CRATER_INCOMPLETE, this.incompleteReported || this.legacyCarveIncomplete);
     }
 
     private void warnIfCratersStayUnderground() {
-        if (!this.hasCrater || ContentBlackHoleDestructionPlan.breaksSurface(
-            this.center.y, this.craterRadius, this.craterGroundY
-        )) {
+        if (!this.hasCrater || this.carvePlan == null
+            || breaksSurface(this.carvePlan.volume(), this.craterGroundY)) {
             return;
         }
         LOGGER.warn(
@@ -888,63 +772,35 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
         this.yaw = state.getFloat(YAW);
         this.pitch = state.getFloat(PITCH);
         this.roll = state.getFloat(ROLL);
-        this.coreStarted = state.getBoolean(CORE_STARTED);
-        this.coreDone = state.getBoolean(CORE_DONE);
+        this.coreDoneReported = state.getBoolean(CORE_DONE);
         this.craterSyncReleased = state.getBoolean(CRATER_RELEASED);
-        this.destructionIncomplete = state.getBoolean(CRATER_INCOMPLETE);
-        this.destructionComplete = this.craterSyncReleased && !this.destructionIncomplete;
-        this.craterEndWarned = this.destructionIncomplete;
+        this.incompleteReported = state.getBoolean(CRATER_INCOMPLETE);
         if (state.contains(CRATER_GROUND_Y)) {
             this.craterGroundY = state.getDouble(CRATER_GROUND_Y);
         }
-        if (state.contains(CRATER_RADIUS)
-            && state.contains(CRATER_START)
-            && state.contains(CRATER_WORK_END)
-            && state.contains(CRATER_GROUND_Y)) {
-            double restoredRadius = state.getDouble(CRATER_RADIUS);
-            if (state.contains(CRATER_DEPTH)) {
-                // Legacy ellipsoid saves used a separate depth; a sphere takes the larger extent.
-                restoredRadius = Math.max(restoredRadius, state.getDouble(CRATER_DEPTH));
-            }
-            this.craterRadius = restoredRadius;
-            this.destruction = ContentBlackHoleDestructionPlan.restored(
-                restoredRadius,
-                this.coreRadius,
-                state.getFloat(CRATER_START),
-                state.getFloat(CRATER_WORK_END),
-                EffectBudgets.sectionEditsPerLevelTick(),
-                state.getInt(CRATER_SOLID_SECTIONS),
-                state.getInt(CRATER_ESTIMATED_SECTIONS),
-                context.spec().anchor().y(),
-                this.craterGroundY,
-                context.level().getMinBuildHeight()
-            );
-        }
-        CompoundTag craterTag = state.getCompound(CRATER_EDIT);
-        if (!craterTag.isEmpty()) {
-            this.terrainEditor = EffectBulkBlockEditor.restore(
-                context, craterTag, EffectBulkBlockEditor.Ordering.CENTER_OUT
-            );
-            this.syncCraterVolumeFromEditor();
-            this.frontRadius = this.terrainEditor.frontScale() * this.craterRadius;
-        }
-        if (this.destruction != null && this.destruction.solidSections() <= 0
-            && this.terrainEditor != null) {
-            int total = this.terrainEditor.progress().totalSections();
-            this.destruction = ContentBlackHoleDestructionPlan.restored(
-                this.craterRadius,
-                this.coreRadius,
-                this.destruction.startProgress(),
-                this.destruction.workEndProgress(),
-                this.destruction.sectionBudget(),
-                total,
-                total,
-                context.spec().anchor().y(),
-                this.craterGroundY,
-                context.level().getMinBuildHeight()
-            );
-            context.updatePersistentState(this::putDestructionPlan);
-        }
+    }
+
+    private static double radiusOf(EffectBlockVolume volume) {
+        EffectBounds bounds = volume.bounds();
+        return Math.max(
+            bounds.maxX() - bounds.minX(),
+            Math.max(bounds.maxY() - bounds.minY(), bounds.maxZ() - bounds.minZ())
+        ) * 0.5;
+    }
+
+    private static boolean intersectsTerrain(
+        EffectBlockVolume volume,
+        double groundY,
+        GameplayEffectContext context
+    ) {
+        EffectBounds bounds = volume.bounds();
+        return bounds.maxY() >= context.level().getMinBuildHeight() + 1
+            && bounds.minY() <= groundY;
+    }
+
+    private static boolean breaksSurface(EffectBlockVolume volume, double groundY) {
+        EffectBounds bounds = volume.bounds();
+        return bounds.minY() <= groundY && bounds.maxY() >= groundY;
     }
 
     /** Radius of the rim being torn out, always inside the final crater. */

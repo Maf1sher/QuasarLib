@@ -18,6 +18,7 @@ import mafisher.quasar.content.ContentEffectIds;
 import mafisher.quasar.effect.persistence.BlockJournal;
 import mafisher.quasar.testing.GlobalStateTest;
 import mafisher.quasar.testing.TestServerLevel;
+import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.Vec3;
@@ -93,6 +94,60 @@ class ContentBlackHoleGameplayControllerTest {
 
             assertTrue(context.pendingBlockChanges() > 0);
             assertTrue(GameplayEffectAccess.rawPersistentState(context).getBoolean("core_done"));
+        } finally {
+            close(context);
+        }
+    }
+
+    @Test
+    void advancesTheCraterAfterTheGrowthWindowStarts() {
+        this.world.fillSection(Blocks.STONE.defaultBlockState());
+        Vec3 center = new Vec3(8.0, 8.0, 8.0);
+        GameplayEffectContext context = context(
+            center, 0.5F, age(0.25F), new CompoundTag()
+        );
+        ContentBlackHoleGameplayController controller = new ContentBlackHoleGameplayController();
+
+        try {
+            controller.onStart(context);
+            context.beginTick((int)age(0.25F));
+            controller.onTick(context);
+
+            assertTrue(this.world.blockState(new BlockPos(8, 8, 8)).isAir());
+            assertTrue(GameplayEffectAccess.rawPersistentState(context)
+                .contains("carve_session"));
+        } finally {
+            close(context);
+        }
+    }
+
+    @Test
+    void resumesACompletedLegacyCarveWithoutBudgetEdits() {
+        this.world.fillSection(Blocks.STONE.defaultBlockState());
+        CompoundTag legacy = new CompoundTag();
+        legacy.putDouble("crater_radius", 6.0);
+        legacy.putDouble("crater_depth", 6.0);
+        legacy.putFloat("crater_start", 0.085F);
+        legacy.putFloat("crater_work_end", 0.76F);
+        legacy.putDouble("crater_ground_y", 15.0);
+        legacy.putBoolean("crater_released", true);
+        legacy.putBoolean("core_done", true);
+        Vec3 center = new Vec3(8.0, 8.0, 8.0);
+        GameplayEffectContext context = context(
+            center, 0.5F, age(0.25F), legacy
+        );
+        ContentBlackHoleGameplayController controller = new ContentBlackHoleGameplayController();
+
+        try {
+            controller.onResume(context);
+            context.beginTick((int)age(0.25F));
+            controller.onTick(context);
+
+            assertEquals(0, context.pendingBlockChanges());
+            assertEquals(Blocks.STONE.defaultBlockState(),
+                this.world.blockState(new BlockPos(8, 8, 8)));
+            assertTrue(GameplayEffectAccess.rawPersistentState(context)
+                .getBoolean("crater_released"));
         } finally {
             close(context);
         }

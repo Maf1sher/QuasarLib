@@ -31,6 +31,7 @@ import mafisher.quasar.effect.runtime.RecordingPacketSink;
 import mafisher.quasar.effect.runtime.TestBudgetSource;
 import mafisher.quasar.effect.runtime.TestEffectRuntime;
 import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerLevel;
@@ -573,7 +574,24 @@ class EffectBulkBlockEditorTest {
         editor.tickToScale(0.25, 10);
         assertTrue(editor.progress().completedSections() > 1);
         assertTrue(editor.frontScale() > 0.0);
+        assertTrue(editor.frontScale() <= 0.25 + 1.0E-6);
         editor.close(false);
+    }
+
+    @Test
+    void cylinderAndBoxSectionsUseOneNormalizedMetric() {
+        EffectBlockVolume cylinder = EffectBlockVolume.cylinder(
+            new EffectPoint(8.0, 8.0, 8.0), 8.0, 0.0, 16.0
+        );
+        double rim = CarveVolumeMath.sectionDistanceSquared(cylinder, -1, 0, 0);
+        assertTrue(rim <= 1.0 + 1.0E-6);
+        assertEquals(1.0, rim, 1.0E-6);
+
+        EffectBlockVolume box = EffectBlockVolume.box(new mafisher.quasar.api.effect.EffectBounds(
+            0.0, 0.0, 0.0, 16.0, 16.0, 16.0
+        ));
+        double corner = CarveVolumeMath.sectionDistanceSquared(box, -1, 0, 0);
+        assertTrue(corner <= 1.0 + 1.0E-6);
     }
 
     @Test
@@ -726,5 +744,49 @@ class EffectBulkBlockEditorTest {
         assertEquals(0, editor.dirtyChunkCount());
         assertFalse(editor.hasPendingSolidSections());
         editor.close(false);
+    }
+
+    @Test
+    void persistsDirtyColumnsAndRevealThrottles() {
+        when(this.level.getMaxSection()).thenReturn(2);
+        when(this.level.getMaxBuildHeight()).thenReturn(32);
+        when(this.level.getSectionIndexFromSectionY(1)).thenReturn(1);
+        LevelChunkSection second = new LevelChunkSection(
+            new PalettedContainer<>(
+                Block.BLOCK_STATE_REGISTRY,
+                Blocks.AIR.defaultBlockState(),
+                PalettedContainer.Strategy.SECTION_STATES
+            ),
+            this.section.getBiomes()
+        );
+        second.setBlockState(8, 0, 8, Blocks.STONE.defaultBlockState(), false);
+        this.sections = new LevelChunkSection[]{this.section, second};
+        when(this.chunk.getSection(1)).thenAnswer(ignored -> this.sections[1]);
+        when(this.chunk.getSections()).thenReturn(this.sections);
+
+        EffectBulkBlockEditor editor = EffectBulkBlockEditor.create(
+            this.context,
+            new EffectBulkBlockEditor.Spec(
+                EffectBlockVolume.box(new mafisher.quasar.api.effect.EffectBounds(
+                    0.0, 0.0, 0.0, 15.999, 31.999, 15.999
+                )),
+                Blocks.AIR.defaultBlockState(),
+                true,
+                EffectBulkBlockEditor.SyncPolicy.PROGRESSIVE,
+                0.0,
+                false
+            ),
+            EffectBulkBlockEditor.Ordering.CENTER_OUT
+        );
+        editor.tick(1);
+        assertEquals(1, editor.dirtyChunkCount());
+        CompoundTag saved = editor.save();
+        editor.close(false);
+
+        EffectBulkBlockEditor restored = EffectBulkBlockEditor.restore(this.context, saved);
+        assertEquals(1, restored.dirtyChunkCount());
+        restored.tick(1);
+        assertEquals(0, restored.dirtyChunkCount());
+        restored.close(false);
     }
 }

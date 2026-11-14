@@ -21,7 +21,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtUtils;
+import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
@@ -57,6 +59,8 @@ public final class EffectBulkBlockEditor {
     private static final int MAX_TICKET_CHUNKS = 1_024;
     private static final int MAX_SECTIONS = 16_384;
     private static final int MAX_STALLED_TICKS = 200;
+    /** Editor state schema; version 2 adds dirty columns and reveal throttles. */
+    private static final int EDITOR_VERSION = 2;
     /** Minimum normalized front advance before a column is revealed again. */
     private static final double REVEAL_STEP = 0.15;
     private static final int[] NEIGHBOR_OFFSETS = {-1, 1, -16, 16, -256, 256};
@@ -192,8 +196,28 @@ public final class EffectBulkBlockEditor {
             editor.recomputeFrontScale();
         }
         editor.rebuildNextSectionIndices();
-        editor.rebuildDirtyState();
+        if (tag.contains("dirty_chunks")) {
+            restoreDirtyState(editor, tag);
+        } else {
+            editor.rebuildDirtyState();
+        }
         return editor;
+    }
+
+    private static void restoreDirtyState(EffectBulkBlockEditor editor, CompoundTag tag) {
+        for (long packed : tag.getLongArray("dirty_chunks")) {
+            editor.dirtyChunks.add(new ChunkPos(packed));
+        }
+        ListTag revealScales = tag.getList("reveal_scales", Tag.TAG_COMPOUND);
+        for (int index = 0; index < revealScales.size(); index++) {
+            CompoundTag entry = revealScales.getCompound(index);
+            editor.lastReleaseScale.put(
+                new ChunkPos(entry.getLong("chunk")), entry.getDouble("scale")
+            );
+        }
+        if (editor.syncReleased) {
+            editor.requestAllSync();
+        }
     }
 
     /** Advances the edit within the session and level-wide section budgets. */
@@ -289,7 +313,7 @@ public final class EffectBulkBlockEditor {
             return;
         }
         double targetScale = Double.isInfinite(targetSquared)
-            ? this.frontScale
+            ? 1.0
             : Math.min(1.0, Math.sqrt(Math.max(0.0, targetSquared)));
         this.releaseFrontChunks(targetScale);
     }
@@ -320,12 +344,13 @@ public final class EffectBulkBlockEditor {
     }
 
     private void requestAllSync() {
-        for (ChunkPos chunk : this.dirtyChunks) {
+        for (ChunkPos chunk : new ArrayList<>(this.dirtyChunks)) {
             if (this.spec.syncPolicy() == SyncPolicy.PROGRESSIVE) {
                 TerrainEditService.queuePriorityRelight(this.level, chunk);
             }
             TerrainEditService.requestSync(this.level, chunk, true);
         }
+        this.dirtyChunks.clear();
     }
 
     /** Closes the editor and releases its chunk tickets. */
@@ -467,7 +492,7 @@ public final class EffectBulkBlockEditor {
         }
         this.frontScale = Math.max(
             this.frontScale,
-            Math.min(1.0, Math.sqrt(entry.distanceSquared()))
+            Math.min(1.0, Math.sqrt(entry.minDistanceSquared()))
         );
     }
 
@@ -481,7 +506,7 @@ public final class EffectBulkBlockEditor {
             SectionEntry entry = this.sections.get(index);
             this.frontScale = Math.max(
                 this.frontScale,
-                Math.min(1.0, Math.sqrt(entry.distanceSquared()))
+                Math.min(1.0, Math.sqrt(entry.minDistanceSquared()))
             );
         }
     }
@@ -545,9 +570,10 @@ public final class EffectBulkBlockEditor {
         return Math.min(REVEAL_STEP, 12.0 / Math.max(1.0, span));
     }
 
-    /** Persists the cursor and shape for session restore. */
+    /** Persists the cursor, dirty columns, reveal throttles, and shape for session restore. */
     public CompoundTag save() {
         CompoundTag tag = new CompoundTag();
+        tag.putInt("editor_version", EDITOR_VERSION);
         writeVolume(tag, this.spec.volume());
         tag.put("replacement", NbtUtils.writeBlockState(this.spec.replacement()));
         tag.putBoolean("remove_block_entities", this.spec.removeBlockEntities());
@@ -561,6 +587,20 @@ public final class EffectBulkBlockEditor {
         tag.putDouble("front_scale", this.frontScale);
         tag.putBoolean("sync_released", this.syncReleased);
         tag.putBoolean("finished", this.finished);
+        long[] dirtyChunks = new long[this.dirtyChunks.size()];
+        int dirtyIndex = 0;
+        for (ChunkPos chunk : this.dirtyChunks) {
+            dirtyChunks[dirtyIndex++] = chunk.toLong();
+        }
+        tag.putLongArray("dirty_chunks", dirtyChunks);
+        ListTag revealScales = new ListTag();
+        for (Map.Entry<ChunkPos, Double> entry : this.lastReleaseScale.entrySet()) {
+            CompoundTag value = new CompoundTag();
+            value.putLong("chunk", entry.getKey().toLong());
+            value.putDouble("scale", entry.getValue());
+            revealScales.add(value);
+        }
+        tag.put("reveal_scales", revealScales);
         return tag;
     }
 
@@ -997,7 +1037,6 @@ public final class EffectBulkBlockEditor {
         int maxSectionZ = SectionPos.blockToSectionCoord(Mth.floor(bounds.maxZ()));
 
         if (ordering == Ordering.CENTER_OUT) {
-            SectionShape shape = SectionShape.of(volume);
             PriorityQueue<SectionEntry> nearest = new PriorityQueue<>(
                 Comparator.comparingDouble(SectionEntry::minDistanceSquared).reversed()
             );
@@ -1009,13 +1048,11 @@ public final class EffectBulkBlockEditor {
                             continue;
                         }
                         total++;
-                        double dx = (sectionX * 16.0 + 8.0 - shape.centerX()) / shape.radiusX();
-                        double dy = (sectionY * 16.0 + 8.0 - shape.centerY()) / shape.radiusY();
-                        double dz = (sectionZ * 16.0 + 8.0 - shape.centerZ()) / shape.radiusZ();
                         nearest.add(new SectionEntry(
                             new SectionKey(sectionX, sectionY, sectionZ),
-                            dx * dx + dy * dy + dz * dz,
-                            minDistanceSquared(shape, sectionX, sectionY, sectionZ),
+                            CarveVolumeMath.sectionDistanceSquared(
+                                volume, sectionX, sectionY, sectionZ
+                            ),
                             0
                         ));
                         if (nearest.size() > MAX_SECTIONS) {
@@ -1055,7 +1092,7 @@ public final class EffectBulkBlockEditor {
                     }
                     chunks.add(chunk);
                     sections.add(new SectionEntry(
-                        new SectionKey(sectionX, sectionY, sectionZ), 0.0, 0.0, 0
+                        new SectionKey(sectionX, sectionY, sectionZ), 0.0, 0
                     ));
                     if (sections.size() >= MAX_SECTIONS) {
                         LOGGER.warn(
@@ -1102,42 +1139,10 @@ public final class EffectBulkBlockEditor {
             int next = nextByChunk.getOrDefault(chunk, entries.length);
             nextByChunk.put(chunk, index);
             entries[index] = new SectionEntry(
-                entry.key(), entry.distanceSquared(), entry.minDistanceSquared(), next
+                entry.key(), entry.minDistanceSquared(), next
             );
         }
         return List.of(entries);
-    }
-
-    /** Minimum normalized distance from the shape centre to a section box. */
-    private static double minDistanceSquared(
-        SectionShape shape,
-        int sectionX,
-        int sectionY,
-        int sectionZ
-    ) {
-        double minX = sectionX * 16.0;
-        double minY = sectionY * 16.0;
-        double minZ = sectionZ * 16.0;
-        double dx = axisMinDistance(
-            (minX - shape.centerX()) / shape.radiusX(),
-            (minX + 16.0 - shape.centerX()) / shape.radiusX()
-        );
-        double dy = axisMinDistance(
-            (minY - shape.centerY()) / shape.radiusY(),
-            (minY + 16.0 - shape.centerY()) / shape.radiusY()
-        );
-        double dz = axisMinDistance(
-            (minZ - shape.centerZ()) / shape.radiusZ(),
-            (minZ + 16.0 - shape.centerZ()) / shape.radiusZ()
-        );
-        return dx * dx + dy * dy + dz * dz;
-    }
-
-    private static double axisMinDistance(double min, double max) {
-        if (max < 0.0) {
-            return -max;
-        }
-        return min > 0.0 ? min : 0.0;
     }
 
     /** Test-friendly view of the ordered section cursor. */
@@ -1168,52 +1173,9 @@ public final class EffectBulkBlockEditor {
 
     private record SectionEntry(
         SectionKey key,
-        double distanceSquared,
         double minDistanceSquared,
         int nextIndex
     ) {
-    }
-
-    private record SectionShape(
-        double centerX,
-        double centerY,
-        double centerZ,
-        double radiusX,
-        double radiusY,
-        double radiusZ
-    ) {
-        static SectionShape of(EffectBlockVolume volume) {
-            if (volume instanceof EffectBlockVolume.Ellipsoid ellipsoid) {
-                return new SectionShape(
-                    ellipsoid.center().x(),
-                    ellipsoid.center().y(),
-                    ellipsoid.center().z(),
-                    ellipsoid.radiusX(),
-                    ellipsoid.radiusY(),
-                    ellipsoid.radiusZ()
-                );
-            }
-            if (volume instanceof EffectBlockVolume.Sphere sphere) {
-                double radius = sphere.radius();
-                return new SectionShape(
-                    sphere.center().x(),
-                    sphere.center().y(),
-                    sphere.center().z(),
-                    radius,
-                    radius,
-                    radius
-                );
-            }
-            EffectBounds bounds = volume.bounds();
-            return new SectionShape(
-                (bounds.minX() + bounds.maxX()) * 0.5,
-                (bounds.minY() + bounds.maxY()) * 0.5,
-                (bounds.minZ() + bounds.maxZ()) * 0.5,
-                Math.max(0.5, (bounds.maxX() - bounds.minX()) * 0.5),
-                Math.max(0.5, (bounds.maxY() - bounds.minY()) * 0.5),
-                Math.max(0.5, (bounds.maxZ() - bounds.minZ()) * 0.5)
-            );
-        }
     }
 
     private static void writeVolume(CompoundTag tag, EffectBlockVolume volume) {
