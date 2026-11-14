@@ -18,7 +18,8 @@ import mafisher.quasar.api.effect.EffectLifetimePolicy;
 import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.EffectSpace;
 import mafisher.quasar.api.effect.budget.EffectPriority;
-import mafisher.quasar.api.effect.VisualEffectSpec;
+import mafisher.quasar.api.gameplay.CompanionSpec;
+import mafisher.quasar.api.gameplay.EffectCompanion;
 import mafisher.quasar.api.gameplay.block.EffectCarvePlan;
 import mafisher.quasar.api.gameplay.block.EffectCarveSession;
 import mafisher.quasar.api.gameplay.block.EffectCarveSpec;
@@ -52,8 +53,8 @@ import org.slf4j.LoggerFactory;
  * Block edits end with a reveal reserve before the closing phase, leaving the outro visual-only.
  * Tearing rays sample the leading edge in every direction and emit straight radial debris from
  * the blocks they actually remove; the fragments vanish at the horizon. The visual child is owned
- * by the session scope and uses the same cinematic progress, so pausing, resume, and cleanup stay
- * in one place.
+ * by the session companion and uses the same cinematic progress, so pausing, resume, and cleanup
+ * stay in one place.
  */
 @SuppressWarnings("PMD.GodClass")
 public final class ContentBlackHoleGameplayController implements GameplayEffectController {
@@ -105,7 +106,7 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
     private float pitch;
     private float roll;
 
-    private boolean visualStarted;
+    private EffectCompanion companion;
     private boolean hasCrater;
     private boolean craterSyncReleased;
     private boolean craterLogged;
@@ -168,7 +169,7 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
         });
         context.updatePersistentState(this::putDestructionPlan);
         context.updatePersistentState(this::putCarveSession);
-        this.startVisual(context);
+        this.companion = EffectCompanion.start(context, this.companionSpec());
         this.track(context);
     }
 
@@ -211,12 +212,15 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
             this.frontRadius = this.craterRadius;
         }
         this.configureTear(context);
-        this.visualStarted = true;
+        this.companion = EffectCompanion.restore(context, this.companionSpec());
         this.track(context);
     }
 
     @Override
     public void onTick(GameplayEffectContext context) {
+        if (this.companion != null) {
+            this.companion.tick(context);
+        }
         int duration = context.spec().phases().totalDurationTicks();
         float progress = Math.min(1.0F, Math.max(0.0F, context.ageTicks() / (float)duration));
         float horizonScale = ContentBlackHoleCinematics.parameters()
@@ -260,6 +264,7 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
             this.carveSession = null;
         }
         this.surfaceSampler = null;
+        this.companion = null;
         Set<UUID> sessions = ACTIVE.get(context.level());
         if (sessions != null) {
             sessions.remove(context.sessionId());
@@ -274,37 +279,14 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
             .add(context.sessionId());
     }
 
-    private void startVisual(GameplayEffectContext context) {
-        if (this.visualStarted) {
-            return;
-        }
-        this.visualStarted = true;
-        UUID visualId = context.scope().playVisual(new VisualEffectSpec(
-            ContentEffectIds.BLACK_HOLE,
-            this.center,
-            this.yaw,
-            this.pitch,
-            this.roll,
-            context.spec().scale(),
-            context.spec().phases().totalDurationTicks(),
-            context.spec().seed(),
-            EffectAudience.dimensionWide(),
-            EffectAudioSpec.NONE,
-            EffectPriority.CRITICAL
-        ), EffectLifetimePolicy.CANCEL_WITH_SCOPE).orElse(null);
-        if (visualId == null) {
-            LOGGER.warn(
-                "Black-hole visual for gameplay session {} was not started; the visual budget rejected it",
-                context.sessionId()
-            );
-            return;
-        }
-        LOGGER.info(
-            "Started black-hole visual {} for gameplay session {} at scale {}",
-            visualId,
-            context.sessionId(),
-            context.spec().scale()
-        );
+    private CompanionSpec companionSpec() {
+        return CompanionSpec.builder(ContentEffectIds.BLACK_HOLE, EffectAudience.dimensionWide())
+            .rotation(this.yaw, this.pitch, this.roll)
+            .scale(1.0F)
+            .audio(EffectAudioSpec.NONE)
+            .priority(EffectPriority.CRITICAL)
+            .lifetime(EffectLifetimePolicy.CANCEL_WITH_SCOPE)
+            .build();
     }
 
     private double sampleGroundY(GameplayEffectContext context) {

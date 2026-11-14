@@ -1,6 +1,7 @@
 package mafisher.quasar.content.blackhole;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
@@ -18,6 +19,8 @@ import mafisher.quasar.api.gameplay.GameplayEffectContext;
 import mafisher.quasar.api.gameplay.GameplayEffectEndReason;
 import mafisher.quasar.api.gameplay.GameplayEffectSpec;
 import mafisher.quasar.api.persistence.EffectCapabilities;
+import mafisher.quasar.api.persistence.EffectDescriptor;
+import mafisher.quasar.api.persistence.EffectKind;
 import mafisher.quasar.content.ContentEffectIds;
 import mafisher.quasar.effect.persistence.BlockJournal;
 import mafisher.quasar.testing.GlobalStateTest;
@@ -61,6 +64,15 @@ class ContentBlackHoleGameplayControllerTest {
             assertTrue(state.contains("crater_work_end"));
             assertTrue(state.contains("crater_ground_y"));
             assertEquals(15.0, state.getDouble("crater_ground_y"), 1.0E-6);
+            assertTrue(state.contains("quasar_companion"));
+            UUID childId = state.getCompound("quasar_companion").getUUID("child");
+            EffectDescriptor child = this.world.store().find(childId);
+            assertNotNull(child);
+            assertEquals(EffectKind.VISUAL, child.kind());
+            assertEquals(context.sessionId(), child.ownerSessionId());
+            assertEquals(1200, child.durationTicks());
+            assertEquals(7L, child.seed());
+            assertEquals(1.0F, child.scale(), 1.0E-6);
             assertEquals(0, context.pendingBlockChanges());
         } finally {
             close(context);
