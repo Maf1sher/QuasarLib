@@ -45,6 +45,17 @@ class EffectSpaceTest {
     }
 
     @Test
+    void rotationIntoMatchesTheBasisMatrixAndResetsTheDestination() {
+        Matrix4f destination = new Matrix4f().translate(4.0F, 5.0F, 6.0F);
+
+        EffectSpace.Basis.rotationInto(37.0F, 8.0F, -12.0F, destination);
+
+        assertMatrix(EffectSpace.Basis.fromEuler(37.0F, 8.0F, -12.0F).rotation(), destination, 1.0E-5F);
+        assertThrows(NullPointerException.class,
+            () -> EffectSpace.Basis.rotationInto(0.0F, 0.0F, 0.0F, null));
+    }
+
+    @Test
     void basisFollowsTheEffectYawAndPitch() {
         EffectSpace.Basis yawed = EffectSpace.Basis.fromEuler(90.0F, 0.0F, 0.0F);
         assertVector(0.0F, 0.0F, -1.0F, yawed.right());

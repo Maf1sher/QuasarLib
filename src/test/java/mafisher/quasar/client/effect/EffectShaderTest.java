@@ -36,6 +36,34 @@ class EffectShaderTest {
     }
 
     @Test
+    void createsHandleWithInstancedVariant() {
+        ResourceLocation instancedId = ResourceLocation.fromNamespaceAndPath("test", "shader_instanced");
+        EffectShader shader = EffectShader.createBatched(ID, instancedId, DefaultVertexFormat.BLOCK);
+
+        assertEquals(ID, shader.id());
+        assertEquals(DefaultVertexFormat.BLOCK, shader.format());
+        assertTrue(shader.instance().isEmpty());
+        EffectShader instanced = shader.instancedVariant().orElseThrow();
+        assertEquals(instancedId, instanced.id());
+        assertEquals(DefaultVertexFormat.BLOCK, instanced.format());
+        assertTrue(instanced.instancedVariant().isEmpty());
+        assertTrue(instanced.instance().isEmpty());
+    }
+
+    @Test
+    void rejectsInvalidBatchedArguments() {
+        ResourceLocation instancedId = ResourceLocation.fromNamespaceAndPath("test", "shader_instanced");
+        assertThrows(NullPointerException.class,
+            () -> EffectShader.createBatched(null, instancedId, DefaultVertexFormat.BLOCK));
+        assertThrows(NullPointerException.class,
+            () -> EffectShader.createBatched(ID, null, DefaultVertexFormat.BLOCK));
+        assertThrows(NullPointerException.class,
+            () -> EffectShader.createBatched(ID, instancedId, null));
+        assertThrows(IllegalArgumentException.class,
+            () -> EffectShader.createBatched(ID, ID, DefaultVertexFormat.BLOCK));
+    }
+
+    @Test
     void rejectsNullArguments() {
         assertThrows(NullPointerException.class,
             () -> EffectShader.create(null, DefaultVertexFormat.BLOCK));

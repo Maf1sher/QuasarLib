@@ -63,10 +63,18 @@ final class InstanceBufferLayout {
     }
 
     static void write(FloatBuffer output, List<InstancedBatchBuilder.Instance> instances) {
+        write(output, instances, 0, instances.size());
+    }
+
+    static void write(FloatBuffer output, List<InstancedBatchBuilder.Instance> instances,
+        int start, int end) {
         Objects.requireNonNull(output, "output");
         Objects.requireNonNull(instances, "instances");
-        for (InstancedBatchBuilder.Instance instance : instances) {
-            write(output, instance);
+        if (start < 0 || end < start || end > instances.size()) {
+            throw new IllegalArgumentException("Invalid instance range");
+        }
+        for (int index = start; index < end; index++) {
+            write(output, instances.get(index));
         }
     }
 }

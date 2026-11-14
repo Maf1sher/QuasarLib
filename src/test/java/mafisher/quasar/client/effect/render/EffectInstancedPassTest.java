@@ -53,7 +53,7 @@ class EffectInstancedPassTest {
 
     @Test
     void composesWorldAndLocalTransforms() {
-        Matrix4f model = InstancedBatchBuilder.modelMatrix(
+        Matrix4f model = modelMatrix(
             new EffectTransform(new EffectPoint(10.0, 20.0, 30.0), 90.0F, 0.0F, 0.0F),
             new Matrix4f().scale(2.0F),
             0.0, 0.0, 0.0
@@ -74,7 +74,7 @@ class EffectInstancedPassTest {
 
     @Test
     void keepsSubBlockOffsetsAtLargeWorldCoordinates() {
-        Matrix4f model = InstancedBatchBuilder.modelMatrix(
+        Matrix4f model = modelMatrix(
             new EffectTransform(new EffectPoint(30_000_000.5, -20_000_000.25, 30_000_000.75),
                 0.0F, 0.0F, 0.0F),
             new Matrix4f(),
@@ -88,11 +88,19 @@ class EffectInstancedPassTest {
 
     @Test
     void rejectsNonFiniteCameraCoordinates() {
-        assertThrows(IllegalArgumentException.class, () -> InstancedBatchBuilder.modelMatrix(
+        assertThrows(IllegalArgumentException.class, () -> modelMatrix(
             new EffectTransform(new EffectPoint(0.0, 0.0, 0.0), 0.0F, 0.0F, 0.0F),
             new Matrix4f(),
             Double.NaN, 0.0, 0.0
         ));
+    }
+
+    private static Matrix4f modelMatrix(EffectTransform transform, Matrix4f localTransform,
+        double cameraX, double cameraY, double cameraZ) {
+        Matrix4f model = new Matrix4f();
+        InstancedBatchBuilder.modelMatrixInto(transform, localTransform, cameraX, cameraY, cameraZ,
+            model, new Matrix4f());
+        return model;
     }
 
     private static EffectInstancedPass pass(Matrix4f local) {

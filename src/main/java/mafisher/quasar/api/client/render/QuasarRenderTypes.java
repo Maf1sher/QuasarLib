@@ -19,7 +19,8 @@ public final class QuasarRenderTypes {
      * the particles target, uses Minecraft's translucent shader, and preserves the depth behavior that prevents water
      * and glass from showing a square occlusion artifact.
      *
-     * <p>The texture is sampled as RGBA and is mipmapped. The returned type is cached per texture.</p>
+     * <p>The texture is sampled as RGBA and is mipmapped. The returned type is cached per texture. Static-mesh
+     * passes using this type batch automatically through the engine's translucent instanced twin.</p>
      *
      * @param texture the effect texture
      * @return a world-visual render type

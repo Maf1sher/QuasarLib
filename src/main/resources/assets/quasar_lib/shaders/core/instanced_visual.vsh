@@ -30,9 +30,9 @@ void main() {
     vec3 viewPos = (ModelViewMat * vec4(world, 1.0)).xyz;
     gl_Position = ProjMat * vec4(viewPos, 1.0);
 
-    vertexDistance = fog_distance(viewPos, FogShape);
+    vertexDistance = fog_distance(world, FogShape);
     vertexColor = quasarInstanceColor(InstanceBuffer, gl_InstanceID)
-        * minecraft_sample_lightmap(Sampler2, UV2);
+        * Color * minecraft_sample_lightmap(Sampler2, UV2);
     texCoord0 = UV0;
     effectData = quasarInstanceData(InstanceBuffer, gl_InstanceID).xy;
 }

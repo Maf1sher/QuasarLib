@@ -29,6 +29,7 @@ final class GpuMeshCache implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(GpuMeshCache.class);
 
     private final Map<GpuMeshKey, GpuMesh> meshes = new LinkedHashMap<>(16, 0.75F, true);
+    private long generation;
 
     /** Returns a cached white, fullbright mesh or uploads it. Must run on the render thread. */
     GpuMesh get(RenderType renderType, EffectMesh mesh) {
@@ -43,15 +44,25 @@ final class GpuMeshCache implements AutoCloseable {
             LOGGER.warn("Effect mesh pass {} requires BLOCK/QUADS; skipping", renderType);
             return null;
         }
-        GpuMeshKey key = new GpuMeshKey(renderType.format(), renderType.mode(), mesh,
-            red, green, blue, alpha, overlay, light);
+        return get(new GpuMeshKey(renderType.format(), renderType.mode(), mesh,
+            red, green, blue, alpha, overlay, light));
+    }
+
+    /** Returns a cached mesh for a prebuilt key, avoiding a per-frame key allocation. */
+    GpuMesh get(GpuMeshKey key) {
+        Objects.requireNonNull(key, "key");
+        if (!DefaultVertexFormat.BLOCK.equals(key.format())
+            || key.mode() != VertexFormat.Mode.QUADS) {
+            LOGGER.warn("Effect mesh pass {} requires BLOCK/QUADS; skipping", key.format());
+            return null;
+        }
         GpuMesh existing = this.meshes.get(key);
         if (existing != null) {
             return existing;
         }
         GpuMesh created;
         try {
-            created = upload(mesh, key);
+            created = upload(key.mesh(), key);
         } catch (RuntimeException exception) {
             LOGGER.error("Could not upload effect mesh", exception);
             return null;
@@ -63,6 +74,11 @@ final class GpuMeshCache implements AutoCloseable {
 
     int size() {
         return this.meshes.size();
+    }
+
+    /** Increments whenever eviction or close invalidates a cached {@link GpuMesh} reference. */
+    long generation() {
+        return this.generation;
     }
 
     private static GpuMesh upload(EffectMesh mesh, GpuMeshKey key) {
@@ -105,6 +121,7 @@ final class GpuMeshCache implements AutoCloseable {
             GpuMesh removed = iterator.next().getValue();
             iterator.remove();
             removed.close();
+            this.generation++;
         }
     }
 
@@ -114,6 +131,7 @@ final class GpuMeshCache implements AutoCloseable {
             mesh.close();
         }
         this.meshes.clear();
+        this.generation++;
     }
 
     record GpuMeshKey(

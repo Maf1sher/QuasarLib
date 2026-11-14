@@ -112,17 +112,32 @@ public record EffectSpace(
          * {@code rotate*} methods, not the replacing {@code rotation*} setters.</p>
          */
         public static Basis fromEuler(float yaw, float pitch, float roll) {
-            if (!Float.isFinite(yaw) || !Float.isFinite(pitch) || !Float.isFinite(roll)) {
-                throw new IllegalArgumentException("Effect angles must be finite");
-            }
-            Matrix4f matrix = new Matrix4f()
-                .rotateY((float)Math.toRadians(yaw))
-                .rotateX((float)Math.toRadians(pitch))
-                .rotateZ((float)Math.toRadians(roll));
+            Matrix4f matrix = new Matrix4f();
+            rotationInto(yaw, pitch, roll, matrix);
             Vector3f right = matrix.transformDirection(new Vector3f(1.0F, 0.0F, 0.0F)).normalize();
             Vector3f up = matrix.transformDirection(new Vector3f(0.0F, 1.0F, 0.0F)).normalize();
             Vector3f forward = matrix.transformDirection(new Vector3f(0.0F, 0.0F, 1.0F)).normalize();
             return new Basis(right, up, forward, new Matrix4f(matrix));
+        }
+
+        /**
+         * Writes the engine orientation {@code Y(yaw) * X(pitch) * Z(roll)} into a reusable
+         * matrix. The destination is reset before the rotation is composed.
+         *
+         * @param yaw yaw in degrees
+         * @param pitch pitch in degrees
+         * @param roll roll in degrees
+         * @param destination the matrix to overwrite
+         */
+        public static void rotationInto(float yaw, float pitch, float roll, Matrix4f destination) {
+            Objects.requireNonNull(destination, "destination");
+            if (!Float.isFinite(yaw) || !Float.isFinite(pitch) || !Float.isFinite(roll)) {
+                throw new IllegalArgumentException("Effect angles must be finite");
+            }
+            destination.identity()
+                .rotateY((float)Math.toRadians(yaw))
+                .rotateX((float)Math.toRadians(pitch))
+                .rotateZ((float)Math.toRadians(roll));
         }
 
         /** Returns a copy of the rotated local +X axis. */

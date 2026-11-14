@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.ShaderInstance;
 import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL20C;
@@ -20,6 +19,7 @@ import org.slf4j.LoggerFactory;
  * data through an RGBA32F buffer texture; shaders that only declare the legacy uniform arrays are split into
  * 128-instance draws. Both paths use the shared sequential quad index buffer and indexed instancing.
  */
+@SuppressWarnings("PMD.TooManyMethods")
 final class InstancedBatchRenderer implements AutoCloseable {
     static final int MAX_INSTANCES_PER_SHADER = 128;
 
@@ -32,6 +32,7 @@ final class InstancedBatchRenderer implements AutoCloseable {
     private final InstanceUniformLocationCache<ShaderInstance> uniformLocations =
         new InstanceUniformLocationCache<>();
     private final Set<String> warnedContracts = new HashSet<>();
+    private final Matrix4f cameraRelativeView = new Matrix4f();
     private int maxUniformInstances = -1;
     private int maxInstancesPerDraw = -1;
 
@@ -56,23 +57,51 @@ final class InstancedBatchRenderer implements AutoCloseable {
         if (draws.isEmpty()) {
             return;
         }
-        Matrix4f cameraRelativeView = new Matrix4f(modelView).setTranslation(0.0F, 0.0F, 0.0F);
+        this.cameraRelativeView.set(modelView).setTranslation(0.0F, 0.0F, 0.0F);
         for (InstancedBatchBuilder.InstancedDraw draw : draws) {
-            this.drawBatch(draw, cameraRelativeView, projection);
+            GpuMeshCache.GpuMesh mesh = this.meshes.get(draw.key().renderType(), draw.key().mesh(),
+                1.0F, 1.0F, 1.0F, 1.0F, draw.key().overlay(), draw.key().light());
+            if (mesh != null) {
+                this.drawResolvedBatch(draw.key(), mesh, draw.instances(), draw.start(),
+                    draw.end(), this.cameraRelativeView, projection);
+            }
         }
     }
 
-    private void drawBatch(InstancedBatchBuilder.InstancedDraw draw, Matrix4f modelView, Matrix4f projection) {
-        InstancedBatchBuilder.BatchKey key = draw.key();
-        RenderType renderType = key.renderType();
+    /** Draws one batch whose GPU mesh was resolved and cached by the caller. */
+    void drawResolvedBatch(InstanceBatchDescriptor batch, GpuMeshCache.GpuMesh mesh,
+        List<InstancedBatchBuilder.Instance> instances, int start, int end, Matrix4f modelView,
+        Matrix4f projection) {
+        if (start == end || mesh == null) {
+            return;
+        }
+        this.cameraRelativeView.set(modelView).setTranslation(0.0F, 0.0F, 0.0F);
+        float[] shaderColor = RenderSystem.getShaderColor();
+        float previousRed = shaderColor[0];
+        float previousGreen = shaderColor[1];
+        float previousBlue = shaderColor[2];
+        float previousAlpha = shaderColor[3];
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+        try {
+            this.drawBatchInternal(batch, mesh, instances, start, end, this.cameraRelativeView,
+                projection);
+        } finally {
+            RenderSystem.setShaderColor(previousRed, previousGreen, previousBlue, previousAlpha);
+        }
+    }
+
+    private void drawBatchInternal(InstanceBatchDescriptor batch, GpuMeshCache.GpuMesh mesh,
+        List<InstancedBatchBuilder.Instance> instances, int start, int end, Matrix4f modelView,
+        Matrix4f projection) {
         ShaderInstance shader = null;
         boolean renderStateSetUp = false;
         try {
-            renderType.setupRenderState();
+            batch.renderType().setupRenderState();
             renderStateSetUp = true;
             shader = RenderSystem.getShader();
             if (shader == null) {
-                warnOnce("shader:" + key.id(), "Instanced pass " + key.id() + " has no active shader");
+                warnOnce("shader:" + batch.id(),
+                    "Instanced pass " + batch.id() + " has no active shader");
                 return;
             }
             shader.setDefaultUniforms(VertexFormat.Mode.QUADS, modelView, projection,
@@ -84,24 +113,20 @@ final class InstancedBatchRenderer implements AutoCloseable {
                 (instance, name) -> GL20C.glGetUniformLocation(instance.getId(), name)
             );
             if (!locations.isComplete()) {
-                warnOnce("contract:" + key.id(), "Instanced shader for pass " + key.id()
+                warnOnce("contract:" + batch.id(), "Instanced shader for pass " + batch.id()
                     + " is missing InstanceBuffer and the legacy instance arrays");
-                return;
-            }
-
-            GpuMeshCache.GpuMesh mesh = this.meshes.get(key.renderType(), key.mesh());
-            if (mesh == null) {
                 return;
             }
 
             boolean drawn = false;
             if (locations.usesBuffer()) {
-                drawn = drawBuffered(key, mesh, draw.instances(), locations.instanceBuffer());
+                drawn = drawBuffered(batch.id(), mesh, instances, start, end,
+                    locations.instanceBuffer());
             }
             if (!drawn && locations.usesUniformArrays()) {
-                drawUniform(key, mesh, draw.instances(), locations);
+                drawUniform(mesh, instances, start, end, locations);
             } else if (!drawn) {
-                warnOnce("buffer:" + key.id(), "Could not draw instanced pass " + key.id()
+                warnOnce("buffer:" + batch.id(), "Could not draw instanced pass " + batch.id()
                     + " through the buffer texture or the uniform fallback");
             }
         } finally {
@@ -110,7 +135,7 @@ final class InstancedBatchRenderer implements AutoCloseable {
                 shader.clear();
             }
             if (renderStateSetUp) {
-                renderType.clearRenderState();
+                batch.renderType().clearRenderState();
             }
         }
     }
@@ -119,18 +144,17 @@ final class InstancedBatchRenderer implements AutoCloseable {
      * Draws one batch through the buffer texture. A failure before the first chunk allows the caller to fall back to
      * uniforms; a failure after some chunks completes the path to avoid drawing the same instances twice.
      */
-    private boolean drawBuffered(InstancedBatchBuilder.BatchKey key, GpuMeshCache.GpuMesh mesh,
-        List<InstancedBatchBuilder.Instance> instances, int samplerLocation) {
+    private boolean drawBuffered(String id, GpuMeshCache.GpuMesh mesh,
+        List<InstancedBatchBuilder.Instance> instances, int start, int end, int samplerLocation) {
         int limit = Math.max(1, this.instanceBuffer.maxInstances());
         boolean drawn = false;
-        for (int start = 0; start < instances.size(); start += limit) {
-            int end = Math.min(start + limit, instances.size());
-            List<InstancedBatchBuilder.Instance> chunk = instances.subList(start, end);
-            if (!this.instanceBuffer.bind(samplerLocation, chunk, key.id())) {
+        for (int chunkStart = start; chunkStart < end; chunkStart += limit) {
+            int chunkEnd = Math.min(chunkStart + limit, end);
+            if (!this.instanceBuffer.bind(samplerLocation, instances, chunkStart, chunkEnd, id)) {
                 return drawn;
             }
             try {
-                drawChunk(key, mesh, chunk.size());
+                drawChunk(mesh, chunkEnd - chunkStart);
                 drawn = true;
             } finally {
                 this.instanceBuffer.unbind();
@@ -139,14 +163,15 @@ final class InstancedBatchRenderer implements AutoCloseable {
         return drawn;
     }
 
-    private void drawUniform(InstancedBatchBuilder.BatchKey key, GpuMeshCache.GpuMesh mesh,
-        List<InstancedBatchBuilder.Instance> instances, InstanceUniformLocationCache.Locations locations) {
+    private void drawUniform(GpuMeshCache.GpuMesh mesh,
+        List<InstancedBatchBuilder.Instance> instances, int start, int end,
+        InstanceUniformLocationCache.Locations locations) {
         int limit = maxUniformInstances();
-        for (int start = 0; start < instances.size(); start += limit) {
-            int end = Math.min(start + limit, instances.size());
-            List<InstancedBatchBuilder.Instance> chunk = instances.subList(start, end);
-            this.uniformBuffers.upload(locations.instances(), locations.colors(), locations.data(), chunk);
-            drawChunk(key, mesh, chunk.size());
+        for (int chunkStart = start; chunkStart < end; chunkStart += limit) {
+            int chunkEnd = Math.min(chunkStart + limit, end);
+            this.uniformBuffers.upload(locations.instances(), locations.colors(), locations.data(),
+                instances, chunkStart, chunkEnd);
+            drawChunk(mesh, chunkEnd - chunkStart);
         }
     }
 
@@ -168,7 +193,7 @@ final class InstancedBatchRenderer implements AutoCloseable {
         return this.maxUniformInstances;
     }
 
-    private static void drawChunk(InstancedBatchBuilder.BatchKey key, GpuMeshCache.GpuMesh mesh, int instances) {
+    private static void drawChunk(GpuMeshCache.GpuMesh mesh, int instances) {
         mesh.bind();
         RenderSystem.AutoStorageIndexBuffer indices = mesh.bindSequentialIndices();
         GL31C.glDrawElementsInstanced(VertexFormat.Mode.QUADS.asGLMode, mesh.indexCount(),

@@ -9,8 +9,10 @@ import java.util.List;
  *
  * <p>Cached passes are submitted before the renderer's CPU
  * {@link VisualEffectRenderer#renderPasses(EffectRenderContext)} passes, so opaque depth-writing geometry can
- * precede translucent CPU passes. They are not sorted or instanced, and their mesh, tint, overlay, and light are
- * static. See {@link EffectStaticMeshPass}.</p>
+ * precede translucent CPU passes. Compatible passes whose render type has an instanced twin (see
+ * {@link EffectShader#createBatched}) batch automatically into ordered instanced runs; other passes keep one cached
+ * draw. Mesh, tint, overlay, and light stay static; the batch path carries tint through the instance payload. See
+ * {@link EffectStaticMeshPass}.</p>
  */
 public interface StaticMeshVisualEffectRenderer extends VisualEffectRenderer {
     /**

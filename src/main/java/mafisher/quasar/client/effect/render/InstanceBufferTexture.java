@@ -64,12 +64,16 @@ final class InstanceBufferTexture implements AutoCloseable {
      *
      * @return {@code true} when the texture is bound and the sampler was pointed at it
      */
-    boolean bind(int samplerLocation, List<InstancedBatchBuilder.Instance> instances, String passId) {
+    boolean bind(int samplerLocation, List<InstancedBatchBuilder.Instance> instances,
+        int start, int end, String passId) {
         Objects.requireNonNull(instances, "instances");
-        if (samplerLocation < 0 || instances.isEmpty() || !isSupported()) {
+        if (start < 0 || end < start || end > instances.size()) {
+            throw new IllegalArgumentException("Invalid instance range");
+        }
+        if (samplerLocation < 0 || start == end || !isSupported()) {
             return false;
         }
-        if (!ensureResources() || !upload(instances, passId)) {
+        if (!ensureResources() || !upload(instances, start, end, passId)) {
             return false;
         }
 
@@ -127,14 +131,15 @@ final class InstanceBufferTexture implements AutoCloseable {
         }
     }
 
-    private boolean upload(List<InstancedBatchBuilder.Instance> instances, String passId) {
-        int count = instances.size();
+    private boolean upload(List<InstancedBatchBuilder.Instance> instances, int start, int end,
+        String passId) {
+        int count = end - start;
         if (!ensureCapacity(count)) {
             return false;
         }
         FloatBuffer buffer = this.staging;
         buffer.clear();
-        InstanceBufferLayout.write(buffer, instances);
+        InstanceBufferLayout.write(buffer, instances, start, end);
         buffer.flip();
 
         GlStateManager._glBindBuffer(GL31C.GL_TEXTURE_BUFFER, this.bufferId);

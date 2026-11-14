@@ -41,7 +41,7 @@ class InstancedBatchBuilderTest {
 
         List<InstancedBatchBuilder.InstancedDraw> draws = builder.draws();
         assertEquals(1, draws.size());
-        assertEquals(2, draws.getFirst().instances().size());
+        assertEquals(2, draws.getFirst().instanceCount());
         assertEquals("outer", draws.getFirst().key().id());
     }
 
@@ -54,9 +54,9 @@ class InstancedBatchBuilderTest {
 
         List<InstancedBatchBuilder.InstancedDraw> draws = builder.draws();
         assertEquals(3, draws.size());
-        assertEquals(2, draws.get(0).instances().size());
-        assertEquals(2, draws.get(1).instances().size());
-        assertEquals(1, draws.get(2).instances().size());
+        assertEquals(2, draws.get(0).instanceCount());
+        assertEquals(2, draws.get(1).instanceCount());
+        assertEquals(1, draws.get(2).instanceCount());
     }
 
     @Test
@@ -98,7 +98,7 @@ class InstancedBatchBuilderTest {
 
         assertTrue(builder.isEmpty());
         builder.add(context(1.0, 0.0, 0.0), List.of(pass("outer")));
-        assertEquals(81.0, builder.draws().getFirst().instances().getFirst().cameraDistanceSquared(), 0.0);
+        assertEquals(81.0, builder.draws().getFirst().instance(0).cameraDistanceSquared(), 0.0);
     }
 
     @Test
@@ -120,10 +120,10 @@ class InstancedBatchBuilderTest {
         builder.add(context(5.0, 0.0, 0.0), List.of(pass("outer")));
         builder.add(context(3.0, 0.0, 0.0), List.of(pass("outer")));
 
-        List<InstancedBatchBuilder.Instance> instances = builder.draws().getFirst().instances();
-        assertEquals(5.0, instances.get(0).model().m30());
-        assertEquals(3.0, instances.get(1).model().m30());
-        assertEquals(1.0, instances.get(2).model().m30());
+        InstancedBatchBuilder.InstancedDraw draw = builder.draws().getFirst();
+        assertEquals(5.0, draw.instance(0).model().m30());
+        assertEquals(3.0, draw.instance(1).model().m30());
+        assertEquals(1.0, draw.instance(2).model().m30());
     }
 
     @Test
@@ -131,8 +131,7 @@ class InstancedBatchBuilderTest {
         InstancedBatchBuilder builder = new InstancedBatchBuilder(8, 4.0, 0.0, 0.0);
         builder.add(context(10.0, 0.0, 0.0), List.of(pass("outer")));
 
-        List<InstancedBatchBuilder.Instance> instances = builder.draws().getFirst().instances();
-        assertEquals(6.0, instances.getFirst().model().m30());
+        assertEquals(6.0, builder.draws().getFirst().instance(0).model().m30());
     }
 
     @Test
@@ -144,10 +143,10 @@ class InstancedBatchBuilderTest {
 
         List<InstancedBatchBuilder.InstancedDraw> draws = builder.draws();
         assertEquals(1, draws.size());
-        List<InstancedBatchBuilder.Instance> instances = draws.getFirst().instances();
-        assertEquals(256, instances.size());
-        assertEquals(255.0, instances.getFirst().model().m30());
-        assertEquals(0.0, instances.getLast().model().m30());
+        InstancedBatchBuilder.InstancedDraw draw = draws.getFirst();
+        assertEquals(256, draw.instanceCount());
+        assertEquals(255.0, draw.instance(0).model().m30());
+        assertEquals(0.0, draw.instance(255).model().m30());
     }
 
     @Test
@@ -159,10 +158,10 @@ class InstancedBatchBuilderTest {
 
         List<InstancedBatchBuilder.InstancedDraw> draws = builder.draws();
         assertEquals(2, draws.size());
-        assertEquals(255.0, draws.get(0).instances().getFirst().model().m30());
-        assertEquals(56.0, draws.get(0).instances().getLast().model().m30());
-        assertEquals(55.0, draws.get(1).instances().getFirst().model().m30());
-        assertEquals(0.0, draws.get(1).instances().getLast().model().m30());
+        assertEquals(255.0, draws.get(0).instance(0).model().m30());
+        assertEquals(56.0, draws.get(0).instance(199).model().m30());
+        assertEquals(55.0, draws.get(1).instance(0).model().m30());
+        assertEquals(0.0, draws.get(1).instance(55).model().m30());
     }
 
     @Test
@@ -174,10 +173,10 @@ class InstancedBatchBuilderTest {
 
         List<InstancedBatchBuilder.InstancedDraw> draws = builder.draws();
         assertEquals(2, draws.size());
-        assertEquals(4.0, draws.get(0).instances().get(0).model().m30());
-        assertEquals(3.0, draws.get(0).instances().get(1).model().m30());
-        assertEquals(2.0, draws.get(1).instances().get(0).model().m30());
-        assertEquals(1.0, draws.get(1).instances().get(1).model().m30());
+        assertEquals(4.0, draws.get(0).instance(0).model().m30());
+        assertEquals(3.0, draws.get(0).instance(1).model().m30());
+        assertEquals(2.0, draws.get(1).instance(0).model().m30());
+        assertEquals(1.0, draws.get(1).instance(1).model().m30());
     }
 
     @Test
@@ -187,10 +186,10 @@ class InstancedBatchBuilderTest {
         builder.add(context(5.0, 0.0, 0.0), List.of(pass("opaque", UNSORTED_RENDER_TYPE)));
         builder.add(context(3.0, 0.0, 0.0), List.of(pass("opaque", UNSORTED_RENDER_TYPE)));
 
-        List<InstancedBatchBuilder.Instance> instances = builder.draws().getFirst().instances();
-        assertEquals(1.0, instances.get(0).model().m30());
-        assertEquals(5.0, instances.get(1).model().m30());
-        assertEquals(3.0, instances.get(2).model().m30());
+        InstancedBatchBuilder.InstancedDraw draw = builder.draws().getFirst();
+        assertEquals(1.0, draw.instance(0).model().m30());
+        assertEquals(5.0, draw.instance(1).model().m30());
+        assertEquals(3.0, draw.instance(2).model().m30());
     }
 
     private static EffectInstancedPass pass(String id) {

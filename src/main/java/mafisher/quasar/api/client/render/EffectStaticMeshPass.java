@@ -12,8 +12,9 @@ import org.joml.Matrix4f;
  * {@code localTransform}.
  *
  * <p>{@code renderType} must use {@link com.mojang.blaze3d.vertex.DefaultVertexFormat#BLOCK} and
- * {@link com.mojang.blaze3d.vertex.VertexFormat.Mode#QUADS}. The mesh, tint, overlay, and light are baked into the
- * cached buffer once, so this pass is for static materials and stable {@link EffectMesh} instances. Use a CPU
+ * {@link com.mojang.blaze3d.vertex.VertexFormat.Mode#QUADS}. The mesh is uploaded once. Overlay and light are baked
+ * into the cached buffer; tint stays per-instance when the render type has an instanced twin and is baked
+ * otherwise. This pass is for static materials and stable {@link EffectMesh} instances. Use a CPU
  * {@link EffectRenderPass} for geometry whose vertex colours or {@code UV1} change every frame.</p>
  *
  * @param id stable pass ID, unique within one context

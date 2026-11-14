@@ -83,10 +83,13 @@ public final class ClientVisualEffectManager {
     private final GpuMeshCache meshCache = new GpuMeshCache();
     private final InstancedBatchRenderer instancedRenderer = new InstancedBatchRenderer(this.meshCache);
     private final CachedMeshRenderer cachedMeshRenderer = new CachedMeshRenderer(this.meshCache);
+    private final StaticMeshBatchRenderer staticMeshRenderer =
+        new StaticMeshBatchRenderer(this.instancedRenderer, this.cachedMeshRenderer, this.meshCache);
     private final List<VisibleEffect> visibleEffects = new ArrayList<>();
     private final List<ScreenEffectFrame> screenFrames = new ArrayList<>();
     private final Set<RenderType> usedRenderTypes = new LinkedHashSet<>();
     private final Set<String> passIds = new HashSet<>();
+    private final List<String> staticPassIds = new ArrayList<>();
     private final Matrix4f viewMatrix = new Matrix4f();
     private final List<InstancedBatchBuilder.InstancedDraw> instancedDraws = new ArrayList<>();
     private final List<UUID> finishedEffects = new ArrayList<>();
@@ -98,6 +101,7 @@ public final class ClientVisualEffectManager {
     private boolean screenEffectStateChanged;
     private RenderEnvironment frameEnvironment = RenderEnvironment.VANILLA;
     private InstancedBatchBuilder instancedBatchBuilder;
+    private StaticMeshBatchBuilder staticMeshBatchBuilder;
     private List<ScreenEffectBatch> screenBatches = List.of();
     private int screenBatchTick = Integer.MIN_VALUE;
     private ClientLevel currentLevel;
@@ -328,14 +332,18 @@ public final class ClientVisualEffectManager {
             PoseStack poseStack = event.getPoseStack();
             MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
             InstancedBatchBuilder instancedBatches = this.instancedBatchBuilder(cameraPosition);
+            StaticMeshBatchBuilder staticBatches = this.staticMeshBatchBuilder(cameraPosition);
             this.viewMatrix.set(RenderSystem.getModelViewMatrix());
             poseStack.pushPose();
             poseStack.translate(-cameraPosition.x, -cameraPosition.y, -cameraPosition.z);
             try {
                 this.usedRenderTypes.clear();
                 for (VisibleEffect visible : this.visibleEffects) {
-                    this.renderWorldPasses(visible, poseStack, buffers, instancedBatches);
+                    this.renderWorldPasses(visible, poseStack, buffers, instancedBatches,
+                        staticBatches);
                 }
+                this.staticMeshRenderer.draw(staticBatches, this.viewMatrix,
+                    RenderSystem.getProjectionMatrix());
             } finally {
                 poseStack.popPose();
                 for (RenderType renderType : this.usedRenderTypes) {
@@ -351,23 +359,18 @@ public final class ClientVisualEffectManager {
     }
 
     private void renderWorldPasses(VisibleEffect visible, PoseStack poseStack,
-        MultiBufferSource.BufferSource buffers, InstancedBatchBuilder instancedBatches) {
+        MultiBufferSource.BufferSource buffers, InstancedBatchBuilder instancedBatches,
+        StaticMeshBatchBuilder staticBatches) {
         VisualEffectRenderer renderer = visible.renderer();
         EffectRenderContext context = visible.context();
         if (renderer instanceof StaticMeshVisualEffectRenderer staticRenderer) {
             List<EffectStaticMeshPass> staticPasses = staticRenderer.staticMeshPasses(context);
             if (!staticPasses.isEmpty()) {
+                this.validateStaticPassIds(staticPasses, visible);
                 EffectTransform staticTransform = context.transform();
-                poseStack.pushPose();
-                try {
-                    poseStack.translate(staticTransform.position().x(),
-                        staticTransform.position().y(), staticTransform.position().z());
-                    EffectRenderTransform.applyRotation(poseStack, staticTransform.yaw(),
-                        staticTransform.pitch(), staticTransform.roll());
-                    this.cachedMeshRenderer.draw(staticPasses, poseStack, this.viewMatrix,
-                        RenderSystem.getProjectionMatrix());
-                } finally {
-                    poseStack.popPose();
+                for (EffectStaticMeshPass pass : staticPasses) {
+                    staticBatches.add(pass, EffectRenderTypes.staticBatchType(pass.renderType()),
+                        staticTransform);
                 }
             }
         }
@@ -1001,6 +1004,27 @@ public final class ClientVisualEffectManager {
         return this.instancedBatchBuilder;
     }
 
+    private StaticMeshBatchBuilder staticMeshBatchBuilder(Vec3 cameraPosition) {
+        int maxInstances = this.instancedRenderer.maxInstancesPerDraw();
+        if (this.staticMeshBatchBuilder == null
+            || this.staticMeshBatchBuilder.maxInstancesPerDraw() != maxInstances) {
+            this.staticMeshBatchBuilder = new StaticMeshBatchBuilder(maxInstances);
+        }
+        this.staticMeshBatchBuilder.reset(cameraPosition);
+        return this.staticMeshBatchBuilder;
+    }
+
+    private void validateStaticPassIds(List<EffectStaticMeshPass> passes, VisibleEffect visible) {
+        this.staticPassIds.clear();
+        for (EffectStaticMeshPass pass : passes) {
+            if (this.staticPassIds.contains(pass.id())) {
+                throw new IllegalStateException("Duplicate static mesh pass ID '" + pass.id()
+                    + "' for effect " + visible.effect().effectId());
+            }
+            this.staticPassIds.add(pass.id());
+        }
+    }
+
     private void invalidateFrame() {
         this.frameCache.invalidate();
         this.screenBatchTick = Integer.MIN_VALUE;
@@ -1025,6 +1049,7 @@ public final class ClientVisualEffectManager {
     public void onResourceReload(ResourceManager resourceManager) {
         this.rendererRegistry.onResourceReload(resourceManager);
         this.instancedRenderer.onResourceReload();
+        EffectRenderTypes.onResourceReload();
     }
 
     private void synchronizeLevel(ClientLevel level) {

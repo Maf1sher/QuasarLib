@@ -2,18 +2,27 @@ package mafisher.quasar.client.effect.render;
 
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.VertexFormat;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import mafisher.quasar.api.client.render.EffectRenderTypeOptions;
 import mafisher.quasar.api.client.render.EffectShader;
 import net.minecraft.Util;
 import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.resources.ResourceLocation;
+import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Built-in render types and the shared shader-backed render-type factory. */
 @org.jetbrains.annotations.ApiStatus.Internal
+@SuppressWarnings("PMD.TooManyMethods")
 public final class EffectRenderTypes {
+    private static final Logger LOGGER = LoggerFactory.getLogger(EffectRenderTypes.class);
     private static final RenderStateShard.OutputStateShard SCREEN_MASK_TARGET =
         new RenderStateShard.OutputStateShard("quasar_lib_screen_mask_target", () -> { }, () -> { });
     private static final Function<ShaderTypeKey, RenderType> SHADER_TYPES = Util.memoize(
@@ -22,12 +31,22 @@ public final class EffectRenderTypes {
     private static final Function<ResourceLocation, RenderType> VISUAL = Util.memoize(
         EffectRenderTypes::createVisual
     );
+    private static final Function<ResourceLocation, RenderType> INSTANCED_VISUAL = Util.memoize(
+        EffectRenderTypes::createInstancedVisual
+    );
+    private static final Map<RenderType, StaticBatchMaterial> STATIC_BATCH_MATERIALS =
+        new ConcurrentHashMap<>();
+    private static final Set<RenderType> WARNED_BATCH_MATERIALS = ConcurrentHashMap.newKeySet();
 
     private EffectRenderTypes() {
     }
 
     public static RenderType visual(ResourceLocation texture) {
-        return VISUAL.apply(texture);
+        RenderType normal = VISUAL.apply(texture);
+        STATIC_BATCH_MATERIALS.putIfAbsent(normal, new StaticBatchMaterial(
+            INSTANCED_VISUAL.apply(texture), EffectShaders.INSTANCED_TRANSLUCENT, null
+        ));
+        return normal;
     }
 
     public static RenderType instancedWorld(ResourceLocation texture) {
@@ -40,7 +59,61 @@ public final class EffectRenderTypes {
 
     public static RenderType shaderWorld(EffectShader shader, ResourceLocation texture,
         EffectRenderTypeOptions options) {
-        return SHADER_TYPES.apply(new ShaderTypeKey(shader, texture, options, false));
+        ShaderTypeKey key = new ShaderTypeKey(shader, texture, options, false);
+        RenderType normal = SHADER_TYPES.apply(key);
+        shader.instancedVariant().ifPresent(instanced -> STATIC_BATCH_MATERIALS.putIfAbsent(
+            normal,
+            new StaticBatchMaterial(
+                SHADER_TYPES.apply(new ShaderTypeKey(instanced, texture, options, false)),
+                instanced,
+                shader
+            )
+        ));
+        return normal;
+    }
+
+    /**
+     * Returns the instanced twin for a world render type that supports automatic static-mesh
+     * batching, or {@code null} when the material has no variant or the variant is not ready.
+     */
+    static @Nullable RenderType staticBatchType(RenderType normal) {
+        Objects.requireNonNull(normal, "normal");
+        StaticBatchMaterial material = STATIC_BATCH_MATERIALS.get(normal);
+        if (material == null) {
+            return null;
+        }
+        ShaderInstance batch = material.batchShader().shaderInstance();
+        if (batch == null) {
+            return null;
+        }
+        if (material.normalShader() != null) {
+            ShaderInstance base = material.normalShader().shaderInstance();
+            if (base == null) {
+                return null;
+            }
+            if (!base.getFragmentProgram().getName().equals(batch.getFragmentProgram().getName())) {
+                warnBatch(normal, "Static batch material " + normal
+                    + " uses a different fragment stage; automatic batching is disabled");
+                return null;
+            }
+        }
+        return material.renderType();
+    }
+
+    /** Package-private view used by tests to inspect the declared material pairing. */
+    static @Nullable StaticBatchMaterial staticBatchMaterial(RenderType normal) {
+        return STATIC_BATCH_MATERIALS.get(normal);
+    }
+
+    /** Clears one-shot diagnostics so a shader reload can retry the pairing. */
+    static void onResourceReload() {
+        WARNED_BATCH_MATERIALS.clear();
+    }
+
+    private static void warnBatch(RenderType normal, String message) {
+        if (WARNED_BATCH_MATERIALS.add(normal)) {
+            LOGGER.warn(message);
+        }
     }
 
     public static RenderType shaderMask(EffectShader shader, ResourceLocation texture,
@@ -96,15 +169,6 @@ public final class EffectRenderTypes {
     }
 
     private static RenderType createVisual(ResourceLocation texture) {
-        RenderType.CompositeState state = RenderType.CompositeState.builder()
-            .setShaderState(RenderStateShard.RENDERTYPE_TRANSLUCENT_SHADER)
-            .setTextureState(new RenderStateShard.TextureStateShard(texture, false, true))
-            .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
-            .setDepthTestState(RenderStateShard.LEQUAL_DEPTH_TEST)
-            .setLightmapState(RenderStateShard.LIGHTMAP)
-            .setOutputState(RenderStateShard.PARTICLES_TARGET)
-            .setWriteMaskState(RenderStateShard.COLOR_WRITE)
-            .createCompositeState(true);
         return RenderType.create(
             "quasar_lib_translucent_visual_effect",
             DefaultVertexFormat.BLOCK,
@@ -112,8 +176,40 @@ public final class EffectRenderTypes {
             2_097_152,
             true,
             true,
-            state
+            visualState(RenderStateShard.RENDERTYPE_TRANSLUCENT_SHADER, texture)
         );
+    }
+
+    private static RenderType createInstancedVisual(ResourceLocation texture) {
+        RenderStateShard.ShaderStateShard shader = new RenderStateShard.ShaderStateShard(
+            EffectShaders.INSTANCED_TRANSLUCENT::shaderInstance
+        );
+        return RenderType.create(
+            "quasar_lib_instance_translucent_visual_effect",
+            DefaultVertexFormat.BLOCK,
+            VertexFormat.Mode.QUADS,
+            2_097_152,
+            true,
+            true,
+            visualState(shader, texture)
+        );
+    }
+
+    private static RenderType.CompositeState visualState(RenderStateShard.ShaderStateShard shader,
+        ResourceLocation texture) {
+        return RenderType.CompositeState.builder()
+            .setShaderState(shader)
+            .setTextureState(new RenderStateShard.TextureStateShard(texture, false, true))
+            .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
+            .setDepthTestState(RenderStateShard.LEQUAL_DEPTH_TEST)
+            .setLightmapState(RenderStateShard.LIGHTMAP)
+            .setOutputState(RenderStateShard.PARTICLES_TARGET)
+            .setWriteMaskState(RenderStateShard.COLOR_WRITE)
+            .createCompositeState(true);
+    }
+
+    record StaticBatchMaterial(RenderType renderType, EffectShader batchShader,
+        @Nullable EffectShader normalShader) {
     }
 
     private record ShaderTypeKey(EffectShader shader, ResourceLocation texture,

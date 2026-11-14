@@ -54,8 +54,12 @@ class InstanceBufferLayoutTest {
 
     private static InstancedBatchBuilder.Instance instance(Matrix4f model, float red, float green, float blue,
         float alpha, float effectDataX, float effectDataY, float effectDataZ, float effectDataW) {
-        return new InstancedBatchBuilder.Instance(model, red, green, blue, alpha, effectDataX, effectDataY,
-            effectDataZ, effectDataW, 0.0);
+        InstancedBatchBuilder.Instance instance = new InstancedBatchBuilder.Instance();
+        instance.setModel(model);
+        instance.setColor(red, green, blue, alpha);
+        instance.setEffectData(effectDataX, effectDataY, effectDataZ, effectDataW);
+        instance.setCameraDistanceSquared(0.0);
+        return instance;
     }
 
     private static FloatBuffer directBuffer() {

@@ -11,6 +11,7 @@ import java.util.Set;
 import mafisher.quasar.api.client.render.EffectInstancedPass;
 import mafisher.quasar.api.client.render.EffectMesh;
 import mafisher.quasar.api.client.render.EffectRenderContext;
+import mafisher.quasar.api.client.render.EffectStaticMeshPass;
 import mafisher.quasar.api.effect.EffectSpace;
 import mafisher.quasar.api.effect.EffectTransform;
 import net.minecraft.client.renderer.RenderType;
@@ -25,12 +26,14 @@ import org.joml.Matrix4f;
  * expected order even though an instanced draw cannot use {@code MultiBufferSource} sorting. Opaque and unsorted
  * types keep insertion order.</p>
  */
+@SuppressWarnings("PMD.TooManyMethods")
 final class InstancedBatchBuilder {
     private static final Comparator<Instance> BACK_TO_FRONT =
         Comparator.comparingDouble(Instance::cameraDistanceSquared).reversed();
 
     private final int maxInstancesPerDraw;
     private final Map<BatchKey, Batch> batches = new LinkedHashMap<>();
+    private final Matrix4f rotationScratch = new Matrix4f();
     private double cameraX;
     private double cameraY;
     private double cameraZ;
@@ -77,9 +80,10 @@ final class InstancedBatchBuilder {
                 throw new IllegalStateException("Duplicate instanced pass ID '" + pass.id()
                     + "' for effect " + context.effect().effectId());
             }
-            BatchKey key = new BatchKey(pass.id(), pass.renderType(), pass.mesh());
+            BatchKey key = new BatchKey(pass.id(), pass.renderType(), pass.mesh(), 0,
+                EffectStaticMeshPass.FULLBRIGHT_LIGHT);
             this.batches.computeIfAbsent(key, Batch::new).add(context.transform(), pass,
-                this.cameraX, this.cameraY, this.cameraZ);
+                this.cameraX, this.cameraY, this.cameraZ, this.rotationScratch);
         }
     }
 
@@ -87,7 +91,7 @@ final class InstancedBatchBuilder {
     List<InstancedDraw> draws() {
         List<InstancedDraw> draws = new ArrayList<>();
         this.drawInto(draws);
-        return List.copyOf(draws);
+        return draws;
     }
 
     /** Fills {@code output} with the ordered draws for one immediate render pass. */
@@ -101,34 +105,39 @@ final class InstancedBatchBuilder {
             }
             for (int start = 0; start < instances.size(); start += this.maxInstancesPerDraw) {
                 int end = Math.min(start + this.maxInstancesPerDraw, instances.size());
-                output.add(new InstancedDraw(batch.key, instances.subList(start, end)));
+                output.add(new InstancedDraw(batch.key, instances, start, end));
             }
         }
     }
 
     /**
-     * Composes the cell world transform with the renderer's local transform in the camera-relative frame.
-     * The camera offset is subtracted in double precision before the matrix is narrowed to float.
+     * Writes the camera-relative model matrix into a reusable destination.
+     *
+     * @param rotationScratch a reusable matrix used for the engine yaw/pitch/roll basis
      */
-    static Matrix4f modelMatrix(EffectTransform transform, Matrix4f localTransform, double cameraX,
-        double cameraY, double cameraZ) {
+    static void modelMatrixInto(EffectTransform transform, Matrix4f localTransform, double cameraX,
+        double cameraY, double cameraZ, Matrix4f destination, Matrix4f rotationScratch) {
         Objects.requireNonNull(transform, "transform");
         Objects.requireNonNull(localTransform, "localTransform");
+        Objects.requireNonNull(destination, "destination");
+        Objects.requireNonNull(rotationScratch, "rotationScratch");
         if (!Double.isFinite(cameraX) || !Double.isFinite(cameraY) || !Double.isFinite(cameraZ)) {
             throw new IllegalArgumentException("Instanced batch camera position must be finite");
         }
-        return new Matrix4f()
+        EffectSpace.Basis.rotationInto(
+            transform.yaw(), transform.pitch(), transform.roll(), rotationScratch);
+        destination.identity()
             .translate(
                 (float)(transform.position().x() - cameraX),
                 (float)(transform.position().y() - cameraY),
                 (float)(transform.position().z() - cameraZ)
             )
-            .mul(EffectSpace.Basis.fromEuler(
-                transform.yaw(), transform.pitch(), transform.roll()).rotation())
+            .mul(rotationScratch)
             .mul(localTransform);
     }
 
-    record BatchKey(String id, RenderType renderType, EffectMesh mesh) {
+    record BatchKey(String id, RenderType renderType, EffectMesh mesh, int overlay, int light)
+        implements InstanceBatchDescriptor {
         BatchKey {
             Objects.requireNonNull(id, "id");
             Objects.requireNonNull(renderType, "renderType");
@@ -136,51 +145,134 @@ final class InstancedBatchBuilder {
         }
     }
 
-    record Instance(
-        Matrix4f model,
-        float red,
-        float green,
-        float blue,
-        float alpha,
-        float effectDataX,
-        float effectDataY,
-        float effectDataZ,
-        float effectDataW,
-        double cameraDistanceSquared
-    ) {
-        Instance {
+    static final class Instance {
+        private final Matrix4f model = new Matrix4f();
+        private float red;
+        private float green;
+        private float blue;
+        private float alpha;
+        private float effectDataX;
+        private float effectDataY;
+        private float effectDataZ;
+        private float effectDataW;
+        private double cameraDistanceSquared;
+
+        Instance() {
+        }
+
+        void setModel(Matrix4f model) {
             Objects.requireNonNull(model, "model");
             if (!model.isFinite()) {
                 throw new IllegalArgumentException("Instance model matrix must be finite");
             }
+            this.model.set(model);
+        }
+
+        void setColor(float red, float green, float blue, float alpha) {
+            this.red = red;
+            this.green = green;
+            this.blue = blue;
+            this.alpha = alpha;
+        }
+
+        void setEffectData(float effectDataX, float effectDataY, float effectDataZ, float effectDataW) {
+            this.effectDataX = effectDataX;
+            this.effectDataY = effectDataY;
+            this.effectDataZ = effectDataZ;
+            this.effectDataW = effectDataW;
+        }
+
+        void setCameraDistanceSquared(double cameraDistanceSquared) {
             if (!Double.isFinite(cameraDistanceSquared) || cameraDistanceSquared < 0.0) {
                 throw new IllegalArgumentException("Invalid instance camera distance");
             }
+            this.cameraDistanceSquared = cameraDistanceSquared;
         }
 
-        /** Source-compatible constructor for passes that only carry two data values. */
-        Instance(
-            Matrix4f model,
-            float red,
-            float green,
-            float blue,
-            float alpha,
-            float effectDataX,
-            float effectDataY,
-            double cameraDistanceSquared
-        ) {
-            this(model, red, green, blue, alpha, effectDataX, effectDataY, 0.0F, 0.0F,
-                cameraDistanceSquared);
+        Matrix4f model() {
+            return this.model;
+        }
+
+        float red() {
+            return this.red;
+        }
+
+        float green() {
+            return this.green;
+        }
+
+        float blue() {
+            return this.blue;
+        }
+
+        float alpha() {
+            return this.alpha;
+        }
+
+        float effectDataX() {
+            return this.effectDataX;
+        }
+
+        float effectDataY() {
+            return this.effectDataY;
+        }
+
+        float effectDataZ() {
+            return this.effectDataZ;
+        }
+
+        float effectDataW() {
+            return this.effectDataW;
+        }
+
+        double cameraDistanceSquared() {
+            return this.cameraDistanceSquared;
         }
     }
 
-    record InstancedDraw(BatchKey key, List<Instance> instances) {
-        InstancedDraw {
+    static final class InstancedDraw {
+        private final BatchKey key;
+        private final List<Instance> instances;
+        private final int start;
+        private final int end;
+
+        InstancedDraw(BatchKey key, List<Instance> instances, int start, int end) {
             Objects.requireNonNull(key, "key");
             Objects.requireNonNull(instances, "instances");
-            if (instances.isEmpty()) {
-                throw new IllegalArgumentException("An instanced draw needs at least one instance");
+            if (start < 0 || end <= start || end > instances.size()) {
+                throw new IllegalArgumentException("Invalid instanced draw range");
             }
+            this.key = key;
+            this.instances = instances;
+            this.start = start;
+            this.end = end;
+        }
+
+        BatchKey key() {
+            return this.key;
+        }
+
+        List<Instance> instances() {
+            return this.instances;
+        }
+
+        int start() {
+            return this.start;
+        }
+
+        int end() {
+            return this.end;
+        }
+
+        int instanceCount() {
+            return this.end - this.start;
+        }
+
+        Instance instance(int index) {
+            if (index < 0 || index >= instanceCount()) {
+                throw new IndexOutOfBoundsException(index);
+            }
+            return this.instances.get(this.start + index);
         }
     }
 
@@ -193,20 +285,19 @@ final class InstancedBatchBuilder {
         }
 
         private void add(EffectTransform transform, EffectInstancedPass pass, double cameraX, double cameraY,
-            double cameraZ) {
+            double cameraZ, Matrix4f rotationScratch) {
             double dx = transform.position().x() - cameraX;
             double dy = transform.position().y() - cameraY;
             double dz = transform.position().z() - cameraZ;
-            this.instances.add(new Instance(
-                modelMatrix(transform, pass.localTransform(), cameraX, cameraY, cameraZ),
-                pass.red(),
-                pass.green(),
-                pass.blue(),
-                pass.alpha(),
-                pass.effectDataX(),
-                pass.effectDataY(),
-                dx * dx + dy * dy + dz * dz
-            ));
+            Matrix4f model = new Matrix4f();
+            modelMatrixInto(transform, pass.localTransform(), cameraX, cameraY, cameraZ, model,
+                rotationScratch);
+            Instance instance = new Instance();
+            instance.setModel(model);
+            instance.setColor(pass.red(), pass.green(), pass.blue(), pass.alpha());
+            instance.setEffectData(pass.effectDataX(), pass.effectDataY(), 0.0F, 0.0F);
+            instance.setCameraDistanceSquared(dx * dx + dy * dy + dz * dz);
+            this.instances.add(instance);
         }
     }
 }

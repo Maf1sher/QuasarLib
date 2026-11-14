@@ -3,6 +3,7 @@ package mafisher.quasar.client.effect.render;
 import com.mojang.blaze3d.systems.RenderSystem;
 import java.nio.FloatBuffer;
 import java.util.List;
+import java.util.Objects;
 import org.lwjgl.system.MemoryUtil;
 
 /** Reusable uniform-array buffers for the legacy instancing contract. */
@@ -19,11 +20,21 @@ final class UniformInstanceBuffers implements AutoCloseable {
 
     void upload(int matricesLocation, int colorsLocation, int dataLocation,
         List<InstancedBatchBuilder.Instance> instances) {
-        ensureCapacity(instances.size());
+        upload(matricesLocation, colorsLocation, dataLocation, instances, 0, instances.size());
+    }
+
+    void upload(int matricesLocation, int colorsLocation, int dataLocation,
+        List<InstancedBatchBuilder.Instance> instances, int start, int end) {
+        Objects.requireNonNull(instances, "instances");
+        if (start < 0 || end < start || end > instances.size()) {
+            throw new IllegalArgumentException("Invalid instance range");
+        }
+        ensureCapacity(end - start);
         this.matrices.clear();
         this.colors.clear();
         this.data.clear();
-        for (InstancedBatchBuilder.Instance instance : instances) {
+        for (int index = start; index < end; index++) {
+            InstancedBatchBuilder.Instance instance = instances.get(index);
             int matrixOffset = this.matrices.position();
             instance.model().get(matrixOffset, this.matrices);
             this.matrices.position(matrixOffset + FLOATS_PER_MATRIX);

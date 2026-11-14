@@ -15,6 +15,9 @@ public final class EffectShaders {
     static final EffectShader INSTANCED_VISUAL = EffectShader.create(
         id("instanced_visual"), DefaultVertexFormat.BLOCK
     );
+    static final EffectShader INSTANCED_TRANSLUCENT = EffectShader.create(
+        id("instanced_translucent"), DefaultVertexFormat.BLOCK
+    );
     public static final EffectShader SCREEN_MASK = EffectShader.create(
         id("screen_mask"), DefaultVertexFormat.BLOCK
     );
@@ -39,6 +42,7 @@ public final class EffectShaders {
 
     public static void registerAll(RegisterShadersEvent event) throws IOException {
         INSTANCED_VISUAL.register(event);
+        INSTANCED_TRANSLUCENT.register(event);
         SCREEN_MASK.register(event);
         SCREEN_FULLSCREEN_MASK.register(event);
         SCREEN_COMPOSITE.register(event);

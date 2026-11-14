@@ -7,6 +7,7 @@ import java.util.Optional;
 import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.client.event.RegisterShadersEvent;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Stable handle for one shader registered by a consumer mod.
@@ -24,11 +25,14 @@ import net.neoforged.neoforge.client.event.RegisterShadersEvent;
 public final class EffectShader {
     private final ResourceLocation id;
     private final VertexFormat format;
+    private final @Nullable EffectShader instancedVariant;
     private volatile ShaderInstance instance;
 
-    private EffectShader(ResourceLocation id, VertexFormat format) {
+    private EffectShader(ResourceLocation id, VertexFormat format,
+        @Nullable EffectShader instancedVariant) {
         this.id = Objects.requireNonNull(id, "id");
         this.format = Objects.requireNonNull(format, "format");
+        this.instancedVariant = instancedVariant;
     }
 
     /**
@@ -40,12 +44,38 @@ public final class EffectShader {
      * @return a new handle
      */
     public static EffectShader create(ResourceLocation id, VertexFormat format) {
-        return new EffectShader(id, format);
+        return new EffectShader(id, format, null);
+    }
+
+    /**
+     * Creates a handle with an instanced variant for automatic static-mesh batching.
+     *
+     * <p>The normal program is used by unbatched passes. The instanced program must use the
+     * engine's instanced vertex contract and the same fragment stage as the normal program;
+     * the engine disables batching when the fragment programs differ or the variant is not
+     * loaded. Both programs are registered by {@link #register(RegisterShadersEvent)}.</p>
+     *
+     * @param id the normal shader ID
+     * @param instancedId the instanced-variant shader ID
+     * @param format the vertex format shared by both programs
+     * @return a new handle with an instanced variant
+     */
+    public static EffectShader createBatched(ResourceLocation id, ResourceLocation instancedId,
+        VertexFormat format) {
+        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(instancedId, "instancedId");
+        Objects.requireNonNull(format, "format");
+        if (id.equals(instancedId)) {
+            throw new IllegalArgumentException("A batched shader needs a distinct instanced variant ID");
+        }
+        EffectShader instanced = new EffectShader(instancedId, format, null);
+        return new EffectShader(id, format, instanced);
     }
 
     /**
      * Registers this handle's shader for the current shader load. Call this from
-     * a {@link RegisterShadersEvent} handler on the client mod bus.
+     * a {@link RegisterShadersEvent} handler on the client mod bus. A batched handle
+     * registers its instanced variant as well.
      *
      * @param event the NeoForge shader registration event
      * @throws IOException if the shader assets cannot be read
@@ -56,6 +86,9 @@ public final class EffectShader {
             new ShaderInstance(event.getResourceProvider(), this.id, this.format),
             this::accept
         );
+        if (this.instancedVariant != null) {
+            this.instancedVariant.register(event);
+        }
     }
 
     /** Returns the shader ID used to load {@code shaders/core/<path>.json}. */
@@ -66,6 +99,14 @@ public final class EffectShader {
     /** Returns the vertex format this shader expects. */
     public VertexFormat format() {
         return this.format;
+    }
+
+    /**
+     * Returns the instanced variant used for static-mesh batching, or an empty optional
+     * when this handle has none.
+     */
+    public Optional<EffectShader> instancedVariant() {
+        return Optional.ofNullable(this.instancedVariant);
     }
 
     /**
