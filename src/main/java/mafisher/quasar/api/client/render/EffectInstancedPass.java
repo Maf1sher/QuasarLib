@@ -6,15 +6,18 @@ import org.joml.Matrix4f;
 
 /**
  * One GPU-instanced world pass for a visible effect instance or segment cell. The engine applies the cell's
- * interpolated world transform (position and yaw/pitch/roll) and then {@code localTransform}; include scale and any
- * local rotation in {@code localTransform}.
+ * interpolated transform (position and yaw/pitch/roll) in the camera-relative frame and then {@code localTransform};
+ * include scale and any local rotation in {@code localTransform}.
  *
  * <p>{@code renderType} must use {@link com.mojang.blaze3d.vertex.DefaultVertexFormat#BLOCK} and
- * {@link com.mojang.blaze3d.vertex.VertexFormat.Mode#QUADS}. The shader must declare
- * {@code uniform mat4 Instances[128]}, {@code uniform vec4 InstanceColors[128]}, and
- * {@code uniform vec4 InstanceData[128]}, and use {@code gl_InstanceID} to index them. The built-in
- * {@link QuasarRenderTypes#instancedWorldVisual(net.minecraft.resources.ResourceLocation)} factories satisfy the
- * contract.</p>
+ * {@link com.mojang.blaze3d.vertex.VertexFormat.Mode#QUADS}. The engine's buffer-texture contract declares
+ * {@code uniform samplerBuffer InstanceBuffer} and imports
+ * {@code quasar_lib:instance_payload.glsl}; it stores four camera-relative model-matrix columns, a color, and an
+ * effect-data vector per instance. Shaders that declare only the legacy
+ * {@code Instances[128]}/{@code InstanceColors[128]}/{@code InstanceData[128]} arrays keep working through the
+ * 128-instance uniform fallback. Both paths use {@code gl_InstanceID}. The built-in
+ * {@link QuasarRenderTypes#instancedWorldVisual(net.minecraft.resources.ResourceLocation)} factory satisfies the
+ * buffer-texture contract.</p>
  *
  * @param id stable pass ID, unique within one context
  * @param renderType instanced world render type

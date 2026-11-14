@@ -8,8 +8,8 @@ import java.util.List;
  * of the CPU {@link VisualEffectRenderer#renderPasses(EffectRenderContext)} for that context. Visible instances and
  * segmented grid cells that return the same pass ID, render type, and mesh are batched into one instanced draw.
  *
- * <p>Instanced passes require a shader that consumes the engine instance arrays. See
- * {@link QuasarRenderTypes#instancedWorldVisual(net.minecraft.resources.ResourceLocation)} and
+ * <p>Instanced passes require a shader that consumes the engine {@code InstanceBuffer} payload or the legacy instance
+ * arrays. See {@link QuasarRenderTypes#instancedWorldVisual(net.minecraft.resources.ResourceLocation)} and
  * {@link EffectInstancedPass}.</p>
  */
 public interface InstancedVisualEffectRenderer extends VisualEffectRenderer {

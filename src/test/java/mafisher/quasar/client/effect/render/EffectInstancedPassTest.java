@@ -55,7 +55,8 @@ class EffectInstancedPassTest {
     void composesWorldAndLocalTransforms() {
         Matrix4f model = InstancedBatchBuilder.modelMatrix(
             new EffectTransform(new EffectPoint(10.0, 20.0, 30.0), 90.0F, 0.0F, 0.0F),
-            new Matrix4f().scale(2.0F)
+            new Matrix4f().scale(2.0F),
+            0.0, 0.0, 0.0
         );
 
         var origin = model.transformPosition(new org.joml.Vector3f(0.0F, 0.0F, 0.0F));
@@ -69,6 +70,29 @@ class EffectInstancedPassTest {
         assertEquals(28.0, axis.z, 1.0E-5);
         assertEquals(2.0, axis.distance(origin), 1.0E-5);
         assertTrue(model.isFinite());
+    }
+
+    @Test
+    void keepsSubBlockOffsetsAtLargeWorldCoordinates() {
+        Matrix4f model = InstancedBatchBuilder.modelMatrix(
+            new EffectTransform(new EffectPoint(30_000_000.5, -20_000_000.25, 30_000_000.75),
+                0.0F, 0.0F, 0.0F),
+            new Matrix4f(),
+            30_000_000.0, -20_000_000.0, 30_000_000.0
+        );
+
+        assertEquals(0.5F, model.m30(), 1.0E-4F);
+        assertEquals(-0.25F, model.m31(), 1.0E-4F);
+        assertEquals(0.75F, model.m32(), 1.0E-4F);
+    }
+
+    @Test
+    void rejectsNonFiniteCameraCoordinates() {
+        assertThrows(IllegalArgumentException.class, () -> InstancedBatchBuilder.modelMatrix(
+            new EffectTransform(new EffectPoint(0.0, 0.0, 0.0), 0.0F, 0.0F, 0.0F),
+            new Matrix4f(),
+            Double.NaN, 0.0, 0.0
+        ));
     }
 
     private static EffectInstancedPass pass(Matrix4f local) {

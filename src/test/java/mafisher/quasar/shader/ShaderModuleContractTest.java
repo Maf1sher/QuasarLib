@@ -126,6 +126,7 @@ class ShaderModuleContractTest {
             "MediumFogActive"
         ));
         modules.put(INCLUDE_PREFIX + "noise.glsl", Set.of());
+        modules.put(INCLUDE_PREFIX + "instance_payload.glsl", Set.of());
         modules.put(INCLUDE_PREFIX + "depth_reconstruction.glsl", Set.of(
             "InvProjMat",
             "InvViewMat"

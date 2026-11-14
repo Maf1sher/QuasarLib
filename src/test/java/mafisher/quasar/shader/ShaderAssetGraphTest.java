@@ -89,18 +89,17 @@ class ShaderAssetGraphTest {
     }
 
     @Test
-    void instancedVertexShaderDeclaresArrayUniforms() {
+    void instancedVertexShaderUsesTheInstancePayloadModule() {
         ShaderDeclarationScanner.Declarations declarations = ShaderDeclarationScanner.scan(
             ShaderTestResources.preprocessedShader(
                 "quasar_lib:shaders/core/instanced_visual.vsh"));
-        Map<String, ShaderDeclarationScanner.Declaration> uniforms = declarations.uniforms().stream()
-            .collect(Collectors.toMap(ShaderDeclarationScanner.Declaration::name,
-                declaration -> declaration, (first, second) -> first));
-        for (String name : List.of("Instances", "InstanceColors", "InstanceData")) {
-            ShaderDeclarationScanner.Declaration declaration = uniforms.get(name);
-            assertTrue(declaration != null && declaration.array(),
-                () -> name + " must be declared as an array uniform");
-        }
+        Set<String> samplers = ShaderDeclarationScanner.Declarations.names(declarations.samplers());
+        assertTrue(samplers.contains("InstanceBuffer"),
+            () -> "InstanceBuffer must be declared as a samplerBuffer: " + samplers);
+        Set<String> imports = importsOf(ShaderTestResources.ShaderResource.parse(
+            "quasar_lib:shaders/core/instanced_visual.vsh"));
+        assertTrue(imports.contains("quasar_lib:shaders/include/instance_payload.glsl"),
+            () -> "instanced_visual.vsh must import the instance payload module: " + imports);
     }
 
     @Test

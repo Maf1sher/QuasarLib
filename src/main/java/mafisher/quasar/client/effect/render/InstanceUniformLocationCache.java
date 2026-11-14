@@ -4,8 +4,9 @@ import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Objects;
 
-/** Caches the three instance uniform locations once per shader program. */
+/** Caches the instance payload locations once per shader program. */
 final class InstanceUniformLocationCache<K> {
+    static final String INSTANCE_BUFFER = "InstanceBuffer";
     static final String INSTANCES = "Instances[0]";
     static final String INSTANCE_COLORS = "InstanceColors[0]";
     static final String INSTANCE_DATA = "InstanceData[0]";
@@ -20,6 +21,7 @@ final class InstanceUniformLocationCache<K> {
             return cached;
         }
         Locations resolved = new Locations(
+            resolver.location(key, INSTANCE_BUFFER),
             resolver.location(key, INSTANCES),
             resolver.location(key, INSTANCE_COLORS),
             resolver.location(key, INSTANCE_DATA)
@@ -32,9 +34,17 @@ final class InstanceUniformLocationCache<K> {
         this.locations.clear();
     }
 
-    record Locations(int instances, int colors, int data) {
-        boolean isComplete() {
+    record Locations(int instanceBuffer, int instances, int colors, int data) {
+        boolean usesBuffer() {
+            return this.instanceBuffer >= 0;
+        }
+
+        boolean usesUniformArrays() {
             return this.instances >= 0 && this.colors >= 0 && this.data >= 0;
+        }
+
+        boolean isComplete() {
+            return usesBuffer() || usesUniformArrays();
         }
     }
 

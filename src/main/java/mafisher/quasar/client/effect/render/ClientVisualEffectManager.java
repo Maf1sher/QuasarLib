@@ -88,7 +88,6 @@ public final class ClientVisualEffectManager {
     private final Set<RenderType> usedRenderTypes = new LinkedHashSet<>();
     private final Set<String> passIds = new HashSet<>();
     private final Matrix4f viewMatrix = new Matrix4f();
-    private final Matrix4f baseView = new Matrix4f();
     private final List<InstancedBatchBuilder.InstancedDraw> instancedDraws = new ArrayList<>();
     private final List<UUID> finishedEffects = new ArrayList<>();
     private final FrameSnapshotCache frameCache = new FrameSnapshotCache();
@@ -332,7 +331,6 @@ public final class ClientVisualEffectManager {
             this.viewMatrix.set(RenderSystem.getModelViewMatrix());
             poseStack.pushPose();
             poseStack.translate(-cameraPosition.x, -cameraPosition.y, -cameraPosition.z);
-            this.baseView.set(RenderSystem.getModelViewMatrix()).mul(poseStack.last().pose());
             try {
                 this.usedRenderTypes.clear();
                 for (VisibleEffect visible : this.visibleEffects) {
@@ -345,7 +343,7 @@ public final class ClientVisualEffectManager {
                 }
             }
             instancedBatches.drawInto(this.instancedDraws);
-            this.instancedRenderer.draw(this.instancedDraws, this.baseView,
+            this.instancedRenderer.draw(this.instancedDraws, this.viewMatrix,
                 RenderSystem.getProjectionMatrix());
         } finally {
             ClientQualityController.endWorldGpu();

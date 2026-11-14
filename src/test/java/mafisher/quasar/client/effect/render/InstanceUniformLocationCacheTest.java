@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 
 class InstanceUniformLocationCacheTest {
     @Test
-    void resolvesAllThreeLocationsOncePerShader() {
+    void resolvesAllFourLocationsOncePerShader() {
         InstanceUniformLocationCache<Object> cache = new InstanceUniformLocationCache<>();
         Object shader = new Object();
         AtomicInteger calls = new AtomicInteger();
@@ -17,6 +17,7 @@ class InstanceUniformLocationCacheTest {
         InstanceUniformLocationCache.Locations first = cache.get(shader, (key, name) -> {
             calls.incrementAndGet();
             return switch (name) {
+                case InstanceUniformLocationCache.INSTANCE_BUFFER -> 3;
                 case InstanceUniformLocationCache.INSTANCES -> 4;
                 case InstanceUniformLocationCache.INSTANCE_COLORS -> 5;
                 default -> 6;
@@ -28,11 +29,31 @@ class InstanceUniformLocationCacheTest {
         });
 
         assertEquals(first, second);
-        assertEquals(3, calls.get());
+        assertEquals(4, calls.get());
         assertTrue(first.isComplete());
+        assertTrue(first.usesBuffer());
+        assertTrue(first.usesUniformArrays());
+        assertEquals(3, first.instanceBuffer());
         assertEquals(4, first.instances());
         assertEquals(5, first.colors());
         assertEquals(6, first.data());
+    }
+
+    @Test
+    void prefersTheBufferContractWithoutLosingTheUniformFallback() {
+        InstanceUniformLocationCache<Object> cache = new InstanceUniformLocationCache<>();
+
+        InstanceUniformLocationCache.Locations bufferOnly = cache.get(new Object(), (key, name) ->
+            name.equals(InstanceUniformLocationCache.INSTANCE_BUFFER) ? 1 : -1);
+        assertTrue(bufferOnly.isComplete());
+        assertTrue(bufferOnly.usesBuffer());
+        assertFalse(bufferOnly.usesUniformArrays());
+
+        InstanceUniformLocationCache.Locations uniformsOnly = cache.get(new Object(), (key, name) ->
+            name.equals(InstanceUniformLocationCache.INSTANCE_BUFFER) ? -1 : 2);
+        assertTrue(uniformsOnly.isComplete());
+        assertFalse(uniformsOnly.usesBuffer());
+        assertTrue(uniformsOnly.usesUniformArrays());
     }
 
     @Test
@@ -58,6 +79,7 @@ class InstanceUniformLocationCacheTest {
         cache.clear();
         InstanceUniformLocationCache.Locations resolved = cache.get(shader, (key, name) -> 2);
 
+        assertEquals(2, resolved.instanceBuffer());
         assertEquals(2, resolved.instances());
         assertEquals(2, resolved.colors());
         assertEquals(2, resolved.data());

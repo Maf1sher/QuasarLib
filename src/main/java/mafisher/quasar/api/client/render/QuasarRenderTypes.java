@@ -61,8 +61,8 @@ public final class QuasarRenderTypes {
 
     /**
      * Returns the engine's instanced world render type. Use it with
-     * {@link InstancedVisualEffectRenderer} and {@link EffectInstancedPass}; the shader consumes
-     * {@code Instances[128]}, {@code InstanceColors[128]}, and {@code InstanceData[128]}.
+     * {@link InstancedVisualEffectRenderer} and {@link EffectInstancedPass}; the engine streams
+     * camera-relative instance matrices, colors, and data through an {@code InstanceBuffer} texture.
      *
      * @param texture the effect texture
      * @return an instanced world-visual render type
@@ -72,8 +72,9 @@ public final class QuasarRenderTypes {
     }
 
     /**
-     * Returns an instanced world render type backed by a consumer shader. The shader must declare the engine instance
-     * uniforms and use the {@code BLOCK}/{@code QUADS} vertex layout.
+     * Returns an instanced world render type backed by a consumer shader. The shader must use the
+     * {@code BLOCK}/{@code QUADS} vertex layout and declare either the engine's {@code InstanceBuffer} sampler or the
+     * legacy instance arrays.
      *
      * @param shader the consumer-owned instanced shader
      * @param texture the effect texture

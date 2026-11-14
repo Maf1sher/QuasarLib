@@ -3,7 +3,8 @@
   "fragment": "quasar_lib:effect_visual",
   "samplers": [
     { "name": "Sampler0" },
-    { "name": "Sampler2" }
+    { "name": "Sampler2" },
+    { "name": "InstanceBuffer" }
   ],
   "attributes": [
     "Position",

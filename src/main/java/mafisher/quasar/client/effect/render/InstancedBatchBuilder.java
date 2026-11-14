@@ -20,9 +20,10 @@ import org.joml.Matrix4f;
  * Groups instanced passes across visible effects and segment cells and splits them into bounded GPU draws. This class
  * is pure: matrix composition and batching are covered by headless tests, while the renderer owns GL resources.
  *
- * <p>Batches whose render type sorts on upload are ordered back to front from the camera, so translucent instances
- * blend in the expected order even though an instanced draw cannot use {@code MultiBufferSource} sorting. Opaque and
- * unsorted types keep insertion order.</p>
+ * <p>Model matrices are composed in the camera-relative frame so large world coordinates stay stable. Batches whose
+ * render type sorts on upload are ordered back to front from the camera, so translucent instances blend in the
+ * expected order even though an instanced draw cannot use {@code MultiBufferSource} sorting. Opaque and unsorted
+ * types keep insertion order.</p>
  */
 final class InstancedBatchBuilder {
     private static final Comparator<Instance> BACK_TO_FRONT =
@@ -105,15 +106,22 @@ final class InstancedBatchBuilder {
         }
     }
 
-    /** Composes the cell world transform with the renderer's local transform. */
-    static Matrix4f modelMatrix(EffectTransform transform, Matrix4f localTransform) {
+    /**
+     * Composes the cell world transform with the renderer's local transform in the camera-relative frame.
+     * The camera offset is subtracted in double precision before the matrix is narrowed to float.
+     */
+    static Matrix4f modelMatrix(EffectTransform transform, Matrix4f localTransform, double cameraX,
+        double cameraY, double cameraZ) {
         Objects.requireNonNull(transform, "transform");
         Objects.requireNonNull(localTransform, "localTransform");
+        if (!Double.isFinite(cameraX) || !Double.isFinite(cameraY) || !Double.isFinite(cameraZ)) {
+            throw new IllegalArgumentException("Instanced batch camera position must be finite");
+        }
         return new Matrix4f()
             .translate(
-                (float)transform.position().x(),
-                (float)transform.position().y(),
-                (float)transform.position().z()
+                (float)(transform.position().x() - cameraX),
+                (float)(transform.position().y() - cameraY),
+                (float)(transform.position().z() - cameraZ)
             )
             .mul(EffectSpace.Basis.fromEuler(
                 transform.yaw(), transform.pitch(), transform.roll()).rotation())
@@ -142,6 +150,9 @@ final class InstancedBatchBuilder {
     ) {
         Instance {
             Objects.requireNonNull(model, "model");
+            if (!model.isFinite()) {
+                throw new IllegalArgumentException("Instance model matrix must be finite");
+            }
             if (!Double.isFinite(cameraDistanceSquared) || cameraDistanceSquared < 0.0) {
                 throw new IllegalArgumentException("Invalid instance camera distance");
             }
@@ -187,7 +198,7 @@ final class InstancedBatchBuilder {
             double dy = transform.position().y() - cameraY;
             double dz = transform.position().z() - cameraZ;
             this.instances.add(new Instance(
-                modelMatrix(transform, pass.localTransform()),
+                modelMatrix(transform, pass.localTransform(), cameraX, cameraY, cameraZ),
                 pass.red(),
                 pass.green(),
                 pass.blue(),

@@ -127,6 +127,45 @@ class InstancedBatchBuilderTest {
     }
 
     @Test
+    void composesModelMatricesRelativeToTheCamera() {
+        InstancedBatchBuilder builder = new InstancedBatchBuilder(8, 4.0, 0.0, 0.0);
+        builder.add(context(10.0, 0.0, 0.0), List.of(pass("outer")));
+
+        List<InstancedBatchBuilder.Instance> instances = builder.draws().getFirst().instances();
+        assertEquals(6.0, instances.getFirst().model().m30());
+    }
+
+    @Test
+    void keepsBackToFrontOrderBeyondOneHundredTwentyEightInstances() {
+        InstancedBatchBuilder builder = new InstancedBatchBuilder(512);
+        for (int index = 0; index < 256; index++) {
+            builder.add(context(index, 0.0, 0.0), List.of(pass("outer")));
+        }
+
+        List<InstancedBatchBuilder.InstancedDraw> draws = builder.draws();
+        assertEquals(1, draws.size());
+        List<InstancedBatchBuilder.Instance> instances = draws.getFirst().instances();
+        assertEquals(256, instances.size());
+        assertEquals(255.0, instances.getFirst().model().m30());
+        assertEquals(0.0, instances.getLast().model().m30());
+    }
+
+    @Test
+    void largeBatchesSplitWithoutBreakingSortOrder() {
+        InstancedBatchBuilder builder = new InstancedBatchBuilder(200);
+        for (int index = 0; index < 256; index++) {
+            builder.add(context(index, 0.0, 0.0), List.of(pass("outer")));
+        }
+
+        List<InstancedBatchBuilder.InstancedDraw> draws = builder.draws();
+        assertEquals(2, draws.size());
+        assertEquals(255.0, draws.get(0).instances().getFirst().model().m30());
+        assertEquals(56.0, draws.get(0).instances().getLast().model().m30());
+        assertEquals(55.0, draws.get(1).instances().getFirst().model().m30());
+        assertEquals(0.0, draws.get(1).instances().getLast().model().m30());
+    }
+
+    @Test
     void chunkSplittingKeepsBackToFrontOrder() {
         InstancedBatchBuilder builder = new InstancedBatchBuilder(2);
         for (int index = 1; index <= 4; index++) {
