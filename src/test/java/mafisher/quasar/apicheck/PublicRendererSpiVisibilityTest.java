@@ -16,6 +16,7 @@ import mafisher.quasar.api.client.render.EffectMeshLod;
 import mafisher.quasar.api.client.render.EffectMeshes;
 import mafisher.quasar.api.client.render.EffectRenderContext;
 import mafisher.quasar.api.client.render.EffectRenderTypeOptions;
+import mafisher.quasar.api.client.render.EffectRibbon;
 import mafisher.quasar.api.client.render.EffectShader;
 import mafisher.quasar.api.client.render.EffectStaticMeshPass;
 import mafisher.quasar.api.client.render.InstancedVisualEffectRenderer;
@@ -63,6 +64,15 @@ class PublicRendererSpiVisibilityTest {
         assertNotNull(EffectMeshes.icosphere(2));
         assertNotNull(EffectMeshes.disk());
         assertNotNull(EffectMeshes.disk(2, 8));
+        EffectRibbon ribbon = EffectRibbon.builder()
+            .maxPoints(8)
+            .subdivisions(2)
+            .taper(1.0F, 0.0F)
+            .uv(EffectRibbon.UvMode.NORMALIZED, 1.0F)
+            .build();
+        assertTrue(ribbon.addPoint(0.0, 0.0, 0.0));
+        assertTrue(ribbon.addPoint(1.0, 0.0, 0.0));
+        assertEquals(2, ribbon.pointCount());
         EffectMeshLod meshLod = EffectMeshLod.of(
             new AABB(-1.0, -1.0, -1.0, 1.0, 1.0, 1.0),
             EffectMeshes.icosphere(2), EffectMeshes.icosphere(1)
