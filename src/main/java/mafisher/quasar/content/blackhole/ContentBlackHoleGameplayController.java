@@ -7,15 +7,12 @@ import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 import java.util.WeakHashMap;
-import java.util.function.Consumer;
 import mafisher.quasar.api.audio.EffectAudioSpec;
-import mafisher.quasar.api.block.BlockChange;
 import mafisher.quasar.api.effect.EffectAudience;
 import mafisher.quasar.api.effect.EffectBounds;
 import mafisher.quasar.api.effect.damage.EffectDamageShape;
 import mafisher.quasar.api.effect.debris.EffectDebrisAttractor;
 import mafisher.quasar.api.effect.debris.EffectDebrisSpawn;
-import mafisher.quasar.api.effect.debris.EffectDebrisSpec;
 import mafisher.quasar.api.effect.force.EffectForceField;
 import mafisher.quasar.api.effect.damage.EffectHitbox;
 import mafisher.quasar.api.effect.EffectLifetimePolicy;
@@ -23,16 +20,14 @@ import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.EffectSpace;
 import mafisher.quasar.api.effect.budget.EffectPriority;
 import mafisher.quasar.api.effect.VisualEffectSpec;
-import mafisher.quasar.api.gameplay.block.BlockJournalMode;
 import mafisher.quasar.api.gameplay.block.EffectCarvePlan;
 import mafisher.quasar.api.gameplay.block.EffectCarveSession;
 import mafisher.quasar.api.gameplay.block.EffectCarveSpec;
+import mafisher.quasar.api.gameplay.block.EffectSurfaceTear;
+import mafisher.quasar.api.gameplay.block.EffectWriteFeedback;
 import mafisher.quasar.api.gameplay.world.EffectBlockCursor;
-import mafisher.quasar.api.gameplay.world.EffectBlockSample;
 import mafisher.quasar.api.gameplay.world.EffectBlockVolume;
 import mafisher.quasar.api.gameplay.block.EffectBulkBlockEditor;
-import mafisher.quasar.api.gameplay.world.EffectRaycastResult;
-import mafisher.quasar.api.gameplay.world.EffectRaycastStatus;
 import mafisher.quasar.api.gameplay.GameplayEffectContext;
 import mafisher.quasar.api.gameplay.GameplayEffectController;
 import mafisher.quasar.api.gameplay.GameplayEffectEndReason;
@@ -43,11 +38,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
-import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;
@@ -68,7 +61,6 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
     private static final Logger LOGGER = LoggerFactory.getLogger(ContentBlackHoleGameplayController.class);
     private static final ContentBlackHoleGameplaySettings SETTINGS =
         ContentBlackHoleGameplaySettings.DEFAULT;
-    private static final double MAX_PENDING_HEADROOM = 12_000.0;
     private static final Map<ServerLevel, Set<UUID>> ACTIVE = new WeakHashMap<>();
 
     public static int stopAll(ServerLevel level) {
@@ -102,8 +94,6 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
     private static final String CRATER_ESTIMATED_SECTIONS = "crater_estimated_sections";
     private static final String CRATER_INCOMPLETE = "crater_incomplete";
     private static final String CARVE_SESSION = "carve_session";
-    private static final int TEAR_CLUSTER_RADIUS = 1;
-    private static final int TEAR_CLUSTER_BLOCKS = 27;
 
     private final ContentBlackHoleGameplaySettings settings;
     private Vec3 center = Vec3.ZERO;
@@ -132,7 +122,8 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
     private double frontRadius;
     private EffectCarvePlan carvePlan;
     private EffectCarveSession carveSession;
-    private int tearBurstsEmitted;
+    private EffectSurfaceTear surfaceTear;
+    private EffectWriteFeedback tearFeedback;
 
     public ContentBlackHoleGameplayController() {
         this(SETTINGS);
@@ -169,6 +160,7 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
             this.coreDoneReported = true;
         }
         this.frontRadius = 0.0;
+        this.configureTear(context);
         context.updatePersistentState(tag -> {
             tag.putFloat(YAW, this.yaw);
             tag.putFloat(PITCH, this.pitch);
@@ -218,6 +210,7 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
         } else if (this.legacyCarveComplete) {
             this.frontRadius = this.craterRadius;
         }
+        this.configureTear(context);
         this.visualStarted = true;
         this.track(context);
     }
@@ -228,7 +221,6 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
         float progress = Math.min(1.0F, Math.max(0.0F, context.ageTicks() / (float)duration));
         float horizonScale = ContentBlackHoleCinematics.parameters()
             .sampleFloat("HorizonScale", progress);
-        this.tearBurstsEmitted = 0;
 
         // The terrain front advances before tearing and debris read it. The session owns the
         // exact core pre-pass, the bulk front, and the no-edits-after-deadline rule.
@@ -444,155 +436,58 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
         }
     }
 
-    private void tickSurfaceTear(GameplayEffectContext context) {
-        if (this.carveSession == null
-            || this.carveSession.complete()
-            || this.frontRadius <= 0.0) {
+    private void configureTear(GameplayEffectContext context) {
+        if (this.carvePlan == null || this.carveSession == null) {
+            this.surfaceTear = null;
+            this.tearFeedback = null;
             return;
         }
-        int headroom = (int)Math.max(0.0, MAX_PENDING_HEADROOM - context.pendingBlockChanges());
-        int maxRays = headroom / TEAR_CLUSTER_BLOCKS;
-        if (maxRays <= 0) {
-            return;
-        }
-        double band = this.tearBand();
-        double tearRadius = tearRadius(this.frontRadius, this.craterRadius, band);
-        if (tearRadius <= 0.0) {
-            return;
-        }
-        int rays = Math.min(this.tearRayCount(tearRadius), maxRays);
-        RandomSource random = context.random();
-        double innerSquared = Math.max(0.0, this.frontRadius - band);
-        innerSquared *= innerSquared;
-        for (int index = 0; index < rays; index++) {
-            Vec3 direction = randomDirection(random);
-            Vec3 from = this.center.add(direction.scale(tearRadius));
-            EffectRaycastResult result = context.world().raycast(
-                from,
-                this.center,
-                state -> !state.isAir() && state.getFluidState().isEmpty()
-            );
-            if (result.status() == EffectRaycastStatus.BUDGET_EXHAUSTED
-                || result.status() == EffectRaycastStatus.UNLOADED) {
-                break;
+        this.surfaceTear = new EffectSurfaceTear(new EffectSurfaceTear.Settings(
+            this.tearBand(),
+            this.settings.tearRaysPerTick(),
+            Math.max(2.0, this.coreRadius * 0.5),
+            1
+        ));
+        EffectWriteFeedback debris = EffectSurfaceTear.debrisFeedback(
+            context,
+            new EffectSurfaceTear.Debris(
+                this.debrisAudience,
+                this.debrisAttractor,
+                new EffectDebrisSpawn.Point(),
+                this.settings.tearDebrisPieces(),
+                this.settings.debrisFallSpeed(),
+                ContentBlackHoleDebris.MIN_LIFETIME_TICKS,
+                this.settings.debrisMaxLifetimeTicks(),
+                this.settings.debrisPieceScale(),
+                this.settings.tearDebrisBurstsPerTick(),
+                ContentBlackHoleCinematics.IMPLOSION
+            )
+        );
+        this.tearFeedback = sample -> {
+            Vec3 origin = Vec3.atCenterOf(sample.position());
+            double distance = origin.distanceTo(this.center);
+            if (distance > this.coreRadius * 1.05 && distance <= this.craterRadius * 1.25) {
+                debris.onWritten(sample);
             }
-            if (!result.isHit()) {
-                continue;
-            }
-            BlockPos position = result.hit().orElseThrow().position();
-            double dx = position.getX() + 0.5 - this.center.x;
-            double dy = position.getY() + 0.5 - this.center.y;
-            double dz = position.getZ() + 0.5 - this.center.z;
-            double distanceSquared = dx * dx + dy * dy + dz * dz;
-            if (distanceSquared < innerSquared
-                || !this.isInsideCrater(position.getX() + 0.5, position.getY() + 0.5,
-                    position.getZ() + 0.5)) {
-                continue;
-            }
-            this.queueTearCluster(context, position);
-        }
+        };
     }
 
-    private boolean isInsideCrater(double x, double y, double z) {
-        if (this.craterRadius <= 0.0) {
-            return false;
+    private void tickSurfaceTear(GameplayEffectContext context) {
+        if (this.surfaceTear == null || this.tearFeedback == null
+            || this.carveSession == null || this.frontRadius <= 0.0) {
+            return;
         }
-        double dx = x - this.center.x;
-        double dy = y - this.center.y;
-        double dz = z - this.center.z;
-        return dx * dx + dy * dy + dz * dz <= this.craterRadius * this.craterRadius;
+        this.surfaceTear.tick(
+            context,
+            new EffectSurfaceTear.Geometry(
+                this.carvePlan.volume(), this.center, this.frontRadius, this.craterRadius
+            ),
+            this.tearFeedback
+        );
     }
 
     private double tearBand() {
         return Math.max(2.0, Math.min(this.craterRadius, this.coreRadius * 0.5));
-    }
-
-    private int tearRayCount(double radius) {
-        int maxRays = this.settings.tearRaysPerTick();
-        if (maxRays <= 0) {
-            return 0;
-        }
-        double spacing = Math.max(2.0, this.coreRadius * 0.5);
-        int wanted = (int)Math.ceil(2.0 * Math.PI * radius / spacing);
-        return Math.max(1, Math.min(maxRays, wanted));
-    }
-
-    private void queueTearCluster(GameplayEffectContext context, BlockPos hitPosition) {
-        boolean emitsDebris = this.settings.tearDebrisBurstsPerTick() > 0;
-        for (int x = -TEAR_CLUSTER_RADIUS; x <= TEAR_CLUSTER_RADIUS; x++) {
-            for (int y = -TEAR_CLUSTER_RADIUS; y <= TEAR_CLUSTER_RADIUS; y++) {
-                for (int z = -TEAR_CLUSTER_RADIUS; z <= TEAR_CLUSTER_RADIUS; z++) {
-                    BlockPos position = hitPosition.offset(x, y, z);
-                    if (!context.level().isInWorldBounds(position)
-                        || position.getY() <= context.level().getMinBuildHeight()
-                        || !this.isInsideCrater(
-                            position.getX() + 0.5, position.getY() + 0.5, position.getZ() + 0.5
-                        )) {
-                        continue;
-                    }
-                    Consumer<EffectBlockSample> applied = emitsDebris
-                        && position.equals(hitPosition)
-                            ? sample -> this.emitTearDebris(context, sample)
-                            : null;
-                    context.queueBlockChange(
-                        new BlockChange(position, Blocks.AIR.defaultBlockState()),
-                        applied,
-                        BlockJournalMode.SECTION
-                    );
-                }
-            }
-        }
-    }
-
-    /**
-     * Emits one straight radial burst from the block that was actually removed. The callback only
-     * runs after a successful write, so protection vetoes never show a block that stayed in place.
-     */
-    private void emitTearDebris(GameplayEffectContext context, EffectBlockSample sample) {
-        if (this.tearBurstsEmitted >= this.settings.tearDebrisBurstsPerTick()
-            || this.debrisAudience == null) {
-            return;
-        }
-        BlockState state = sample.state();
-        if (state.isAir()) {
-            return;
-        }
-        Vec3 origin = Vec3.atCenterOf(sample.position());
-        double distance = origin.distanceTo(this.center);
-        if (distance <= this.coreRadius * 1.05 || distance > this.craterRadius * 1.25) {
-            return;
-        }
-        int remaining = this.remainingTicksUntilImplosion(context);
-        if (remaining < ContentBlackHoleDebris.MIN_LIFETIME_TICKS) {
-            return;
-        }
-        int lifetime = Math.min(
-            ContentBlackHoleDebris.lifetimeTicks(
-                distance, this.settings.debrisFallSpeed(), this.settings.debrisMaxLifetimeTicks()
-            ),
-            remaining
-        );
-        this.tearBurstsEmitted++;
-        context.spawnDebris(EffectDebrisSpec.infallField(
-            origin,
-            state,
-            this.settings.tearDebrisPieces(),
-            0.0,
-            0.0,
-            lifetime,
-            this.debrisAudience,
-            this.debrisAttractor,
-            new EffectDebrisSpawn.Point(),
-            this.settings.debrisPieceScale()
-        ));
-    }
-
-    private int remainingTicksUntilImplosion(GameplayEffectContext context) {
-        int duration = Math.max(1, context.spec().phases().totalDurationTicks());
-        int implosionTick = Math.max(1, Math.round(
-            ContentBlackHoleCinematics.IMPLOSION * duration
-        ));
-        return Math.max(0, implosionTick - context.ageTicks());
     }
 
     private void tickForces(GameplayEffectContext context, float horizonScale) {
@@ -801,26 +696,6 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
     private static boolean breaksSurface(EffectBlockVolume volume, double groundY) {
         EffectBounds bounds = volume.bounds();
         return bounds.minY() <= groundY && bounds.maxY() >= groundY;
-    }
-
-    /** Radius of the rim being torn out, always inside the final crater. */
-    static double tearRadius(double frontRadius, double craterRadius, double band) {
-        return Math.min(craterRadius, Math.max(0.0, frontRadius + band));
-    }
-
-    private static Vec3 randomDirection(RandomSource random) {
-        double x;
-        double y;
-        double z;
-        double lengthSquared;
-        do {
-            x = random.nextDouble() * 2.0 - 1.0;
-            y = random.nextDouble() * 2.0 - 1.0;
-            z = random.nextDouble() * 2.0 - 1.0;
-            lengthSquared = x * x + y * y + z * z;
-        } while (lengthSquared <= 1.0E-6 || lengthSquared > 1.0);
-        double scale = 1.0 / Math.sqrt(lengthSquared);
-        return new Vec3(x * scale, y * scale, z * scale);
     }
 
     private static Vec3 diskAxis(float yaw, float pitch, float roll) {

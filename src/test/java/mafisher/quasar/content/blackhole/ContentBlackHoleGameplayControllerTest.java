@@ -122,6 +122,26 @@ class ContentBlackHoleGameplayControllerTest {
     }
 
     @Test
+    void tearingStopsAtTheWorkDeadline() {
+        this.world.fillSection(Blocks.STONE.defaultBlockState());
+        Vec3 center = new Vec3(8.0, 8.0, 8.0);
+        GameplayEffectContext context = context(
+            center, 0.5F, age(0.95F), new CompoundTag()
+        );
+        ContentBlackHoleGameplayController controller = new ContentBlackHoleGameplayController();
+
+        try {
+            controller.onStart(context);
+            context.beginTick((int)age(0.95F));
+            controller.onTick(context);
+
+            assertEquals(0, context.pendingBlockChanges());
+        } finally {
+            close(context);
+        }
+    }
+
+    @Test
     void resumesACompletedLegacyCarveWithoutBudgetEdits() {
         this.world.fillSection(Blocks.STONE.defaultBlockState());
         CompoundTag legacy = new CompoundTag();
