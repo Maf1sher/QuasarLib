@@ -2,6 +2,10 @@ package mafisher.quasar.content.blackhole;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.util.UUID;
 import mafisher.quasar.TestConfig;
@@ -56,7 +60,26 @@ class ContentBlackHoleGameplayControllerTest {
             assertTrue(state.contains("crater_start"));
             assertTrue(state.contains("crater_work_end"));
             assertTrue(state.contains("crater_ground_y"));
+            assertEquals(15.0, state.getDouble("crater_ground_y"), 1.0E-6);
             assertEquals(0, context.pendingBlockChanges());
+        } finally {
+            close(context);
+        }
+    }
+
+    @Test
+    void unloadedGroundSampleFallsBackWithoutForceLoading() {
+        when(this.world.level().hasChunkAt(8, 8)).thenReturn(false);
+        GameplayEffectContext context = context(age(0.0F), new CompoundTag());
+        ContentBlackHoleGameplayController controller = new ContentBlackHoleGameplayController();
+
+        try {
+            controller.onStart(context);
+
+            assertEquals(300.0,
+                GameplayEffectAccess.rawPersistentState(context).getDouble("crater_ground_y"),
+                1.0E-6);
+            verify(this.world.level(), never()).getChunkAt(any());
         } finally {
             close(context);
         }

@@ -3,7 +3,6 @@ package mafisher.quasar.content.blackhole;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Objects;
-import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 import java.util.WeakHashMap;
@@ -27,6 +26,7 @@ import mafisher.quasar.api.gameplay.block.EffectSurfaceTear;
 import mafisher.quasar.api.gameplay.block.EffectWriteFeedback;
 import mafisher.quasar.api.gameplay.world.EffectBlockCursor;
 import mafisher.quasar.api.gameplay.world.EffectBlockVolume;
+import mafisher.quasar.api.gameplay.world.EffectSurfaceSampler;
 import mafisher.quasar.api.gameplay.block.EffectBulkBlockEditor;
 import mafisher.quasar.api.gameplay.GameplayEffectContext;
 import mafisher.quasar.api.gameplay.GameplayEffectController;
@@ -34,7 +34,6 @@ import mafisher.quasar.api.gameplay.GameplayEffectEndReason;
 import mafisher.quasar.api.gameplay.GameplayEffectHandle;
 import mafisher.quasar.api.gameplay.GameplayEffectService;
 import mafisher.quasar.content.ContentEffectIds;
-import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
@@ -123,6 +122,7 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
     private EffectCarvePlan carvePlan;
     private EffectCarveSession carveSession;
     private EffectSurfaceTear surfaceTear;
+    private EffectSurfaceSampler surfaceSampler;
     private EffectWriteFeedback tearFeedback;
 
     public ContentBlackHoleGameplayController() {
@@ -259,6 +259,7 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
             this.carveSession.close(releaseReveal);
             this.carveSession = null;
         }
+        this.surfaceSampler = null;
         Set<UUID> sessions = ACTIVE.get(context.level());
         if (sessions != null) {
             sessions.remove(context.sessionId());
@@ -307,20 +308,24 @@ public final class ContentBlackHoleGameplayController implements GameplayEffectC
     }
 
     private double sampleGroundY(GameplayEffectContext context) {
+        if (this.surfaceSampler == null) {
+            this.surfaceSampler = new EffectSurfaceSampler(context);
+        }
         int x = Mth.floor(this.center.x);
         int z = Mth.floor(this.center.z);
-        OptionalInt ground = context.world().height(
-            Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z
+        EffectSurfaceSampler.Column column = this.surfaceSampler.sampleColumn(
+            x, z, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES
         );
-        if (ground.isEmpty()) {
-            // The cinematic may sit just beyond the player's simulation distance; make sure the
-            // crater column exists before reading its height.
-            context.level().getChunkAt(new BlockPos(x, context.level().getMinBuildHeight(), z));
-            ground = OptionalInt.of(context.level().getHeight(
-                Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z
-            ));
+        if (!column.loaded()) {
+            // Never force-load the cinematic's column; an unavailable sample keeps the visual
+            // alive and falls back to the authored anchor height.
+            LOGGER.debug(
+                "Black-hole ground sample at {},{} is {}; using the anchor Y {}",
+                x, z, column.status(), this.center.y
+            );
+            return this.center.y;
         }
-        int groundY = ground.getAsInt();
+        int groundY = column.height();
         if (groundY <= context.level().getMinBuildHeight() + 1) {
             return this.center.y;
         }
