@@ -20,6 +20,7 @@ class ContentSpiRegistrationTest {
         assertTrue(registry.find(ContentEffectIds.WAVE_DISTORTION).isPresent());
         assertTrue(registry.find(ContentEffectIds.SCENE_BLUR).isPresent());
         assertTrue(registry.find(ContentEffectIds.BLOOM).isPresent());
+        assertTrue(registry.find(ContentEffectIds.RIBBON).isPresent());
         assertTrue(registry.find(ContentEffectIds.BLACK_HOLE).isPresent());
         assertTrue(registry.find(ContentEffectIds.BLACK_HOLE_MESH).isPresent());
     }

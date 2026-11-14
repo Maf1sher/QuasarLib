@@ -15,6 +15,8 @@ class ContentEffectIdsTest {
         assertEquals("quasar_content", ContentEffectIds.BLACK_HOLE.getNamespace());
         assertEquals("black_hole", ContentEffectIds.BLACK_HOLE.getPath());
         assertEquals("quasar_content", ContentEffectIds.BLACK_HOLE_MESH.getNamespace());
+        assertEquals("quasar_content", ContentEffectIds.RIBBON.getNamespace());
+        assertEquals("ribbon", ContentEffectIds.RIBBON.getPath());
     }
 
     @Test

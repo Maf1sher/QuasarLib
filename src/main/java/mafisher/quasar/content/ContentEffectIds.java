@@ -22,6 +22,9 @@ public final class ContentEffectIds {
     public static final ResourceLocation BLACK_HOLE_MESH = ResourceLocation.fromNamespaceAndPath(
         ContentBootstrap.NAMESPACE, "black_hole_mesh"
     );
+    public static final ResourceLocation RIBBON = ResourceLocation.fromNamespaceAndPath(
+        ContentBootstrap.NAMESPACE, "ribbon"
+    );
 
     private ContentEffectIds() {
     }

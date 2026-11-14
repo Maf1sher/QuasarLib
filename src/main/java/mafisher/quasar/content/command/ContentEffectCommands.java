@@ -67,6 +67,9 @@ final class ContentEffectCommands {
         root.then(withAngles(Commands.literal("bloom"), context -> startVisual(
             context.getSource(), ContentEffectIds.BLOOM, readAngles(context)
         )));
+        root.then(withAngles(Commands.literal("ribbon"), context -> startVisual(
+            context.getSource(), ContentEffectIds.RIBBON, readAngles(context)
+        )));
         root.then(withAngles(Commands.literal("probe"), context -> spawnProbe(
             context.getSource(), readAngles(context)
         )));

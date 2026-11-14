@@ -8,6 +8,7 @@ import mafisher.quasar.content.blackhole.ContentBlackHoleOperation;
 import mafisher.quasar.content.blackhole.ContentBlackHoleRenderer;
 import mafisher.quasar.content.demo.ContentBloomRenderer;
 import mafisher.quasar.content.demo.ContentProbeRenderer;
+import mafisher.quasar.content.demo.ContentRibbonRenderer;
 import mafisher.quasar.content.demo.ContentSceneBlurRenderer;
 import mafisher.quasar.content.demo.ContentWaveDistortionRenderer;
 import mafisher.quasar.content.rune.ContentRuneCircleRenderer;
@@ -31,6 +32,7 @@ public final class ContentClientEffects {
         event.register(ContentEffectIds.WAVE_DISTORTION, new ContentWaveDistortionRenderer());
         event.register(ContentEffectIds.SCENE_BLUR, new ContentSceneBlurRenderer());
         event.register(ContentEffectIds.BLOOM, new ContentBloomRenderer());
+        event.register(ContentEffectIds.RIBBON, new ContentRibbonRenderer());
         event.register(ContentEffectIds.BLACK_HOLE, new ContentBlackHoleRenderer());
         event.register(ContentEffectIds.BLACK_HOLE_MESH, new ContentBlackHoleMeshRenderer());
     }
