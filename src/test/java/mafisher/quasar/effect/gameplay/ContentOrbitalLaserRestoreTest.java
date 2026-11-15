@@ -1,10 +1,13 @@
 package mafisher.quasar.effect.gameplay;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.UUID;
 import mafisher.quasar.TestConfig;
+import mafisher.quasar.api.audio.EffectAudioPlan;
+import mafisher.quasar.api.audio.EffectAudioService;
 import mafisher.quasar.api.effect.EffectRemovalPolicy;
 import mafisher.quasar.api.effect.VisualEffectService;
 import mafisher.quasar.api.gameplay.GameplayEffectEndReason;
@@ -88,6 +91,32 @@ class ContentOrbitalLaserRestoreTest {
 
         assertEquals(1, VisualEffectService.activeCount(this.world.level()));
         assertEquals(childId, visualDescriptorId());
+    }
+
+    @Test
+    void restoresThePhaseScorePlan() {
+        GameplayEffectHandle handle = start();
+        EffectAudioPlan before = EffectAudioService.planOrNull(
+            this.world.level(), handle.sessionId()
+        );
+        assertNotNull(before);
+        assertEquals(7, before.cueCount());
+        long startGameTime = before.startGameTime();
+
+        GameplayEffectService.stopAll(
+            this.world.level(),
+            GameplayEffectEndReason.LEVEL_UNLOAD,
+            EffectRemovalPolicy.KEEP_FOR_RESTORE
+        );
+        VisualEffectService.clear(this.world.level());
+        EffectRestoreService.restoreLevel(this.world.level());
+
+        EffectAudioPlan restored = EffectAudioService.planOrNull(
+            this.world.level(), handle.sessionId()
+        );
+        assertNotNull(restored);
+        assertEquals(7, restored.cueCount());
+        assertEquals(startGameTime, restored.startGameTime());
     }
 
     @Test

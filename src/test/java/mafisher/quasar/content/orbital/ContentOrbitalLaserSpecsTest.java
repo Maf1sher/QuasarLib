@@ -1,6 +1,7 @@
 package mafisher.quasar.content.orbital;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -31,6 +32,23 @@ class ContentOrbitalLaserSpecsTest {
     @AfterEach
     void tearDown() {
         TestConfig.unload();
+    }
+
+    @Test
+    void gameplayAndPreviewCarryThePhaseScore() {
+        GameplayEffectSpec gameplay = ContentOrbitalLaserSpecs.gameplay(
+            null, new TargetColumn(0, 0, SURFACE_Y), 6, 42L
+        );
+
+        assertFalse(gameplay.audio().isEmpty());
+        assertEquals(7, gameplay.audio().cueCount());
+        assertTrue(gameplay.audio().fitsWithin(ContentOrbitalLaserSettings.TOTAL_TICKS));
+        assertEquals(
+            gameplay.audio().cues(),
+            ContentOrbitalLaserSpecs.preview(
+                new TargetColumn(0, 0, SURFACE_Y), 6, 42L
+            ).audio().cues()
+        );
     }
 
     @Test

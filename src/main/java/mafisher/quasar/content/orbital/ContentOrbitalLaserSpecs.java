@@ -1,7 +1,6 @@
 package mafisher.quasar.content.orbital;
 
 import java.util.UUID;
-import mafisher.quasar.api.audio.EffectAudioSpec;
 import mafisher.quasar.api.effect.EffectLifetimePolicy;
 import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.VisualEffectSpec;
@@ -39,7 +38,7 @@ public final class ContentOrbitalLaserSpecs {
             seed,
             ContentOrbitalLaserSettings.gameplayBudget(),
             OwnerPolicy.STOP_WHEN_UNAVAILABLE,
-            EffectAudioSpec.NONE,
+            ContentOrbitalLaserAudio.plan(target.center()),
             EffectPriority.NORMAL,
             ContentOrbitalLaserSettings.requireRadius(radius)
         );
@@ -98,6 +97,7 @@ public final class ContentOrbitalLaserSpecs {
                 ContentOrbitalLaserSettings.AUDIENCE
             )
             .scale(ContentOrbitalLaserSettings.requireRadius(radius))
+            .audio(ContentOrbitalLaserAudio.plan(target.center()))
             .build();
     }
 }

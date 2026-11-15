@@ -14,31 +14,42 @@ import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 
 class ContentSoundsTest {
-    private static final List<String> FILES = List.of(
+    private static final List<String> BLACK_HOLE_FILES = List.of(
         "dread", "drone", "ignition", "shockwave", "accretion", "pulse",
         "collapse", "implosion", "echo"
     );
+    private static final List<String> ORBITAL_LASER_FILES = List.of(
+        "warning", "descent", "impact", "drone", "crackle", "collapse", "aftermath"
+    );
 
     @Test
-    void registersEveryBlackHoleSoundEvent() {
+    void registersEveryContentSoundEvent() {
         Set<ResourceLocation> ids = ContentSounds.SOUNDS.getEntries().stream()
             .map(holder -> holder.getId())
             .collect(Collectors.toSet());
 
-        assertEquals(10, ids.size());
+        assertEquals(17, ids.size());
         assertTrue(ids.contains(id("effect_test")));
         assertTrue(ids.contains(id("black_hole_drone")));
         assertTrue(ids.contains(id("black_hole_implosion")));
+        assertTrue(ids.contains(id("orbital_laser_warning")));
+        assertTrue(ids.contains(id("orbital_laser_aftermath")));
     }
 
     @Test
     void shipsTheSoundJsonAndEveryAsset() throws IOException {
         String json = readAsset("assets/quasar_content/sounds.json");
-        for (String name : FILES) {
-            assertTrue(json.contains("\"black_hole_" + name + "\""), name);
-            assertTrue(json.contains("\"quasar_content:black_hole/" + name + "\""), name);
+        assertAssets(json, "black_hole", BLACK_HOLE_FILES);
+        assertAssets(json, "orbital_laser", ORBITAL_LASER_FILES);
+    }
+
+    private void assertAssets(String json, String directory, List<String> names) {
+        for (String name : names) {
+            String event = directory + "_" + name;
+            assertTrue(json.contains("\"" + event + "\""), event);
+            assertTrue(json.contains("\"quasar_content:" + directory + "/" + name + "\""), name);
             assertNotNull(getClass().getClassLoader().getResource(
-                "assets/quasar_content/sounds/black_hole/" + name + ".ogg"), name);
+                "assets/quasar_content/sounds/" + directory + "/" + name + ".ogg"), name);
         }
     }
 

@@ -51,5 +51,40 @@
     "sounds": [
       { "name": "quasar_content:black_hole/echo" }
     ]
+  },
+  "orbital_laser_warning": {
+    "sounds": [
+      { "name": "quasar_content:orbital_laser/warning" }
+    ]
+  },
+  "orbital_laser_descent": {
+    "sounds": [
+      { "name": "quasar_content:orbital_laser/descent" }
+    ]
+  },
+  "orbital_laser_impact": {
+    "sounds": [
+      { "name": "quasar_content:orbital_laser/impact" }
+    ]
+  },
+  "orbital_laser_drone": {
+    "sounds": [
+      { "name": "quasar_content:orbital_laser/drone", "stream": true }
+    ]
+  },
+  "orbital_laser_crackle": {
+    "sounds": [
+      { "name": "quasar_content:orbital_laser/crackle" }
+    ]
+  },
+  "orbital_laser_collapse": {
+    "sounds": [
+      { "name": "quasar_content:orbital_laser/collapse" }
+    ]
+  },
+  "orbital_laser_aftermath": {
+    "sounds": [
+      { "name": "quasar_content:orbital_laser/aftermath" }
+    ]
   }
 }

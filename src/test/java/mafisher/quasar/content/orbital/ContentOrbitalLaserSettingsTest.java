@@ -2,6 +2,7 @@ package mafisher.quasar.content.orbital;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -95,7 +96,8 @@ class ContentOrbitalLaserSettingsTest {
         assertEquals(6.0F, spec.scale());
         assertEquals(220, spec.phases().totalDurationTicks());
         assertEquals(OwnerPolicy.STOP_WHEN_UNAVAILABLE, spec.ownerPolicy());
-        assertTrue(spec.audio().isEmpty());
+        assertFalse(spec.audio().isEmpty());
+        assertEquals(7, spec.audio().cueCount());
     }
 
     @Test
@@ -123,7 +125,8 @@ class ContentOrbitalLaserSettingsTest {
         assertEquals(220, preview.durationTicks());
         assertEquals(42L, preview.seed());
         assertInstanceOf(EffectAudience.DimensionWide.class, preview.audience());
-        assertTrue(preview.audio().isEmpty());
+        assertFalse(preview.audio().isEmpty());
+        assertEquals(7, preview.audio().cueCount());
     }
 
     @Test

@@ -118,6 +118,7 @@ public final class ContentOrbitalLaserRenderer
 
     @Override
     public ScreenEffectSettings screenEffectSettings(EffectRenderContext context) {
+        ContentOrbitalLaserImpulses.tick(context);
         return ScreenEffectSettings.custom(
             ContentScreenOperations.ORBITAL_LASER_BEAM, BEAM_SETTINGS
         );

@@ -14,6 +14,7 @@ import mafisher.quasar.content.demo.ContentSceneBlurRenderer;
 import mafisher.quasar.content.demo.ContentStaticMeshRenderer;
 import mafisher.quasar.content.demo.ContentWaveDistortionRenderer;
 import mafisher.quasar.content.orbital.ContentOrbitalLaserBeamOperation;
+import mafisher.quasar.content.orbital.ContentOrbitalLaserImpulses;
 import mafisher.quasar.content.orbital.ContentOrbitalLaserRenderer;
 import mafisher.quasar.content.rune.ContentRuneCircleRenderer;
 import mafisher.quasar.content.rune.ContentRuneGlowOperation;
@@ -53,6 +54,7 @@ public final class ContentClientEffects {
     public static void onLevelUnload(LevelEvent.Unload event) {
         if (event.getLevel() instanceof ClientLevel) {
             ContentBlackHoleImpulses.clear();
+            ContentOrbitalLaserImpulses.clear();
         }
     }
 }
