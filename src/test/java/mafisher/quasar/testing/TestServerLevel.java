@@ -58,6 +58,7 @@ public final class TestServerLevel {
     private final EffectSavedData store;
     private final Map<BlockPos, BlockState> blocks = new HashMap<>();
     private final Map<UUID, Entity> entities = new HashMap<>();
+    private final List<Entity> worldEntities = new ArrayList<>();
     private final List<String> calls = new ArrayList<>();
     private final ServerChunkCache chunkSource;
     private final LevelChunk chunk;
@@ -134,9 +135,17 @@ public final class TestServerLevel {
         when(this.chunk.getSection(anyInt())).thenReturn(this.section);
         when(this.chunk.getSections()).thenReturn(this.sections);
         when(this.chunk.getBlockEntities()).thenReturn(Map.of());
-        when(this.level.getEntitiesOfClass(any(), any(AABB.class))).thenReturn(List.of());
+        when(this.level.getEntitiesOfClass(any(), any(AABB.class))).thenAnswer(
+            invocation -> {
+                Class<?> type = invocation.getArgument(0);
+                return this.worldEntities.stream()
+                    .filter(entity -> type.isInstance(entity))
+                    .toList();
+            }
+        );
         DamageSources damageSources = mock(DamageSources.class);
         when(damageSources.fellOutOfWorld()).thenReturn(mock(DamageSource.class));
+        when(damageSources.magic()).thenReturn(mock(DamageSource.class));
         when(this.level.damageSources()).thenReturn(damageSources);
         when(this.level.getEntity(any(UUID.class))).thenAnswer(
             invocation -> this.entities.get(invocation.getArgument(0))
@@ -184,6 +193,14 @@ public final class TestServerLevel {
         this.gameTime = gameTime;
     }
 
+    /** Overrides the fixture's single-section build range for a focused test. */
+    public void setBuildHeight(int minBuildHeight, int maxBuildHeight) {
+        when(this.level.getMinBuildHeight()).thenReturn(minBuildHeight);
+        when(this.level.getMaxBuildHeight()).thenReturn(maxBuildHeight);
+        when(this.level.getMinSection()).thenReturn(Math.floorDiv(minBuildHeight, 16));
+        when(this.level.getMaxSection()).thenReturn(Math.floorDiv(maxBuildHeight - 1, 16) + 1);
+    }
+
     public void advanceGameTime() {
         this.gameTime++;
     }
@@ -228,6 +245,10 @@ public final class TestServerLevel {
 
     public void putEntity(UUID id, Entity entity) {
         this.entities.put(id, entity);
+    }
+
+    public void addWorldEntity(Entity entity) {
+        this.worldEntities.add(entity);
     }
 
     public void removeEntity(UUID id) {

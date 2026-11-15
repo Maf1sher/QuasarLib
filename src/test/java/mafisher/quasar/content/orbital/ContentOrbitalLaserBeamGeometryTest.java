@@ -41,6 +41,22 @@ class ContentOrbitalLaserBeamGeometryTest {
     }
 
     @Test
+    void effectiveRadiusAppliesTheBudgetScale() {
+        assertEquals(5.0F,
+            ContentOrbitalLaserBeamGeometry.effectiveRadius(10.0F, 0.5F), 0.0F);
+        assertEquals(10.0F,
+            ContentOrbitalLaserBeamGeometry.effectiveRadius(10.0F, 1.0F), 0.0F);
+        assertEquals(0.0F,
+            ContentOrbitalLaserBeamGeometry.effectiveRadius(10.0F, 0.0F), 0.0F);
+        assertEquals(0.0F,
+            ContentOrbitalLaserBeamGeometry.effectiveRadius(Float.NaN, 1.0F), 0.0F);
+        assertEquals(0.0F,
+            ContentOrbitalLaserBeamGeometry.effectiveRadius(10.0F, Float.NaN), 0.0F);
+        assertEquals(10.0F,
+            ContentOrbitalLaserBeamGeometry.effectiveRadius(10.0F, 2.0F), 0.0F);
+    }
+
+    @Test
     void footprintAndRadiusCoverEveryPhase() {
         assertEquals(3.5F, SETTINGS.maximumFootprintFactor(), 0.0F);
         assertEquals(35.0, ContentOrbitalLaserBeamGeometry.maximumFootprint(SETTINGS, 10.0F),

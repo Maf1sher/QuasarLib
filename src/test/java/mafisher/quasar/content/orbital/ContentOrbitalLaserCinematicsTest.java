@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import mafisher.quasar.api.effect.EffectParameterSet;
+import mafisher.quasar.api.effect.EffectParameterState;
 import org.junit.jupiter.api.Test;
 
 class ContentOrbitalLaserCinematicsTest {
@@ -99,6 +100,24 @@ class ContentOrbitalLaserCinematicsTest {
         assertEquals(0.0F, sample("BeamStrength", AFTERMATH), 1.0E-6F);
         assertFalse(ContentOrbitalLaserCinematics.screenVisible(AFTERMATH));
         assertEquals(0.0F, sample("ContactGlow", AFTERMATH), 1.0E-6F);
+    }
+
+    @Test
+    void serverOverridesDriveTheEffectiveRadiusAndFrontDepth() {
+        EffectParameterState state = EffectParameterState.builder()
+            .putFloat(ContentOrbitalLaserCinematics.BEAM_RADIUS_SCALE, 0.5F)
+            .putFloat(ContentOrbitalLaserCinematics.TIP_DEPTH, 24.0F)
+            .build();
+
+        assertEquals(0.5F,
+            ContentOrbitalLaserCinematics.beamRadiusScale(0.5F, state), 1.0E-6F);
+        assertEquals(24.0F,
+            ContentOrbitalLaserCinematics.tipDepth(0.5F, state), 1.0E-6F);
+        assertEquals(1.0F,
+            ContentOrbitalLaserCinematics.beamRadiusScale(0.5F, EffectParameterState.EMPTY),
+            1.0E-6F);
+        assertEquals(0.0F,
+            ContentOrbitalLaserCinematics.tipDepth(0.5F, EffectParameterState.EMPTY), 1.0E-6F);
     }
 
     @Test

@@ -151,16 +151,22 @@ public final class ContentOrbitalLaserRenderer
         double topX = base.x() + up.x() * BEAM_SETTINGS.topHeight();
         double topY = base.y() + up.y() * BEAM_SETTINGS.topHeight();
         double topZ = base.z() + up.z() * BEAM_SETTINGS.topHeight();
+        float tipDepth = ContentOrbitalLaserCinematics.tipDepth(
+            context.progress(), context.parameters()
+        );
+        double bottomX = base.x() - up.x() * tipDepth;
+        double bottomY = base.y() - up.y() * tipDepth;
+        double bottomZ = base.z() - up.z() * tipDepth;
         double footprint = ContentOrbitalLaserBeamGeometry.maximumFootprint(
             BEAM_SETTINGS, context.scale()
         );
         return new AABB(
-            Math.min(base.x(), topX) - footprint,
-            Math.min(base.y(), topY) - footprint,
-            Math.min(base.z(), topZ) - footprint,
-            Math.max(base.x(), topX) + footprint,
-            Math.max(base.y(), topY) + footprint,
-            Math.max(base.z(), topZ) + footprint
+            Math.min(base.x(), Math.min(topX, bottomX)) - footprint,
+            Math.min(base.y(), Math.min(topY, bottomY)) - footprint,
+            Math.min(base.z(), Math.min(topZ, bottomZ)) - footprint,
+            Math.max(base.x(), Math.max(topX, bottomX)) + footprint,
+            Math.max(base.y(), Math.max(topY, bottomY)) + footprint,
+            Math.max(base.z(), Math.max(topZ, bottomZ)) + footprint
         );
     }
 

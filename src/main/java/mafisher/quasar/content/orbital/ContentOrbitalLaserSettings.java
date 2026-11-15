@@ -3,6 +3,7 @@ package mafisher.quasar.content.orbital;
 import mafisher.quasar.api.effect.EffectAudience;
 import mafisher.quasar.api.gameplay.EffectPhase;
 import mafisher.quasar.api.gameplay.EffectPhasePlan;
+import mafisher.quasar.api.gameplay.tick.EffectTickBudget;
 
 /** Content-owned timing, target limits, and phase plan for the orbital-laser acceptance test. */
 public final class ContentOrbitalLaserSettings {
@@ -62,6 +63,31 @@ public final class ContentOrbitalLaserSettings {
     /** Minimum composition scale for the fullscreen beam operation. */
     public static final float BEAM_COMPOSITION_FLOOR = 0.75F;
 
+    /** Damage applied to one target by one sustained-beam damage tick. */
+    public static final float BEAM_DAMAGE = 4.0F;
+    /** Delay before the beam can damage the same target again. */
+    public static final int BEAM_DAMAGE_REHIT_TICKS = 10;
+    /** Maximum living targets damaged by one sustained-beam interval. */
+    public static final int MAX_BEAM_DAMAGE_TARGETS = 16;
+    /** Server ticks between sustained-beam damage scans. */
+    public static final int BEAM_DAMAGE_INTERVAL_TICKS = 4;
+    /** Damage-cylinder radius as a fraction of the effective radius. */
+    public static final float BEAM_DAMAGE_RADIUS_FACTOR = 1.0F;
+    /** Impact-shockwave radius as a fraction of the effective radius. */
+    public static final float SHOCKWAVE_RADIUS_FACTOR = SHOCK_MAX_RADIUS_FACTOR;
+    /** Outward impact-shockwave velocity in blocks per tick. */
+    public static final double SHOCKWAVE_STRENGTH = 0.8;
+    /** Upward component of the impact shockwave. */
+    public static final double SHOCKWAVE_LIFT = 0.35;
+    /** Shockwave falloff exponent inside its radius. */
+    public static final double SHOCKWAVE_FALLOFF = 1.0;
+    /** Maximum entities examined by one impact shockwave. */
+    public static final int MAX_SHOCKWAVE_TARGETS = 64;
+    /** Maximum targets examined by one beam-damage hitbox call. */
+    public static final int MAX_BEAM_TARGETS_EXAMINED = 64;
+    /** Bulk section edits allowed per server tick for the burn. */
+    public static final int MAX_SECTION_EDITS = 8;
+
     private ContentOrbitalLaserSettings() {
     }
 
@@ -74,6 +100,31 @@ public final class ContentOrbitalLaserSettings {
             new EffectPhase("sustain", SUSTAIN_TICKS),
             new EffectPhase("collapse", COLLAPSE_TICKS),
             new EffectPhase("aftermath", AFTERMATH_TICKS)
+        );
+    }
+
+    /** Progress at which the ground carve starts: the impact phase. */
+    public static float carveWindowStart() {
+        return (TARGET_TICKS + DESCENT_TICKS) / (float)TOTAL_TICKS;
+    }
+
+    /** Progress at which ground edits stop: the collapse phase. */
+    public static float carveWindowEnd() {
+        return (TARGET_TICKS + DESCENT_TICKS + IMPACT_TICKS + SUSTAIN_TICKS)
+            / (float)TOTAL_TICKS;
+    }
+
+    /** Per-tick budgets for the destructive orbital-laser session. */
+    public static EffectTickBudget gameplayBudget() {
+        return new EffectTickBudget(
+            MAX_BEAM_TARGETS_EXAMINED,
+            1,
+            0,
+            0,
+            0,
+            MAX_SHOCKWAVE_TARGETS,
+            0,
+            MAX_SECTION_EDITS
         );
     }
 

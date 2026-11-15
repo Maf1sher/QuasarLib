@@ -3,6 +3,7 @@ package mafisher.quasar.content.orbital;
 import mafisher.quasar.api.effect.EffectCurve;
 import mafisher.quasar.api.effect.EffectEasing;
 import mafisher.quasar.api.effect.EffectParameterSet;
+import mafisher.quasar.api.effect.EffectParameterState;
 
 /**
  * Duration-independent curves for the orbital-laser beam show.
@@ -24,6 +25,10 @@ final class ContentOrbitalLaserCinematics {
     private static final float SHOCK_EXPAND = 16.0F * TICK;
     /** Time for the shock ring to fade out. */
     private static final float SHOCK_DECAY = 22.0F * TICK;
+    /** Server-authored multiplier for the effective beam and impact footprint. */
+    static final String BEAM_RADIUS_SCALE = "BeamRadiusScale";
+    /** Server-authored beam depth below the surface anchor. */
+    static final String TIP_DEPTH = "TipDepth";
 
     static final EffectParameterSet PARAMETERS = buildParameters();
 
@@ -44,12 +49,25 @@ final class ContentOrbitalLaserCinematics {
         return PARAMETERS.sampleFloat("MarkerAlpha", progress);
     }
 
+    /** Returns the clamped effective-radius multiplier from server overrides. */
+    static float beamRadiusScale(float progress, EffectParameterState parameters) {
+        float value = PARAMETERS.sampleFloat(BEAM_RADIUS_SCALE, progress, parameters);
+        return Float.isFinite(value) ? Math.max(0.0F, Math.min(1.0F, value)) : 1.0F;
+    }
+
+    /** Returns the non-negative beam depth below the surface anchor. */
+    static float tipDepth(float progress, EffectParameterState parameters) {
+        float value = PARAMETERS.sampleFloat(TIP_DEPTH, progress, parameters);
+        return Float.isFinite(value) && value > 0.0F ? value : 0.0F;
+    }
+
     private static EffectParameterSet buildParameters() {
         EffectParameterSet.Builder builder = EffectParameterSet.builder()
             .anchors(ContentOrbitalLaserSettings.phasePlan());
         addBeamCurves(builder);
         addMarkerCurve(builder);
         addImpactCurves(builder);
+        addServerParameters(builder);
         return builder.build();
     }
 
@@ -121,6 +139,11 @@ final class ContentOrbitalLaserCinematics {
             key("aftermath", 0.0F, 0.0F),
             key(1.0F, 0.0F)
         ));
+    }
+
+    private static void addServerParameters(EffectParameterSet.Builder builder) {
+        builder.parameter(BEAM_RADIUS_SCALE, EffectCurve.Value.scalar(1.0F));
+        builder.parameter(TIP_DEPTH, EffectCurve.Value.scalar(0.0F));
     }
 
     private static EffectCurve.Builder curve(Key... keys) {

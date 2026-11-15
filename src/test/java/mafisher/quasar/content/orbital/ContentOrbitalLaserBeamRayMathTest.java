@@ -58,6 +58,19 @@ class ContentOrbitalLaserBeamRayMathTest {
     }
 
     @Test
+    void negativeBottomClipsTheBurnDepth() {
+        double[] span = span(
+            0.0, 10.0, 0.0, 0.0, -1.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+            2.0, -20.0, 256.0, 100.0
+        );
+
+        assertTrue(span != null);
+        assertEquals(0.0, span[0], PLANCK);
+        assertEquals(30.0, span[1], PLANCK);
+    }
+
+    @Test
     void missAndBehindCameraReturnNoSpan() {
         assertNull(span(
             10.0, 0.0, 0.0, 0.0, 0.0, 1.0,

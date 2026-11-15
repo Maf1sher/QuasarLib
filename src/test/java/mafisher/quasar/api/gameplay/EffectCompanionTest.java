@@ -17,15 +17,19 @@ import mafisher.quasar.api.audio.EffectAudioSpec;
 import mafisher.quasar.api.effect.EffectAttachment;
 import mafisher.quasar.api.effect.EffectAudience;
 import mafisher.quasar.api.effect.EffectLifetimePolicy;
+import mafisher.quasar.api.effect.EffectParameterState;
 import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.EffectStartStatus;
 import mafisher.quasar.api.effect.EffectTransform;
+import mafisher.quasar.api.effect.EffectCurve;
 import mafisher.quasar.api.effect.VisualEffectService;
 import mafisher.quasar.api.effect.budget.EffectPriority;
 import mafisher.quasar.api.gameplay.tick.EffectTickBudget;
 import mafisher.quasar.api.persistence.EffectDescriptor;
 import mafisher.quasar.api.persistence.EffectKind;
+import mafisher.quasar.effect.network.EffectParameterBatchPayload;
 import mafisher.quasar.effect.network.EffectTransformBatchPayload;
+import mafisher.quasar.effect.persistence.EffectParameterNbt;
 import mafisher.quasar.effect.runtime.LevelEffectRuntime;
 import mafisher.quasar.effect.runtime.RecordingPacketSink;
 import mafisher.quasar.effect.runtime.SavedDataEffectStore;
@@ -245,6 +249,34 @@ class EffectCompanionTest {
             EffectAttachment.resolve(parent, spec.localTransform(), spec.rotationInheritance()),
             child.transform()
         );
+    }
+
+    @Test
+    void parameterOverridesAreForwardedAndPersisted() {
+        ServerPlayer player = player();
+        MinecraftServer server = server(player);
+        when(this.world.level().players()).thenReturn(List.of(player));
+        when(this.world.level().getServer()).thenReturn(server);
+        GameplayEffectFixtures.CompanionController controller =
+            new GameplayEffectFixtures.CompanionController(companionSpec());
+        GameplayEffectService.start(
+            this.world.level(), parentSpec(new Vec3(0.0, 64.0, 0.0), 7L, 1.0F, 40), controller
+        );
+        this.packets.clear();
+        EffectParameterState parameters = EffectParameterState.builder()
+            .putFloat("depth", 12.0F)
+            .build();
+
+        controller.companion.updateParameters(parameters);
+        this.runtime.tick();
+
+        assertEquals(1, this.packets.sent().size());
+        EffectParameterBatchPayload payload =
+            (EffectParameterBatchPayload)this.packets.sent().getFirst().payload();
+        assertEquals(parameters, payload.updates().getFirst().state());
+        EffectDescriptor child = this.world.store().find(controller.companion.childId());
+        assertNotNull(child);
+        assertEquals(parameters, EffectParameterNbt.loadFrom(child));
     }
 
     private ServerPlayer player() {

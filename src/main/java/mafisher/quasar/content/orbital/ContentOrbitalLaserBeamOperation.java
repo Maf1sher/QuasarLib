@@ -30,6 +30,7 @@ public final class ContentOrbitalLaserBeamOperation implements ScreenEffectOpera
         .uniform("ShockRadiusScale", "ShockRadiusScale")
         .uniform("ShockStrength", "ShockStrength")
         .uniform("ContactGlow", "ContactGlow")
+        .uniform("TipDepth", "TipDepth")
         .build();
     private static final EmissiveComposite COMPOSITE = EmissiveComposite
         .builder()
@@ -79,12 +80,18 @@ public final class ContentOrbitalLaserBeamOperation implements ScreenEffectOpera
         ScreenEffectMediumOptics.from(context).bind(context, shader);
 
         float scale = context.effect().scale();
-        context.setUniform(shader, "BeamRadius", scale);
+        float radius = ContentOrbitalLaserBeamGeometry.effectiveRadius(
+            scale,
+            ContentOrbitalLaserCinematics.beamRadiusScale(
+                context.effect().progress(), context.parameters()
+            )
+        );
+        context.setUniform(shader, "BeamRadius", radius);
         context.setUniform(shader, "BeamTopHeight", SETTINGS.topHeight());
-        context.setUniform(shader, "BeamCoreRadius", scale * SETTINGS.coreRadiusFactor());
-        context.setUniform(shader, "BeamGlowRadius", scale * SETTINGS.glowRadiusFactor());
-        context.setUniform(shader, "ShockMaxRadius", scale * SETTINGS.shockMaxRadiusFactor());
-        context.setUniform(shader, "FlashRadius", scale * SETTINGS.flashRadiusFactor());
+        context.setUniform(shader, "BeamCoreRadius", radius * SETTINGS.coreRadiusFactor());
+        context.setUniform(shader, "BeamGlowRadius", radius * SETTINGS.glowRadiusFactor());
+        context.setUniform(shader, "ShockMaxRadius", radius * SETTINGS.shockMaxRadiusFactor());
+        context.setUniform(shader, "FlashRadius", radius * SETTINGS.flashRadiusFactor());
         context.setUniform(shader, "MarchSteps", (float)ContentOrbitalLaserBeamGeometry.marchSteps(
             context.effect().lod().level(), context.effectiveQuality()
         ));

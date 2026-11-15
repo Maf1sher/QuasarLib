@@ -15,6 +15,7 @@ import mafisher.quasar.api.client.render.EffectRenderContext;
 import mafisher.quasar.api.client.screen.ScreenEffectMasks;
 import mafisher.quasar.api.client.screen.ScreenEffectSettings;
 import mafisher.quasar.api.effect.StartVisualEffectPayload;
+import mafisher.quasar.api.effect.EffectParameterState;
 import mafisher.quasar.api.effect.budget.EffectQualityTier;
 import mafisher.quasar.content.ContentEffectIds;
 import mafisher.quasar.content.ContentScreenOperations;
@@ -98,6 +99,21 @@ class ContentOrbitalLaserRendererTest {
     }
 
     @Test
+    void cullingBoundsExtendBelowTheSurfaceForTheBurnFront() {
+        EffectParameterState parameters = EffectParameterState.builder()
+            .putFloat(ContentOrbitalLaserCinematics.TIP_DEPTH, 30.0F)
+            .build();
+        EffectRenderContext context = context(120.0F, parameters);
+        AABB bounds = this.renderer.cullingBounds(context);
+        double footprint = ContentOrbitalLaserBeamGeometry.maximumFootprint(
+            ContentOrbitalLaserBeamSettings.DEFAULT, context.scale()
+        );
+
+        assertTrue(bounds.minY
+            <= context.transform().position().y() - 30.0 - footprint + 1.0E-6);
+    }
+
+    @Test
     void declaresDistanceLodWithoutChangingTheFootprint() {
         EffectLodProfile profile = this.renderer.lodProfile();
 
@@ -135,6 +151,20 @@ class ContentOrbitalLaserRendererTest {
         );
         return TestVisualEffects.context(
             payload, ageTicks, ageTicks / ContentOrbitalLaserSettings.TOTAL_TICKS
+        );
+    }
+
+    private static EffectRenderContext context(
+        float ageTicks,
+        EffectParameterState parameters
+    ) {
+        EffectRenderContext base = context(ageTicks);
+        return new EffectRenderContext(
+            base.effect().withParameters(parameters),
+            base.transform(),
+            base.ageTicks(),
+            base.progress(),
+            base.partialTick()
         );
     }
 }

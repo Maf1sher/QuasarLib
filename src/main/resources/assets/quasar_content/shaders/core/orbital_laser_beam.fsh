@@ -32,6 +32,7 @@ uniform float BeamGlowRadius;
 uniform float ShockMaxRadius;
 uniform float FlashRadius;
 uniform float MarchSteps;
+uniform float TipDepth;
 
 uniform float BeamTip;
 uniform float BeamStrength;
@@ -126,7 +127,7 @@ bool rayCylinder(vec3 origin, vec3 direction, vec3 center, vec3 axis, float radi
         farHit = (-b + root) / (2.0 * a);
     }
 
-    float minimumHeight = max(tipHeight, 0.0);
+    float minimumHeight = tipHeight;
     float maximumHeight = max(topHeight, minimumHeight);
     if (abs(directionAxis) < DIRECTION_EPSILON) {
         if (offsetAxis < minimumHeight || offsetAxis > maximumHeight) {
@@ -170,6 +171,8 @@ void main() {
     float beamRadius = max(BeamRadius, 0.001);
     float topHeight = max(BeamTopHeight, beamRadius);
     float tipHeight = clamp(BeamTip, 0.0, 1.0) * topHeight;
+    float tipDepth = max(TipDepth, 0.0);
+    float bottomHeight = tipDepth > 0.001 ? -tipDepth : tipHeight;
     float beamStrength = clamp(BeamStrength, 0.0, 1.0);
     float flash = clamp(ImpactFlash, 0.0, 1.0);
     float contact = clamp(ContactGlow, 0.0, 1.0);
@@ -203,7 +206,7 @@ void main() {
     float tEnter;
     float tExit;
     if (beamStrength > 0.001
-        && rayCylinder(vec3(0.0), direction, base, axis, beamRadius, tipHeight,
+        && rayCylinder(vec3(0.0), direction, base, axis, beamRadius, bottomHeight,
             topHeight, sceneDistance, tEnter, tExit)) {
         nearestEntry = min(nearestEntry, tEnter);
         int steps = int(clamp(MarchSteps, 8.0, float(MAX_STEPS)));
@@ -229,10 +232,8 @@ void main() {
                 dot(radialVector, EffectRight));
 
             float topFade = 1.0 - smoothstep(topFadeStart, topHeight, height);
-            float tipFade = tipHeight > 0.001
-                ? smoothstep(tipHeight, tipHeight + headRadius * 0.5, height)
-                : 1.0;
-            float head = exp(-pow((height - tipHeight) / headRadius, 2.0)) * topFade;
+            float tipFade = smoothstep(bottomHeight, bottomHeight + headRadius * 0.5, height);
+            float head = exp(-pow((height - bottomHeight) / headRadius, 2.0)) * topFade;
             float normalizedRadius = radial / coreRadius;
             float coreProfile = exp(-pow(normalizedRadius, 4.0)
                 * QUASAR_ORBITAL_CORE_PROFILE);
@@ -282,6 +283,27 @@ void main() {
         coreAlpha = clamp(1.0 - transmittance, 0.0, 0.96) * beamStrength;
     }
 
+    vec3 bottom = base + axis * bottomHeight;
+    float bottomDistance = length(bottom);
+    float planeDenominator = dot(direction, axis);
+    float bottomPlaneDistance = bottomDistance > 0.0
+        && abs(planeDenominator) > DIRECTION_EPSILON
+        ? dot(bottom, axis) / planeDenominator
+        : -1.0;
+    if (bottomPlaneDistance > 0.0 && bottomPlaneDistance < sceneDistance) {
+        vec3 hit = direction * bottomPlaneDistance;
+        vec3 relative = hit - bottom;
+        float radial = length(relative - axis * dot(relative, axis));
+        float contactRadius = max(beamRadius * QUASAR_ORBITAL_CONTACT_RADIUS_FACTOR, 0.001);
+        float contactDisk = exp(-pow(radial / contactRadius, 2.0) * 2.5);
+        if (quasarLayerVisible(QUASAR_LAYER_FILL, bottomPlaneDistance, sceneDistance,
+            depthBias)) {
+            emission += contactColor * contactDisk * contact
+                * QUASAR_ORBITAL_CONTACT_EMISSION;
+            nearestEntry = min(nearestEntry, bottomPlaneDistance);
+        }
+    }
+
     float baseDistance = length(base);
     float basePlaneDenominator = dot(direction, axis);
     float basePlaneDistance = baseDistance > 0.0 && abs(basePlaneDenominator) > DIRECTION_EPSILON
@@ -291,15 +313,6 @@ void main() {
         vec3 hit = direction * basePlaneDistance;
         vec3 relative = hit - base;
         float radial = length(relative - axis * dot(relative, axis));
-        float contactRadius = max(beamRadius * QUASAR_ORBITAL_CONTACT_RADIUS_FACTOR, 0.001);
-        float contactDisk = exp(-pow(radial / contactRadius, 2.0) * 2.5);
-        if (quasarLayerVisible(QUASAR_LAYER_FILL, basePlaneDistance, sceneDistance,
-            depthBias)) {
-            emission += contactColor * contactDisk * contact
-                * QUASAR_ORBITAL_CONTACT_EMISSION;
-            nearestEntry = min(nearestEntry, basePlaneDistance);
-        }
-
         float ringRadius = clamp(ShockRadiusScale, 0.0, 1.0) * max(ShockMaxRadius, 0.001);
         float ringWidth = max(max(ShockMaxRadius * QUASAR_ORBITAL_RING_WIDTH_FACTOR,
             beamRadius * 0.15), 0.001);

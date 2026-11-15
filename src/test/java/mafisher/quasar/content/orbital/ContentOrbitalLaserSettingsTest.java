@@ -16,6 +16,7 @@ import mafisher.quasar.api.gameplay.CompanionSpec;
 import mafisher.quasar.api.gameplay.EffectPhasePlan;
 import mafisher.quasar.api.gameplay.GameplayEffectSpec;
 import mafisher.quasar.api.gameplay.OwnerPolicy;
+import mafisher.quasar.api.gameplay.tick.EffectTickBudget;
 import mafisher.quasar.content.ContentEffectIds;
 import mafisher.quasar.content.orbital.ContentOrbitalLaserTarget.TargetColumn;
 import net.minecraft.world.phys.Vec3;
@@ -57,8 +58,24 @@ class ContentOrbitalLaserSettingsTest {
     }
 
     @Test
-    void anchorsTheSessionAtTheColumnCentreAndLiftsTheMarker() {
-        TargetColumn target = new TargetColumn(10, -4, 71);
+    void exposesTheCarveWindowAndDestructiveBudgets() {
+        assertEquals(60.0F / 220.0F,
+            ContentOrbitalLaserSettings.carveWindowStart(), 1.0E-6F);
+        assertEquals(164.0F / 220.0F,
+            ContentOrbitalLaserSettings.carveWindowEnd(), 1.0E-6F);
+
+        EffectTickBudget budget = ContentOrbitalLaserSettings.gameplayBudget();
+        assertEquals(ContentOrbitalLaserSettings.MAX_BEAM_TARGETS_EXAMINED,
+            budget.maxTargetsExamined());
+        assertEquals(1, budget.maxHitboxCalls());
+        assertEquals(ContentOrbitalLaserSettings.MAX_SHOCKWAVE_TARGETS,
+            budget.maxForceTargets());
+        assertEquals(ContentOrbitalLaserSettings.MAX_SECTION_EDITS,
+            budget.maxSectionEdits());
+    }
+
+    @Test
+    void anchorsTheSessionAtTheColumnCentreAndLiftsTheMarker() {        TargetColumn target = new TargetColumn(10, -4, 71);
 
         assertEquals(new Vec3(10.5, 71.0, -3.5), target.center());
         assertEquals(71.0 + ContentOrbitalLaserSettings.MARKER_LIFT,

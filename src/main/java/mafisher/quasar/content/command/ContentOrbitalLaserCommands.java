@@ -3,6 +3,7 @@ package mafisher.quasar.content.command;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
+import java.util.Locale;
 import java.util.Optional;
 import mafisher.quasar.api.effect.VisualEffectService;
 import mafisher.quasar.api.effect.VisualEffectStartResult;
@@ -133,12 +134,14 @@ final class ContentOrbitalLaserCommands {
         GameplayEffectSpec spec = ContentOrbitalLaserSpecs.gameplay(
             player == null ? null : player.getUUID(), target, radius, seed
         );
+        ContentOrbitalLaserGameplayController controller =
+            new ContentOrbitalLaserGameplayController();
         GameplayEffectHandle handle;
         try {
             handle = GameplayEffectService.start(
                 level,
                 spec,
-                new ContentOrbitalLaserGameplayController(),
+                controller,
                 EffectPersistenceOptions.DEFAULT.withCapabilities(
                     EffectCapabilities.destructiveCapability()
                 )
@@ -148,10 +151,12 @@ final class ContentOrbitalLaserCommands {
             return 0;
         }
         ContentOrbitalLaserSessions.trackSession(level, handle);
+        String effective = String.format(Locale.ROOT, "%.2f", controller.effectiveRadius());
         source.sendSuccess(
             () -> Component.literal(
                 "Locked the orbital laser on " + describe(target) + " (radius " + radius
-                    + ", session " + handle.sessionId() + ")."
+                    + " requested, " + effective + " effective, session "
+                    + handle.sessionId() + ")."
             ),
             false
         );

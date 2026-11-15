@@ -30,6 +30,15 @@ final class ContentOrbitalLaserBeamGeometry {
         return clamp01(tipFraction) * topHeight;
     }
 
+    /** Returns the effective world radius after the budget-fit and server override. */
+    static float effectiveRadius(float scale, float radiusScale) {
+        if (!Float.isFinite(scale) || scale <= 0.0F
+            || !Float.isFinite(radiusScale) || radiusScale <= 0.0F) {
+            return 0.0F;
+        }
+        return scale * clamp01(radiusScale);
+    }
+
     /** Returns the maximum world-space radial footprint of the beam and impact effects. */
     static double maximumFootprint(ContentOrbitalLaserBeamSettings settings, float scale) {
         if (settings == null || !Float.isFinite(scale) || scale <= 0.0F) {

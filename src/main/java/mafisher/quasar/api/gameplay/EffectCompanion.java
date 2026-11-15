@@ -5,6 +5,7 @@ import java.util.Objects;
 import java.util.UUID;
 import mafisher.quasar.api.effect.EffectAttachment;
 import mafisher.quasar.api.effect.EffectLifetimePolicy;
+import mafisher.quasar.api.effect.EffectParameterState;
 import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.EffectRemovalPolicy;
 import mafisher.quasar.api.effect.EffectStartStatus;
@@ -175,6 +176,21 @@ public final class EffectCompanion {
             this.lastChildTransform = child;
         }
         this.lastParentFrame = frame;
+    }
+
+    /**
+     * Replaces the child visual's server-authored parameter overrides.
+     *
+     * <p>The runtime persists the newest overrides with the visual descriptor and delivers them
+     * to tracking players. Calls while the child is not active are ignored, so a caller can keep
+     * syncing before the first resume tick without creating traffic.</p>
+     */
+    public void updateParameters(EffectParameterState parameters) {
+        Objects.requireNonNull(parameters, "parameters");
+        if (this.closed || this.status != Status.ACTIVE) {
+            return;
+        }
+        this.context.scope().updateVisualParameters(this.childHandle.instanceId(), parameters);
     }
 
     /** Current lifecycle state of the child. */
