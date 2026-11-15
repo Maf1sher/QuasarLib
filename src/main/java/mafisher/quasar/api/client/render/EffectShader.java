@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vertex.VertexFormat;
 import java.io.IOException;
 import java.util.Objects;
 import java.util.Optional;
+import mafisher.quasar.client.effect.render.EffectShaderCatalog;
 import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.client.event.RegisterShadersEvent;
@@ -21,6 +22,9 @@ import org.jspecify.annotations.Nullable;
  * <p>Shader assets live under {@code assets/<namespace>/shaders/core/<path>.json}
  * for the {@link ResourceLocation} passed to {@link #create(ResourceLocation, VertexFormat)}.
  * The vertex format must match the attributes declared by that shader.</p>
+ *
+ * <p>The engine records registered handles and validates them before a client
+ * resource reload. A failed candidate keeps the previously loaded program.</p>
  */
 public final class EffectShader {
     private final ResourceLocation id;
@@ -82,6 +86,7 @@ public final class EffectShader {
      */
     public void register(RegisterShadersEvent event) throws IOException {
         Objects.requireNonNull(event, "event");
+        EffectShaderCatalog.record(this);
         event.registerShader(
             new ShaderInstance(event.getResourceProvider(), this.id, this.format),
             this::accept
