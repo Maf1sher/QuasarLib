@@ -132,6 +132,7 @@ class ShaderModuleContractTest {
             "InvViewMat"
         ));
         modules.put(INCLUDE_PREFIX + "soft_particles.glsl", Set.of());
+        modules.put(INCLUDE_PREFIX + "particle_field.glsl", Set.of());
         modules.put("quasar_content:shaders/include/black_hole_optics.glsl", Set.of());
         return modules;
     }

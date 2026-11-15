@@ -20,10 +20,8 @@ import org.junit.jupiter.api.Test;
 
 /** Keeps the shader asset graph reachable and free of orphaned sources. */
 class ShaderAssetGraphTest {
-    /** Public modules that no shipped program imports yet; 4.10 adopts soft particles. */
-    private static final Set<String> LIBRARY_ONLY_INCLUDES = Set.of(
-        "quasar_lib:shaders/include/soft_particles.glsl"
-    );
+    /** Public modules that no shipped program imports yet. */
+    private static final Set<String> LIBRARY_ONLY_INCLUDES = Set.of();
 
     @Test
     void everyProgramReferencesExistingStages() {

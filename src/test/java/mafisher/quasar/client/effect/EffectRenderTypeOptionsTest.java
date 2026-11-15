@@ -27,6 +27,14 @@ class EffectRenderTypeOptionsTest {
 
         assertEquals(Transparency.TRANSLUCENT, EffectRenderTypeOptions.MASK_DEFAULT.transparency());
         assertFalse(EffectRenderTypeOptions.MASK_DEFAULT.lightmap());
+
+        assertEquals(Transparency.TRANSLUCENT, EffectRenderTypeOptions.PARTICLE_ALPHA.transparency());
+        assertFalse(EffectRenderTypeOptions.PARTICLE_ALPHA.cull());
+        assertFalse(EffectRenderTypeOptions.PARTICLE_ALPHA.lightmap());
+        assertFalse(EffectRenderTypeOptions.PARTICLE_ALPHA.sort());
+        assertEquals(Transparency.ADDITIVE, EffectRenderTypeOptions.PARTICLE_ADDITIVE.transparency());
+        assertTrue(EffectRenderTypeOptions.PARTICLE_ADDITIVE.depthTest());
+        assertFalse(EffectRenderTypeOptions.PARTICLE_ADDITIVE.writeDepth());
     }
 
     @Test

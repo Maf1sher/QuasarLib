@@ -23,6 +23,8 @@ import mafisher.quasar.api.client.render.EffectRenderPass;
 import mafisher.quasar.api.client.render.EffectScreenLodProfile;
 import mafisher.quasar.api.client.render.EffectScreenMetrics;
 import mafisher.quasar.api.client.render.EffectStaticMeshPass;
+import mafisher.quasar.api.client.particle.EffectParticlePass;
+import mafisher.quasar.api.client.particle.ParticleVisualEffectRenderer;
 import mafisher.quasar.api.client.render.InstancedVisualEffectRenderer;
 import mafisher.quasar.api.client.screen.ScreenEffectMask;
 import mafisher.quasar.api.client.screen.ScreenEffectRenderer;
@@ -41,6 +43,7 @@ import mafisher.quasar.api.effect.StartVisualEffectPayload;
 import mafisher.quasar.api.scale.SegmentGridLayout;
 import mafisher.quasar.api.scale.SegmentLink;
 import mafisher.quasar.api.scale.StartSegmentedVisualEffectPayload;
+import mafisher.quasar.QuasarClientConfig;
 import mafisher.quasar.client.effect.frame.ClientEffectClock;
 import mafisher.quasar.client.effect.quality.ClientFarPlane;
 import mafisher.quasar.client.effect.quality.EffectLodSelection;
@@ -91,6 +94,7 @@ public final class ClientVisualEffectManager {
     private final VisualEffectRendererRegistry rendererRegistry;
     private final GpuMeshCache meshCache = new GpuMeshCache();
     private final InstancedBatchRenderer instancedRenderer = new InstancedBatchRenderer(this.meshCache);
+    private final ParticleBatchRenderer particleRenderer = new ParticleBatchRenderer(this.meshCache);
     private final CachedMeshRenderer cachedMeshRenderer = new CachedMeshRenderer(this.meshCache);
     private final StaticMeshBatchRenderer staticMeshRenderer =
         new StaticMeshBatchRenderer(this.instancedRenderer, this.cachedMeshRenderer, this.meshCache);
@@ -101,6 +105,7 @@ public final class ClientVisualEffectManager {
     private final List<String> staticPassIds = new ArrayList<>();
     private final Matrix4f viewMatrix = new Matrix4f();
     private final List<InstancedBatchBuilder.InstancedDraw> instancedDraws = new ArrayList<>();
+    private final List<ParticleBatchBuilder.Draw> particleDraws = new ArrayList<>();
     private final List<UUID> finishedEffects = new ArrayList<>();
     private final FrameSnapshotCache frameCache = new FrameSnapshotCache();
     private final ClientAttachmentResolver attachmentResolver;
@@ -112,6 +117,7 @@ public final class ClientVisualEffectManager {
     private RenderEnvironment frameEnvironment = RenderEnvironment.VANILLA;
     private InstancedBatchBuilder instancedBatchBuilder;
     private StaticMeshBatchBuilder staticMeshBatchBuilder;
+    private ParticleBatchBuilder particleBatchBuilder;
     private List<ScreenEffectBatch> screenBatches = List.of();
     private int screenBatchTick = Integer.MIN_VALUE;
     private ClientLevel currentLevel;
@@ -351,6 +357,7 @@ public final class ClientVisualEffectManager {
             MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
             InstancedBatchBuilder instancedBatches = this.instancedBatchBuilder(cameraPosition);
             StaticMeshBatchBuilder staticBatches = this.staticMeshBatchBuilder(cameraPosition);
+            ParticleBatchBuilder particleBatches = this.particleBatchBuilder(cameraPosition);
             this.viewMatrix.set(RenderSystem.getModelViewMatrix());
             poseStack.pushPose();
             poseStack.translate(-cameraPosition.x, -cameraPosition.y, -cameraPosition.z);
@@ -358,7 +365,7 @@ public final class ClientVisualEffectManager {
                 this.usedRenderTypes.clear();
                 for (VisibleEffect visible : this.visibleEffects) {
                     this.renderWorldPasses(visible, poseStack, buffers, instancedBatches,
-                        staticBatches);
+                        staticBatches, particleBatches);
                 }
                 this.staticMeshRenderer.draw(staticBatches, this.viewMatrix,
                     RenderSystem.getProjectionMatrix());
@@ -371,6 +378,10 @@ public final class ClientVisualEffectManager {
             instancedBatches.drawInto(this.instancedDraws);
             this.instancedRenderer.draw(this.instancedDraws, this.viewMatrix,
                 RenderSystem.getProjectionMatrix());
+            this.particleDraws.clear();
+            this.particleDraws.addAll(particleBatches.draws());
+            this.particleRenderer.draw(this.particleDraws, this.viewMatrix,
+                RenderSystem.getProjectionMatrix(), this.frameCamera, depthFrame);
         } finally {
             ClientQualityController.endWorldGpu();
         }
@@ -378,12 +389,13 @@ public final class ClientVisualEffectManager {
 
     private void renderWorldPasses(VisibleEffect visible, PoseStack poseStack,
         MultiBufferSource.BufferSource buffers, InstancedBatchBuilder instancedBatches,
-        StaticMeshBatchBuilder staticBatches) {
+        StaticMeshBatchBuilder staticBatches, ParticleBatchBuilder particleBatches) {
         if (!this.shouldRenderDepth(visible)) {
             return;
         }
         VisualEffectRenderer renderer = visible.renderer();
         EffectRenderContext context = visible.context();
+        this.collectParticlePasses(renderer, context, particleBatches);
         if (renderer instanceof StaticMeshVisualEffectRenderer staticRenderer) {
             List<EffectStaticMeshPass> staticPasses = staticRenderer.staticMeshPasses(context);
             if (!staticPasses.isEmpty()) {
@@ -423,6 +435,16 @@ public final class ClientVisualEffectManager {
             }
         } finally {
             poseStack.popPose();
+        }
+    }
+
+    private void collectParticlePasses(VisualEffectRenderer renderer, EffectRenderContext context,
+        ParticleBatchBuilder particleBatches) {
+        if (renderer instanceof ParticleVisualEffectRenderer particleRenderer) {
+            List<EffectParticlePass> particlePasses = particleRenderer.particlePasses(context);
+            if (!particlePasses.isEmpty()) {
+                particleBatches.add(context, particlePasses);
+            }
         }
     }
 
@@ -1146,6 +1168,15 @@ public final class ClientVisualEffectManager {
         return this.staticMeshBatchBuilder;
     }
 
+    private ParticleBatchBuilder particleBatchBuilder(Vec3 cameraPosition) {
+        if (this.particleBatchBuilder == null) {
+            this.particleBatchBuilder = new ParticleBatchBuilder();
+        }
+        this.particleBatchBuilder.reset(QuasarClientConfig.particleBudget(), cameraPosition.x,
+            cameraPosition.y, cameraPosition.z);
+        return this.particleBatchBuilder;
+    }
+
     private void validateStaticPassIds(List<EffectStaticMeshPass> passes, VisibleEffect visible) {
         this.staticPassIds.clear();
         for (EffectStaticMeshPass pass : passes) {
@@ -1164,6 +1195,7 @@ public final class ClientVisualEffectManager {
         this.frameGroupOcclusionEnabled.clear();
         this.screenFrames.clear();
         this.screenBatches = List.of();
+        this.particleDraws.clear();
     }
 
     public void onLevelUnload(ClientLevel level) {
@@ -1182,6 +1214,7 @@ public final class ClientVisualEffectManager {
     public void onResourceReload(ResourceManager resourceManager) {
         this.rendererRegistry.onResourceReload(resourceManager);
         this.instancedRenderer.onResourceReload();
+        this.particleRenderer.onResourceReload();
         this.depthOcclusion.reset();
         EffectRenderTypes.onResourceReload();
     }
@@ -1212,6 +1245,7 @@ public final class ClientVisualEffectManager {
         this.unindexedGroups.clear();
         this.depthOcclusion.reset();
         this.instancedRenderer.close();
+        this.particleRenderer.close();
         this.meshCache.close();
     }
 

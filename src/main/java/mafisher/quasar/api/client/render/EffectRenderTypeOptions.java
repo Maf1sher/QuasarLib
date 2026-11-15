@@ -33,6 +33,16 @@ public record EffectRenderTypeOptions(
         Transparency.TRANSLUCENT, true, true, false, true, false, true
     );
 
+    /** Alpha-blended, depth-tested, unculled, unlit camera-facing particles. */
+    public static final EffectRenderTypeOptions PARTICLE_ALPHA = new EffectRenderTypeOptions(
+        Transparency.TRANSLUCENT, true, true, false, false, false, false
+    );
+
+    /** Additive, depth-tested, unculled, unlit camera-facing particles. */
+    public static final EffectRenderTypeOptions PARTICLE_ADDITIVE = new EffectRenderTypeOptions(
+        Transparency.ADDITIVE, true, true, false, false, false, false
+    );
+
     public EffectRenderTypeOptions {
         Objects.requireNonNull(transparency, "transparency");
     }

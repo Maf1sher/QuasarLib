@@ -19,6 +19,10 @@ class ShaderUniformUsageTest {
         "setUniform\\s*\\(\\s*shader\\s*,\\s*\"([^\"]+)\"");
     private static final Pattern SET_SAMPLER = Pattern.compile(
         "setSampler\\s*\\(\\s*shader\\s*,\\s*\"([^\"]+)\"");
+    private static final Pattern SET_SHADER_UNIFORM = Pattern.compile(
+        "set(?:Float|Int|Vec2|Vec3|Color|Mat4)\\s*\\(\\s*shader\\s*,\\s*\"([^\"]+)\"");
+    private static final Pattern SET_SHADER_SAMPLER = Pattern.compile(
+        "shader\\.setSampler\\s*\\(\\s*\"([^\"]+)\"");
 
     @Test
     void blackHoleOperationOnlyBindsDeclaredUniformsAndSamplers() throws IOException {
@@ -57,6 +61,22 @@ class ShaderUniformUsageTest {
         compare("uniform", names(source, SET_UNIFORM), Set.copyOf(program.uniforms()), failures);
 
         assertTrue(failures.isEmpty(), () -> "ContentBlackHoleBloom binds undeclared inputs:\n"
+            + String.join("\n", failures));
+    }
+
+    @Test
+    void particleRendererOnlyBindsDeclaredInputs() throws IOException {
+        ShaderTestResources.ShaderProgramAsset program = program("quasar_lib:micro_particles");
+        String source = Files.readString(sourceRoot().resolve(
+            "mafisher/quasar/client/effect/render/ParticleBatchRenderer.java"));
+
+        List<String> failures = new ArrayList<>();
+        compare("uniform", names(source, SET_SHADER_UNIFORM), Set.copyOf(program.uniforms()),
+            failures);
+        compare("sampler", names(source, SET_SHADER_SAMPLER), Set.copyOf(program.samplers()),
+            failures);
+
+        assertTrue(failures.isEmpty(), () -> "ParticleBatchRenderer binds undeclared inputs:\n"
             + String.join("\n", failures));
     }
 

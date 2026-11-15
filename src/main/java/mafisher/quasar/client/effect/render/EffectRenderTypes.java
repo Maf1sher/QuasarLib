@@ -7,6 +7,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
+import mafisher.quasar.api.client.particle.EffectParticleAppearance;
 import mafisher.quasar.api.client.render.EffectRenderTypeOptions;
 import mafisher.quasar.api.client.render.EffectShader;
 import net.minecraft.Util;
@@ -51,6 +52,15 @@ public final class EffectRenderTypes {
 
     public static RenderType instancedWorld(ResourceLocation texture) {
         return shaderWorld(EffectShaders.INSTANCED_VISUAL, texture, EffectRenderTypeOptions.WORLD_DEFAULT);
+    }
+
+    /** Returns the cached engine particle render type for one texture and blend mode. */
+    public static RenderType particleWorld(ResourceLocation texture,
+        EffectParticleAppearance.Blend blend) {
+        EffectRenderTypeOptions options = blend == EffectParticleAppearance.Blend.ADDITIVE
+            ? EffectRenderTypeOptions.PARTICLE_ADDITIVE
+            : EffectRenderTypeOptions.PARTICLE_ALPHA;
+        return shaderWorld(EffectShaders.MICRO_PARTICLES, texture, options);
     }
 
     public static RenderType screenMask(ResourceLocation texture) {

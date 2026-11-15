@@ -30,6 +30,14 @@ public final class QuasarClientConfig {
         )
         .defineInRange("effect_budget_ms", 2.5, 0.25, 50.0);
 
+    static final ModConfigSpec.IntValue PARTICLE_BUDGET = BUILDER
+        .comment(
+            "Soft per-frame ceiling for stateless GPU micro-particles.",
+            "The engine scales counts by quality tier and shares this budget across fields.",
+            "Set to 0 to disable micro-particles without rejecting effects."
+        )
+        .defineInRange("particle_budget", 16_384, 0, 262_144);
+
     static final ModConfigSpec.BooleanValue CINEMATIC_IMPULSES = BUILDER
         .comment(
             "Allow cinematic effects to add camera shake and screen pulses.",
@@ -52,6 +60,11 @@ public final class QuasarClientConfig {
 
     public static double effectBudgetMillis() {
         return value(EFFECT_BUDGET_MS);
+    }
+
+    /** Soft per-frame ceiling for stateless GPU micro-particles; {@code 0} disables them. */
+    public static int particleBudget() {
+        return value(PARTICLE_BUDGET);
     }
 
     /** Whether cinematic camera shake and screen flashes are allowed. */

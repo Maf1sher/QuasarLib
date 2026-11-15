@@ -28,6 +28,9 @@ public final class ContentEffectIds {
     public static final ResourceLocation STATIC_MESH = ResourceLocation.fromNamespaceAndPath(
         ContentBootstrap.NAMESPACE, "static_mesh"
     );
+    public static final ResourceLocation PARTICLES = ResourceLocation.fromNamespaceAndPath(
+        ContentBootstrap.NAMESPACE, "particles"
+    );
 
     private ContentEffectIds() {
     }

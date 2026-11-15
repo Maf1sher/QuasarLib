@@ -10,6 +10,8 @@ import static org.mockito.Mockito.when;
 
 import com.mojang.blaze3d.shaders.Program;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.VertexFormat;
+import mafisher.quasar.api.client.particle.EffectParticleAppearance;
 import mafisher.quasar.api.client.render.EffectRenderTypeOptions;
 import mafisher.quasar.api.client.render.EffectShader;
 import mafisher.quasar.api.client.render.QuasarRenderTypes;
@@ -36,6 +38,21 @@ class EffectRenderTypesTest {
     void cachesEngineOwnedShaderTypes() {
         assertSame(EffectRenderTypes.instancedWorld(TEXTURE), EffectRenderTypes.instancedWorld(TEXTURE));
         assertSame(EffectRenderTypes.screenMask(TEXTURE), EffectRenderTypes.screenMask(TEXTURE));
+    }
+
+    @Test
+    void buildsAndCachesParticleTypes() {
+        var alpha = EffectRenderTypes.particleWorld(TEXTURE,
+            EffectParticleAppearance.Blend.ALPHA);
+        var additive = EffectRenderTypes.particleWorld(TEXTURE,
+            EffectParticleAppearance.Blend.ADDITIVE);
+
+        assertSame(alpha, EffectRenderTypes.particleWorld(TEXTURE,
+            EffectParticleAppearance.Blend.ALPHA));
+        assertNotEquals(alpha, additive);
+        assertEquals(DefaultVertexFormat.BLOCK, alpha.format());
+        assertEquals(VertexFormat.Mode.QUADS, alpha.mode());
+        assertNull(EffectRenderTypes.staticBatchMaterial(alpha));
     }
 
     @Test

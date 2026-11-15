@@ -13,4 +13,11 @@ class EffectShadersTest {
             EffectShaders.SCREEN_PRESENT.id());
         assertEquals(DefaultVertexFormat.POSITION, EffectShaders.SCREEN_PRESENT.format());
     }
+
+    @Test
+    void registersMicroParticles() {
+        assertEquals(ResourceLocation.fromNamespaceAndPath("quasar_lib", "micro_particles"),
+            EffectShaders.MICRO_PARTICLES.id());
+        assertEquals(DefaultVertexFormat.BLOCK, EffectShaders.MICRO_PARTICLES.format());
+    }
 }

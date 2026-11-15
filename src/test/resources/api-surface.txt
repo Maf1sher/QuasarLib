@@ -28,6 +28,12 @@ mafisher.quasar.api.client.screen.BloomSettings
 mafisher.quasar.api.client.screen.EmissiveComposite
 mafisher.quasar.api.client.impulse.CameraShakeImpulse
 mafisher.quasar.api.client.impulse.ClientEffectImpulses
+mafisher.quasar.api.client.particle.EffectParticleAppearance
+mafisher.quasar.api.client.particle.EffectParticleField
+mafisher.quasar.api.client.particle.EffectParticleMotion
+mafisher.quasar.api.client.particle.EffectParticlePass
+mafisher.quasar.api.client.particle.EffectParticleShape
+mafisher.quasar.api.client.particle.ParticleVisualEffectRenderer
 mafisher.quasar.api.client.render.EffectCameraSnapshot
 mafisher.quasar.api.client.render.EffectDepthOcclusion
 mafisher.quasar.api.client.render.EffectInstancedPass
