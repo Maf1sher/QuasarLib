@@ -135,6 +135,7 @@ public final class ContentCommands {
 
         ContentEffectCommands.register(root);
         ContentCinematicCommands.register(root);
+        ContentOrbitalLaserCommands.register(root);
         dispatcher.register(root);
     }
 

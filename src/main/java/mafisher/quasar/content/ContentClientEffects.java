@@ -13,6 +13,7 @@ import mafisher.quasar.content.demo.ContentRibbonRenderer;
 import mafisher.quasar.content.demo.ContentSceneBlurRenderer;
 import mafisher.quasar.content.demo.ContentStaticMeshRenderer;
 import mafisher.quasar.content.demo.ContentWaveDistortionRenderer;
+import mafisher.quasar.content.orbital.ContentOrbitalLaserRenderer;
 import mafisher.quasar.content.rune.ContentRuneCircleRenderer;
 import mafisher.quasar.content.rune.ContentRuneGlowOperation;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -39,6 +40,7 @@ public final class ContentClientEffects {
         event.register(ContentEffectIds.PARTICLES, new ContentParticleRenderer());
         event.register(ContentEffectIds.BLACK_HOLE, new ContentBlackHoleRenderer());
         event.register(ContentEffectIds.BLACK_HOLE_MESH, new ContentBlackHoleMeshRenderer());
+        event.register(ContentEffectIds.ORBITAL_LASER, new ContentOrbitalLaserRenderer());
     }
 
     public static void registerEntityRenderers(EntityRenderersEvent.RegisterRenderers event) {

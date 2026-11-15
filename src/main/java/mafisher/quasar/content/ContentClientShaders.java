@@ -15,5 +15,6 @@ public final class ContentClientShaders {
         ContentShaders.BLACK_HOLE.register(event);
         ContentShaders.BLACK_HOLE_MESH.register(event);
         ContentShaders.BLACK_HOLE_MESH_MASK.register(event);
+        ContentShaders.ORBITAL_LASER_MARKER.register(event);
     }
 }

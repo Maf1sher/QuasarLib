@@ -14,6 +14,7 @@ import mafisher.quasar.content.blackhole.ContentBlackHoleRenderer;
 import mafisher.quasar.content.demo.ContentBloomRenderer;
 import mafisher.quasar.content.demo.ContentSceneBlurRenderer;
 import mafisher.quasar.content.demo.ContentWaveDistortionRenderer;
+import mafisher.quasar.content.orbital.ContentOrbitalLaserRenderer;
 import mafisher.quasar.content.rune.ContentRuneCircleRenderer;
 import mafisher.quasar.testing.TestVisualEffects;
 import net.minecraft.resources.ResourceLocation;
@@ -41,7 +42,8 @@ class ContentVisualEffectRendererSpatialRadiusTest {
             new ContentSceneBlurRenderer(),
             new ContentBloomRenderer(),
             new ContentBlackHoleRenderer(),
-            new ContentBlackHoleMeshRenderer()
+            new ContentBlackHoleMeshRenderer(),
+            new ContentOrbitalLaserRenderer()
         );
 
         for (VisualEffectRenderer renderer : renderers) {

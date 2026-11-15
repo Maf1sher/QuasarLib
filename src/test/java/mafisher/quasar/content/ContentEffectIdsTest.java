@@ -19,6 +19,8 @@ class ContentEffectIdsTest {
         assertEquals("ribbon", ContentEffectIds.RIBBON.getPath());
         assertEquals("quasar_content", ContentEffectIds.STATIC_MESH.getNamespace());
         assertEquals("static_mesh", ContentEffectIds.STATIC_MESH.getPath());
+        assertEquals("quasar_content", ContentEffectIds.ORBITAL_LASER.getNamespace());
+        assertEquals("orbital_laser", ContentEffectIds.ORBITAL_LASER.getPath());
     }
 
     @Test
@@ -27,5 +29,6 @@ class ContentEffectIdsTest {
         assertFalse(ContentEffectIds.BLACK_HOLE.getPath().startsWith("debug_"));
         assertFalse(ContentEffectIds.BLACK_HOLE_MESH.getPath().startsWith("debug_"));
         assertFalse(ContentEffectIds.STATIC_MESH.getPath().startsWith("debug_"));
+        assertFalse(ContentEffectIds.ORBITAL_LASER.getPath().startsWith("debug_"));
     }
 }

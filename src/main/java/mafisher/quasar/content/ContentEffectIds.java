@@ -31,6 +31,9 @@ public final class ContentEffectIds {
     public static final ResourceLocation PARTICLES = ResourceLocation.fromNamespaceAndPath(
         ContentBootstrap.NAMESPACE, "particles"
     );
+    public static final ResourceLocation ORBITAL_LASER = ResourceLocation.fromNamespaceAndPath(
+        ContentBootstrap.NAMESPACE, "orbital_laser"
+    );
 
     private ContentEffectIds() {
     }

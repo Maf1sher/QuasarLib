@@ -24,6 +24,9 @@ public final class ContentShaders {
     public static final EffectShader BLACK_HOLE_MESH_MASK = EffectShader.create(
         id("black_hole_mesh_mask"), DefaultVertexFormat.BLOCK
     );
+    public static final EffectShader ORBITAL_LASER_MARKER = EffectShader.create(
+        id("orbital_laser_marker"), DefaultVertexFormat.BLOCK
+    );
 
     private ContentShaders() {
     }
