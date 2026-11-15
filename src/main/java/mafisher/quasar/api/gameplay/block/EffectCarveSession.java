@@ -47,6 +47,7 @@ public final class EffectCarveSession implements AutoCloseable {
     private boolean syncReleased;
     private boolean closed;
     private float frontScale;
+    private double frontY;
     private boolean coreSkipLogged;
     private boolean deadlineLogged;
 
@@ -60,6 +61,7 @@ public final class EffectCarveSession implements AutoCloseable {
         this.spec = spec;
         this.plan = plan;
         this.editor = editor;
+        this.frontY = plan.frontTopY();
         this.coreDone = !plan.hasCoreWork();
         this.context.onClose(() -> {
             this.closed = true;
@@ -113,10 +115,10 @@ public final class EffectCarveSession implements AutoCloseable {
         EffectBulkBlockEditor editor = null;
         if (tag.contains("editor")) {
             EffectBulkBlockEditor restored = EffectBulkBlockEditor.restore(
-                context, tag.getCompound("editor"), EffectBulkBlockEditor.Ordering.CENTER_OUT
+                context, tag.getCompound("editor"), spec.ordering()
             );
             if (restored.volume().equals(plan.volume())
-                && restored.ordering() == EffectBulkBlockEditor.Ordering.CENTER_OUT) {
+                && restored.ordering() == spec.ordering()) {
                 editor = restored;
             } else {
                 restored.close(false);
@@ -135,6 +137,7 @@ public final class EffectCarveSession implements AutoCloseable {
         session.completed = tag.getBoolean("complete");
         session.syncReleased = tag.getBoolean("sync_released");
         session.frontScale = Math.max(0.0F, Math.min(1.0F, tag.getFloat("front_scale")));
+        session.frontY = restoredFrontY(plan, context, tag);
         if (!session.coreDone
             && tag.contains("core_cursor")
             && plan.coreVolume() != null) {
@@ -162,6 +165,15 @@ public final class EffectCarveSession implements AutoCloseable {
             return;
         }
         float progress = this.effectProgress();
+        if (this.spec.ordering() == EffectBulkBlockEditor.Ordering.TOP_DOWN) {
+            this.tickTopDown(progress);
+        } else {
+            this.tickRadial(progress);
+        }
+        this.updateCompletion();
+    }
+
+    private void tickRadial(float progress) {
         if (!this.coreDone && !this.coreSkipped) {
             if (progress >= this.plan.growthStart() && this.plan.hasCoreWork()) {
                 this.skipCore(progress);
@@ -170,7 +182,6 @@ public final class EffectCarveSession implements AutoCloseable {
             }
         }
         if (progress < this.plan.growthStart()) {
-            this.updateCompletion();
             return;
         }
         if (progress < this.plan.workEnd()) {
@@ -190,12 +201,44 @@ public final class EffectCarveSession implements AutoCloseable {
                 this.frontScale = Math.max(this.frontScale, 1.0F);
             }
         }
-        this.updateCompletion();
     }
 
-    /** Normalized visual front inside the effective volume. */
+    private void tickTopDown(float progress) {
+        if (progress < this.plan.growthStart()) {
+            return;
+        }
+        if (progress < this.plan.workEnd()) {
+            if (!this.deadlineReached) {
+                double front = this.plan.frontYAt(progress);
+                if (!this.editor.progress().finished()) {
+                    this.editor.tickToFront(front, this.plan.sectionBudget());
+                }
+                this.frontY = Math.min(this.frontY, front);
+                if (this.editor.progress().finished()) {
+                    this.releaseSync();
+                }
+            }
+        } else {
+            this.reachDeadline(progress);
+            if (!this.incomplete) {
+                this.frontY = this.plan.frontBottomY();
+            }
+        }
+    }
+
+    /** Normalized radial visual front inside the effective volume. */
     public float frontScale() {
         return this.frontScale;
+    }
+
+    /** Absolute world height of the planned top-down front. */
+    public double frontY() {
+        return this.frontY;
+    }
+
+    /** Absolute world height of the editor cursor; meaningful for {@code TOP_DOWN} sessions. */
+    public double carvedFrontY() {
+        return this.editor.frontY();
     }
 
     /** Whether every planned edit and reveal has finished. */
@@ -263,6 +306,7 @@ public final class EffectCarveSession implements AutoCloseable {
         tag.putBoolean("complete", this.completed);
         tag.putBoolean("sync_released", this.syncReleased);
         tag.putFloat("front_scale", this.frontScale);
+        tag.putDouble("front_y", this.frontY);
         return tag;
     }
 
@@ -374,7 +418,11 @@ public final class EffectCarveSession implements AutoCloseable {
             && this.editor.hasPendingSolidSections();
         if (pending) {
             this.incomplete = true;
-            this.frontScale = Math.min(this.frontScale, (float)this.editor.frontScale());
+            if (this.spec.ordering() == EffectBulkBlockEditor.Ordering.TOP_DOWN) {
+                this.frontY = Math.max(this.frontY, this.editor.frontY());
+            } else {
+                this.frontScale = Math.min(this.frontScale, (float)this.editor.frontScale());
+            }
             if (!this.deadlineLogged) {
                 this.deadlineLogged = true;
                 LOGGER.warn(
@@ -423,7 +471,30 @@ public final class EffectCarveSession implements AutoCloseable {
                 0.0,
                 spec.journal()
             ),
-            EffectBulkBlockEditor.Ordering.CENTER_OUT
+            spec.ordering()
         );
+    }
+
+    private static double restoredFrontY(
+        EffectCarvePlan plan,
+        GameplayEffectContext context,
+        CompoundTag tag
+    ) {
+        if (tag.contains("front_y")) {
+            return clampFrontY(plan, tag.getDouble("front_y"));
+        }
+        if (plan.ordering() != EffectBulkBlockEditor.Ordering.TOP_DOWN) {
+            return plan.frontTopY();
+        }
+        int duration = Math.max(1, context.spec().phases().totalDurationTicks());
+        float progress = Math.max(0.0F, Math.min(1.0F, context.ageTicks() / (float)duration));
+        return plan.frontYAt(progress);
+    }
+
+    private static double clampFrontY(EffectCarvePlan plan, double frontY) {
+        if (!Double.isFinite(frontY)) {
+            return plan.frontTopY();
+        }
+        return Math.max(plan.frontBottomY(), Math.min(plan.frontTopY(), frontY));
     }
 }

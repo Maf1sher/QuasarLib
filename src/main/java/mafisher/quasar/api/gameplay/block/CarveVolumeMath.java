@@ -21,6 +21,37 @@ final class CarveVolumeMath {
     private CarveVolumeMath() {
     }
 
+    /** Scales a volume for the selected front. Top-down keeps the vertical extent fixed. */
+    static EffectBlockVolume scaleForOrdering(
+        EffectBlockVolume volume,
+        double factor,
+        EffectBulkBlockEditor.Ordering ordering
+    ) {
+        if (ordering == EffectBulkBlockEditor.Ordering.TOP_DOWN) {
+            return scaleRadius(volume, factor);
+        }
+        return scale(volume, factor);
+    }
+
+    /**
+     * Shrinks only the horizontal radius of a vertical cylinder. The authored bottom and top stay
+     * exact so a budget reduction degrades the hole width, never its reach to the protected floor.
+     */
+    static EffectBlockVolume scaleRadius(EffectBlockVolume volume, double factor) {
+        if (!Double.isFinite(factor) || factor <= 0.0) {
+            throw new IllegalArgumentException("Carve scale must be finite and positive");
+        }
+        if (volume instanceof EffectBlockVolume.Cylinder cylinder) {
+            return EffectBlockVolume.cylinder(
+                cylinder.center(),
+                cylinder.radius() * factor,
+                cylinder.minY(),
+                cylinder.maxY()
+            );
+        }
+        throw new IllegalArgumentException("Radius-only carve scaling requires a cylinder");
+    }
+
     static EffectBlockVolume scale(EffectBlockVolume volume, double factor) {
         if (!Double.isFinite(factor) || factor <= 0.0) {
             throw new IllegalArgumentException("Carve scale must be finite and positive");

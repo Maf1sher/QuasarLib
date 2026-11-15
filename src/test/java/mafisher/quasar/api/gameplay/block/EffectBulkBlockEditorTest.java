@@ -643,6 +643,71 @@ class EffectBulkBlockEditorTest {
     }
 
     @Test
+    void topDownFrontProcessesSectionsFromTheTopAndRevealsEarly() {
+        installSecondSection();
+        EffectBulkBlockEditor editor = topDownEditor(
+            EffectBlockVolume.box(new EffectBounds(
+                0.0, 0.0, 0.0, 15.999, 31.999, 15.999
+            ))
+        );
+
+        editor.tickToFront(24.0, 10);
+
+        assertEquals(1, editor.progress().completedSections());
+        assertEquals(16.0, editor.frontY(), 1.0E-6);
+        assertEquals(0, editor.dirtyChunkCount());
+
+        editor.tickToFront(0.0, 10);
+
+        assertEquals(2, editor.progress().completedSections());
+        assertEquals(0.0, editor.frontY(), 1.0E-6);
+        editor.close(false);
+    }
+
+    @Test
+    void topDownFrontYRoundTripsThroughTheEditorState() {
+        installSecondSection();
+        EffectBulkBlockEditor editor = topDownEditor(
+            EffectBlockVolume.box(new EffectBounds(
+                0.0, 0.0, 0.0, 15.999, 31.999, 15.999
+            ))
+        );
+        editor.tickToFront(24.0, 10);
+        CompoundTag saved = editor.save();
+        editor.close(false);
+
+        EffectBulkBlockEditor restored = EffectBulkBlockEditor.restore(
+            this.context, saved, EffectBulkBlockEditor.Ordering.TOP_DOWN
+        );
+
+        assertEquals(16.0, restored.frontY(), 1.0E-6);
+        assertEquals(EffectBulkBlockEditor.Ordering.TOP_DOWN, restored.ordering());
+        restored.close(false);
+    }
+
+    @Test
+    void tickToFrontRejectsRadialOrdering() {
+        EffectBulkBlockEditor editor = EffectBulkBlockEditor.create(
+            this.context,
+            new EffectBulkBlockEditor.Spec(
+                EffectBlockVolume.sphere(new EffectPoint(8.0, 8.0, 8.0), 4.0),
+                Blocks.AIR.defaultBlockState(),
+                true,
+                EffectBulkBlockEditor.SyncPolicy.MANUAL,
+                0.0,
+                false
+            ),
+            EffectBulkBlockEditor.Ordering.CENTER_OUT
+        );
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+            IllegalStateException.class,
+            () -> editor.tickToFront(0.0, 1)
+        );
+        editor.close(false);
+    }
+
+    @Test
     void deferredTicketReleaseWaitsForQueuedReveals() {
         TerrainEditService.acquireTickets(this.level, List.of(this.chunkPos));
         TerrainEditService.releaseTicketsWhenSettled(this.level, List.of(this.chunkPos));
@@ -788,5 +853,38 @@ class EffectBulkBlockEditorTest {
         restored.tick(1);
         assertEquals(0, restored.dirtyChunkCount());
         restored.close(false);
+    }
+
+    private void installSecondSection() {
+        when(this.level.getMaxSection()).thenReturn(2);
+        when(this.level.getMaxBuildHeight()).thenReturn(32);
+        when(this.level.getSectionIndexFromSectionY(1)).thenReturn(1);
+        LevelChunkSection second = new LevelChunkSection(
+            new PalettedContainer<>(
+                Block.BLOCK_STATE_REGISTRY,
+                Blocks.AIR.defaultBlockState(),
+                PalettedContainer.Strategy.SECTION_STATES
+            ),
+            this.section.getBiomes()
+        );
+        second.setBlockState(8, 0, 8, Blocks.STONE.defaultBlockState(), false);
+        this.sections = new LevelChunkSection[]{this.section, second};
+        when(this.chunk.getSection(1)).thenAnswer(ignored -> this.sections[1]);
+        when(this.chunk.getSections()).thenReturn(this.sections);
+    }
+
+    private EffectBulkBlockEditor topDownEditor(EffectBlockVolume volume) {
+        return EffectBulkBlockEditor.create(
+            this.context,
+            new EffectBulkBlockEditor.Spec(
+                volume,
+                Blocks.AIR.defaultBlockState(),
+                true,
+                EffectBulkBlockEditor.SyncPolicy.PROGRESSIVE,
+                0.0,
+                false
+            ),
+            EffectBulkBlockEditor.Ordering.TOP_DOWN
+        );
     }
 }

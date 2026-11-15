@@ -16,6 +16,12 @@ import org.jspecify.annotations.Nullable;
  * so a small sphere or shaft still has a clean interior. The core is scaled by the same factor as
  * the main volume.</p>
  *
+ * <p>{@code ordering} selects the destruction front. {@code CENTER_OUT} is the radial default
+ * and keeps the historical behavior. {@code TOP_DOWN} burns a vertical cylinder from the sampled
+ * surface to the protected floor; its plan shrinks only the radius and never the height. A
+ * top-down carve currently requires a {@link EffectBlockVolume.Cylinder} and has no core pre-pass,
+ * because a core would be revealed out of front order.</p>
+ *
  * <p>{@code surfaceY} is the sampled terrain surface used to pace the visible front by removable
  * volume instead of bounding-box volume. When it is absent, the whole volume is treated as solid.
  * The warp never samples or loads a chunk; callers that need a surface sample supply it.</p>
@@ -30,12 +36,16 @@ public record EffectCarveSpec(
     float windowEnd,
     @Nullable EffectBlockVolume coreVolume,
     float coreStartProgress,
-    @Nullable Double surfaceY
+    @Nullable Double surfaceY,
+    EffectBulkBlockEditor.Ordering ordering
 ) {
     public EffectCarveSpec {
         Objects.requireNonNull(volume, "volume");
         Objects.requireNonNull(replacement, "replacement");
         syncPolicy = syncPolicy == null ? EffectBulkBlockEditor.SyncPolicy.ON_COMPLETE : syncPolicy;
+        ordering = ordering == null
+            ? EffectBulkBlockEditor.Ordering.CENTER_OUT
+            : ordering;
         requireUnitProgress(windowStart, "window start");
         requireUnitProgress(windowEnd, "window end");
         if (windowStart >= windowEnd) {
@@ -48,6 +58,47 @@ public record EffectCarveSpec(
         if (coreVolume != null && !contains(volume.bounds(), coreVolume.bounds())) {
             throw new IllegalArgumentException("Core volume must be contained in the carve volume");
         }
+        if (ordering == EffectBulkBlockEditor.Ordering.TOP_DOWN) {
+            if (!(volume instanceof EffectBlockVolume.Cylinder)) {
+                throw new IllegalArgumentException(
+                    "Top-down carve requires a cylinder volume"
+                );
+            }
+            if (coreVolume != null) {
+                throw new IllegalArgumentException(
+                    "Top-down carve does not support a core volume"
+                );
+            }
+        }
+    }
+
+    /** Historical radial constructor; {@code CENTER_OUT} ordering. */
+    @SuppressWarnings("checkstyle:ParameterNumber")
+    public EffectCarveSpec(
+        EffectBlockVolume volume,
+        BlockState replacement,
+        boolean removeBlockEntities,
+        boolean journal,
+        EffectBulkBlockEditor.SyncPolicy syncPolicy,
+        float windowStart,
+        float windowEnd,
+        @Nullable EffectBlockVolume coreVolume,
+        float coreStartProgress,
+        @Nullable Double surfaceY
+    ) {
+        this(
+            volume,
+            replacement,
+            removeBlockEntities,
+            journal,
+            syncPolicy,
+            windowStart,
+            windowEnd,
+            coreVolume,
+            coreStartProgress,
+            surfaceY,
+            EffectBulkBlockEditor.Ordering.CENTER_OUT
+        );
     }
 
     /** A default progressive air carve over the whole effect timeline. */

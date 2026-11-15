@@ -58,6 +58,7 @@ class EffectCarvePlanTest {
         );
         EffectCarvePlan plan = plan(cylinder, 64, 64);
 
+        assertEquals(EffectBulkBlockEditor.Ordering.CENTER_OUT, plan.ordering());
         assertEquals(1.0, plan.scale(), 1.0E-6);
         assertTrue(plan.intersectsTerrain());
         assertTrue(plan.estimatedSections() <= EffectBulkBlockEditor.maxSectionsPerEdit());
@@ -172,6 +173,12 @@ class EffectCarvePlanTest {
         assertEquals(plan.estimatedSections(), restored.estimatedSections());
         assertEquals(plan.estimatedTickets(), restored.estimatedTickets());
         assertEquals(plan.volume().bounds(), restored.volume().bounds());
+
+        tag.remove("ordering");
+        EffectCarvePlan legacy = CarvePlanNbt.restore(
+            context(200, 2), planSpec(sphere(80.0), 200, 2), tag
+        );
+        assertEquals(EffectBulkBlockEditor.Ordering.CENTER_OUT, legacy.ordering());
     }
 
     @Test
@@ -193,6 +200,111 @@ class EffectCarvePlanTest {
             CarveVolumeMath.pacingVolume(cylinder, 5.0, -10.0),
             1.0E-6
         );
+    }
+
+    @Test
+    void topDownCylinderKeepsItsAuthoredDepthWhenTheRadiusShrinks() {
+        EffectBlockVolume cylinder = EffectBlockVolume.cylinder(
+            new EffectPoint(0.0, 32.0, 0.0), 200.0, 0.0, SURFACE
+        );
+        EffectCarvePlan plan = topDownPlan(cylinder, 200, 1);
+
+        assertTrue(plan.scale() < 1.0);
+        assertTrue(plan.budgetClamped());
+        assertEquals(EffectBulkBlockEditor.Ordering.TOP_DOWN, plan.ordering());
+        EffectBlockVolume.Cylinder effective = (EffectBlockVolume.Cylinder)plan.volume();
+        assertEquals(0.0, effective.minY(), 1.0E-6);
+        assertEquals(SURFACE, effective.maxY(), 1.0E-6);
+        assertEquals(200.0 * plan.scale(), effective.radius(), 1.0E-6);
+    }
+
+    @Test
+    void topDownFrontDescendsFromSurfaceToProtectedFloor() {
+        EffectBlockVolume cylinder = EffectBlockVolume.cylinder(
+            new EffectPoint(0.0, 32.0, 0.0), 8.0, 0.0, SURFACE
+        );
+        EffectCarvePlan plan = topDownPlan(cylinder, DURATION, 64);
+
+        assertEquals(SURFACE, plan.frontTopY(), 1.0E-6);
+        assertEquals(0.0, plan.frontBottomY(), 1.0E-6);
+        assertEquals(SURFACE, plan.frontYAt(plan.growthStart()), 1.0E-6);
+        assertEquals(0.0, plan.frontYAt(plan.workEnd()), 1.0E-6);
+
+        double middle = plan.frontYAt((plan.growthStart() + plan.workEnd()) * 0.5F);
+        assertEquals(SURFACE * 0.5, middle, 0.5);
+    }
+
+    @Test
+    void frontAccessorsRejectTheWrongOrdering() {
+        EffectCarvePlan radial = plan(sphere(10.0), 64, 64);
+        EffectCarvePlan topDown = topDownPlan(
+            EffectBlockVolume.cylinder(new EffectPoint(0.0, 32.0, 0.0), 8.0, 0.0, SURFACE),
+            64,
+            64
+        );
+
+        assertThrows(IllegalStateException.class, () -> radial.frontYAt(0.5F));
+        assertThrows(IllegalStateException.class, () -> topDown.scaleAt(0.5F));
+    }
+
+    @Test
+    void topDownPlanRoundTripsThroughItsPersistedState() {
+        EffectBlockVolume cylinder = EffectBlockVolume.cylinder(
+            new EffectPoint(0.0, 32.0, 0.0), 8.0, 0.0, SURFACE
+        );
+        EffectCarveSpec spec = spec(
+            cylinder, null, SURFACE, FLOOR, 0.085F, 0.860F,
+            EffectBulkBlockEditor.Ordering.TOP_DOWN
+        );
+        EffectCarvePlan plan = EffectCarvePlan.plan(context(DURATION, 64), spec);
+        CompoundTag tag = new CompoundTag();
+        CarvePlanNbt.write(plan, tag);
+
+        EffectCarvePlan restored = CarvePlanNbt.restore(
+            context(DURATION, 64), spec, tag
+        );
+
+        assertEquals(EffectBulkBlockEditor.Ordering.TOP_DOWN, restored.ordering());
+        assertEquals(plan.frontTopY(), restored.frontTopY(), 1.0E-6);
+        assertEquals(plan.frontBottomY(), restored.frontBottomY(), 1.0E-6);
+        assertEquals(plan.frontYAt(0.5F), restored.frontYAt(0.5F), 1.0E-6);
+    }
+
+    @Test
+    void topDownSpecRequiresACylinderWithoutACore() {
+        EffectBlockVolume cylinder = EffectBlockVolume.cylinder(
+            new EffectPoint(0.0, 32.0, 0.0), 4.0, 0.0, SURFACE
+        );
+        EffectBlockVolume core = EffectBlockVolume.sphere(
+            new EffectPoint(0.0, 32.0, 0.0), 1.0
+        );
+
+        assertThrows(IllegalArgumentException.class, () -> new EffectCarveSpec(
+            sphere(4.0),
+            Blocks.AIR.defaultBlockState(),
+            true,
+            true,
+            EffectBulkBlockEditor.SyncPolicy.PROGRESSIVE,
+            0.1F,
+            0.8F,
+            null,
+            0.0F,
+            SURFACE,
+            EffectBulkBlockEditor.Ordering.TOP_DOWN
+        ));
+        assertThrows(IllegalArgumentException.class, () -> new EffectCarveSpec(
+            cylinder,
+            Blocks.AIR.defaultBlockState(),
+            true,
+            true,
+            EffectBulkBlockEditor.SyncPolicy.PROGRESSIVE,
+            0.1F,
+            0.8F,
+            core,
+            0.0F,
+            SURFACE,
+            EffectBulkBlockEditor.Ordering.TOP_DOWN
+        ));
     }
 
     @Test
@@ -231,6 +343,20 @@ class EffectCarvePlanTest {
         return plan(volume, duration, sectionBudget, 0.085F, 0.860F);
     }
 
+    private EffectCarvePlan topDownPlan(
+        EffectBlockVolume volume,
+        int duration,
+        int sectionBudget
+    ) {
+        return EffectCarvePlan.plan(
+            context(duration, sectionBudget),
+            spec(
+                volume, null, SURFACE, FLOOR, 0.085F, 0.860F,
+                EffectBulkBlockEditor.Ordering.TOP_DOWN
+            )
+        );
+    }
+
     private EffectCarvePlan plan(
         EffectBlockVolume volume,
         int duration,
@@ -260,6 +386,21 @@ class EffectCarvePlanTest {
         float windowStart,
         float windowEnd
     ) {
+        return spec(
+            volume, core, surfaceY, floorY, windowStart, windowEnd,
+            EffectBulkBlockEditor.Ordering.CENTER_OUT
+        );
+    }
+
+    private static EffectCarveSpec spec(
+        EffectBlockVolume volume,
+        EffectBlockVolume core,
+        double surfaceY,
+        double floorY,
+        float windowStart,
+        float windowEnd,
+        EffectBulkBlockEditor.Ordering ordering
+    ) {
         return new EffectCarveSpec(
             volume,
             Blocks.AIR.defaultBlockState(),
@@ -270,7 +411,8 @@ class EffectCarvePlanTest {
             windowEnd,
             core,
             0.07F,
-            surfaceY
+            surfaceY,
+            ordering
         );
     }
 

@@ -45,9 +45,10 @@ import org.slf4j.LoggerFactory;
  * cleared through the chunk-section palette instead of per-block level writes; partial boundary
  * sections fall back to per-block edits so the surface stays smooth. Heightmaps, lighting, block
  * entities, chunk tickets, and one full-chunk client resend per changed column are handled by the
- * engine. {@link SyncPolicy#PROGRESSIVE} additionally reveals a column once the current radial
- * front has passed all of its sections, so the client never receives a half-carved column; depth
- * reveals are spaced out and flushed at the end.
+ * engine. {@link SyncPolicy#PROGRESSIVE} reveals the changed columns as the front advances:
+ * a radial edit waits until the front has passed every section in the column, while a top-down
+ * edit resends the column as the burn approaches, so the shaft visibly opens during the descent.
+ * Depth reveals are spaced out and flushed at the end.
  *
  * <p>Server authority is unchanged: protection is queried before each change and the block journal
  * records a compact section snapshot for rollback. Clients only present the final chunk.
@@ -120,6 +121,7 @@ public final class EffectBulkBlockEditor {
     private long clearedBlocks;
     private int editedSections;
     private double frontScale;
+    private double frontY;
     private boolean syncReleased;
     private boolean finished;
     private boolean closed;
@@ -131,7 +133,8 @@ public final class EffectBulkBlockEditor {
         this.spec = Objects.requireNonNull(spec, "spec");
         this.ordering = ordering == null ? Ordering.TOP_DOWN : ordering;
         this.sections = buildSections(spec.volume(), this.level, this.ordering);
-        this.revealStep = computeRevealStep(spec.volume());
+        this.frontY = spec.volume().bounds().maxY();
+        this.revealStep = computeRevealStep(spec.volume(), this.ordering);
         this.ticketChunks = ticketChunks(this.sections);
         this.indexSectionsByChunk();
         this.context.onClose(this::releaseTickets);
@@ -184,6 +187,14 @@ public final class EffectBulkBlockEditor {
         } else {
             editor.recomputeFrontScale();
         }
+        if (tag.contains("front_y")) {
+            editor.frontY = Math.max(
+                editor.spec.volume().bounds().minY(),
+                Math.min(editor.spec.volume().bounds().maxY(), tag.getDouble("front_y"))
+            );
+        } else {
+            editor.recomputeFrontY();
+        }
         editor.rebuildNextSectionIndices();
         if (tag.contains("dirty_chunks")) {
             restoreDirtyState(editor, tag);
@@ -220,7 +231,9 @@ public final class EffectBulkBlockEditor {
      * destruction front without changing the engine's hard budget checks.
      */
     public Progress tick(int maxSections) {
-        return this.tickInternal(Double.POSITIVE_INFINITY, Math.max(0, maxSections));
+        return this.tickInternal(
+            Double.POSITIVE_INFINITY, Math.max(0, maxSections), Double.NEGATIVE_INFINITY
+        );
     }
 
     /**
@@ -241,10 +254,30 @@ public final class EffectBulkBlockEditor {
             throw new IllegalArgumentException("Front scale must be finite");
         }
         double clamped = Math.max(0.0, Math.min(1.0, scale));
-        return this.tickInternal(clamped * clamped, Math.max(0, maxSections));
+        return this.tickInternal(
+            clamped * clamped, Math.max(0, maxSections), Double.NEGATIVE_INFINITY
+        );
     }
 
-    private Progress tickInternal(double targetSquared, int maxSections) {
+    /** Advances a {@link Ordering#TOP_DOWN} edit down to an absolute world height. */
+    public Progress tickToFront(double frontY) {
+        return this.tickToFront(frontY, Integer.MAX_VALUE);
+    }
+
+    /** @see #tickToFront(double) */
+    public Progress tickToFront(double frontY, int maxSections) {
+        if (this.ordering != Ordering.TOP_DOWN) {
+            throw new IllegalStateException("tickToFront requires TOP_DOWN ordering");
+        }
+        if (!Double.isFinite(frontY)) {
+            throw new IllegalArgumentException("Front height must be finite");
+        }
+        return this.tickInternal(
+            Double.POSITIVE_INFINITY, Math.max(0, maxSections), frontY
+        );
+    }
+
+    private Progress tickInternal(double targetSquared, int maxSections, double targetFrontY) {
         if (this.closed || this.finished) {
             return this.progress();
         }
@@ -255,28 +288,22 @@ public final class EffectBulkBlockEditor {
         int edited = 0;
         while (this.sectionIndex < this.sections.size() && edited < limit) {
             SectionEntry entry = this.sections.get(this.sectionIndex);
-            if (entry.minDistanceSquared() > targetSquared) {
+            if (!this.frontReached(entry, targetSquared, targetFrontY)) {
                 break;
             }
             SectionKey key = entry.key();
             LevelChunk chunk = this.level.getChunkSource().getChunkNow(key.sectionX(), key.sectionZ());
             if (chunk == null) {
-                this.stalledTicks++;
-                if (this.stalledTicks == MAX_STALLED_TICKS) {
-                    LOGGER.warn(
-                        "Bulk edit is waiting for chunk {} {}; the front will resume when it loads",
-                        key.sectionX(), key.sectionZ()
-                    );
-                }
+                this.stallOnChunk(key);
                 break;
             }
             int sectionArrayIndex = this.level.getSectionIndexFromSectionY(key.sectionY());
             LevelChunkSection section = chunk.getSection(sectionArrayIndex);
-            if (section == null
-                || section.hasOnlyAir()
-                || !section.maybeHas(state -> !state.isAir()
-                    && !BlockEditRules.INDESTRUCTIBLE.contains(state.getBlock()))) {
+            if (isSkippableSection(section)) {
                 this.passSection(entry);
+                if (this.ordering == Ordering.TOP_DOWN) {
+                    this.advanceFront(entry);
+                }
                 this.sectionIndex++;
                 this.stalledTicks = 0;
                 continue;
@@ -297,8 +324,47 @@ public final class EffectBulkBlockEditor {
         return this.progress();
     }
 
+    private boolean frontReached(
+        SectionEntry entry,
+        double targetSquared,
+        double targetFrontY
+    ) {
+        if (this.ordering == Ordering.CENTER_OUT) {
+            return entry.minDistanceSquared() <= targetSquared;
+        }
+        return sectionTopY(entry) >= targetFrontY;
+    }
+
+    private void stallOnChunk(SectionKey key) {
+        this.stalledTicks++;
+        if (this.stalledTicks == MAX_STALLED_TICKS) {
+            LOGGER.warn(
+                "Bulk edit is waiting for chunk {} {}; the front will resume when it loads",
+                key.sectionX(), key.sectionZ()
+            );
+        }
+    }
+
+    private static boolean isSkippableSection(LevelChunkSection section) {
+        return section == null
+            || section.hasOnlyAir()
+            || !section.maybeHas(state -> !state.isAir()
+                && !BlockEditRules.INDESTRUCTIBLE.contains(state.getBlock()));
+    }
+
     private void releaseProgressiveFront(double targetSquared) {
         if (this.spec.syncPolicy() != SyncPolicy.PROGRESSIVE || this.syncReleased) {
+            return;
+        }
+        if (this.ordering == Ordering.TOP_DOWN) {
+            EffectBounds bounds = this.spec.volume().bounds();
+            double span = bounds.maxY() - bounds.minY();
+            double targetScale = span <= 1.0E-6
+                ? 1.0
+                : (bounds.maxY() - this.frontY) / span;
+            this.releaseFrontChunksTopDown(
+                Math.max(0.0, Math.min(1.0, targetScale))
+            );
             return;
         }
         double targetScale = Double.isInfinite(targetSquared)
@@ -394,6 +460,11 @@ public final class EffectBulkBlockEditor {
         return this.frontScale;
     }
 
+    /** Absolute world height of the processed top-down cursor; radial edits do not use it. */
+    public double frontY() {
+        return this.frontY;
+    }
+
     /** Cursor ordering this editor was created or restored with. */
     public Ordering ordering() {
         return this.ordering;
@@ -476,13 +547,22 @@ public final class EffectBulkBlockEditor {
     }
 
     private void advanceFront(SectionEntry entry) {
-        if (this.ordering != Ordering.CENTER_OUT) {
+        if (this.ordering == Ordering.TOP_DOWN) {
+            this.frontY = Math.min(this.frontY, sectionBottomY(entry));
             return;
         }
         this.frontScale = Math.max(
             this.frontScale,
             Math.min(1.0, Math.sqrt(entry.minDistanceSquared()))
         );
+    }
+
+    private static double sectionTopY(SectionEntry entry) {
+        return sectionBottomY(entry) + 16.0;
+    }
+
+    private static double sectionBottomY(SectionEntry entry) {
+        return entry.key().sectionY() * 16.0;
     }
 
     private void recomputeFrontScale() {
@@ -497,6 +577,17 @@ public final class EffectBulkBlockEditor {
                 this.frontScale,
                 Math.min(1.0, Math.sqrt(entry.minDistanceSquared()))
             );
+        }
+    }
+
+    private void recomputeFrontY() {
+        this.frontY = this.spec.volume().bounds().maxY();
+        if (this.ordering != Ordering.TOP_DOWN) {
+            return;
+        }
+        int processed = Math.min(this.sectionIndex, this.sections.size());
+        for (int index = 0; index < processed; index++) {
+            this.frontY = Math.min(this.frontY, sectionBottomY(this.sections.get(index)));
         }
     }
 
@@ -550,12 +641,40 @@ public final class EffectBulkBlockEditor {
         return new ChunkPos(key.sectionX(), key.sectionZ());
     }
 
-    private static double computeRevealStep(EffectBlockVolume volume) {
+    /**
+     * Reveals a top-down column as the burn passes it. Unlike the radial front, a half-carved
+     * column is the expected look while the shaft descends, so each dirty chunk is resent after
+     * the front advances by {@link #revealStep} instead of waiting for the whole column.
+     */
+    private void releaseFrontChunksTopDown(double targetScale) {
+        if (this.syncReleased) {
+            return;
+        }
+        Iterator<ChunkPos> iterator = this.dirtyChunks.iterator();
+        while (iterator.hasNext()) {
+            ChunkPos chunk = iterator.next();
+            double previous = this.lastReleaseScale.getOrDefault(chunk, -1.0);
+            if (previous >= 0.0 && targetScale - previous < this.revealStep) {
+                continue;
+            }
+            this.lastReleaseScale.put(chunk, targetScale);
+            TerrainEditService.queuePriorityRelight(this.level, chunk);
+            TerrainEditService.requestSync(this.level, chunk, true);
+            iterator.remove();
+        }
+    }
+
+    private static double computeRevealStep(
+        EffectBlockVolume volume,
+        Ordering ordering
+    ) {
         EffectBounds bounds = volume.bounds();
-        double span = Math.max(
-            bounds.maxX() - bounds.minX(),
-            bounds.maxZ() - bounds.minZ()
-        ) * 0.5;
+        double span = ordering == Ordering.TOP_DOWN
+            ? bounds.maxY() - bounds.minY()
+            : Math.max(
+                bounds.maxX() - bounds.minX(),
+                bounds.maxZ() - bounds.minZ()
+            ) * 0.5;
         return Math.min(REVEAL_STEP, 12.0 / Math.max(1.0, span));
     }
 
@@ -574,6 +693,7 @@ public final class EffectBulkBlockEditor {
         tag.putLong("cleared_blocks", this.clearedBlocks);
         tag.putInt("edited_sections", this.editedSections);
         tag.putDouble("front_scale", this.frontScale);
+        tag.putDouble("front_y", this.frontY);
         tag.putBoolean("sync_released", this.syncReleased);
         tag.putBoolean("finished", this.finished);
         long[] dirtyChunks = new long[this.dirtyChunks.size()];

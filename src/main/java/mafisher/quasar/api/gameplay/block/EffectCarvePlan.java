@@ -11,13 +11,16 @@ import org.jspecify.annotations.Nullable;
  * Immutable, headless plan for one destructive carve.
  *
  * <p>{@link #scale()} is the factor applied to the authored volume. It is {@code 1} when the
- * authored size fits the timeline and engine caps and shrinks uniformly otherwise. The authored
- * volume remains the only source of the requested size; the plan never enlarges it.</p>
+ * authored size fits the timeline and engine caps and shrinks otherwise. The authored volume
+ * remains the only source of the requested size; the plan never enlarges it. {@code CENTER_OUT}
+ * shrinks uniformly. {@code TOP_DOWN} shrinks only a cylinder radius and keeps its authored
+ * vertical extent.</p>
  *
- * <p>{@link #scaleAt(float)} is the normalized visual front inside the effective volume. It
- * advances with removable terrain volume between the core finish and {@link #workEnd()}, so a
- * sphere grows in every direction at once. The front follows authored progress even when the
- * editor finishes early; {@link EffectCarveSession} keeps "edits finished" separate.</p>
+ * <p>{@link #scaleAt(float)} is the normalized radial visual front inside the effective volume.
+ * It advances with removable terrain volume between the core finish and {@link #workEnd()}, so a
+ * sphere grows in every direction at once. {@link #frontYAt(float)} is the equivalent absolute
+ * world height for a top-down burn. The front follows authored progress even when the editor
+ * finishes early; {@link EffectCarveSession} keeps "edits finished" separate.</p>
  */
 @SuppressWarnings({
     "PMD.TooManyMethods",
@@ -25,9 +28,6 @@ import org.jspecify.annotations.Nullable;
     "checkstyle:ParameterNumber"
 })
 public final class EffectCarvePlan {
-    private static final int SECTION_BLOCKS = 16 * 16 * 16;
-    /** Whole-section estimates miss per-block boundary sections; keep a safety margin. */
-    private static final double SECTION_SAFETY = 1.25;
     private static final float MIN_WINDOW = 0.05F;
     /** Keep at least this much of the authored window for relight and client reveal. */
     private static final float MIN_REVEAL_PROGRESS = 0.10F;
@@ -36,10 +36,10 @@ public final class EffectCarvePlan {
     /** Never let the exact core pass starve the main carve for more than this share. */
     private static final float MAX_CORE_WINDOW_FRACTION = 0.35F;
     private static final int MAX_CORE_BLOCK_BATCH = 4_096;
-    private static final double MIN_SCALE = 1.0E-6;
-    private static final int SEARCH_STEPS = 40;
+    private static final double EPSILON = 1.0E-6;
 
     private final EffectCarveSpec spec;
+    private final EffectBulkBlockEditor.Ordering ordering;
     private final double scale;
     private final EffectBlockVolume requestedVolume;
     private final EffectBlockVolume volume;
@@ -58,6 +58,8 @@ public final class EffectCarvePlan {
     private final boolean intersectsTerrain;
     private final double floorY;
     private final double surfaceY;
+    private final double frontTopY;
+    private final double frontBottomY;
     private final int estimatedCoreBlocks;
     private final int coreBlockBudget;
     private final double startingScale;
@@ -87,12 +89,13 @@ public final class EffectCarvePlan {
         int coreBlockBudget
     ) {
         this.spec = spec;
+        this.ordering = spec.ordering();
         this.scale = scale;
         this.requestedVolume = spec.volume();
-        this.volume = CarveVolumeMath.scale(spec.volume(), scale);
+        this.volume = CarveVolumeMath.scaleForOrdering(spec.volume(), scale, this.ordering);
         this.coreVolume = spec.coreVolume() == null
             ? null
-            : CarveVolumeMath.scale(spec.coreVolume(), scale);
+            : CarveVolumeMath.scaleForOrdering(spec.coreVolume(), scale, this.ordering);
         this.windowStart = windowStart;
         this.growthStart = growthStart;
         this.workEnd = workEnd;
@@ -109,17 +112,34 @@ public final class EffectCarvePlan {
         this.surfaceY = surfaceY;
         this.estimatedCoreBlocks = Math.max(0, estimatedCoreBlocks);
         this.coreBlockBudget = Math.max(0, coreBlockBudget);
-        this.startingScale = startingScale(spec);
-        this.startingVolume = CarveVolumeMath.pacingVolumeAtScale(
-            this.volume, this.startingScale, this.surfaceY, this.floorY
-        );
-        this.endVolume = CarveVolumeMath.pacingVolume(
-            this.volume, this.surfaceY, this.floorY
-        );
-        this.startingGeometry = CarveVolumeMath.geometricVolumeAtScale(
-            this.volume, this.startingScale
-        );
-        this.endGeometry = CarveVolumeMath.geometricVolume(this.volume);
+        double rawTop = Math.min(this.volume.bounds().maxY(), surfaceY);
+        double rawBottom = Math.max(this.volume.bounds().minY(), floorY);
+        if (rawBottom >= rawTop) {
+            this.frontTopY = rawBottom;
+            this.frontBottomY = rawBottom;
+        } else {
+            this.frontTopY = rawTop;
+            this.frontBottomY = rawBottom;
+        }
+        if (this.ordering == EffectBulkBlockEditor.Ordering.CENTER_OUT) {
+            this.startingScale = startingScale(spec);
+            this.startingVolume = CarveVolumeMath.pacingVolumeAtScale(
+                this.volume, this.startingScale, this.surfaceY, this.floorY
+            );
+            this.endVolume = CarveVolumeMath.pacingVolume(
+                this.volume, this.surfaceY, this.floorY
+            );
+            this.startingGeometry = CarveVolumeMath.geometricVolumeAtScale(
+                this.volume, this.startingScale
+            );
+            this.endGeometry = CarveVolumeMath.geometricVolume(this.volume);
+        } else {
+            this.startingScale = 0.0;
+            this.startingVolume = 0.0;
+            this.endVolume = 0.0;
+            this.startingGeometry = 0.0;
+            this.endGeometry = 0.0;
+        }
     }
 
     public static EffectCarvePlan plan(
@@ -181,7 +201,7 @@ public final class EffectCarvePlan {
             1, Math.round((workEnd - growthStart) * duration)
         );
 
-        double scale = largestFittingScale(
+        double scale = CarvePlanFit.largestFittingScale(
             spec,
             level,
             availableTicks,
@@ -189,7 +209,9 @@ public final class EffectCarvePlan {
             surfaceY,
             floorY
         );
-        EffectBlockVolume volume = CarveVolumeMath.scale(spec.volume(), scale);
+        EffectBlockVolume volume = CarveVolumeMath.scaleForOrdering(
+            spec.volume(), scale, spec.ordering()
+        );
         CarveVolumeMath.Metrics metrics = CarveVolumeMath.countMetrics(
             volume,
             level,
@@ -197,8 +219,10 @@ public final class EffectCarvePlan {
             EffectBulkBlockEditor.maxTicketChunks()
         );
         if (metrics == null) {
-            scale = MIN_SCALE;
-            volume = CarveVolumeMath.scale(spec.volume(), scale);
+            scale = CarvePlanFit.MIN_SCALE;
+            volume = CarveVolumeMath.scaleForOrdering(
+                spec.volume(), scale, spec.ordering()
+            );
             metrics = CarveVolumeMath.countMetrics(
                 volume,
                 level,
@@ -210,8 +234,10 @@ public final class EffectCarvePlan {
             }
         }
         double pacingVolume = CarveVolumeMath.pacingVolume(volume, surfaceY, floorY);
-        int estimatedSolidSections = Math.max(
-            1, (int)Math.ceil(pacingVolume / SECTION_BLOCKS * SECTION_SAFETY)
+        int estimatedSolidSections = CarvePlanFit.estimatedSolidSections(
+            spec.ordering() == EffectBulkBlockEditor.Ordering.TOP_DOWN,
+            metrics.sections(),
+            pacingVolume
         );
         int sectionsPerTick = Math.max(
             1, (int)Math.ceil(estimatedSolidSections / (double)availableTicks)
@@ -259,9 +285,27 @@ public final class EffectCarvePlan {
         return this.volume;
     }
 
-    /** Effective volume divided by authored volume, in {@code (0, 1]}. */
+    /**
+     * Effective size factor in {@code (0, 1]}: a uniform volume scale for {@code CENTER_OUT},
+     * or the cylinder radius factor for {@code TOP_DOWN}.
+     */
     public double scale() {
         return this.scale;
+    }
+
+    /** Destruction front selected by the authored spec. */
+    public EffectBulkBlockEditor.Ordering ordering() {
+        return this.ordering;
+    }
+
+    /** First top-down front height: the surface clipped to the effective volume. */
+    public double frontTopY() {
+        return this.frontTopY;
+    }
+
+    /** Last top-down front height: the protected floor clipped to the effective volume. */
+    public double frontBottomY() {
+        return this.frontBottomY;
     }
 
     /** Effective optional core volume, or {@code null}. */
@@ -340,10 +384,15 @@ public final class EffectCarvePlan {
     }
 
     /**
-     * Normalized front inside the effective volume at {@code progress}. It starts at the effective
-     * core size, advances with removable volume, and reaches {@code 1} at {@link #workEnd()}.
+     * Normalized radial front inside the effective volume at {@code progress}. It starts at the
+     * effective core size, advances with removable volume, and reaches {@code 1} at {@link
+     * #workEnd()}. Only {@code CENTER_OUT} plans have a radial front; use {@link #frontYAt(float)}
+     * for a top-down burn.
      */
     public double scaleAt(float progress) {
+        if (this.ordering != EffectBulkBlockEditor.Ordering.CENTER_OUT) {
+            throw new IllegalStateException("scaleAt is a radial front; use frontYAt");
+        }
         if (progress <= this.growthStart) {
             return this.startingScale;
         }
@@ -383,60 +432,50 @@ public final class EffectCarvePlan {
         );
     }
 
-    private static double largestFittingScale(
-        EffectCarveSpec spec,
-        LevelHeightAccessor level,
-        int availableTicks,
-        int sectionBudget,
-        double surfaceY,
-        double floorY
-    ) {
-        if (fits(
-            spec, 1.0, level, availableTicks, sectionBudget, surfaceY, floorY
-        )) {
-            return 1.0;
+    /**
+     * Absolute world height of the top-down front at {@code progress}. It starts at {@link
+     * #frontTopY()}, descends by actually removable terrain volume, and reaches {@link
+     * #frontBottomY()} at {@link #workEnd()}. A volume with no terrain descends linearly.
+     */
+    public double frontYAt(float progress) {
+        if (this.ordering != EffectBulkBlockEditor.Ordering.TOP_DOWN) {
+            throw new IllegalStateException("frontYAt is a top-down front; use scaleAt");
         }
-        if (!fits(
-            spec, MIN_SCALE, level, availableTicks, sectionBudget, surfaceY, floorY
-        )) {
-            return MIN_SCALE;
+        if (progress <= this.growthStart) {
+            return this.frontTopY;
         }
-        double low = MIN_SCALE;
-        double high = 1.0;
-        for (int step = 0; step < SEARCH_STEPS; step++) {
+        float fraction = fractionAt(progress);
+        if (fraction <= 0.0F) {
+            return this.frontTopY;
+        }
+        if (fraction >= 1.0F) {
+            return this.frontBottomY;
+        }
+        double span = this.frontTopY - this.frontBottomY;
+        if (span <= EPSILON) {
+            return this.frontBottomY;
+        }
+        double total = CarveVolumeMath.pacingVolume(
+            this.volume, this.frontTopY, this.frontBottomY
+        );
+        if (total <= EPSILON) {
+            return this.frontTopY - span * fraction;
+        }
+        double targetBelow = total * (1.0 - fraction);
+        double low = this.frontBottomY;
+        double high = this.frontTopY;
+        for (int step = 0; step < CarvePlanFit.SEARCH_STEPS; step++) {
             double middle = (low + high) * 0.5;
-            if (fits(
-                spec, middle, level, availableTicks, sectionBudget, surfaceY, floorY
-            )) {
+            double below = CarveVolumeMath.pacingVolume(
+                this.volume, middle, this.frontBottomY
+            );
+            if (below < targetBelow) {
                 low = middle;
             } else {
                 high = middle;
             }
         }
-        return low;
-    }
-
-    private static boolean fits(
-        EffectCarveSpec spec,
-        double scale,
-        LevelHeightAccessor level,
-        int availableTicks,
-        int sectionBudget,
-        double surfaceY,
-        double floorY
-    ) {
-        EffectBlockVolume volume = CarveVolumeMath.scale(spec.volume(), scale);
-        if (CarveVolumeMath.countMetrics(
-            volume,
-            level,
-            EffectBulkBlockEditor.maxSectionsPerEdit(),
-            EffectBulkBlockEditor.maxTicketChunks()
-        ) == null) {
-            return false;
-        }
-        double pacingVolume = CarveVolumeMath.pacingVolume(volume, surfaceY, floorY);
-        double solidSections = Math.ceil(pacingVolume / SECTION_BLOCKS * SECTION_SAFETY);
-        return solidSections <= (double)availableTicks * sectionBudget;
+        return (low + high) * 0.5;
     }
 
     private static double startingScale(EffectCarveSpec spec) {

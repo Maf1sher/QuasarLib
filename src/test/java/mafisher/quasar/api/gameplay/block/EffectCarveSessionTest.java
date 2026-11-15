@@ -215,6 +215,77 @@ class EffectCarveSessionTest {
         close(context);
     }
 
+    @Test
+    void topDownSessionCarvesFromTheTopAndRestoresItsFront() {
+        this.world.fillSection(Blocks.STONE.defaultBlockState());
+        GameplayEffectContext context = context(0, new CompoundTag());
+        EffectCarveSpec spec = topDownSpec(4.0);
+        EffectCarvePlan plan = EffectCarvePlan.plan(context, spec);
+        EffectCarveSession session = EffectCarveSession.start(context, spec, plan);
+
+        assertEquals(EffectBulkBlockEditor.Ordering.TOP_DOWN, session.plan().ordering());
+        assertEquals(plan.frontTopY(), session.frontY(), 1.0E-6);
+
+        context.beginTick(Math.round(plan.growthStart() * DURATION) + 2);
+        session.tick();
+
+        assertTrue(session.frontY() < plan.frontTopY());
+        assertTrue(session.progress().completedSections() > 0);
+        assertEquals(0.0, session.carvedFrontY(), 1.0E-6);
+
+        double front = session.frontY();
+        CompoundTag saved = session.save();
+        session.close(false);
+
+        GameplayEffectContext resumed = context(
+            Math.round(plan.growthStart() * DURATION) + 2, saved
+        );
+        EffectCarveSession restored = EffectCarveSession.restore(resumed, spec, saved);
+
+        assertEquals(EffectBulkBlockEditor.Ordering.TOP_DOWN, restored.plan().ordering());
+        assertEquals(front, restored.frontY(), 1.0E-6);
+        assertEquals(0.0, restored.carvedFrontY(), 1.0E-6);
+        restored.close(false);
+        close(resumed);
+        close(context);
+    }
+
+    @Test
+    void topDownSessionStopsAtTheDeadline() {
+        this.world.fillSection(Blocks.STONE.defaultBlockState());
+        GameplayEffectContext context = context(1_080, new CompoundTag());
+        EffectCarveSpec spec = topDownSpec(4.0);
+        EffectCarveSession session = EffectCarveSession.start(
+            context, spec, EffectCarvePlan.plan(context, spec)
+        );
+
+        session.tick();
+
+        assertTrue(session.incomplete());
+        assertFalse(session.complete());
+        assertEquals(session.plan().frontTopY(), session.frontY(), 1.0E-6);
+        assertEquals(0, session.progress().clearedBlocks());
+        session.close(false);
+        close(context);
+    }
+
+    private EffectCarveSpec topDownSpec(double radius) {
+        EffectPoint center = new EffectPoint(CENTER.x, CENTER.y, CENTER.z);
+        return new EffectCarveSpec(
+            EffectBlockVolume.cylinder(center, radius, 0.0, SURFACE),
+            Blocks.AIR.defaultBlockState(),
+            true,
+            true,
+            EffectBulkBlockEditor.SyncPolicy.PROGRESSIVE,
+            0.085F,
+            0.860F,
+            null,
+            0.07F,
+            SURFACE,
+            EffectBulkBlockEditor.Ordering.TOP_DOWN
+        );
+    }
+
     private EffectCarveSpec spec(boolean core) {
         return spec(core, 6.0);
     }

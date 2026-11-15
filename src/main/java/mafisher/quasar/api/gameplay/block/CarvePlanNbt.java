@@ -13,6 +13,7 @@ final class CarvePlanNbt {
     static void write(EffectCarvePlan plan, CompoundTag tag) {
         tag.putInt("plan_version", PLAN_VERSION);
         tag.putInt("volume_hash", plan.spec().volume().hashCode());
+        tag.putString("ordering", plan.ordering().name());
         tag.putDouble("scale", plan.scale());
         tag.putFloat("window_start", plan.windowStart());
         tag.putFloat("growth_start", plan.growthStart());
@@ -41,6 +42,19 @@ final class CarvePlanNbt {
     ) {
         if (tag.getInt("plan_version") != PLAN_VERSION
             || tag.getInt("volume_hash") != spec.volume().hashCode()) {
+            return EffectCarvePlan.plan(context, spec);
+        }
+        if (tag.contains("ordering")) {
+            EffectBulkBlockEditor.Ordering ordering;
+            try {
+                ordering = EffectBulkBlockEditor.Ordering.valueOf(tag.getString("ordering"));
+            } catch (IllegalArgumentException ignored) {
+                return EffectCarvePlan.plan(context, spec);
+            }
+            if (ordering != spec.ordering()) {
+                return EffectCarvePlan.plan(context, spec);
+            }
+        } else if (spec.ordering() != EffectBulkBlockEditor.Ordering.CENTER_OUT) {
             return EffectCarvePlan.plan(context, spec);
         }
         double scale = tag.getDouble("scale");
