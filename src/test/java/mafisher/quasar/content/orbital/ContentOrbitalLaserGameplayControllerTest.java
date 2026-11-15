@@ -171,6 +171,51 @@ class ContentOrbitalLaserGameplayControllerTest {
         verify(target, never()).hurt(any(), anyFloat());
     }
 
+    @Test
+    void cancellationBeforeImpactLeavesTerrainUntouched() {
+        this.world.fillSection(Blocks.STONE.defaultBlockState());
+        ContentOrbitalLaserGameplayController controller =
+            new ContentOrbitalLaserGameplayController();
+        GameplayEffectHandle handle = start(controller);
+
+        tick(ContentOrbitalLaserSettings.TARGET_TICKS
+            + ContentOrbitalLaserSettings.DESCENT_TICKS - 1);
+        GameplayEffectService.stop(
+            this.world.level(), handle, GameplayEffectEndReason.CANCELLED
+        );
+        tick(ContentOrbitalLaserSettings.TOTAL_TICKS);
+
+        assertTrue(this.world.blockState(block(8, 15, 8)).is(Blocks.STONE));
+        assertFalse(GameplayEffectService.isActive(this.world.level(), handle));
+        assertEquals(0, VisualEffectService.activeCount(this.world.level()));
+    }
+
+    @Test
+    void cancellationDuringSustainStopsTheChildAndDamage() {
+        this.world.fillSection(Blocks.STONE.defaultBlockState());
+        LivingEntity target = livingAt(8.5, SURFACE_Y - 0.5, 8.5);
+        this.world.addWorldEntity(target);
+        ContentOrbitalLaserGameplayController controller =
+            new ContentOrbitalLaserGameplayController();
+        GameplayEffectHandle handle = start(controller);
+
+        tick(ContentOrbitalLaserSettings.TARGET_TICKS
+            + ContentOrbitalLaserSettings.DESCENT_TICKS
+            + ContentOrbitalLaserSettings.IMPACT_TICKS + 2);
+        verify(target, times(1)).hurt(any(), anyFloat());
+
+        GameplayEffectService.stop(
+            this.world.level(), handle, GameplayEffectEndReason.CANCELLED
+        );
+        assertFalse(GameplayEffectService.isActive(this.world.level(), handle));
+        assertEquals(0, VisualEffectService.activeCount(this.world.level()));
+
+        clearInvocations(target);
+        tick(ContentOrbitalLaserSettings.SUSTAIN_TICKS
+            + ContentOrbitalLaserSettings.COLLAPSE_TICKS);
+        verify(target, never()).hurt(any(), anyFloat());
+    }
+
     private static BlockPos block(int x, int y, int z) {
         return new BlockPos(x, y, z);
     }

@@ -36,10 +36,13 @@ uniform float TipDepth;
 
 uniform float BeamTip;
 uniform float BeamStrength;
+uniform float BeamWidth;
 uniform float ImpactFlash;
+uniform float FinalFlash;
 uniform float ShockRadiusScale;
 uniform float ShockStrength;
 uniform float ContactGlow;
+uniform float RimGlow;
 
 uniform float ForegroundDepthValid;
 uniform float OpaqueColorValid;
@@ -168,16 +171,21 @@ void main() {
         axis = normalize(axis);
     }
 
-    float beamRadius = max(BeamRadius, 0.001);
-    float topHeight = max(BeamTopHeight, beamRadius);
+    float beamWidth = clamp(BeamWidth, 0.0, 1.0);
+    float fullBeamRadius = max(BeamRadius, 0.001);
+    float beamRadius = max(fullBeamRadius * beamWidth, 0.001);
+    float topHeight = max(BeamTopHeight, fullBeamRadius);
     float tipHeight = clamp(BeamTip, 0.0, 1.0) * topHeight;
     float tipDepth = max(TipDepth, 0.0);
     float bottomHeight = tipDepth > 0.001 ? -tipDepth : tipHeight;
     float beamStrength = clamp(BeamStrength, 0.0, 1.0);
-    float flash = clamp(ImpactFlash, 0.0, 1.0);
+    float flash = max(clamp(ImpactFlash, 0.0, 1.0), clamp(FinalFlash, 0.0, 1.0));
+    float finalFlash = clamp(FinalFlash, 0.0, 1.0);
     float contact = clamp(ContactGlow, 0.0, 1.0);
     float ringStrength = clamp(ShockStrength, 0.0, 1.0);
-    if (beamStrength < 0.001 && flash < 0.001 && contact < 0.001 && ringStrength < 0.001) {
+    float rimGlow = clamp(RimGlow, 0.0, 1.0);
+    if (beamStrength < 0.001 && flash < 0.001 && contact < 0.001
+        && ringStrength < 0.001 && rimGlow < 0.001) {
         fragColor = vec4(0.0);
         return;
     }
@@ -196,8 +204,12 @@ void main() {
         daylight * 0.35);
     vec3 flashColor = mix(vec3(1.0, 0.56, 0.22), vec3(1.0, 0.93, 0.76),
         daylight * 0.35);
+    vec3 rimColor = mix(vec3(1.0, 0.12, 0.02), vec3(1.0, 0.62, 0.22),
+        daylight * 0.40);
     vec3 ringColor = mix(vec3(1.0, 0.25, 0.06), vec3(1.0, 0.72, 0.36),
         daylight * 0.30);
+    vec3 activeFlashColor = mix(flashColor, vec3(1.0, 0.96, 0.86),
+        finalFlash * 0.65);
 
     float nearestEntry = sceneDistance;
     vec3 emission = vec3(0.0);
@@ -215,8 +227,8 @@ void main() {
         float transmittance = 1.0;
         float topFadeStart = topHeight * (1.0 - QUASAR_ORBITAL_TOP_FADE_FRACTION);
         float headRadius = max(beamRadius * QUASAR_ORBITAL_HEAD_RADIUS_FACTOR, 0.001);
-        float coreRadius = max(BeamCoreRadius, 0.001);
-        float glowRadius = max(BeamGlowRadius, coreRadius);
+        float coreRadius = max(BeamCoreRadius * beamWidth, 0.001);
+        float glowRadius = max(BeamGlowRadius * beamWidth, coreRadius);
 
         for (int index = 0; index < MAX_STEPS; index++) {
             if (index >= count) {
@@ -315,7 +327,7 @@ void main() {
         float radial = length(relative - axis * dot(relative, axis));
         float ringRadius = clamp(ShockRadiusScale, 0.0, 1.0) * max(ShockMaxRadius, 0.001);
         float ringWidth = max(max(ShockMaxRadius * QUASAR_ORBITAL_RING_WIDTH_FACTOR,
-            beamRadius * 0.15), 0.001);
+            fullBeamRadius * 0.15), 0.001);
         float ringOffset = (radial - ringRadius) / ringWidth;
         float ring = exp(-ringOffset * ringOffset);
         if (ringStrength > 0.001 && ringRadius > 0.001
@@ -327,6 +339,28 @@ void main() {
         }
     }
 
+    if (rimGlow > 0.001 && basePlaneDistance > 0.0
+        && basePlaneDistance < sceneDistance) {
+        vec3 hit = direction * basePlaneDistance;
+        vec3 relative = hit - base;
+        float radial = length(relative - axis * dot(relative, axis));
+        float rimRadius = max(fullBeamRadius, 0.001);
+        float rimWidth = max(rimRadius * QUASAR_ORBITAL_RIM_WIDTH_FACTOR, 0.35);
+        float inner = smoothstep(rimRadius - rimWidth, rimRadius, radial);
+        float outer = 1.0 - smoothstep(rimRadius, rimRadius + rimWidth * 1.8, radial);
+        float rim = inner * outer;
+        float angle = atan(dot(relative, EffectForward), dot(relative, EffectRight));
+        float flicker = 0.72 + 0.28 * quasarValueNoise3(vec3(
+            angle * 2.4, AgeTicks * 0.08 + Seed * 3.0, Seed * 17.0));
+        if (rim > 0.001
+            && quasarLayerVisible(QUASAR_LAYER_EDGE, basePlaneDistance, sceneDistance,
+                depthBias)) {
+            emission += rimColor * rim * rimGlow * flicker
+                * QUASAR_ORBITAL_RIM_EMISSION;
+            nearestEntry = min(nearestEntry, basePlaneDistance);
+        }
+    }
+
     if (flash > 0.001) {
         float flashEntry = raySphereEntry(vec3(0.0), direction, base,
             max(FlashRadius, 0.001));
@@ -334,7 +368,7 @@ void main() {
             vec3 hit = direction * flashEntry;
             float normalized = length(hit - base) / max(FlashRadius, 0.001);
             float sphereFlash = exp(-normalized * normalized * 2.5) * flash;
-            emission += flashColor * sphereFlash * QUASAR_ORBITAL_FLASH_EMISSION;
+            emission += activeFlashColor * sphereFlash * QUASAR_ORBITAL_FLASH_EMISSION;
             nearestEntry = min(nearestEntry, flashEntry);
         }
 
@@ -346,7 +380,7 @@ void main() {
                 / max(2.0 * baseDistance, 0.001), pixelSize * 1.5);
             float offset = length(texCoord - baseUv) / width;
             float halo = exp(-offset * offset * 2.0) * flash;
-            emission += flashColor * halo * QUASAR_ORBITAL_SCREEN_HALO;
+            emission += activeFlashColor * halo * QUASAR_ORBITAL_SCREEN_HALO;
         }
     }
 

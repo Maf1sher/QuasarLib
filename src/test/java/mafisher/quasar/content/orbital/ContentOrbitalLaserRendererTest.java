@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.UUID;
+import mafisher.quasar.api.client.particle.EffectParticlePass;
 import mafisher.quasar.api.client.render.EffectInstancedPass;
 import mafisher.quasar.api.client.render.EffectLod;
 import mafisher.quasar.api.client.render.EffectLodProfile;
@@ -16,6 +17,7 @@ import mafisher.quasar.api.client.screen.ScreenEffectMasks;
 import mafisher.quasar.api.client.screen.ScreenEffectSettings;
 import mafisher.quasar.api.effect.StartVisualEffectPayload;
 import mafisher.quasar.api.effect.EffectParameterState;
+import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.budget.EffectQualityTier;
 import mafisher.quasar.content.ContentEffectIds;
 import mafisher.quasar.content.ContentScreenOperations;
@@ -140,12 +142,80 @@ class ContentOrbitalLaserRendererTest {
         assertFalse(this.renderer.renderPasses(reduced).iterator().hasNext());
     }
 
+    @Test
+    void particlePassesAppearOnlyInTheLatePhases() {
+        assertTrue(this.renderer.particlePasses(context(63.0F)).isEmpty());
+
+        List<EffectParticlePass> sparks = this.renderer.particlePasses(context(64.0F));
+        List<EffectParticlePass> collapse = this.renderer.particlePasses(context(164.0F));
+        List<EffectParticlePass> aftermath = this.renderer.particlePasses(context(194.0F));
+
+        assertEquals(List.of("sustain_sparks", "sustain_smoke"), ids(sparks));
+        assertEquals(List.of("collapse_sparks", "collapse_embers", "collapse_smoke"),
+            ids(collapse));
+        assertEquals(List.of("aftermath_embers", "aftermath_smoke"), ids(aftermath));
+    }
+
+    @Test
+    void particlePassesAreCachedAndUseUniqueFieldsAndSalts() {
+        EffectRenderContext context = context(194.0F);
+        List<EffectParticlePass> first = this.renderer.particlePasses(context);
+        List<EffectParticlePass> second = this.renderer.particlePasses(context);
+
+        assertSame(first, second);
+        assertEquals(first.size(), first.stream().map(EffectParticlePass::id).distinct().count());
+        assertEquals(first.size(),
+            first.stream().map(pass -> pass.field().salt()).distinct().count());
+        assertTrue(first.stream()
+            .allMatch(pass -> pass.field().maxParticles() > 0
+                && pass.field().spatialRadius() > 0.0));
+    }
+
+    @Test
+    void particleExtentFitsInsideTheCullingBoundsAtEveryRadius() {
+        for (float scale : List.of(2.0F, 6.0F, 32.0F)) {
+            EffectRenderContext context = context(194.0F, scale);
+            AABB bounds = this.renderer.cullingBounds(context);
+            EffectPoint base = context.transform().position();
+            double localRadius = this.renderer.particlePasses(context).stream()
+                .mapToDouble(pass -> pass.field().spatialRadius())
+                .max()
+                .orElse(0.0);
+            double footprint = localRadius * scale;
+
+            assertTrue(bounds.minX <= base.x() - footprint + 1.0E-6);
+            assertTrue(bounds.maxX >= base.x() + footprint - 1.0E-6);
+            assertTrue(bounds.minZ <= base.z() - footprint + 1.0E-6);
+            assertTrue(bounds.maxZ >= base.z() + footprint - 1.0E-6);
+            assertTrue(this.renderer.spatialRadius(context) >= bounds.maxY - base.y());
+        }
+    }
+
+    @Test
+    void particlePassesDoNotDependOnLodOrQuality() {
+        EffectRenderContext full = context(194.0F);
+        EffectRenderContext reduced = context(194.0F)
+            .withLod(new EffectLod(3, 400.0, 12.0))
+            .withEffectiveQuality(EffectQualityTier.LOW);
+
+        assertSame(this.renderer.particlePasses(full),
+            this.renderer.particlePasses(reduced));
+    }
+
+    private static List<String> ids(List<EffectParticlePass> passes) {
+        return passes.stream().map(EffectParticlePass::id).toList();
+    }
+
     private static EffectRenderContext context(float ageTicks) {
+        return context(ageTicks, 6.0F);
+    }
+
+    private static EffectRenderContext context(float ageTicks, float scale) {
         StartVisualEffectPayload payload = TestVisualEffects.payload(
             ContentEffectIds.ORBITAL_LASER,
             UUID.randomUUID(),
             new Vec3(10.0, 64.0, -5.0),
-            6.0F,
+            scale,
             ContentOrbitalLaserSettings.TOTAL_TICKS,
             1234L
         );

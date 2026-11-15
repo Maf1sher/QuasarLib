@@ -10,7 +10,8 @@ import mafisher.quasar.api.effect.EffectParameterState;
  *
  * <p>Every curve is anchored to {@link ContentOrbitalLaserSettings#phasePlan()}, so phase edits move
  * the visuals with the session instead of requiring hand-tuned absolute progress values. The marker
- * handoff, beam descent, impact flash, and shock ring all read the same parameter set.</p>
+ * handoff, beam descent, impact flash, shock ring, collapse narrowing/snap, final flash, and rim
+ * glow all read the same parameter set.</p>
  */
 @SuppressWarnings("PMD.TooManyMethods")
 final class ContentOrbitalLaserCinematics {
@@ -25,6 +26,20 @@ final class ContentOrbitalLaserCinematics {
     private static final float SHOCK_EXPAND = 16.0F * TICK;
     /** Time for the shock ring to fade out. */
     private static final float SHOCK_DECAY = 22.0F * TICK;
+    /** Collapse progress at which the beam starts narrowing. */
+    private static final float COLLAPSE_NARROW_START = 6.0F * TICK;
+    /** Collapse progress at which the beam reaches its narrowest point and snaps off. */
+    private static final float COLLAPSE_SNAP = 24.0F * TICK;
+    /** Collapse progress at which the narrow beam has fully disappeared. */
+    private static final float COLLAPSE_SNAP_END = 26.0F * TICK;
+    /** Time for the final flash to decay into the aftermath. */
+    private static final float FINAL_FLASH_DECAY = 6.0F * TICK;
+    /** Collapse progress at which the hot hole rim starts to glow. */
+    private static final float RIM_GLOW_START = 20.0F * TICK;
+    /** Aftermath progress at which the rim glow has faded out. */
+    private static final float RIM_GLOW_END = 20.0F * TICK;
+    /** Aftermath progress at which the screen operation stops drawing. */
+    private static final float SCREEN_VISIBLE_END = 22.0F * TICK;
     /** Server-authored multiplier for the effective beam and impact footprint. */
     static final String BEAM_RADIUS_SCALE = "BeamRadiusScale";
     /** Server-authored beam depth below the surface anchor. */
@@ -61,12 +76,33 @@ final class ContentOrbitalLaserCinematics {
         return Float.isFinite(value) && value > 0.0F ? value : 0.0F;
     }
 
+    /** Normalized progress at which the beam snaps off. */
+    static float collapseSnapProgress() {
+        return phaseStartProgress(ContentOrbitalLaserSettings.PHASE_COLLAPSE) + COLLAPSE_SNAP;
+    }
+
+    /** Normalized progress at which the narrow beam has fully disappeared. */
+    static float collapseSnapEndProgress() {
+        return phaseStartProgress(ContentOrbitalLaserSettings.PHASE_COLLAPSE) + COLLAPSE_SNAP_END;
+    }
+
+    /** Normalized progress at which the aftermath starts. */
+    static float aftermathStartProgress() {
+        return phaseStartProgress(ContentOrbitalLaserSettings.PHASE_AFTERMATH);
+    }
+
+    private static float phaseStartProgress(int phaseIndex) {
+        return ContentOrbitalLaserSettings.phasePlan().phaseStartTick(phaseIndex)
+            / (float)ContentOrbitalLaserSettings.TOTAL_TICKS;
+    }
+
     private static EffectParameterSet buildParameters() {
         EffectParameterSet.Builder builder = EffectParameterSet.builder()
             .anchors(ContentOrbitalLaserSettings.phasePlan());
         addBeamCurves(builder);
         addMarkerCurve(builder);
         addImpactCurves(builder);
+        addCollapseCurves(builder);
         addServerParameters(builder);
         return builder.build();
     }
@@ -76,8 +112,8 @@ final class ContentOrbitalLaserCinematics {
             key(0.0F, 0.0F),
             key("descent", -TICK, 0.0F, EffectEasing.LINEAR),
             key("descent", 0.0F, 1.0F, EffectEasing.LINEAR),
-            key("collapse", 0.0F, 1.0F),
-            key("aftermath", 0.0F, 0.0F),
+            key("aftermath", SCREEN_VISIBLE_END, 1.0F),
+            key("aftermath", SCREEN_VISIBLE_END + 2.0F * TICK, 0.0F, EffectEasing.LINEAR),
             key(1.0F, 0.0F)
         ));
         builder.curve("BeamTip", curve(
@@ -91,6 +127,18 @@ final class ContentOrbitalLaserCinematics {
             key("descent", -TICK, 0.0F, EffectEasing.LINEAR),
             key("descent", 0.0F, 1.0F, EffectEasing.LINEAR),
             key("collapse", 0.0F, 1.0F),
+            key("collapse", COLLAPSE_SNAP, 1.0F, EffectEasing.LINEAR),
+            key("collapse", COLLAPSE_SNAP_END, 0.0F, EffectEasing.LINEAR),
+            key(1.0F, 0.0F)
+        ));
+        builder.curve("BeamWidth", curve(
+            key(0.0F, 0.0F),
+            key("descent", -TICK, 0.0F, EffectEasing.LINEAR),
+            key("descent", 0.0F, 1.0F, EffectEasing.LINEAR),
+            key("collapse", 0.0F, 1.0F),
+            key("collapse", COLLAPSE_NARROW_START, 0.94F, EffectEasing.EASE_IN),
+            key("collapse", COLLAPSE_SNAP, 0.12F, EffectEasing.EASE_IN_CUBIC),
+            key("collapse", COLLAPSE_SNAP_END, 0.04F, EffectEasing.LINEAR),
             key("aftermath", 0.0F, 0.0F),
             key(1.0F, 0.0F)
         ));
@@ -136,7 +184,29 @@ final class ContentOrbitalLaserCinematics {
             key("impact", 0.0F, 0.8F, EffectEasing.LINEAR),
             key("sustain", 0.0F, 1.0F),
             key("collapse", 0.0F, 0.35F),
+            key("collapse", COLLAPSE_SNAP, 0.12F),
+            key("collapse", COLLAPSE_SNAP_END, 0.0F),
             key("aftermath", 0.0F, 0.0F),
+            key(1.0F, 0.0F)
+        ));
+    }
+
+    private static void addCollapseCurves(EffectParameterSet.Builder builder) {
+        builder.curve("FinalFlash", curve(
+            key(0.0F, 0.0F),
+            key("collapse", COLLAPSE_SNAP - TICK, 0.0F, EffectEasing.LINEAR),
+            key("collapse", COLLAPSE_SNAP, 1.0F, EffectEasing.LINEAR),
+            key("collapse", COLLAPSE_SNAP_END, 0.75F, EffectEasing.LINEAR),
+            key("aftermath", FINAL_FLASH_DECAY, 0.0F, EffectEasing.LINEAR),
+            key(1.0F, 0.0F)
+        ));
+        builder.curve("RimGlow", curve(
+            key(0.0F, 0.0F),
+            key("collapse", RIM_GLOW_START, 0.0F),
+            key("collapse", COLLAPSE_SNAP, 1.0F, EffectEasing.EASE_IN),
+            key("aftermath", 0.0F, 1.0F),
+            key("aftermath", RIM_GLOW_END * 0.5F, 0.45F),
+            key("aftermath", RIM_GLOW_END, 0.0F, EffectEasing.EASE_OUT),
             key(1.0F, 0.0F)
         ));
     }

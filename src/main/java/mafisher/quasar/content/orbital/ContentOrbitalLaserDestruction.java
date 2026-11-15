@@ -113,10 +113,15 @@ final class ContentOrbitalLaserDestruction {
             return;
         }
         this.carveSession.tick();
-        if (context.phaseIndex() == ContentOrbitalLaserSettings.PHASE_SUSTAIN) {
+        if (damageActive(context)) {
             this.damageTick(context);
         }
         this.persist(context);
+    }
+
+    /** Damage is limited to the sustained beam; collapse and aftermath never hurt targets. */
+    static boolean damageActive(GameplayEffectContext context) {
+        return context.phaseIndex() == ContentOrbitalLaserSettings.PHASE_SUSTAIN;
     }
 
     /** Applies the one-shot impact shockwave. Duplicate calls and resumes are ignored. */

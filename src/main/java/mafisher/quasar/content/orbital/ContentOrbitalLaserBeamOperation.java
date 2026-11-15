@@ -15,9 +15,9 @@ import net.minecraft.client.renderer.ShaderInstance;
  * Content-owned orbital-laser beam and impact screen operation.
  *
  * <p>The operation draws the whole sky-to-ground volume, the marker handoff contact glow, the
- * impact flash, and the expanding shock ring in one depth-tested pass. The standard
- * {@link EmissiveComposite} owns bloom and the final scene re-add; this layer only writes emission
- * and the solid-core coverage in alpha.</p>
+ * impact flash, the expanding shock ring, the collapse flash, and the aftermath rim glow in one
+ * depth-tested pass. The standard {@link EmissiveComposite} owns bloom and the final scene re-add;
+ * this layer only writes emission and the solid-core coverage in alpha.</p>
  */
 public final class ContentOrbitalLaserBeamOperation implements ScreenEffectOperationRenderer {
     private static final ContentOrbitalLaserBeamSettings SETTINGS =
@@ -26,10 +26,13 @@ public final class ContentOrbitalLaserBeamOperation implements ScreenEffectOpera
         .builder(ContentOrbitalLaserCinematics.parameters())
         .uniform("BeamTip", "BeamTip")
         .uniform("BeamStrength", "BeamStrength")
+        .uniform("BeamWidth", "BeamWidth")
         .uniform("ImpactFlash", "ImpactFlash")
+        .uniform("FinalFlash", "FinalFlash")
         .uniform("ShockRadiusScale", "ShockRadiusScale")
         .uniform("ShockStrength", "ShockStrength")
         .uniform("ContactGlow", "ContactGlow")
+        .uniform("RimGlow", "RimGlow")
         .uniform("TipDepth", "TipDepth")
         .build();
     private static final EmissiveComposite COMPOSITE = EmissiveComposite

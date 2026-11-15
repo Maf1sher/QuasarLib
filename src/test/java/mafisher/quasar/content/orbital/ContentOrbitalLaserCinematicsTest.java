@@ -94,12 +94,71 @@ class ContentOrbitalLaserCinematicsTest {
     }
 
     @Test
-    void beamFadesThroughCollapseAndStopsInTheAftermath() {
+    void beamNarrowsMonotonicallyThroughTheCollapse() {
+        assertEquals(1.0F, sample("BeamWidth", COLLAPSE), 1.0E-6F);
+        assertTrue(sample("BeamWidth", ContentOrbitalLaserCinematics.collapseSnapProgress())
+            < 0.2F);
+
+        float previous = 1.0F;
+        for (float progress = COLLAPSE; progress <= AFTERMATH; progress += 0.002F) {
+            float width = sample("BeamWidth", progress);
+            assertTrue(width <= previous + 1.0E-6F, "beam widened at " + progress);
+            assertTrue(width >= 0.0F && width <= 1.0F);
+            previous = width;
+        }
+        assertTrue(sample("BeamWidth", AFTERMATH) < 0.05F);
+    }
+
+    @Test
+    void beamHoldsItsStrengthThroughSustainThenSnapsOff() {
+        float snap = ContentOrbitalLaserCinematics.collapseSnapProgress();
+        float snapped = ContentOrbitalLaserCinematics.collapseSnapEndProgress();
+
         assertEquals(1.0F, sample("BeamStrength", COLLAPSE), 1.0E-6F);
-        assertTrue(sample("BeamStrength", (COLLAPSE + AFTERMATH) * 0.5F) < 1.0F);
-        assertEquals(0.0F, sample("BeamStrength", AFTERMATH), 1.0E-6F);
-        assertFalse(ContentOrbitalLaserCinematics.screenVisible(AFTERMATH));
+        assertEquals(1.0F, sample("BeamStrength", snap), 1.0E-6F);
+        assertEquals(0.0F, sample("BeamStrength", snapped), 1.0E-6F);
+        assertTrue(sample("BeamStrength", (COLLAPSE + snap) * 0.5F) > 0.99F);
+
+        float previous = 1.0F;
+        for (float progress = COLLAPSE; progress <= AFTERMATH; progress += 0.002F) {
+            float strength = sample("BeamStrength", progress);
+            assertTrue(strength <= previous + 1.0E-6F, "beam strength rose at " + progress);
+            previous = strength;
+        }
+    }
+
+    @Test
+    void finalFlashPeaksAtTheSnapAndFadesIntoTheAftermath() {
+        float snap = ContentOrbitalLaserCinematics.collapseSnapProgress();
+        float snapped = ContentOrbitalLaserCinematics.collapseSnapEndProgress();
+
+        assertEquals(0.0F, sample("FinalFlash", snap - 0.01F), 1.0E-6F);
+        assertEquals(1.0F, sample("FinalFlash", snap), 1.0E-6F);
+        assertTrue(sample("FinalFlash", snapped) > 0.0F);
+        assertEquals(0.0F, sample("FinalFlash", AFTERMATH + 0.03F), 1.0E-6F);
+    }
+
+    @Test
+    void rimGlowOutlivesTheBeamAndFadesThroughTheAftermath() {
+        assertEquals(1.0F, sample("RimGlow", AFTERMATH), 1.0E-6F);
+        assertTrue(ContentOrbitalLaserCinematics.screenVisible(AFTERMATH));
+
+        float previous = sample("RimGlow", AFTERMATH);
+        for (float progress = AFTERMATH; progress <= 1.0F; progress += 0.002F) {
+            float glow = sample("RimGlow", progress);
+            assertTrue(glow <= previous + 1.0E-6F, "rim glow rose at " + progress);
+            previous = glow;
+        }
+        assertEquals(0.0F, sample("RimGlow", 1.0F), 1.0E-6F);
         assertEquals(0.0F, sample("ContactGlow", AFTERMATH), 1.0E-6F);
+    }
+
+    @Test
+    void screenOperationStopsOnlyNearTheEndOfTheAftermath() {
+        assertTrue(ContentOrbitalLaserCinematics.screenVisible(AFTERMATH));
+        assertFalse(ContentOrbitalLaserCinematics.screenVisible(
+            progress(ContentOrbitalLaserSettings.TOTAL_TICKS)
+        ));
     }
 
     @Test
