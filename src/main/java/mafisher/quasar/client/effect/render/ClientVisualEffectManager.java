@@ -45,6 +45,7 @@ import mafisher.quasar.api.scale.SegmentLink;
 import mafisher.quasar.api.scale.StartSegmentedVisualEffectPayload;
 import mafisher.quasar.QuasarClientConfig;
 import mafisher.quasar.client.effect.frame.ClientEffectClock;
+import mafisher.quasar.client.effect.inspect.InspectFrame;
 import mafisher.quasar.client.effect.quality.ClientFarPlane;
 import mafisher.quasar.client.effect.quality.EffectLodSelection;
 import mafisher.quasar.client.effect.quality.EffectLodTracker;
@@ -88,6 +89,9 @@ public final class ClientVisualEffectManager {
     private final Map<UUID, EffectLodTracker.State> lodStates = new LinkedHashMap<>();
     private final Map<UUID, EffectQualityTracker.State> qualityStates = new LinkedHashMap<>();
     private final Map<UUID, Boolean> frameGroupOcclusionEnabled = new HashMap<>();
+    private final Set<UUID> frameSkippedByDepth = new LinkedHashSet<>();
+    private final Set<UUID> inspectCapturedIds = new HashSet<>();
+    private final float[] inspectMatrix = new float[16];
     private final ClientEffectSpatialIndex spatialIndex = new ClientEffectSpatialIndex();
     private final Set<ClientEffectSpatialIndex.Key> unindexedInstances = new LinkedHashSet<>();
     private final Set<ClientEffectSpatialIndex.Key> unindexedGroups = new LinkedHashSet<>();
@@ -346,6 +350,8 @@ public final class ClientVisualEffectManager {
         this.ensureFrame(event, environment);
         this.depthOcclusion.beginFrame(depthFrame, this.frameCamera);
         if (this.visibleEffects.isEmpty()) {
+            this.instancedDraws.clear();
+            this.particleDraws.clear();
             return;
         }
 
@@ -391,6 +397,7 @@ public final class ClientVisualEffectManager {
         MultiBufferSource.BufferSource buffers, InstancedBatchBuilder instancedBatches,
         StaticMeshBatchBuilder staticBatches, ParticleBatchBuilder particleBatches) {
         if (!this.shouldRenderDepth(visible)) {
+            this.frameSkippedByDepth.add(visible.effect().instanceId());
             return;
         }
         VisualEffectRenderer renderer = visible.renderer();
@@ -465,6 +472,200 @@ public final class ClientVisualEffectManager {
     /** Returns one diagnostic line for the client compatibility command. */
     public String depthOcclusionStatus() {
         return this.depthOcclusion.status();
+    }
+
+    /** Copies visible and hidden effect state into the inspector's bounded frame. */
+    public void captureInspect(InspectFrame frame) {
+        Objects.requireNonNull(frame, "frame");
+        frame.counts(this.activeEffects.size(), this.segmentedGroups.size(),
+            this.particleDraws.size(), 0);
+        this.inspectCapturedIds.clear();
+        for (VisibleEffect visible : this.visibleEffects) {
+            InspectFrame.EffectSlot slot = frame.addEffect();
+            if (slot == null) {
+                break;
+            }
+            fillVisible(slot, visible);
+            this.inspectCapturedIds.add(visible.effect().instanceId());
+        }
+        for (VisualEffectInstance effect : this.activeEffects.values()) {
+            if (this.inspectCapturedIds.contains(effect.instanceId())) {
+                continue;
+            }
+            InspectFrame.EffectSlot slot = frame.addEffect();
+            if (slot == null) {
+                break;
+            }
+            fillHidden(slot, effect, frame.gameTime());
+        }
+        captureDraws(frame);
+    }
+
+    /** Copies screen-effect batches after composition has produced them. */
+    public void captureInspectScreens(InspectFrame frame) {
+        Objects.requireNonNull(frame, "frame");
+        frame.resetScreens();
+        for (ScreenEffectBatch batch : this.screenBatches) {
+            InspectFrame.ScreenSlot slot = frame.addScreen();
+            if (slot == null) {
+                break;
+            }
+            ScreenEffectFrame first = batch.frames().getFirst();
+            EffectTransform transform = first.context().transform();
+            slot.ownerId = first.ownerId();
+            slot.operationId = batch.settings().operation().id().toString();
+            slot.red = batch.mask().red();
+            slot.green = batch.mask().green();
+            slot.blue = batch.mask().blue();
+            slot.strength = batch.mask().strength();
+            slot.x = transform.position().x();
+            slot.y = transform.position().y();
+            slot.z = transform.position().z();
+            slot.frameCount = batch.frames().size();
+            slot.nearestDistance = batch.nearestCameraDistance();
+        }
+    }
+
+    private void fillVisible(InspectFrame.EffectSlot slot, VisibleEffect visible) {
+        EffectRenderContext context = visible.context();
+        VisualEffectInstance effect = visible.effect();
+        EffectTransform transform = context.transform();
+        slot.instanceId = effect.instanceId();
+        slot.effectId = effect.effectId();
+        slot.visible = true;
+        slot.segmented = effect.payload().segmentLink() != null;
+        slot.depthCulled = this.frameSkippedByDepth.contains(effect.instanceId());
+        slot.x = transform.position().x();
+        slot.y = transform.position().y();
+        slot.z = transform.position().z();
+        slot.yaw = transform.yaw();
+        slot.pitch = transform.pitch();
+        slot.roll = transform.roll();
+        slot.ageTicks = context.ageTicks();
+        slot.progress = context.progress();
+        slot.scale = context.scale();
+        AABB bounds = visible.cullingBounds();
+        slot.minX = bounds.minX;
+        slot.minY = bounds.minY;
+        slot.minZ = bounds.minZ;
+        slot.maxX = bounds.maxX;
+        slot.maxY = bounds.maxY;
+        slot.maxZ = bounds.maxZ;
+        slot.spatialRadius = visible.spatialRadius();
+        slot.lodLevel = context.lod().level();
+        slot.lodPreviousLevel = context.lod().previousLevel();
+        slot.lodBlend = context.lod().blend();
+        slot.cameraDistance = context.lod().cameraDistance();
+        slot.gapInRadii = context.lod().gapInRadii();
+        slot.quality = context.quality();
+        slot.effectiveQuality = context.effectiveQuality();
+        slot.coverage = context.screenMetrics().coverage();
+        slot.centreDistance = context.screenMetrics().centreDistance();
+        slot.score = context.screenMetrics().score();
+        slot.projected = context.screenMetrics().projected();
+        slot.passCount = countPasses(visible.renderer(), context);
+        slot.instanceCount = countInstances(visible.renderer(), context);
+        slot.particleCount = countParticles(visible.renderer(), context);
+    }
+
+    private void fillHidden(InspectFrame.EffectSlot slot, VisualEffectInstance effect, long gameTime) {
+        EffectTransform transform = effect.interpolatedTransform(gameTime, 1.0F);
+        slot.instanceId = effect.instanceId();
+        slot.effectId = effect.effectId();
+        slot.visible = false;
+        slot.segmented = effect.payload().segmentLink() != null;
+        slot.x = transform.position().x();
+        slot.y = transform.position().y();
+        slot.z = transform.position().z();
+        slot.yaw = transform.yaw();
+        slot.pitch = transform.pitch();
+        slot.roll = transform.roll();
+        slot.ageTicks = EffectTimeline.ageTicks(gameTime, effect.payload().startGameTime());
+        slot.progress = EffectTimeline.progress(
+            gameTime, 1.0F, effect.payload().startGameTime(), effect.payload().durationTicks());
+        slot.scale = effect.payload().scale();
+        double radius = this.instanceSpatialRadii.getOrDefault(
+            effect.instanceId(), Double.POSITIVE_INFINITY);
+        slot.spatialRadius = radius;
+        double visibleRadius = Double.isFinite(radius) ? radius : 0.5;
+        slot.minX = slot.x - visibleRadius;
+        slot.minY = slot.y - visibleRadius;
+        slot.minZ = slot.z - visibleRadius;
+        slot.maxX = slot.x + visibleRadius;
+        slot.maxY = slot.y + visibleRadius;
+        slot.maxZ = slot.z + visibleRadius;
+        slot.quality = ClientQualityController.publishedTier();
+        slot.effectiveQuality = slot.quality;
+        slot.lodLevel = 0;
+        slot.lodPreviousLevel = 0;
+    }
+
+    private void captureDraws(InspectFrame frame) {
+        for (InstancedBatchBuilder.InstancedDraw draw : this.instancedDraws) {
+            InspectFrame.DrawSlot slot = frame.addDraw();
+            if (slot == null) {
+                break;
+            }
+            slot.passId = draw.key().id();
+            slot.renderType = draw.key().renderType().toString();
+            slot.mode = this.instancedRenderer.mode();
+            slot.instanceCount = draw.instanceCount();
+            slot.bytes = (int)Math.min(Integer.MAX_VALUE,
+                InstanceBufferLayout.byteSize(draw.instanceCount()));
+            slot.rowCount = Math.min(InspectFrame.MAX_ROWS, draw.instanceCount());
+            for (int row = 0; row < slot.rowCount; row++) {
+                writeRow(slot, row, draw.instance(row));
+            }
+        }
+    }
+
+    private void writeRow(InspectFrame.DrawSlot slot, int row, InstancedBatchBuilder.Instance instance) {
+        int offset = row * InspectFrame.FLOATS_PER_ROW;
+        instance.model().get(this.inspectMatrix);
+        System.arraycopy(this.inspectMatrix, 0, slot.rows, offset, 16);
+        slot.rows[offset + 16] = instance.red();
+        slot.rows[offset + 17] = instance.green();
+        slot.rows[offset + 18] = instance.blue();
+        slot.rows[offset + 19] = instance.alpha();
+        slot.rows[offset + 20] = instance.effectDataX();
+        slot.rows[offset + 21] = instance.effectDataY();
+        slot.rows[offset + 22] = instance.effectDataZ();
+        slot.rows[offset + 23] = instance.effectDataW();
+    }
+
+    private static int countPasses(VisualEffectRenderer renderer, EffectRenderContext context) {
+        if (renderer instanceof StaticMeshVisualEffectRenderer staticRenderer) {
+            int staticPasses = staticRenderer.staticMeshPasses(context).size();
+            if (renderer instanceof InstancedVisualEffectRenderer instanced) {
+                return staticPasses + instanced.instancedPasses(context).size();
+            }
+            return staticPasses + renderer.renderPasses(context).size();
+        }
+        if (renderer instanceof InstancedVisualEffectRenderer instanced) {
+            return instanced.instancedPasses(context).size();
+        }
+        if (renderer instanceof ParticleVisualEffectRenderer particles) {
+            return renderer.renderPasses(context).size() + particles.particlePasses(context).size();
+        }
+        return renderer.renderPasses(context).size();
+    }
+
+    private static int countInstances(VisualEffectRenderer renderer, EffectRenderContext context) {
+        if (renderer instanceof InstancedVisualEffectRenderer instanced) {
+            return instanced.instancedPasses(context).size();
+        }
+        return 0;
+    }
+
+    private static int countParticles(VisualEffectRenderer renderer, EffectRenderContext context) {
+        if (!(renderer instanceof ParticleVisualEffectRenderer particles)) {
+            return 0;
+        }
+        int total = 0;
+        for (EffectParticlePass pass : particles.particlePasses(context)) {
+            total += pass.field().maxParticles();
+        }
+        return total;
     }
 
     public List<ScreenEffectBatch> screenEffects(net.neoforged.neoforge.client.event.RenderLevelStageEvent event,
@@ -569,6 +770,7 @@ public final class ClientVisualEffectManager {
             this.frameProjection = null;
             this.visibleEffects.clear();
             this.frameGroupOcclusionEnabled.clear();
+            this.frameSkippedByDepth.clear();
             this.screenBatches = List.of();
             this.screenBatchTick = Integer.MIN_VALUE;
             return;
@@ -582,6 +784,7 @@ public final class ClientVisualEffectManager {
         if (this.frameCamera == null) {
             this.visibleEffects.clear();
             this.frameGroupOcclusionEnabled.clear();
+            this.frameSkippedByDepth.clear();
             this.screenBatches = List.of();
             this.screenBatchTick = Integer.MIN_VALUE;
             return;
@@ -591,6 +794,7 @@ public final class ClientVisualEffectManager {
         this.removeFinishedEffects(level, gameTime);
         this.visibleEffects.clear();
         this.frameGroupOcclusionEnabled.clear();
+        this.frameSkippedByDepth.clear();
         this.screenBatches = List.of();
         this.screenBatchTick = Integer.MIN_VALUE;
         if (this.activeEffects.isEmpty()) {
@@ -598,9 +802,9 @@ public final class ClientVisualEffectManager {
         }
         float partialTick = event.getPartialTick().getGameTimeDeltaPartialTick(false);
         this.forEachVisibleEffect(event, gameTime, partialTick, (effect, context, renderer,
-            ownerId, occlusionBounds, depthOcclusionEnabled) ->
+            ownerId, cullingBounds, spatialRadius, occlusionBounds, depthOcclusionEnabled) ->
             this.visibleEffects.add(new VisibleEffect(effect, context, renderer, ownerId,
-                occlusionBounds, depthOcclusionEnabled)));
+                cullingBounds, spatialRadius, occlusionBounds, depthOcclusionEnabled)));
     }
 
     private void forEachVisibleEffect(
@@ -673,7 +877,8 @@ public final class ClientVisualEffectManager {
             ? (occlusion.bounds() == null ? cullingBounds : occlusion.bounds())
             : null;
         consumer.accept(effect, context.withLod(selectLod(instanceId, renderer, event, context, radius, effective,
-            gameTime, partialTick)), renderer, instanceId, occlusionBounds, occlusion.enabled());
+            gameTime, partialTick)), renderer, instanceId, cullingBounds, radius, occlusionBounds,
+            occlusion.enabled());
     }
 
     private void visitMember(
@@ -710,7 +915,7 @@ public final class ClientVisualEffectManager {
             (current, next) -> current && next);
         consumer.accept(effect, context.withLod(selectLod(member.instanceId(), renderer, event, context,
             member.spatialRadius(), effective, gameTime, partialTick)), renderer, coordinatorId,
-            groupBounds, occlusionEnabled);
+            cullingBounds, member.spatialRadius(), groupBounds, occlusionEnabled);
     }
 
     private EffectScreenMetrics screenMetrics(EffectRenderContext context, double spatialRadius) {
@@ -1193,6 +1398,7 @@ public final class ClientVisualEffectManager {
         this.screenBatchTick = Integer.MIN_VALUE;
         this.visibleEffects.clear();
         this.frameGroupOcclusionEnabled.clear();
+        this.frameSkippedByDepth.clear();
         this.screenFrames.clear();
         this.screenBatches = List.of();
         this.particleDraws.clear();
@@ -1250,19 +1456,22 @@ public final class ClientVisualEffectManager {
     }
 
     private record VisibleEffect(VisualEffectInstance effect, EffectRenderContext context,
-        VisualEffectRenderer renderer, UUID ownerId, @Nullable AABB occlusionBounds,
-        boolean depthOcclusionEnabled) {
+        VisualEffectRenderer renderer, UUID ownerId, AABB cullingBounds, double spatialRadius,
+        @Nullable AABB occlusionBounds, boolean depthOcclusionEnabled) {
         private VisibleEffect {
             Objects.requireNonNull(effect, "effect");
             Objects.requireNonNull(context, "context");
             Objects.requireNonNull(renderer, "renderer");
             Objects.requireNonNull(ownerId, "ownerId");
+            Objects.requireNonNull(cullingBounds, "cullingBounds");
         }
     }
 
     @FunctionalInterface
     private interface VisibleEffectConsumer {
-        void accept(VisualEffectInstance effect, EffectRenderContext context, VisualEffectRenderer renderer,
-            UUID ownerId, @Nullable AABB occlusionBounds, boolean depthOcclusionEnabled);
+        @SuppressWarnings("checkstyle:ParameterNumber")
+        void accept(VisualEffectInstance effect, EffectRenderContext context,
+            VisualEffectRenderer renderer, UUID ownerId, AABB cullingBounds, double spatialRadius,
+            @Nullable AABB occlusionBounds, boolean depthOcclusionEnabled);
     }
 }

@@ -9,6 +9,7 @@ import mafisher.quasar.effect.network.EffectAudioTriggerPayload;
 import mafisher.quasar.effect.network.EffectDebrisPayload;
 import mafisher.quasar.effect.network.EffectParameterBatchPayload;
 import mafisher.quasar.effect.network.EffectTransformBatchPayload;
+import mafisher.quasar.effect.network.InspectHitboxPayload;
 import mafisher.quasar.effect.network.ResumeEffectsPayload;
 import mafisher.quasar.effect.network.StopEffectAudioPayload;
 import mafisher.quasar.effect.network.StopSegmentedVisualEffectPayload;
@@ -77,6 +78,10 @@ public final class ClientEffectRuntime {
 
     public static void effectDebris(EffectDebrisPayload payload) {
         ClientEffectFrameRuntime.effectDebris(payload);
+    }
+
+    public static void inspectHitboxes(InspectHitboxPayload payload) {
+        ClientEffectFrameRuntime.inspectHitboxes(payload);
     }
 
     /** Returns the quality tier currently used for client presentation. */

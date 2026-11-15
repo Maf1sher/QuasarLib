@@ -15,6 +15,9 @@ import mafisher.quasar.api.effect.EffectRemovalPolicy;
 import mafisher.quasar.api.effect.EffectScope;
 import mafisher.quasar.api.effect.EffectTimeline;
 import mafisher.quasar.api.effect.EffectTransform;
+import mafisher.quasar.api.effect.damage.EffectDamageShape;
+import mafisher.quasar.api.effect.damage.EffectHitbox;
+import mafisher.quasar.api.effect.damage.EffectHitboxOutcome;
 import mafisher.quasar.api.gameplay.GameplayEffectAccess;
 import mafisher.quasar.api.gameplay.GameplayEffectContext;
 import mafisher.quasar.api.gameplay.GameplayEffectController;
@@ -28,8 +31,10 @@ import mafisher.quasar.api.persistence.EffectPersistence;
 import mafisher.quasar.api.persistence.EffectPersistenceOptions;
 import mafisher.quasar.effect.EffectBudgetService;
 import mafisher.quasar.effect.gameplay.GameplayEffectNbt;
+import mafisher.quasar.effect.network.InspectHitboxPayload;
 import mafisher.quasar.effect.persistence.BlockJournal;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import org.jetbrains.annotations.ApiStatus;
 import org.slf4j.Logger;
@@ -420,6 +425,36 @@ public final class GameplayEffectRuntime {
         return false;
     }
 
+    /**
+     * Returns a bounded snapshot of hitboxes applied through active gameplay contexts. Direct
+     * {@link EffectHitbox#apply} calls outside a session are not tracked.
+     */
+    public List<HitboxDebugSnapshot> hitboxSnapshots() {
+        List<HitboxDebugSnapshot> snapshots = new ArrayList<>();
+        for (ActiveSession session : this.sessions.values()) {
+            if (snapshots.size() >= InspectHitboxPayload.MAX_SESSIONS) {
+                break;
+            }
+            List<EffectHitbox> hitboxes = GameplayEffectAccess.debugHitboxes(session.context);
+            if (hitboxes.isEmpty()) {
+                continue;
+            }
+            List<HitboxDebug> entries = new ArrayList<>(hitboxes.size());
+            for (EffectHitbox hitbox : hitboxes) {
+                entries.add(new HitboxDebug(hitbox.shape(), hitbox.outcome()));
+            }
+            snapshots.add(new HitboxDebugSnapshot(
+                session.id,
+                session.spec.typeId(),
+                session.context.ageTicks(),
+                session.context.phaseIndex(),
+                session.spec.phases().phaseCount(),
+                entries
+            ));
+        }
+        return List.copyOf(snapshots);
+    }
+
     /** Advances every active session in one level by one server tick. */
     public void tick() {
         tick(this.budgets.blockChangesPerLevelTick());
@@ -767,6 +802,30 @@ public final class GameplayEffectRuntime {
         this.sessions.clear();
         this.pendingStarts.clear();
         this.ownerAdmission = null;
+    }
+
+    /** One active session and its bounded hitbox shapes for the inspector. */
+    public record HitboxDebugSnapshot(
+        UUID sessionId,
+        ResourceLocation typeId,
+        int ageTicks,
+        int phaseIndex,
+        int phaseCount,
+        List<HitboxDebug> hitboxes
+    ) {
+        public HitboxDebugSnapshot {
+            Objects.requireNonNull(sessionId, "sessionId");
+            Objects.requireNonNull(typeId, "typeId");
+            hitboxes = List.copyOf(hitboxes);
+        }
+    }
+
+    /** One hitbox shape and its outcome. */
+    public record HitboxDebug(EffectDamageShape shape, EffectHitboxOutcome outcome) {
+        public HitboxDebug {
+            Objects.requireNonNull(shape, "shape");
+            Objects.requireNonNull(outcome, "outcome");
+        }
     }
 
     private static final class PendingStart {

@@ -1,8 +1,10 @@
 package mafisher.quasar.api.gameplay;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import mafisher.quasar.api.effect.EffectScope;
+import mafisher.quasar.api.effect.damage.EffectHitbox;
 import mafisher.quasar.api.gameplay.policy.DestructiveEffectPolicies;
 import mafisher.quasar.api.gameplay.policy.DestructiveEffectPolicyContext;
 import mafisher.quasar.api.persistence.EffectCapabilities;
@@ -17,6 +19,7 @@ import org.jetbrains.annotations.ApiStatus;
  * implementation package.
  */
 @ApiStatus.Internal
+@SuppressWarnings("PMD.TooManyMethods")
 public final class GameplayEffectAccess {
     private GameplayEffectAccess() {
     }
@@ -77,6 +80,11 @@ public final class GameplayEffectAccess {
 
     public static void endAt(GameplayEffectContext context, int ageTicks) {
         context.endAt(ageTicks);
+    }
+
+    /** Returns the bounded hitboxes tracked for the inspector. */
+    public static List<EffectHitbox> debugHitboxes(GameplayEffectContext context) {
+        return context.debugHitboxes();
     }
 
     public static boolean destructivePolicyAllows(

@@ -16,6 +16,9 @@ public final class ClientQualityController {
     private static volatile EffectQualityTier publishedTier;
     private static EffectQualityGovernor governor;
     private static long worldRenderNanos;
+    private static long lastCpuNanos;
+    private static long lastGpuNanos = -1L;
+    private static long lastP95Nanos;
     private static volatile boolean resetPending;
 
     private ClientQualityController() {
@@ -57,9 +60,20 @@ public final class ClientQualityController {
         long cost = worldRenderNanos + Math.max(0L, nanos);
         worldRenderNanos = 0L;
         long gpuNanos = gpuTimer.consumeCompletedNanos();
+        lastCpuNanos = cost;
+        lastGpuNanos = gpuNanos;
         if (autoQuality()) {
             governor().sample(cost, gpuNanos);
+            lastP95Nanos = governor().lastP95Nanos();
         }
+    }
+
+    /** Returns the latest completed frame telemetry for the inspector. */
+    public static Telemetry telemetry() {
+        EffectQualityTier selected = tier();
+        long budgetNanos = Math.max(1L, Math.round(QuasarClientConfig.effectBudgetMillis() * 1_000_000.0D));
+        long p95 = autoQuality() && governor != null ? governor.lastP95Nanos() : lastP95Nanos;
+        return new Telemetry(selected, autoQuality(), lastCpuNanos, lastGpuNanos, p95, budgetNanos);
     }
 
     /** Starts the GPU timer for the effect world pass; a no-op unless automatic quality is active. */
@@ -110,6 +124,9 @@ public final class ClientQualityController {
         resetPending = false;
         governor = null;
         worldRenderNanos = 0L;
+        lastCpuNanos = 0L;
+        lastGpuNanos = -1L;
+        lastP95Nanos = 0L;
         gpuTimer.reset();
     }
 
@@ -120,5 +137,26 @@ public final class ClientQualityController {
             governor = new EffectQualityGovernor(maximum, budgetNanos);
         }
         return governor;
+    }
+
+    /** One latest-frame quality sample for the inspector. */
+    public record Telemetry(
+        EffectQualityTier tier,
+        boolean automatic,
+        long cpuNanos,
+        long gpuNanos,
+        long p95Nanos,
+        long budgetNanos
+    ) {
+        public Telemetry {
+            if (tier == null || cpuNanos < 0L || p95Nanos < 0L || budgetNanos < 1L) {
+                throw new IllegalArgumentException("Invalid client quality telemetry");
+            }
+        }
+
+        /** Returns whether the last frame produced a positive GPU result. */
+        public boolean hasGpuSample() {
+            return this.gpuNanos > 0L;
+        }
     }
 }

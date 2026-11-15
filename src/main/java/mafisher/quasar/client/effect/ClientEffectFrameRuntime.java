@@ -12,6 +12,11 @@ import mafisher.quasar.api.scale.StartSegmentedVisualEffectPayload;
 import mafisher.quasar.client.effect.audio.ClientEffectAudio;
 import mafisher.quasar.client.effect.frame.ClientEffectClock;
 import mafisher.quasar.client.effect.frame.CompatFrameEnvironment;
+import mafisher.quasar.client.effect.inspect.InspectController;
+import mafisher.quasar.client.effect.inspect.InspectFrame;
+import mafisher.quasar.client.effect.inspect.InspectGizmos;
+import mafisher.quasar.client.effect.inspect.InspectHitboxStore;
+import mafisher.quasar.client.effect.inspect.InspectOverlay;
 import mafisher.quasar.client.effect.quality.ClientFarPlane;
 import mafisher.quasar.client.effect.quality.ClientQualityController;
 import mafisher.quasar.client.effect.render.ClientVisualEffectManager;
@@ -23,6 +28,7 @@ import mafisher.quasar.effect.network.EffectAudioTriggerPayload;
 import mafisher.quasar.effect.network.EffectDebrisPayload;
 import mafisher.quasar.effect.network.EffectParameterBatchPayload;
 import mafisher.quasar.effect.network.EffectTransformBatchPayload;
+import mafisher.quasar.effect.network.InspectHitboxPayload;
 import mafisher.quasar.effect.network.ResumeEffectsPayload;
 import mafisher.quasar.effect.network.StopEffectAudioPayload;
 import mafisher.quasar.effect.network.StopSegmentedVisualEffectPayload;
@@ -34,6 +40,8 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Client-only owner of the effect manager and screen compositor. Common payload handlers must
@@ -42,6 +50,7 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 @SuppressWarnings({"PMD.GodClass", "PMD.CognitiveComplexity"})
 final class ClientEffectFrameRuntime {
     private static final Object INIT_LOCK = new Object();
+    private static final Logger LOGGER = LoggerFactory.getLogger(ClientEffectFrameRuntime.class);
     private static final CompatFrameEnvironment FRAME_ENVIRONMENT =
         new CompatFrameEnvironment(CompatRegistry::environment);
     private static volatile ClientVisualEffectManager manager;
@@ -150,6 +159,10 @@ final class ClientEffectFrameRuntime {
         ClientEffectDebris.accept(payload);
     }
 
+    static void inspectHitboxes(InspectHitboxPayload payload) {
+        InspectHitboxStore.accept(payload);
+    }
+
     static String depthOcclusionStatus() {
         ClientVisualEffectManager current = manager;
         return current == null ? "not initialized" : current.depthOcclusionStatus();
@@ -183,6 +196,7 @@ final class ClientEffectFrameRuntime {
             SceneDepthFrame depthFrame = compositor == null ? null
                 : compositor.occlusionDepthFrame(environment, event.getProjectionMatrix());
             effectManager.render(event, environment, depthFrame);
+            captureInspectWorld(effectManager, event);
             ClientQualityController.recordWorldRender(System.nanoTime() - start);
         } else if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
             long start = System.nanoTime();
@@ -194,6 +208,7 @@ final class ClientEffectFrameRuntime {
                     List<ScreenEffectBatch> batches = effectManager.screenEffects(event, environment);
                     compositor.render(event, effectManager, batches, environment);
                 }
+                captureInspectScreens(effectManager);
                 ScreenFlashRenderer.render(
                     event.getCamera().getPosition(),
                     (float) event.getPartialTick().getGameTimeDeltaPartialTick(false)
@@ -204,6 +219,44 @@ final class ClientEffectFrameRuntime {
             }
             ClientQualityController.recordLevelRender(System.nanoTime() - start);
         }
+    }
+
+    private static void captureInspectWorld(ClientVisualEffectManager effectManager,
+        RenderLevelStageEvent event) {
+        InspectController inspect = InspectController.get();
+        if (!inspect.enabled()) {
+            return;
+        }
+        try {
+            ClientLevel level = Minecraft.getInstance().level;
+            long tick = level == null ? event.getRenderTick() : level.getGameTime();
+            InspectFrame frame = inspect.beginFrame(tick, tick, System.nanoTime());
+            effectManager.captureInspect(frame);
+            frame.debrisPieces(ClientEffectDebris.activePieces());
+            inspect.captureAudio();
+            InspectGizmos.render(event, frame);
+        } catch (RuntimeException exception) {
+            failInspect("world capture", exception);
+        }
+    }
+
+    private static void captureInspectScreens(ClientVisualEffectManager effectManager) {
+        InspectController inspect = InspectController.get();
+        if (!inspect.enabled()) {
+            return;
+        }
+        try {
+            effectManager.captureInspectScreens(inspect.frame());
+            inspect.finishFrame();
+        } catch (RuntimeException exception) {
+            failInspect("screen capture", exception);
+        }
+    }
+
+    private static void failInspect(String stage, RuntimeException exception) {
+        LOGGER.error("Inspector {} failed; disabling the overlay", stage, exception);
+        InspectController.get().clear();
+        InspectOverlay.clear();
     }
 
     /** Resolves the far plane once so both client stages share the same frame environment. */
@@ -221,6 +274,9 @@ final class ClientEffectFrameRuntime {
         ClientEffectAudio.clear();
         ClientEffectDebris.clear();
         ClientEffectImpulses.clear();
+        InspectController.get().resetData();
+        InspectHitboxStore.clear();
+        InspectOverlay.clear();
         FRAME_ENVIRONMENT.endFrame();
         ScreenFlashRenderer.onResourceReload();
         ClientScreenCompositor compositor = screenCompositor;
@@ -240,6 +296,8 @@ final class ClientEffectFrameRuntime {
         ClientEffectAudio.clear();
         ClientEffectDebris.clear();
         ClientEffectImpulses.clear();
+        InspectController.get().clear();
+        InspectOverlay.clear();
         FRAME_ENVIRONMENT.endFrame();
         ScreenFlashRenderer.onResourceReload();
         ClientScreenCompositor compositor = screenCompositor;
@@ -259,6 +317,7 @@ final class ClientEffectFrameRuntime {
         }
         ClientEffectDebris.onResourceReload();
         ScreenFlashRenderer.onResourceReload();
+        InspectOverlay.clear();
         ClientScreenCompositor compositor = screenCompositor;
         if (compositor != null) {
             compositor.onResourceReload();

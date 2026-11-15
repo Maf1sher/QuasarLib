@@ -1,5 +1,7 @@
 package mafisher.quasar.api.gameplay;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -54,6 +56,7 @@ public final class GameplayEffectContext {
     private final PendingBlockChanges blockChanges = new PendingBlockChanges();
     private final PendingAudioTriggers pendingAudioTriggers = new PendingAudioTriggers();
     private final EffectCloseActions closeActions = new EffectCloseActions();
+    private List<EffectHitbox> debugHitboxes;
 
     private boolean audioStarted;
     private int ageTicks;
@@ -201,6 +204,7 @@ public final class GameplayEffectContext {
         Objects.requireNonNull(hitbox, "hitbox");
         Objects.requireNonNull(damageSource, "damageSource");
         Objects.requireNonNull(targetPolicy, "targetPolicy");
+        recordDebugHitbox(hitbox);
         if (!this.budgetState.canApplyHitbox()) {
             return EffectHitResult.NONE;
         }
@@ -216,6 +220,29 @@ public final class GameplayEffectContext {
         );
         this.budgetState.recordHitResult(result);
         return result;
+    }
+
+    /**
+     * Returns up to four distinct hitboxes applied through this context. The list is a diagnostic
+     * snapshot, not an authority source; direct {@link EffectHitbox#apply} calls are not tracked.
+     */
+    List<EffectHitbox> debugHitboxes() {
+        return this.debugHitboxes == null ? List.of() : List.copyOf(this.debugHitboxes);
+    }
+
+    private void recordDebugHitbox(EffectHitbox hitbox) {
+        if (this.debugHitboxes == null) {
+            this.debugHitboxes = new ArrayList<>(4);
+        }
+        for (EffectHitbox tracked : this.debugHitboxes) {
+            if (tracked == hitbox) {
+                return;
+            }
+        }
+        if (this.debugHitboxes.size() >= 4) {
+            this.debugHitboxes.remove(0);
+        }
+        this.debugHitboxes.add(hitbox);
     }
 
     /**

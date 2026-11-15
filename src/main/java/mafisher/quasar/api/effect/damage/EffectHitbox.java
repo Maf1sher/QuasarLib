@@ -53,6 +53,16 @@ public final class EffectHitbox {
         return new EffectHitbox(shape, 0.0F, 0, maxTargetsPerTick, EffectHitboxOutcome.REMOVE);
     }
 
+    /** Returns the current volume for diagnostics and the client inspector. */
+    public EffectDamageShape shape() {
+        return this.shape;
+    }
+
+    /** Returns whether this hitbox damages or removes targets. */
+    public EffectHitboxOutcome outcome() {
+        return this.outcome;
+    }
+
     /** Updates geometry while retaining this effect instance's per-target hit history. */
     public void setShape(EffectDamageShape shape) {
         this.shape = Objects.requireNonNull(shape, "shape");

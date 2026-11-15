@@ -1,11 +1,15 @@
 package mafisher.quasar.client.effect;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import java.util.List;
 import java.util.Locale;
 import java.util.stream.Collectors;
 import mafisher.quasar.QuasarLib;
 import mafisher.quasar.api.compat.CompatRegistry;
 import mafisher.quasar.api.compat.RenderEnvironment;
+import mafisher.quasar.client.effect.inspect.InspectController;
 import mafisher.quasar.client.effect.quality.ClientFarPlane;
 import mafisher.quasar.client.effect.render.ShaderPreflight;
 import net.minecraft.client.Minecraft;
@@ -23,6 +27,7 @@ import org.slf4j.LoggerFactory;
 /** Client-only diagnostic and authoring commands for composition, compatibility, and reloads. */
 @EventBusSubscriber(modid = QuasarLib.MOD_ID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
 @ApiStatus.Internal
+@SuppressWarnings("PMD.TooManyMethods")
 public final class ClientEffectCommands {
     private static final Logger LOGGER = LoggerFactory.getLogger(ClientEffectCommands.class);
 
@@ -49,7 +54,100 @@ public final class ClientEffectCommands {
                     Commands.literal("reload")
                         .executes(context -> reloadShaders(context.getSource()))
                 )
+                .then(inspectCommand())
         );
+    }
+
+    private static LiteralArgumentBuilder<CommandSourceStack> inspectCommand() {
+        return Commands.literal("inspect")
+            .executes(context -> toggleInspect(context.getSource()))
+            .then(Commands.literal("on")
+                .executes(context -> setInspect(context.getSource(), true)))
+            .then(Commands.literal("off")
+                .executes(context -> setInspect(context.getSource(), false)))
+            .then(Commands.literal("status")
+                .executes(context -> inspectStatus(context.getSource())))
+            .then(category("bounds", InspectController.Category.BOUNDS))
+            .then(category("radii", InspectController.Category.RADII))
+            .then(category("audio", InspectController.Category.AUDIO))
+            .then(category("buffers", InspectController.Category.BUFFERS))
+            .then(category("screens", InspectController.Category.SCREENS))
+            .then(category("hitboxes", InspectController.Category.HITBOXES))
+            .then(Commands.literal("buffer")
+                .then(Commands.argument("index", IntegerArgumentType.integer(0))
+                    .executes(context -> selectBuffer(
+                        context.getSource(),
+                        IntegerArgumentType.getInteger(context, "index")
+                    ))));
+    }
+
+    private static LiteralArgumentBuilder<CommandSourceStack> category(
+        String name, InspectController.Category category) {
+        return Commands.literal(name)
+            .executes(context -> toggleCategory(context.getSource(), name, category));
+    }
+
+    private static int toggleInspect(CommandSourceStack source) {
+        InspectController controller = InspectController.get();
+        controller.toggle();
+        return reportInspectState(source, controller);
+    }
+
+    private static int setInspect(CommandSourceStack source, boolean enabled) {
+        InspectController controller = InspectController.get();
+        controller.setEnabled(enabled);
+        return reportInspectState(source, controller);
+    }
+
+    private static int reportInspectState(CommandSourceStack source, InspectController controller) {
+        source.sendSuccess(
+            () -> Component.literal(controller.enabled()
+                ? "Inspector on: telemetry, bounds, radii, audio, buffers, screens; "
+                    + "run /quasarlib hitboxes for server hitboxes."
+                : "Inspector off."),
+            false
+        );
+        return 1;
+    }
+
+    private static int inspectStatus(CommandSourceStack source) {
+        InspectController controller = InspectController.get();
+        if (!controller.enabled()) {
+            source.sendSuccess(() -> Component.literal("Inspector is off; run /quasarlib inspect on."), false);
+            return 1;
+        }
+        List<String> lines = controller.statusLines();
+        if (lines.isEmpty()) {
+            source.sendSuccess(() -> Component.literal("Inspector is on; waiting for a rendered frame."), false);
+            return 1;
+        }
+        for (String line : lines) {
+            source.sendSuccess(() -> Component.literal(line), false);
+        }
+        return 1;
+    }
+
+    private static int toggleCategory(CommandSourceStack source, String name,
+        InspectController.Category category) {
+        boolean enabled = InspectController.get().toggleCategory(category);
+        source.sendSuccess(
+            () -> Component.literal("Inspector " + name + ": " + (enabled ? "on" : "off")),
+            false
+        );
+        return 1;
+    }
+
+    private static int selectBuffer(CommandSourceStack source, int index) {
+        InspectController controller = InspectController.get();
+        int draws = controller.frame().drawCount();
+        if (!controller.selectDraw(index)) {
+            source.sendFailure(Component.literal(
+                "Buffer draw " + index + " is out of range; " + draws + " draw(s) captured."
+            ));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("Inspector buffer draw: " + index), false);
+        return 1;
     }
 
     private static int reloadShaders(CommandSourceStack source) {

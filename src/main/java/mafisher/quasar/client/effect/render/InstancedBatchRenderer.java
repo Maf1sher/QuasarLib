@@ -53,6 +53,11 @@ final class InstancedBatchRenderer implements AutoCloseable {
         return this.maxInstancesPerDraw;
     }
 
+    /** Returns the active instancing path for inspector telemetry. */
+    String mode() {
+        return this.instanceBuffer.isSupported() ? "buffer-texture" : "uniform-fallback";
+    }
+
     void draw(List<InstancedBatchBuilder.InstancedDraw> draws, Matrix4f modelView, Matrix4f projection) {
         if (draws.isEmpty()) {
             return;

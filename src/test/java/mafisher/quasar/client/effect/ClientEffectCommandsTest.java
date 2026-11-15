@@ -20,5 +20,8 @@ class ClientEffectCommandsTest {
 
         assertNotNull(dispatcher.getRoot().getChild("quasarlib"));
         assertNotNull(dispatcher.getRoot().getChild("quasarlib").getChild("reload"));
+        assertNotNull(dispatcher.getRoot().getChild("quasarlib").getChild("inspect"));
+        assertNotNull(dispatcher.getRoot().getChild("quasarlib").getChild("inspect").getChild("status"));
+        assertNotNull(dispatcher.getRoot().getChild("quasarlib").getChild("inspect").getChild("buffer"));
     }
 }

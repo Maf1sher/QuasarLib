@@ -11,6 +11,7 @@ import java.util.UUID;
 import mafisher.quasar.api.effect.damage.EffectDamageShape;
 import mafisher.quasar.api.effect.damage.EffectHitResult;
 import mafisher.quasar.api.effect.damage.EffectHitbox;
+import mafisher.quasar.api.effect.damage.EffectHitboxOutcome;
 import mafisher.quasar.api.effect.EffectPoint;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.damagesource.DamageSource;
@@ -19,6 +20,16 @@ import net.minecraft.world.phys.AABB;
 import org.junit.jupiter.api.Test;
 
 class EffectHitboxTest {
+    @Test
+    void exposesShapeAndOutcomeForDiagnostics() {
+        EffectDamageShape shape = new EffectDamageShape.Sphere(new EffectPoint(0.0, 0.0, 0.0), 2.0);
+        EffectHitbox hitbox = new EffectHitbox(shape, 4.0F, 0, 8);
+
+        assertEquals(shape, hitbox.shape());
+        assertEquals(EffectHitboxOutcome.DAMAGE, hitbox.outcome());
+        assertEquals(EffectHitboxOutcome.REMOVE, EffectHitbox.removal(shape, 8).outcome());
+    }
+
     @Test
     void doesNotConsumeTheCooldownWhenDamageFails() {
         ServerLevel level = mock(ServerLevel.class);

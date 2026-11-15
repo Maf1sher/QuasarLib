@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import mafisher.quasar.api.audio.EffectAudioAttenuation;
 import mafisher.quasar.api.audio.EffectAudioCue;
@@ -121,6 +122,33 @@ public final class ClientEffectAudio {
             state.stop();
         }
         PLANS.clear();
+    }
+
+    /**
+     * Visits a bounded, immutable snapshot of every active plan on the client thread. The
+     * inspector calls this on its refresh tick, not every frame.
+     */
+    public static void forEachDiagnostic(Consumer<EffectAudioDiagnostics> consumer) {
+        Objects.requireNonNull(consumer, "consumer");
+        ClientLevel level = Minecraft.getInstance().level;
+        if (level == null) {
+            return;
+        }
+        for (State state : PLANS.values()) {
+            if (!level.dimension().location().equals(state.plan.dimensionId())) {
+                continue;
+            }
+            Vec3 origin = state.originLookup.apply(state.plan.effectId());
+            Vec3 translation = origin == null ? Vec3.ZERO : origin.subtract(state.plan.center());
+            consumer.accept(new EffectAudioDiagnostics(
+                state.plan,
+                ageTicks(level, state.plan),
+                state.nextCueIndex,
+                state.loops.size(),
+                state.activeInstances.size(),
+                translation
+            ));
+        }
     }
 
     private static int ageTicks(ClientLevel level, EffectAudioPlan plan) {

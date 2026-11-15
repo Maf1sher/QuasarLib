@@ -1,12 +1,17 @@
 package mafisher.quasar.api.gameplay;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.EffectScope;
+import mafisher.quasar.api.effect.damage.EffectDamageShape;
+import mafisher.quasar.api.effect.damage.EffectHitbox;
 import mafisher.quasar.api.gameplay.tick.EffectTickBudget;
 import mafisher.quasar.api.gameplay.GameplayEffectContext;
 import mafisher.quasar.api.gameplay.GameplayEffectSpec;
@@ -29,6 +34,29 @@ class GameplayEffectContextTest {
         context.close();
 
         assertEquals(1, completed.get());
+    }
+
+    @Test
+    void tracksAtMostFourDistinctHitboxesForTheInspector() {
+        GameplayEffectContext context = context();
+        ServerLevel level = context.level();
+        when(level.getEntitiesOfClass(
+            org.mockito.ArgumentMatchers.eq(net.minecraft.world.entity.LivingEntity.class),
+            any(net.minecraft.world.phys.AABB.class)
+        )).thenReturn(List.of());
+
+        EffectDamageShape shape = new EffectDamageShape.Sphere(new EffectPoint(0.0, 0.0, 0.0), 2.0);
+        for (int index = 0; index < 5; index++) {
+            context.applyHitbox(
+                new EffectHitbox(shape, 1.0F, 0, 1),
+                mock(net.minecraft.world.damagesource.DamageSource.class),
+                ignored -> true
+            );
+        }
+
+        List<EffectHitbox> tracked = GameplayEffectAccess.debugHitboxes(context);
+        assertEquals(4, tracked.size());
+        assertEquals(shape, tracked.getFirst().shape());
     }
 
     private static GameplayEffectContext context() {
