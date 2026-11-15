@@ -49,6 +49,19 @@ public final class ContentOrbitalLaserSettings {
     /** Audience for the showpiece visual. */
     public static final EffectAudience AUDIENCE = EffectAudience.dimensionWide();
 
+    /** Beam extent above the resolved column base. */
+    public static final float BEAM_TOP_HEIGHT = 256.0F;
+    /** Solid plasma core radius as a fraction of the requested radius. */
+    public static final float BEAM_CORE_RADIUS_FACTOR = 0.62F;
+    /** Additive plasma envelope radius as a fraction of the requested radius. */
+    public static final float BEAM_GLOW_RADIUS_FACTOR = 1.60F;
+    /** Maximum shock-ring radius as a fraction of the requested radius. */
+    public static final float SHOCK_MAX_RADIUS_FACTOR = 3.5F;
+    /** Impact-flash radius as a fraction of the requested radius. */
+    public static final float IMPACT_FLASH_RADIUS_FACTOR = 2.0F;
+    /** Minimum composition scale for the fullscreen beam operation. */
+    public static final float BEAM_COMPOSITION_FLOOR = 0.75F;
+
     private ContentOrbitalLaserSettings() {
     }
 

@@ -27,6 +27,9 @@ public final class ContentShaders {
     public static final EffectShader ORBITAL_LASER_MARKER = EffectShader.create(
         id("orbital_laser_marker"), DefaultVertexFormat.BLOCK
     );
+    public static final EffectShader ORBITAL_LASER_BEAM = EffectShader.create(
+        id("orbital_laser_beam"), DefaultVertexFormat.POSITION
+    );
 
     private ContentShaders() {
     }

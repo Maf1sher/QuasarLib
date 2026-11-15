@@ -103,7 +103,7 @@ final class ContentOrbitalLaserCommands {
             );
             if (!result.active()) {
                 source.sendFailure(Component.literal(
-                    "Could not start the orbital-laser marker preview (" + result.status() + ")."
+                    "Could not start the orbital-laser preview (" + result.status() + ")."
                 ));
                 return 0;
             }
@@ -114,7 +114,7 @@ final class ContentOrbitalLaserCommands {
         }
         source.sendSuccess(
             () -> Component.literal(
-                "Started the orbital-laser marker preview at " + describe(target)
+                "Started the orbital-laser preview at " + describe(target)
                     + " (radius " + radius + ")."
             ),
             false
@@ -174,7 +174,7 @@ final class ContentOrbitalLaserCommands {
         source.sendSuccess(
             () -> Component.literal(
                 "Stopped " + sessions + " orbital laser session(s) and "
-                    + previews + " marker preview(s)."
+                    + previews + " preview(s)."
             ),
             false
         );

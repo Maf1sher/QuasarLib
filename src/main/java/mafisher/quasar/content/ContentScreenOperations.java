@@ -11,6 +11,9 @@ public final class ContentScreenOperations {
     public static final ScreenEffectOperation BLACK_HOLE = ScreenEffectOperation.create(
         ResourceLocation.fromNamespaceAndPath(ContentBootstrap.NAMESPACE, "black_hole")
     );
+    public static final ScreenEffectOperation ORBITAL_LASER_BEAM = ScreenEffectOperation.create(
+        ResourceLocation.fromNamespaceAndPath(ContentBootstrap.NAMESPACE, "orbital_laser_beam")
+    );
 
     private ContentScreenOperations() {
     }

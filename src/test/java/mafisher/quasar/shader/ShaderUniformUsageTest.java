@@ -65,6 +65,33 @@ class ShaderUniformUsageTest {
     }
 
     @Test
+    void orbitalLaserBeamOperationOnlyBindsDeclaredInputs() throws IOException {
+        ShaderTestResources.ShaderProgramAsset program = orbitalBeamProgram();
+        String source = Files.readString(sourceRoot().resolve(
+            "mafisher/quasar/content/orbital/ContentOrbitalLaserBeamOperation.java"));
+
+        List<String> failures = new ArrayList<>();
+        compare("uniform", names(source, SET_UNIFORM), Set.copyOf(program.uniforms()), failures);
+        compare("sampler", names(source, SET_SAMPLER), Set.copyOf(program.samplers()), failures);
+
+        assertTrue(failures.isEmpty(), () -> "ContentOrbitalLaserBeamOperation binds "
+            + "undeclared inputs:\n" + String.join("\n", failures));
+    }
+
+    @Test
+    void orbitalLaserBloomOnlyBindsDeclaredStandardInputs() throws IOException {
+        ShaderTestResources.ShaderProgramAsset program = program("quasar_lib:emissive_composite");
+        String source = Files.readString(sourceRoot().resolve(
+            "mafisher/quasar/content/orbital/ContentOrbitalLaserBloom.java"));
+
+        List<String> failures = new ArrayList<>();
+        compare("uniform", names(source, SET_UNIFORM), Set.copyOf(program.uniforms()), failures);
+
+        assertTrue(failures.isEmpty(), () -> "ContentOrbitalLaserBloom binds undeclared inputs:\n"
+            + String.join("\n", failures));
+    }
+
+    @Test
     void particleRendererOnlyBindsDeclaredInputs() throws IOException {
         ShaderTestResources.ShaderProgramAsset program = program("quasar_lib:micro_particles");
         String source = Files.readString(sourceRoot().resolve(
@@ -96,6 +123,10 @@ class ShaderUniformUsageTest {
 
     private static ShaderTestResources.ShaderProgramAsset blackHoleProgram() {
         return program("quasar_content:black_hole");
+    }
+
+    private static ShaderTestResources.ShaderProgramAsset orbitalBeamProgram() {
+        return program("quasar_content:orbital_laser_beam");
     }
 
     private static ShaderTestResources.ShaderProgramAsset program(String id) {

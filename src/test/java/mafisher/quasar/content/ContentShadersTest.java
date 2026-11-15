@@ -21,10 +21,15 @@ class ContentShadersTest {
                 "quasar_content", "orbital_laser_marker"
             ),
             ContentShaders.ORBITAL_LASER_MARKER.id());
+        assertEquals(ResourceLocation.fromNamespaceAndPath(
+                "quasar_content", "orbital_laser_beam"
+            ),
+            ContentShaders.ORBITAL_LASER_BEAM.id());
         assertEquals(DefaultVertexFormat.BLOCK, ContentShaders.RUNE_CIRCLE.format());
         assertEquals(DefaultVertexFormat.BLOCK, ContentShaders.RUNE_MASK.format());
         assertEquals(DefaultVertexFormat.POSITION, ContentShaders.RUNE_GLOW.format());
         assertEquals(DefaultVertexFormat.POSITION, ContentShaders.BLACK_HOLE.format());
         assertEquals(DefaultVertexFormat.BLOCK, ContentShaders.ORBITAL_LASER_MARKER.format());
+        assertEquals(DefaultVertexFormat.POSITION, ContentShaders.ORBITAL_LASER_BEAM.format());
     }
 }

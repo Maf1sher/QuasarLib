@@ -12,5 +12,9 @@ class ContentScreenOperationsTest {
             ContentScreenOperations.RUNE_GLOW.id());
         assertEquals(ResourceLocation.fromNamespaceAndPath("quasar_content", "black_hole"),
             ContentScreenOperations.BLACK_HOLE.id());
+        assertEquals(ResourceLocation.fromNamespaceAndPath(
+                "quasar_content", "orbital_laser_beam"
+            ),
+            ContentScreenOperations.ORBITAL_LASER_BEAM.id());
     }
 }

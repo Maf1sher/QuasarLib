@@ -5,7 +5,7 @@ import mafisher.quasar.api.effect.VisualEffectHandle;
 import mafisher.quasar.api.gameplay.GameplayEffectHandle;
 import net.minecraft.server.level.ServerLevel;
 
-/** Tracks orbital-laser sessions and marker previews independently from other content commands. */
+/** Tracks orbital-laser sessions and visual previews independently from other content commands. */
 final class ContentOrbitalLaserSessions {
     private static final SessionSet<GameplayEffectHandle> SESSIONS = new SessionSet<>();
     private static final SessionSet<VisualEffectHandle> PREVIEWS = new SessionSet<>();

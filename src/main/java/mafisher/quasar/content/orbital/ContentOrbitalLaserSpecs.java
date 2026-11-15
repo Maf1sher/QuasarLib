@@ -51,7 +51,7 @@ public final class ContentOrbitalLaserSpecs {
             .build();
     }
 
-    /** Builds the visual-only marker preview used by {@code orbital-laser visual}. */
+    /** Builds the visual-only show preview used by {@code orbital-laser visual}. */
     public static VisualEffectSpec preview(TargetColumn target, int radius, long seed) {
         return VisualEffectSpec.builder(
                 ContentEffectIds.ORBITAL_LASER,

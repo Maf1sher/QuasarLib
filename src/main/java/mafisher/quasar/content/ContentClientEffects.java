@@ -13,6 +13,7 @@ import mafisher.quasar.content.demo.ContentRibbonRenderer;
 import mafisher.quasar.content.demo.ContentSceneBlurRenderer;
 import mafisher.quasar.content.demo.ContentStaticMeshRenderer;
 import mafisher.quasar.content.demo.ContentWaveDistortionRenderer;
+import mafisher.quasar.content.orbital.ContentOrbitalLaserBeamOperation;
 import mafisher.quasar.content.orbital.ContentOrbitalLaserRenderer;
 import mafisher.quasar.content.rune.ContentRuneCircleRenderer;
 import mafisher.quasar.content.rune.ContentRuneGlowOperation;
@@ -28,6 +29,8 @@ public final class ContentClientEffects {
     public static void registerOperations(RegisterScreenEffectOperationsEvent event) {
         event.register(ContentScreenOperations.RUNE_GLOW, new ContentRuneGlowOperation());
         event.register(ContentScreenOperations.BLACK_HOLE, new ContentBlackHoleOperation());
+        event.register(ContentScreenOperations.ORBITAL_LASER_BEAM,
+            new ContentOrbitalLaserBeamOperation());
     }
 
     public static void registerRenderers(RegisterVisualEffectRenderersEvent event) {
