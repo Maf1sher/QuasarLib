@@ -206,7 +206,7 @@ public final class ClientEffectAudio {
                 manager.stop(oldest.instance);
             }
             EffectLoopSoundInstance instance = new EffectLoopSoundInstance(cue);
-            instance.setPosition(this.resolvePosition(cue));
+            instance.setPosition(this.resolvePosition(cue, age));
             instance.setGain(cue.envelope().gainAt(age - cue.tick(), stopTick));
             manager.play(instance);
             this.loops.add(new LoopTrack(cue, stopTick, instance));
@@ -223,12 +223,12 @@ public final class ClientEffectAudio {
                     iterator.remove();
                     continue;
                 }
-                track.instance.setPosition(this.resolvePosition(track.cue));
+                track.instance.setPosition(this.resolvePosition(track.cue, age));
                 track.instance.setGain(track.cue.envelope().gainAt(age - track.cue.tick(), track.stopTick));
             }
         }
 
-        private Vec3 resolvePosition(EffectAudioCue cue) {
+        private Vec3 resolvePosition(EffectAudioCue cue, int age) {
             Vec3 translation = Vec3.ZERO;
             if (cue.motion() instanceof EffectAudioMotion.FollowEffect) {
                 Vec3 origin = this.originLookup.apply(this.plan.effectId());
@@ -236,7 +236,7 @@ public final class ClientEffectAudio {
                     translation = origin.subtract(this.plan.center());
                 }
             }
-            return cue.motion().resolve(cue.position(), translation);
+            return cue.motion().resolve(cue.position(), translation, age);
         }
 
         private void playTrigger(ClientLevel level, EffectAudioTriggerPayload payload) {

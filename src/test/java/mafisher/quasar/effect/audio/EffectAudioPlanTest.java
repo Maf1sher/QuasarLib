@@ -79,6 +79,47 @@ class EffectAudioPlanTest {
     }
 
     @Test
+    void keepsActivePathLoopsPlayableForLateJoiners() {
+        EffectAudioMotion.Path path = new EffectAudioMotion.Path(
+            new Vec3(0.0, -20.0, 0.0), Vec3.ZERO, 20, 60
+        );
+        EffectAudioPlan plan = plan(new EffectAudioCue(
+            10,
+            Vec3.ZERO,
+            SOUND,
+            SoundSource.MASTER,
+            1.0F,
+            1.0F,
+            EffectAudioAttenuation.distance(64.0F),
+            EffectAudioEnvelope.loopUntil(80, 0, 10),
+            path
+        ));
+
+        assertEquals(0, plan.firstCueIndex(40, 2));
+        assertTrue(plan.hasPlayableCues(40, 2));
+        assertEquals(-10.0, path.resolve(Vec3.ZERO, Vec3.ZERO, 40).y);
+    }
+
+    @Test
+    void rejectsPathWindowsBeyondThePlanDuration() {
+        EffectAudioCue cue = new EffectAudioCue(
+            0,
+            Vec3.ZERO,
+            SOUND,
+            SoundSource.MASTER,
+            1.0F,
+            1.0F,
+            EffectAudioAttenuation.VANILLA,
+            EffectAudioEnvelope.loopUntil(40, 0, 0),
+            new EffectAudioMotion.Path(new Vec3(0.0, -10.0, 0.0), Vec3.ZERO, 10, 50)
+        );
+
+        assertThrows(IllegalArgumentException.class, () -> new EffectAudioPlan(
+            UUID.randomUUID(), DIMENSION, Vec3.ZERO, 0L, 40, List.of(cue)
+        ));
+    }
+
+    @Test
     void triggersKeepAPlanPlayableWithoutScheduledCues() {
         EffectAudioPlan plan = new EffectAudioPlan(
             UUID.randomUUID(),

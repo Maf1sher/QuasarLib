@@ -73,6 +73,66 @@ class EffectAudioPlanPayloadTest {
     }
 
     @Test
+    void pathMotionRoundTrips() {
+        EffectAudioMotion.Path path = new EffectAudioMotion.Path(
+            new Vec3(1.0, 2.0, 3.0), new Vec3(4.0, 5.0, 6.0), 10, 20
+        );
+        EffectAudioPlan plan = new EffectAudioPlan(
+            UUID.randomUUID(),
+            DIMENSION,
+            Vec3.ZERO,
+            0L,
+            100,
+            List.of(new EffectAudioCue(
+                0,
+                Vec3.ZERO,
+                SOUND,
+                SoundSource.MASTER,
+                1.0F,
+                1.0F,
+                EffectAudioAttenuation.distance(64.0F),
+                EffectAudioEnvelope.loopUntil(30, 0, 0),
+                path
+            ))
+        );
+        FriendlyByteBuf buffer = new FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
+
+        EffectAudioPlanPayload.STREAM_CODEC.encode(buffer, new EffectAudioPlanPayload(plan, 0L));
+        EffectAudioPlan decoded = EffectAudioPlanPayload.STREAM_CODEC.decode(buffer).plan();
+
+        assertEquals(path, decoded.cues().getFirst().motion());
+    }
+
+    @Test
+    void rejectsAnUnknownMotionType() {
+        FriendlyByteBuf buffer = new FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
+        buffer.writeUUID(UUID.randomUUID());
+        buffer.writeResourceLocation(DIMENSION);
+        buffer.writeDouble(0.0);
+        buffer.writeDouble(0.0);
+        buffer.writeDouble(0.0);
+        buffer.writeLong(0L);
+        buffer.writeVarInt(100);
+        buffer.writeVarInt(1);
+        buffer.writeVarInt(0);
+        buffer.writeDouble(0.0);
+        buffer.writeDouble(0.0);
+        buffer.writeDouble(0.0);
+        buffer.writeResourceLocation(SOUND);
+        buffer.writeEnum(SoundSource.MASTER);
+        buffer.writeFloat(1.0F);
+        buffer.writeFloat(1.0F);
+        buffer.writeByte(0);
+        buffer.writeBoolean(true);
+        buffer.writeVarInt(0);
+        buffer.writeVarInt(0);
+        buffer.writeVarInt(50);
+        buffer.writeByte(3);
+
+        assertThrows(DecoderException.class, () -> EffectAudioPlanPayload.STREAM_CODEC.decode(buffer));
+    }
+
+    @Test
     void rejectsAnOversizedCueCount() {
         FriendlyByteBuf buffer = new FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
         buffer.writeUUID(UUID.randomUUID());

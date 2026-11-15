@@ -58,10 +58,7 @@ public final class EffectAudioNbt {
             entry.putInt("fade_in", cue.envelope().fadeInTicks());
             entry.putInt("fade_out", cue.envelope().fadeOutTicks());
             entry.putInt("stop_tick", cue.envelope().stopTick());
-            entry.putString(
-                "motion",
-                cue.motion() instanceof EffectAudioMotion.FollowEffect ? "follow_effect" : "anchored"
-            );
+            saveMotion(entry, cue.motion());
             cues.add(entry);
         }
         tag.put("cues", cues);
@@ -105,9 +102,7 @@ public final class EffectAudioNbt {
                             : EffectAudioEnvelope.END_OF_EFFECT
                     )
                     : EffectAudioEnvelope.ONE_SHOT;
-                EffectAudioMotion motion = "follow_effect".equals(entry.getString("motion"))
-                    ? EffectAudioMotion.FOLLOW_EFFECT
-                    : EffectAudioMotion.ANCHORED;
+                EffectAudioMotion motion = loadMotion(entry);
                 cues.add(new EffectAudioCue(
                     entry.getInt("tick"),
                     new Vec3(entry.getDouble("x"), entry.getDouble("y"), entry.getDouble("z")),
@@ -143,6 +138,53 @@ public final class EffectAudioNbt {
         } catch (RuntimeException exception) {
             throw new IllegalArgumentException("Invalid effect audio data", exception);
         }
+    }
+
+    private static void saveMotion(CompoundTag entry, EffectAudioMotion motion) {
+        if (motion instanceof EffectAudioMotion.Anchored) {
+            entry.putString("motion", "anchored");
+            return;
+        }
+        if (motion instanceof EffectAudioMotion.FollowEffect) {
+            entry.putString("motion", "follow_effect");
+            return;
+        }
+        if (motion instanceof EffectAudioMotion.Path path) {
+            entry.putString("motion", "path");
+            entry.putDouble("path_start_x", path.startOffset().x);
+            entry.putDouble("path_start_y", path.startOffset().y);
+            entry.putDouble("path_start_z", path.startOffset().z);
+            entry.putDouble("path_end_x", path.endOffset().x);
+            entry.putDouble("path_end_y", path.endOffset().y);
+            entry.putDouble("path_end_z", path.endOffset().z);
+            entry.putInt("path_start_tick", path.startTick());
+            entry.putInt("path_end_tick", path.endTick());
+            return;
+        }
+        throw new IllegalArgumentException("Unknown effect audio motion type");
+    }
+
+    private static EffectAudioMotion loadMotion(CompoundTag entry) {
+        String type = entry.getString("motion");
+        return switch (type) {
+            case "", "anchored" -> EffectAudioMotion.ANCHORED;
+            case "follow_effect" -> EffectAudioMotion.FOLLOW_EFFECT;
+            case "path" -> new EffectAudioMotion.Path(
+                new Vec3(
+                    entry.getDouble("path_start_x"),
+                    entry.getDouble("path_start_y"),
+                    entry.getDouble("path_start_z")
+                ),
+                new Vec3(
+                    entry.getDouble("path_end_x"),
+                    entry.getDouble("path_end_y"),
+                    entry.getDouble("path_end_z")
+                ),
+                entry.getInt("path_start_tick"),
+                entry.getInt("path_end_tick")
+            );
+            default -> throw new IllegalArgumentException("Unknown effect audio motion type: " + type);
+        };
     }
 
     private static CompoundTag saveAttenuation(EffectAudioAttenuation attenuation) {

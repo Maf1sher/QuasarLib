@@ -30,10 +30,21 @@ public record EffectAudioCue(
         Objects.requireNonNull(envelope, "envelope");
         Objects.requireNonNull(motion, "motion");
         EffectSoundValidation.requirePlayable(position, volume, pitch, "Invalid effect audio cue");
+        if (motion instanceof EffectAudioMotion.Path && !envelope.looping()) {
+            throw new IllegalArgumentException("Effect audio path motion requires a looping cue");
+        }
         if (envelope.looping() && envelope.stopTick() != EffectAudioEnvelope.END_OF_EFFECT
             && envelope.stopTick() <= tick) {
             throw new IllegalArgumentException("Looping audio cues must stop after their start tick");
         }
+    }
+
+    /**
+     * True when a path motion ends by {@code durationTicks}; other motions always fit.
+     */
+    boolean motionFitsWithin(int durationTicks) {
+        return !(this.motion instanceof EffectAudioMotion.Path path)
+            || path.endTick() <= durationTicks;
     }
 
     public EffectAudioCue(

@@ -47,4 +47,14 @@ class PublicAudioApiVisibilityTest {
         ).id());
         assertNotNull(EffectAudioService.class);
     }
+
+    @Test
+    void exposesAgeAwarePathMotion() {
+        EffectAudioMotion.Path path = new EffectAudioMotion.Path(
+            new Vec3(0.0, -10.0, 0.0), Vec3.ZERO, 0, 10
+        );
+
+        assertEquals(-5.0, path.resolve(Vec3.ZERO, Vec3.ZERO, 5).y, 1.0E-9);
+        assertEquals(-10.0, path.resolve(Vec3.ZERO, Vec3.ZERO).y, 1.0E-9);
+    }
 }

@@ -78,6 +78,52 @@ class EffectAudioNbtTest {
     }
 
     @Test
+    void roundTripsPathMotion() {
+        EffectAudioMotion.Path path = new EffectAudioMotion.Path(
+            new Vec3(1.0, 2.0, 3.0), new Vec3(4.0, 5.0, 6.0), 10, 20
+        );
+        EffectAudioSpec spec = EffectAudioSpec.builder(100)
+            .cue(new EffectAudioCue(
+                0,
+                Vec3.ZERO,
+                SOUND,
+                SoundSource.MASTER,
+                1.0F,
+                1.0F,
+                EffectAudioAttenuation.distance(64.0F),
+                EffectAudioEnvelope.loopUntil(30, 0, 0),
+                path
+            ))
+            .build();
+        CompoundTag parent = new CompoundTag();
+
+        EffectAudioNbt.saveInto(parent, spec);
+        EffectAudioSpec loaded = EffectAudioNbt.loadFrom(parent);
+
+        assertEquals(path, loaded.cues().getFirst().motion());
+    }
+
+    @Test
+    void rejectsUnknownMotion() {
+        CompoundTag parent = new CompoundTag();
+        CompoundTag audio = new CompoundTag();
+        CompoundTag cue = new CompoundTag();
+        cue.putInt("tick", 0);
+        cue.putString("sound", SOUND.toString());
+        cue.putString("source", SoundSource.MASTER.name());
+        cue.putFloat("volume", 1.0F);
+        cue.putFloat("pitch", 1.0F);
+        CompoundTag attenuation = new CompoundTag();
+        attenuation.putString("type", "vanilla");
+        cue.put("attenuation", attenuation);
+        cue.putString("motion", "orbit");
+        audio.put("cues", listOf(cue));
+        parent.put(EffectAudioNbt.KEY, audio);
+
+        assertThrows(IllegalArgumentException.class, () -> EffectAudioNbt.loadFrom(parent));
+    }
+
+    @Test
     void oldCueDataDefaultsToOneShotAndAnchored() {
         CompoundTag parent = new CompoundTag();
         CompoundTag audio = new CompoundTag();

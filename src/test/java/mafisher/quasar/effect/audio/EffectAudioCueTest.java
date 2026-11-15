@@ -1,5 +1,6 @@
 package mafisher.quasar.effect.audio;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -37,6 +38,36 @@ class EffectAudioCueTest {
             EffectAudioAttenuation.VANILLA,
             EffectAudioEnvelope.loopUntil(5, 0, 0),
             EffectAudioMotion.ANCHORED
+        ));
+    }
+
+    @Test
+    void pathMotionRequiresALoopingCue() {
+        EffectAudioMotion.Path path = new EffectAudioMotion.Path(
+            new Vec3(0.0, -10.0, 0.0), Vec3.ZERO, 0, 20
+        );
+
+        assertThrows(IllegalArgumentException.class, () -> new EffectAudioCue(
+            0,
+            Vec3.ZERO,
+            SOUND,
+            SoundSource.MASTER,
+            1.0F,
+            1.0F,
+            EffectAudioAttenuation.VANILLA,
+            EffectAudioEnvelope.ONE_SHOT,
+            path
+        ));
+        assertDoesNotThrow(() -> new EffectAudioCue(
+            0,
+            Vec3.ZERO,
+            SOUND,
+            SoundSource.MASTER,
+            1.0F,
+            1.0F,
+            EffectAudioAttenuation.VANILLA,
+            EffectAudioEnvelope.loop(0, 0),
+            path
         ));
     }
 

@@ -56,7 +56,9 @@ public final class InspectAudioCapture {
 
     private static void fillCue(InspectFrame.AudioCueSlot slot, EffectAudioCue cue,
         EffectAudioDiagnostics diagnostics, Vec3 listener) {
-        Vec3 position = cue.motion().resolve(cue.position(), diagnostics.effectTranslation());
+        Vec3 position = cue.motion().resolve(
+            cue.position(), diagnostics.effectTranslation(), diagnostics.ageTicks()
+        );
         slot.effectId = diagnostics.plan().effectId();
         slot.cueTick = cue.tick();
         slot.x = position.x;

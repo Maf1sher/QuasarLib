@@ -123,6 +123,76 @@ class EffectAudioSpecTest {
     }
 
     @Test
+    void validatesPathWindowsAgainstDuration() {
+        EffectAudioCue cue = new EffectAudioCue(
+            0,
+            Vec3.ZERO,
+            SOUND,
+            SoundSource.MASTER,
+            1.0F,
+            1.0F,
+            EffectAudioAttenuation.VANILLA,
+            EffectAudioEnvelope.loopUntil(40, 0, 0),
+            new EffectAudioMotion.Path(new Vec3(0.0, -10.0, 0.0), Vec3.ZERO, 10, 50)
+        );
+
+        EffectAudioSpec spec = EffectAudioSpec.builder(60).cue(cue).build();
+
+        assertTrue(spec.fitsWithin(60));
+        assertFalse(spec.fitsWithin(45));
+        assertThrows(IllegalArgumentException.class, () -> EffectAudioSpec.builder(45).cue(cue));
+    }
+
+    @Test
+    void resolvesPhasePathWindowsByShiftingTheWholeWindow() {
+        EffectPhasePlan phases = EffectPhasePlan.of(
+            new EffectPhase("charge", 20),
+            new EffectPhase("impact", 30)
+        );
+        EffectAudioCue cue = new EffectAudioCue(
+            0,
+            Vec3.ZERO,
+            SOUND,
+            SoundSource.MASTER,
+            1.0F,
+            1.0F,
+            EffectAudioAttenuation.VANILLA,
+            EffectAudioEnvelope.loopUntil(10, 0, 0),
+            new EffectAudioMotion.Path(new Vec3(0.0, -10.0, 0.0), Vec3.ZERO, 0, 10)
+        );
+
+        EffectAudioSpec spec = EffectAudioSpec.builder(phases)
+            .phaseCue("impact", 5, cue)
+            .build();
+
+        EffectAudioMotion.Path shifted =
+            (EffectAudioMotion.Path)spec.cues().getFirst().motion();
+        assertEquals(25, shifted.startTick());
+        assertEquals(35, shifted.endTick());
+        assertEquals(25, spec.cues().getFirst().tick());
+        assertEquals(35, spec.cues().getFirst().envelope().stopTick());
+    }
+
+    @Test
+    void rejectsPhasePathWindowsThatStartBeforeTheEffect() {
+        EffectPhasePlan phases = EffectPhasePlan.of(new EffectPhase("impact", 200));
+        EffectAudioCue cue = new EffectAudioCue(
+            100,
+            Vec3.ZERO,
+            SOUND,
+            SoundSource.MASTER,
+            1.0F,
+            1.0F,
+            EffectAudioAttenuation.VANILLA,
+            EffectAudioEnvelope.loopUntil(150, 0, 0),
+            new EffectAudioMotion.Path(Vec3.ZERO, Vec3.ZERO, 5, 10)
+        );
+
+        assertThrows(IllegalArgumentException.class,
+            () -> EffectAudioSpec.builder(phases).phaseCue("impact", 0, cue));
+    }
+
+    @Test
     void resolvesPhaseLoopsByShiftingTheWholeWindow() {
         EffectPhasePlan phases = EffectPhasePlan.of(
             new EffectPhase("charge", 20),

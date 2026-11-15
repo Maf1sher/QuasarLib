@@ -98,27 +98,50 @@ final class EffectAudioPlanCodec {
         buffer.writeVarInt(cue.envelope().fadeInTicks());
         buffer.writeVarInt(cue.envelope().fadeOutTicks());
         buffer.writeVarInt(cue.envelope().stopTick());
-        buffer.writeByte(cue.motion() instanceof EffectAudioMotion.FollowEffect ? 1 : 0);
+        EffectAudioMotion motion = cue.motion();
+        if (motion instanceof EffectAudioMotion.Anchored) {
+            buffer.writeByte(0);
+        } else if (motion instanceof EffectAudioMotion.FollowEffect) {
+            buffer.writeByte(1);
+        } else if (motion instanceof EffectAudioMotion.Path path) {
+            buffer.writeByte(2);
+            writePosition(buffer, path.startOffset());
+            writePosition(buffer, path.endOffset());
+            buffer.writeVarInt(path.startTick());
+            buffer.writeVarInt(path.endTick());
+        } else {
+            throw new IllegalArgumentException("Unknown effect audio motion type");
+        }
     }
 
     private static EffectAudioCue readCue(FriendlyByteBuf buffer) {
-        return new EffectAudioCue(
+        int tick = buffer.readVarInt();
+        Vec3 position = readPosition(buffer);
+        ResourceLocation soundId = buffer.readResourceLocation();
+        SoundSource source = buffer.readEnum(SoundSource.class);
+        float volume = buffer.readFloat();
+        float pitch = buffer.readFloat();
+        EffectAudioAttenuation attenuation = ATTENUATION.decode(buffer);
+        EffectAudioEnvelope envelope = new EffectAudioEnvelope(
+            buffer.readBoolean(),
             buffer.readVarInt(),
-            readPosition(buffer),
-            buffer.readResourceLocation(),
-            buffer.readEnum(SoundSource.class),
-            buffer.readFloat(),
-            buffer.readFloat(),
-            ATTENUATION.decode(buffer),
-            new EffectAudioEnvelope(
-                buffer.readBoolean(),
-                buffer.readVarInt(),
+            buffer.readVarInt(),
+            buffer.readVarInt()
+        );
+        int motionType = buffer.readUnsignedByte();
+        EffectAudioMotion motion = switch (motionType) {
+            case 0 -> EffectAudioMotion.ANCHORED;
+            case 1 -> EffectAudioMotion.FOLLOW_EFFECT;
+            case 2 -> new EffectAudioMotion.Path(
+                readPosition(buffer),
+                readPosition(buffer),
                 buffer.readVarInt(),
                 buffer.readVarInt()
-            ),
-            buffer.readUnsignedByte() == 1
-                ? EffectAudioMotion.FOLLOW_EFFECT
-                : EffectAudioMotion.ANCHORED
+            );
+            default -> throw new DecoderException("Unknown effect audio motion type: " + motionType);
+        };
+        return new EffectAudioCue(
+            tick, position, soundId, source, volume, pitch, attenuation, envelope, motion
         );
     }
 

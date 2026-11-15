@@ -50,6 +50,35 @@ class InspectAudioCaptureTest {
     }
 
     @Test
+    void capturesTheCurrentPointOfAPathLoop() {
+        EffectAudioMotion.Path path = new EffectAudioMotion.Path(
+            new Vec3(0.0, -20.0, 0.0), Vec3.ZERO, 20, 60
+        );
+        EffectAudioPlan plan = plan(new EffectAudioCue(
+            10,
+            Vec3.ZERO,
+            ResourceLocation.withDefaultNamespace("test"),
+            SoundSource.MASTER,
+            1.0F,
+            1.0F,
+            EffectAudioAttenuation.distance(10.0F),
+            EffectAudioEnvelope.loopUntil(80, 0, 10),
+            path
+        ));
+        InspectFrame frame = new InspectFrame();
+        frame.begin(0L, 0L, 1L);
+
+        InspectAudioCapture.capture(
+            frame,
+            new EffectAudioDiagnostics(plan, 40, 0, 1, 0, Vec3.ZERO),
+            Vec3.ZERO
+        );
+
+        assertEquals(1, frame.audioCueCount());
+        assertEquals(-10.0, frame.audioCue(0).y, 1.0E-9);
+    }
+
+    @Test
     void vanillaCuesAreSkippedAndDistanceCuesGetARing() {
         EffectAudioPlan plan = plan(
             new EffectAudioCue(

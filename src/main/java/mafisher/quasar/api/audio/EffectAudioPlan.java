@@ -81,6 +81,12 @@ public final class EffectAudioPlan {
                 );
             }
             cue.envelope().requireValidFor(cue.tick(), durationTicks);
+            if (!cue.motionFitsWithin(durationTicks)) {
+                throw new IllegalArgumentException(
+                    "Effect audio path window at tick " + cue.tick() + " must end by "
+                        + durationTicks
+                );
+            }
         }
         sorted.sort(Comparator.comparingInt(EffectAudioCue::tick));
         this.cues = List.copyOf(sorted);

@@ -12,7 +12,10 @@ import static org.mockito.Mockito.when;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import mafisher.quasar.api.audio.EffectAudioAttenuation;
 import mafisher.quasar.api.audio.EffectAudioCue;
+import mafisher.quasar.api.audio.EffectAudioEnvelope;
+import mafisher.quasar.api.audio.EffectAudioMotion;
 import mafisher.quasar.api.audio.EffectAudioPlan;
 import mafisher.quasar.api.audio.EffectAudioService;
 import mafisher.quasar.api.audio.EffectAudioTrigger;
@@ -289,6 +292,42 @@ class EffectAudioServiceTest {
 
         this.gameTime = 100;
         assertTrue(EffectAudioService.resumePlans(this.level, player).isEmpty());
+    }
+
+    @Test
+    void resumePlansIncludesAnActivePathLoopForLateJoiners() {
+        UUID effectId = UUID.randomUUID();
+        EffectAudioMotion.Path path = new EffectAudioMotion.Path(
+            new Vec3(0.0, -20.0, 0.0), Vec3.ZERO, 20, 60
+        );
+        EffectAudioPlan plan = new EffectAudioPlan(
+            effectId,
+            DIMENSION,
+            Vec3.ZERO,
+            0L,
+            100,
+            List.of(new EffectAudioCue(
+                10,
+                Vec3.ZERO,
+                SOUND,
+                SoundSource.MASTER,
+                1.0F,
+                1.0F,
+                EffectAudioAttenuation.distance(64.0F),
+                EffectAudioEnvelope.loopUntil(80, 0, 10),
+                path
+            ))
+        );
+        EffectAudioService.start(this.level, plan, EffectAudience.dimensionWide());
+        ServerPlayer player = player(new Vec3(0.0, 64.0, 0.0));
+        when(this.level.players()).thenReturn(List.of(player));
+
+        this.gameTime = 40;
+        List<EffectAudioPlan> plans = EffectAudioService.resumePlans(this.level, player);
+
+        assertEquals(1, plans.size());
+        assertEquals(0, plans.getFirst().firstCueIndex(40, EffectAudioPlan.GRACE_TICKS));
+        assertEquals(-10.0, path.resolve(Vec3.ZERO, Vec3.ZERO, 40).y);
     }
 
     @Test

@@ -109,7 +109,9 @@ public final class EffectAudioSpec {
             return false;
         }
         for (EffectAudioCue cue : this.cues) {
-            if (cue.tick() >= durationTicks || !cue.envelope().isValidFor(cue.tick(), durationTicks)) {
+            if (cue.tick() >= durationTicks
+                || !cue.envelope().isValidFor(cue.tick(), durationTicks)
+                || !cue.motionFitsWithin(durationTicks)) {
                 return false;
             }
         }
@@ -193,6 +195,12 @@ public final class EffectAudioSpec {
                 );
             }
             cue.envelope().requireValidFor(cue.tick(), this.durationTicks);
+            if (!cue.motionFitsWithin(this.durationTicks)) {
+                throw new IllegalArgumentException(
+                    "Effect audio path window at tick " + cue.tick() + " must end by "
+                        + this.durationTicks
+                );
+            }
             if (this.cues.size() >= MAX_CUES) {
                 throw new IllegalArgumentException(
                     "An effect audio spec supports at most " + MAX_CUES + " cues"
@@ -217,6 +225,10 @@ public final class EffectAudioSpec {
                     (int)shiftedStop
                 );
             }
+            EffectAudioMotion motion = cue.motion();
+            if (motion instanceof EffectAudioMotion.Path path) {
+                motion = path.shiftedBy(startTick - cue.tick());
+            }
             return new EffectAudioCue(
                 startTick,
                 cue.position(),
@@ -226,7 +238,7 @@ public final class EffectAudioSpec {
                 cue.pitch(),
                 cue.attenuation(),
                 envelope,
-                cue.motion()
+                motion
             );
         }
 
