@@ -2,6 +2,7 @@ package mafisher.quasar.content.orbital;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -66,7 +67,7 @@ class ContentOrbitalLaserSpecsTest {
         when(context.level()).thenReturn(level);
         when(context.spec()).thenReturn(spec);
 
-        EffectCarveSpec carve = ContentOrbitalLaserSpecs.carveSpec(context);
+        EffectCarveSpec carve = ContentOrbitalLaserSpecs.carveSpec(context, SURFACE_Y);
         EffectCarvePlan plan = EffectCarvePlan.plan(context, carve);
 
         assertEquals(EffectBulkBlockEditor.Ordering.TOP_DOWN, carve.ordering());
@@ -80,5 +81,34 @@ class ContentOrbitalLaserSpecsTest {
         assertEquals(32.0 * plan.scale(), effective.radius(), 1.0E-6);
         assertEquals(-63.0, plan.frontBottomY(), 1.0E-6);
         assertEquals(SURFACE_Y, plan.frontTopY(), 1.0E-6);
+    }
+
+    @Test
+    void carveSpecRaisesTheCeilingWithoutMovingTheAnchor() {
+        ServerLevel level = mock(ServerLevel.class);
+        when(level.getMinBuildHeight()).thenReturn(-64);
+        when(level.getMaxBuildHeight()).thenReturn(320);
+        when(level.getMinSection()).thenReturn(-4);
+        when(level.getMaxSection()).thenReturn(20);
+        GameplayEffectSpec spec = ContentOrbitalLaserSpecs.gameplay(
+            null, new TargetColumn(0, 0, SURFACE_Y), 6, 42L
+        );
+        GameplayEffectContext context = mock(GameplayEffectContext.class);
+        when(context.level()).thenReturn(level);
+        when(context.spec()).thenReturn(spec);
+
+        EffectCarveSpec carve = ContentOrbitalLaserSpecs.carveSpec(context, SURFACE_Y + 8.0);
+        EffectCarvePlan plan = EffectCarvePlan.plan(context, carve);
+
+        assertEquals(SURFACE_Y, spec.anchor().y(), 1.0E-6);
+        assertNotNull(carve.surfaceY());
+        assertEquals(SURFACE_Y + 8.0, carve.surfaceY(), 1.0E-6);
+        assertEquals(
+            SURFACE_Y + 8.0,
+            ((EffectBlockVolume.Cylinder)carve.volume()).maxY(),
+            1.0E-6
+        );
+        assertEquals(SURFACE_Y + 8.0, plan.frontTopY(), 1.0E-6);
+        assertEquals(-63.0, plan.frontBottomY(), 1.0E-6);
     }
 }

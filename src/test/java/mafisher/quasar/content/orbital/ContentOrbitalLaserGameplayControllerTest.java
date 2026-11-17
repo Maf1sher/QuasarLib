@@ -15,6 +15,7 @@ import static org.mockito.Mockito.when;
 import java.util.UUID;
 import mafisher.quasar.TestConfig;
 import mafisher.quasar.api.effect.EffectParameterState;
+import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.VisualEffectService;
 import mafisher.quasar.api.gameplay.GameplayEffectEndReason;
 import mafisher.quasar.api.gameplay.GameplayEffectHandle;
@@ -33,6 +34,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.AfterEach;
@@ -105,6 +107,51 @@ class ContentOrbitalLaserGameplayControllerTest {
         assertTrue(this.world.blockState(block(13, 15, 8)).isAir());
         assertTrue(this.world.blockState(block(14, 15, 8)).isAir());
         assertTrue(this.world.blockState(block(15, 15, 8)).is(Blocks.STONE));
+    }
+
+    @Test
+    void carvesTheFullColumnAboveTheAimedSurfaceAndKeepsTheFlashAtTheAim() {
+        prepareSlopedColumn();
+        ContentOrbitalLaserGameplayController controller =
+            new ContentOrbitalLaserGameplayController();
+        start(controller, new TargetColumn(8, 8, 12));
+
+        EffectPoint marker = visualDescriptor().transform().position();
+        assertEquals(8.5, marker.x(), 1.0E-6);
+        assertEquals(12.0 + ContentOrbitalLaserSettings.MARKER_LIFT, marker.y(), 1.0E-6);
+        assertEquals(8.5, marker.z(), 1.0E-6);
+
+        tick(ContentOrbitalLaserSettings.TOTAL_TICKS);
+
+        assertTrue(this.world.blockState(block(9, 12, 8)).isAir());
+        assertTrue(this.world.blockState(block(9, 15, 8)).isAir());
+        assertTrue(this.world.blockState(block(8, 0, 8)).is(Blocks.STONE));
+    }
+
+    @Test
+    void destroysPlantsAboveTheMotionBlockingSurface() {
+        this.world.fillSection(Blocks.STONE.defaultBlockState());
+        this.world.setBlock(block(8, 15, 8), Blocks.SHORT_GRASS.defaultBlockState());
+        this.world.setColumnHeight(Heightmap.Types.MOTION_BLOCKING, 8, 8, 15);
+        this.world.setColumnHeight(Heightmap.Types.WORLD_SURFACE, 8, 8, 16);
+        start(new ContentOrbitalLaserGameplayController(), new TargetColumn(8, 8, 15));
+
+        tick(ContentOrbitalLaserSettings.TOTAL_TICKS);
+
+        assertTrue(this.world.blockState(block(8, 15, 8)).isAir());
+    }
+
+    @Test
+    void persistsTheCarveCeilingForResume() {
+        prepareSlopedColumn();
+        start(new ContentOrbitalLaserGameplayController(), new TargetColumn(8, 8, 12));
+        tick(1);
+
+        assertEquals(
+            16.0,
+            gameplayDescriptor().state().getCompound("state").getDouble("carve_top_y"),
+            1.0E-6
+        );
     }
 
     @Test
@@ -220,6 +267,15 @@ class ContentOrbitalLaserGameplayControllerTest {
         return new BlockPos(x, y, z);
     }
 
+    private void prepareSlopedColumn() {
+        this.world.setGroundY(16);
+        this.world.fillSection(Blocks.STONE.defaultBlockState());
+        for (int y = 12; y < 16; y++) {
+            this.world.setBlock(block(8, y, 8), Blocks.AIR.defaultBlockState());
+        }
+        this.world.setColumnHeight(8, 8, 12);
+    }
+
     private Entity entityAt(double x, double y, double z) {
         Entity entity = mock(Entity.class);
         when(entity.getBoundingBox()).thenReturn(new AABB(x - 0.5, y - 0.5, z - 0.5,
@@ -258,9 +314,24 @@ class ContentOrbitalLaserGameplayControllerTest {
             .orElseThrow();
     }
 
+    private EffectDescriptor gameplayDescriptor() {
+        return this.world.store().descriptors().stream()
+            .filter(descriptor -> descriptor.kind() == EffectKind.GAMEPLAY)
+            .filter(descriptor -> descriptor.typeId().equals(ContentEffectIds.ORBITAL_LASER))
+            .findFirst()
+            .orElseThrow();
+    }
+
     private GameplayEffectHandle start(ContentOrbitalLaserGameplayController controller) {
+        return start(controller, new TargetColumn(8, 8, SURFACE_Y));
+    }
+
+    private GameplayEffectHandle start(
+        ContentOrbitalLaserGameplayController controller,
+        TargetColumn target
+    ) {
         GameplayEffectSpec spec = ContentOrbitalLaserSpecs.gameplay(
-            null, new TargetColumn(8, 8, SURFACE_Y), RADIUS, 42L
+            null, target, RADIUS, 42L
         );
         return GameplayEffectService.start(
             this.world.level(),

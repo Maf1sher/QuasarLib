@@ -57,6 +57,8 @@ public final class TestServerLevel {
     private final DimensionDataStorage storage;
     private final EffectSavedData store;
     private final Map<BlockPos, BlockState> blocks = new HashMap<>();
+    private final Map<Long, Integer> columnHeights = new HashMap<>();
+    private final Map<ColumnHeight, Integer> typedColumnHeights = new HashMap<>();
     private final Map<UUID, Entity> entities = new HashMap<>();
     private final List<Entity> worldEntities = new ArrayList<>();
     private final List<String> calls = new ArrayList<>();
@@ -123,7 +125,11 @@ public final class TestServerLevel {
         when(this.level.getMaxSection()).thenReturn(1);
         when(this.level.getSectionIndexFromSectionY(anyInt())).thenReturn(0);
         when(this.level.getHeight(any(Heightmap.Types.class), anyInt(), anyInt()))
-            .thenAnswer(ignored -> this.groundY);
+            .thenAnswer(invocation -> this.heightAt(
+                invocation.getArgument(0),
+                invocation.getArgument(1),
+                invocation.getArgument(2)
+            ));
         when(this.level.getChunkAt(any(BlockPos.class))).thenReturn(this.chunk);
         when(this.level.getChunkSource()).thenReturn(this.chunkSource);
         when(this.chunkSource.getChunkNow(anyInt(), anyInt())).thenAnswer(invocation -> {
@@ -209,6 +215,25 @@ public final class TestServerLevel {
         this.groundY = groundY;
     }
 
+    /** Overrides the heightmap first-free Y for one block column. */
+    public void setColumnHeight(int x, int z, int firstFreeY) {
+        this.columnHeights.put(BlockPos.asLong(x, 0, z), firstFreeY);
+    }
+
+    /** Overrides one heightmap type for one block column. */
+    public void setColumnHeight(Heightmap.Types type, int x, int z, int firstFreeY) {
+        this.typedColumnHeights.put(new ColumnHeight(type, x, z), firstFreeY);
+    }
+
+    private int heightAt(Heightmap.Types type, int x, int z) {
+        Integer typed = this.typedColumnHeights.get(new ColumnHeight(type, x, z));
+        if (typed != null) {
+            return typed;
+        }
+        Integer height = this.columnHeights.get(BlockPos.asLong(x, 0, z));
+        return height == null ? this.groundY : height;
+    }
+
     public void setBlock(BlockPos position, BlockState state) {
         this.blocks.put(position, state);
         if (isInsideSection(position)) {
@@ -279,6 +304,9 @@ public final class TestServerLevel {
             this.calls.add(invocation.getMethod().getName());
         }
         return Answers.RETURNS_DEFAULTS.answer(invocation);
+    }
+
+    private record ColumnHeight(Heightmap.Types type, int x, int z) {
     }
 
     private boolean isInsideSection(BlockPos position) {

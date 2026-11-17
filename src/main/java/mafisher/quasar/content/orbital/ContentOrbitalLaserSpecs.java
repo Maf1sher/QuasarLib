@@ -47,14 +47,15 @@ public final class ContentOrbitalLaserSpecs {
     /**
      * Builds the full-depth top-down cylinder used by the destructive session.
      *
-     * <p>The volume spans from the authored surface column to the protected world floor. It is
-     * the only source of the requested radius; {@code EffectCarvePlan} may shrink that radius to
-     * fit the timeline and section budget, but never the vertical extent.</p>
+     * <p>The volume spans from the highest non-air surface inside the requested footprint to the
+     * protected world floor. It is the only source of the requested radius;
+     * {@code EffectCarvePlan} may shrink that radius to fit the timeline and section budget, but
+     * never the vertical extent. The ceiling never drops below the aimed column.</p>
      */
-    static EffectCarveSpec carveSpec(GameplayEffectContext context) {
+    static EffectCarveSpec carveSpec(GameplayEffectContext context, double highestSurfaceY) {
         Vec3 anchor = context.spec().anchor();
         double floorY = context.level().getMinBuildHeight() + 1.0;
-        double topY = Math.max(floorY, anchor.y);
+        double topY = Math.max(floorY, Math.max(anchor.y, highestSurfaceY));
         return new EffectCarveSpec(
             EffectBlockVolume.cylinder(
                 new EffectPoint(anchor.x, anchor.y, anchor.z),
@@ -70,7 +71,7 @@ public final class ContentOrbitalLaserSpecs {
             ContentOrbitalLaserSettings.carveWindowEnd(),
             null,
             0.0F,
-            anchor.y,
+            topY,
             EffectBulkBlockEditor.Ordering.TOP_DOWN
         );
     }

@@ -22,6 +22,7 @@ import mafisher.quasar.api.persistence.EffectPersistenceOptions;
 import mafisher.quasar.content.ContentEffectIds;
 import mafisher.quasar.content.ContentGameplayEffects;
 import mafisher.quasar.content.orbital.ContentOrbitalLaserGameplayController;
+import mafisher.quasar.content.orbital.ContentOrbitalLaserSettings;
 import mafisher.quasar.content.orbital.ContentOrbitalLaserSpecs;
 import mafisher.quasar.content.orbital.ContentOrbitalLaserTarget.TargetColumn;
 import mafisher.quasar.effect.persistence.EffectParameterNbt;
@@ -32,6 +33,7 @@ import mafisher.quasar.effect.runtime.SavedDataEffectStore;
 import mafisher.quasar.effect.runtime.TestBudgetSource;
 import mafisher.quasar.testing.GlobalStateTest;
 import mafisher.quasar.testing.TestServerLevel;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.Blocks;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -145,6 +147,34 @@ class ContentOrbitalLaserRestoreTest {
         assertTrue(tipDepth() >= depthBefore - 0.1F);
     }
 
+    @Test
+    void restoresThePersistedCarveCeilingInsteadOfResamplingTheTerrain() {
+        this.world.setBuildHeight(0, 16);
+        this.world.setGroundY(16);
+        this.world.fillSection(Blocks.STONE.defaultBlockState());
+        for (int y = 12; y < 16; y++) {
+            this.world.setBlock(block(8, y, 8), Blocks.AIR.defaultBlockState());
+        }
+        this.world.setColumnHeight(8, 8, 12);
+        GameplayEffectHandle handle = start(new TargetColumn(8, 8, 12));
+        tick(1);
+
+        GameplayEffectService.stopAll(
+            this.world.level(),
+            GameplayEffectEndReason.LEVEL_UNLOAD,
+            EffectRemovalPolicy.KEEP_FOR_RESTORE
+        );
+        VisualEffectService.clear(this.world.level());
+        this.world.setGroundY(12);
+
+        EffectRestoreService.restoreLevel(this.world.level());
+        assertTrue(GameplayEffectService.isActive(this.world.level(), handle));
+        tick(ContentOrbitalLaserSettings.TOTAL_TICKS);
+
+        assertTrue(this.world.blockState(block(9, 15, 8)).isAir());
+        assertTrue(this.world.blockState(block(8, 0, 8)).is(Blocks.STONE));
+    }
+
     private GameplayEffectHandle start() {
         return start(new TargetColumn(0, 0, 20));
     }
@@ -167,6 +197,10 @@ class ContentOrbitalLaserRestoreTest {
         EffectDescriptor descriptor = this.world.store().find(visualDescriptorId());
         return EffectParameterNbt.loadFrom(descriptor)
             .value("TipDepth").x();
+    }
+
+    private static BlockPos block(int x, int y, int z) {
+        return new BlockPos(x, y, z);
     }
 
     private void tick(int ticks) {

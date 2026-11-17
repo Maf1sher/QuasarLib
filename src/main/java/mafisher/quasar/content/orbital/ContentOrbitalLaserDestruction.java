@@ -25,16 +25,18 @@ import org.slf4j.LoggerFactory;
 /**
  * Server-owned terrain, damage, and shockwave behavior of one orbital-laser session.
  *
- * <p>The authored volume is a vertical cylinder from the aimed surface to the protected world
- * floor. {@link EffectCarvePlan} may shrink only its radius to fit the timeline and section
- * budget; the effective radius drives the beam, damage cylinder, and shockwave. The carve window
- * starts at impact and ends before collapse, leaving the reveal reserve to the primitive.</p>
+ * <p>The authored volume is a vertical cylinder from the highest non-air surface inside the
+ * footprint to the protected world floor. {@link EffectCarvePlan} may shrink only its radius to
+ * fit the timeline and section budget; the effective radius drives the beam, damage cylinder, and
+ * shockwave. The carve window starts at impact and ends before collapse, leaving the reveal
+ * reserve to the primitive.</p>
  */
 @SuppressWarnings("PMD.TooManyMethods")
 final class ContentOrbitalLaserDestruction {
     private static final Logger LOGGER =
         LoggerFactory.getLogger(ContentOrbitalLaserDestruction.class);
     private static final String CARVE_SESSION = "carve_session";
+    private static final String CARVE_TOP = "carve_top_y";
     private static final String IMPACT_APPLIED = "impact_applied";
     private static final double MIN_SHAPE_RADIUS = 0.05;
 
@@ -47,6 +49,7 @@ final class ContentOrbitalLaserDestruction {
     private final float radiusScale;
     private final double effectiveRadius;
     private final double surfaceY;
+    private final double carveTopY;
 
     private boolean impactApplied;
     private boolean truncatedLogged;
@@ -55,7 +58,8 @@ final class ContentOrbitalLaserDestruction {
     private ContentOrbitalLaserDestruction(
         GameplayEffectContext context,
         EffectCarvePlan plan,
-        EffectCarveSession carveSession
+        EffectCarveSession carveSession,
+        double carveTopY
     ) {
         this.context = Objects.requireNonNull(context, "context");
         this.plan = Objects.requireNonNull(plan, "plan");
@@ -67,6 +71,7 @@ final class ContentOrbitalLaserDestruction {
             ? 0.0F
             : clampRadiusScale(this.effectiveRadius / requested);
         this.surfaceY = this.anchor.y;
+        this.carveTopY = Math.max(this.surfaceY, carveTopY);
         this.damageSource = context.level().damageSources().magic();
         this.damageHitbox = new EffectHitbox(
             damageShape(plan.frontTopY()),
@@ -78,11 +83,23 @@ final class ContentOrbitalLaserDestruction {
 
     /** Plans and starts the carve. No block edits run before the impact window opens. */
     static ContentOrbitalLaserDestruction start(GameplayEffectContext context) {
-        EffectCarveSpec spec = ContentOrbitalLaserSpecs.carveSpec(context);
+        Vec3 anchor = context.spec().anchor();
+        int minimumTopY = (int)Math.ceil(anchor.y);
+        double carveTopY = Math.max(
+            anchor.y,
+            ContentOrbitalLaserTarget.highestFirstFreeY(
+                context.level(),
+                (int)Math.floor(anchor.x),
+                (int)Math.floor(anchor.z),
+                minimumTopY,
+                Math.max(0, (int)Math.ceil(context.spec().scale()))
+            )
+        );
+        EffectCarveSpec spec = ContentOrbitalLaserSpecs.carveSpec(context, carveTopY);
         EffectCarvePlan plan = EffectCarvePlan.plan(context, spec);
         EffectCarveSession session = EffectCarveSession.start(context, spec, plan);
         ContentOrbitalLaserDestruction destruction =
-            new ContentOrbitalLaserDestruction(context, session.plan(), session);
+            new ContentOrbitalLaserDestruction(context, session.plan(), session, carveTopY);
         destruction.persist(context);
         destruction.logPlan();
         return destruction;
@@ -90,8 +107,13 @@ final class ContentOrbitalLaserDestruction {
 
     /** Restores the carve and impact flag, or starts a fresh idempotent carve for legacy saves. */
     static ContentOrbitalLaserDestruction restore(GameplayEffectContext context) {
-        EffectCarveSpec spec = ContentOrbitalLaserSpecs.carveSpec(context);
         CompoundTag state = context.persistentState();
+        Vec3 anchor = context.spec().anchor();
+        double storedTop = state.getDouble(CARVE_TOP);
+        double carveTopY = state.contains(CARVE_TOP) && Double.isFinite(storedTop)
+            ? Math.max(anchor.y, storedTop)
+            : anchor.y;
+        EffectCarveSpec spec = ContentOrbitalLaserSpecs.carveSpec(context, carveTopY);
         CompoundTag sessionTag = state.getCompound(CARVE_SESSION);
         EffectCarveSession session;
         if (sessionTag.isEmpty()) {
@@ -100,7 +122,7 @@ final class ContentOrbitalLaserDestruction {
             session = EffectCarveSession.restore(context, spec, sessionTag);
         }
         ContentOrbitalLaserDestruction destruction =
-            new ContentOrbitalLaserDestruction(context, session.plan(), session);
+            new ContentOrbitalLaserDestruction(context, session.plan(), session, carveTopY);
         destruction.impactApplied = state.getBoolean(IMPACT_APPLIED);
         destruction.persist(context);
         destruction.logPlan();
@@ -208,6 +230,7 @@ final class ContentOrbitalLaserDestruction {
     private void persist(GameplayEffectContext context) {
         context.updatePersistentState(tag -> {
             tag.put(CARVE_SESSION, this.carveSession.save());
+            tag.putDouble(CARVE_TOP, this.carveTopY);
             tag.putBoolean(IMPACT_APPLIED, this.impactApplied);
         });
     }
@@ -215,10 +238,12 @@ final class ContentOrbitalLaserDestruction {
     private void logPlan() {
         LOGGER.info(
             "Orbital-laser carve planned: requested radius {}, effective radius {}, "
-                + "depth {}..{}, window {}..{}, sections {} (solid {}), budget {}/tick, "
-                + "{} needed",
+                + "ceiling {} (anchor {}), depth {}..{}, window {}..{}, sections {} (solid {}), "
+                + "budget {}/tick, {} needed",
             this.context.spec().scale(),
             this.effectiveRadius,
+            this.carveTopY,
+            this.anchor.y,
             this.plan.frontBottomY(),
             this.plan.frontTopY(),
             this.plan.growthStart(),
