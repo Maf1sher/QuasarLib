@@ -103,6 +103,21 @@ class ScreenEffectVisibilityTest {
     }
 
     @Test
+    void validForegroundDepthIgnoresBackgroundColorDelta() {
+        ScreenEffectVisibility visibility = new ScreenEffectVisibility(160.0F, 10.0F);
+
+        // Background water/ice also differs from the opaque color. A valid
+        // post-translucent depth that is farther than the effect must win over
+        // the color delta instead of hiding the lens or tinting the effect.
+        assertTrue(visibility.visible(
+            ScreenEffectLayer.LENS, 145.0F, 200.0F, 160.0F, true, true, 0.1F));
+        assertFalse(visibility.visible(
+            ScreenEffectLayer.LENS, 145.0F, 200.0F, 100.0F, true, true, 0.1F));
+        assertTrue(visibility.visible(
+            ScreenEffectLayer.LENS, 145.0F, 200.0F, Float.NaN, true, true, 0.1F));
+    }
+
+    @Test
     void missingForegroundFallsBackToOpaqueDepthAndColorDelta() {
         ScreenEffectVisibility visibility = new ScreenEffectVisibility(160.0F, 10.0F);
 

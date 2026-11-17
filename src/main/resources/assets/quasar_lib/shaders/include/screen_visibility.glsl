@@ -41,6 +41,29 @@ bool quasarLayerVisible(int layer, float entryDistance, float sceneDistance,
     return sceneDistance >= max(entryDistance, 0.0) - max(depthBias, 0.0);
 }
 
+// Depth-only half of the foreground test. Callers that sample a color delta
+// from textures can check this first and skip the extra samples when depth
+// already disproves a layer in front.
+bool quasarForegroundLayerDepth(float foregroundDistance, bool foregroundValid,
+    float entryDistance, float tolerance) {
+    return foregroundValid
+        && foregroundDistance < entryDistance - max(tolerance, 0.0);
+}
+
+// Detects a translucent layer in front of the effect. A valid post-translucent
+// depth copy is authoritative: background water, ice, clouds, or weather also
+// differ from the opaque color, so the color delta must only be a fallback when
+// the depth copy is missing. Using it unconditionally prints background colors
+// onto the effect and makes layers behind it look like foreground.
+bool quasarForegroundLayer(float foregroundDistance, bool foregroundValid,
+    float entryDistance, float tolerance, bool colorDelta) {
+    if (foregroundValid) {
+        return quasarForegroundLayerDepth(foregroundDistance, true,
+            entryDistance, tolerance);
+    }
+    return colorDelta;
+}
+
 // Opaque depth plus the optional post-translucent depth and color delta. Only
 // LENS is hard-gated by a foreground translucent layer.
 bool quasarLayerVisibleThroughForeground(int layer, float entryDistance,
@@ -52,31 +75,8 @@ bool quasarLayerVisibleThroughForeground(int layer, float entryDistance,
     if (layer != QUASAR_LAYER_LENS) {
         return true;
     }
-    if (foregroundDelta) {
-        return false;
-    }
-    if (!foregroundValid) {
-        return true;
-    }
-    return foregroundDistance >= max(entryDistance, 0.0) - max(depthBias, 0.0);
-}
-
-// Depth-only half of the foreground test. Callers that sample a color delta
-// from textures can check this first and skip the extra samples when depth
-// already proves a layer is in front.
-bool quasarForegroundLayerDepth(float foregroundDistance, bool foregroundValid,
-    float entryDistance, float tolerance) {
-    return foregroundValid
-        && foregroundDistance < entryDistance - max(tolerance, 0.0);
-}
-
-// Detects a translucent layer at a pixel. Post-translucent depth is preferred;
-// the color delta catches glass or water whose depth write was skipped by the
-// pipeline, a shaderpack, or a batching mod.
-bool quasarForegroundLayer(float foregroundDistance, bool foregroundValid,
-    float entryDistance, float tolerance, bool colorDelta) {
-    return quasarForegroundLayerDepth(foregroundDistance, foregroundValid,
-        entryDistance, tolerance) || colorDelta;
+    return !quasarForegroundLayer(foregroundDistance, foregroundValid,
+        entryDistance, depthBias, foregroundDelta);
 }
 
 // Attenuates the effect's own emission behind a foreground translucent layer.

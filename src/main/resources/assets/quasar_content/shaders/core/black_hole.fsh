@@ -90,11 +90,9 @@ bool foregroundColorDelta(vec2 uv) {
  */
 bool foregroundAt(vec2 uv, float entryDistance, float tolerance) {
     float foreground = quasarViewDistance(texture(ForegroundDepthSampler, uv).r, uv);
-    if (quasarForegroundLayerDepth(foreground, ForegroundDepthValid > 0.5,
-        entryDistance, tolerance)) {
-        return true;
-    }
-    return foregroundColorDelta(uv);
+    return quasarForegroundLayer(foreground, ForegroundDepthValid > 0.5,
+        entryDistance, tolerance,
+        ForegroundDepthValid <= 0.5 && foregroundColorDelta(uv));
 }
 
 /**
@@ -813,7 +811,7 @@ void main() {
     float entryDistance = effectEntry + max(ray.surfaceDistance, 0.0);
     float foregroundDistance = quasarViewDistance(
         texture(ForegroundDepthSampler, texCoord).r, texCoord);
-    bool foregroundDelta = foregroundColorDelta(texCoord);
+    bool foregroundDelta = ForegroundDepthValid <= 0.5 && foregroundColorDelta(texCoord);
     bool lensBlocked = !quasarLayerVisibleThroughForeground(
         QUASAR_LAYER_LENS, entryDistance, sceneDistance, foregroundDistance,
         ForegroundDepthValid > 0.5, foregroundDelta, depthBias);

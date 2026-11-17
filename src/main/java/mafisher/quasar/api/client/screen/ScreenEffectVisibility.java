@@ -15,10 +15,10 @@ import mafisher.quasar.api.effect.EffectSpace;
  *
  * <p>{@code sceneDistance} is reconstructed from the pre-translucent opaque
  * depth copy. {@code foregroundDistance} is reconstructed from the optional
- * post-translucent copy; when that capture is missing, pass
- * {@code foregroundValid = false} and the shader's color-delta fallback decides
- * whether a translucent layer is present. Missing captures must never sample a
- * released target.</p>
+ * post-translucent copy. When that capture is present it is authoritative:
+ * background water, ice, clouds, and weather also differ from the opaque color,
+ * so the color delta is only a fallback when {@code foregroundValid} is false.
+ * Missing captures must never sample a released target.</p>
  */
 public record ScreenEffectVisibility(float distance, float radius) {
     public ScreenEffectVisibility {
@@ -106,6 +106,11 @@ public record ScreenEffectVisibility(float distance, float radius) {
      * <p>Only {@link ScreenEffectLayer#LENS} is hard-gated by a translucent
      * foreground. Emission and solid layers stay visible and are attenuated by
      * the shader tint instead of disappearing behind glass or water.</p>
+     *
+     * <p>When {@code foregroundValid} is true the post-translucent depth is
+     * authoritative and {@code foregroundDelta} is ignored. The color delta is
+     * only used when the capture is missing, so a translucent layer behind the
+     * effect cannot be mistaken for foreground.</p>
      */
     public boolean visible(ScreenEffectLayer layer, float entryDistance, float sceneDistance,
         float foregroundDistance, boolean foregroundValid, boolean foregroundDelta,
@@ -116,10 +121,10 @@ public record ScreenEffectVisibility(float distance, float radius) {
         if (layer != ScreenEffectLayer.LENS) {
             return true;
         }
-        if (foregroundDelta) {
-            return false;
+        if (!foregroundValid) {
+            return !foregroundDelta;
         }
-        if (!foregroundValid || Float.isNaN(foregroundDistance)) {
+        if (Float.isNaN(foregroundDistance)) {
             return true;
         }
         float entry = Math.max(entryDistance, 0.0F);

@@ -12,7 +12,8 @@ package mafisher.quasar.api.client.screen;
  * <p>Translucent foreground (glass, water, ice) only hard-gates
  * {@link #LENS}. Every other layer stays visible through it and is attenuated
  * by the shader tint, because a translucent surface must not erase the effect
- * behind it.</p>
+ * behind it. When the post-translucent depth copy is present it is authoritative;
+ * the color delta is only a fallback when that copy is missing.</p>
  */
 public enum ScreenEffectLayer {
     /** Additive glow or light emitted by the effect; never occludes the scene. */
