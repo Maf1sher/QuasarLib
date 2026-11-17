@@ -14,38 +14,78 @@ import net.minecraft.world.phys.shapes.CollisionContext;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Resolves the surface column under an aimed ray for the orbital-laser command.
+ * Resolves the aimed block column for the orbital-laser command.
  *
  * <p>The ray stops on a colliding block and ignores fluids. The target X and Z come from the hit
- * block; the marker Y comes from the motion-blocking heightmap so the locked column is the surface
- * a sky beam would actually reach. The query is command-time only, outside the gameplay tick
- * budget, and rejects an unloaded hit column.</p>
+ * block; the marker and impact anchor sit on top of that block, even when a canopy or overhang
+ * raises the heightmap. The destructive session samples the non-air surface separately to raise
+ * its carve ceiling to the highest loaded block inside the radius. The query is command-time only,
+ * outside the gameplay tick budget, and rejects an unloaded hit column.</p>
  */
 public final class ContentOrbitalLaserTarget {
     private ContentOrbitalLaserTarget() {
     }
 
-    /** One resolved target column. {@code firstFreeY} is the same value the heightmap returns. */
-    public record TargetColumn(int x, int z, int firstFreeY) {
-        /** World-space column centre at the first free Y above the surface. */
+    /** One resolved target block. {@code anchorY} is the top of the aimed block. */
+    public record TargetColumn(int x, int z, int anchorY) {
+        /** World-space column centre on top of the aimed block. */
         public Vec3 center() {
-            return new Vec3(this.x + 0.5, this.firstFreeY, this.z + 0.5);
+            return new Vec3(this.x + 0.5, this.anchorY, this.z + 0.5);
         }
 
-        /** World-space marker position, lifted just clear of the surface. */
+        /** World-space marker position, lifted just clear of the aimed block. */
         public Vec3 markerPosition() {
             return this.center().add(0.0, ContentOrbitalLaserSettings.MARKER_LIFT, 0.0);
         }
 
-        /** Y of the top blocking block in the column. */
-        public int surfaceBlockY() {
-            return this.firstFreeY - 1;
+        /** Y of the aimed block. */
+        public int targetBlockY() {
+            return this.anchorY - 1;
         }
     }
 
     /**
-     * Traces the aimed ray and returns the surface column, or empty when the ray misses, the
-     * column is unloaded, or the heightmap has no safe surface.
+     * Highest loaded non-air surface inside the radius, never below the minimum.
+     *
+     * <p>Command-time only: the scan reads loaded chunks and never loads or generates one. Block
+     * columns are selected by their centre, matching the cylinder containment used by the carve
+     * editor. {@code WORLD_SURFACE} includes plants, snow, and other non-motion-blocking cover, so
+     * the carve ceiling clears them too.</p>
+     */
+    static int highestFirstFreeY(
+        ServerLevel level,
+        int centerX,
+        int centerZ,
+        int minimumTopY,
+        int radius
+    ) {
+        Objects.requireNonNull(level, "level");
+        if (radius < 0) {
+            throw new IllegalArgumentException("Radius must be non-negative");
+        }
+        int highest = minimumTopY;
+        int limit = radius * radius;
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                if (dx * dx + dz * dz > limit) {
+                    continue;
+                }
+                int x = centerX + dx;
+                int z = centerZ + dz;
+                if (!level.hasChunkAt(x, z)) {
+                    continue;
+                }
+                highest = Math.max(
+                    highest, level.getHeight(Heightmap.Types.WORLD_SURFACE, x, z)
+                );
+            }
+        }
+        return highest;
+    }
+
+    /**
+     * Traces the aimed ray and returns the hit block column, or empty when the ray misses or the
+     * column is unloaded.
      */
     public static Optional<TargetColumn> resolve(
         ServerLevel level,
@@ -80,13 +120,9 @@ public final class ContentOrbitalLaserTarget {
         if (!level.isInWorldBounds(hitPos) || !level.hasChunkAt(hitPos)) {
             return Optional.empty();
         }
-        int firstFreeY = level.getHeight(
-            Heightmap.Types.MOTION_BLOCKING, hitPos.getX(), hitPos.getZ()
-        );
-        if (firstFreeY <= level.getMinBuildHeight() || firstFreeY <= hitPos.getY()) {
-            return Optional.empty();
-        }
-        return Optional.of(new TargetColumn(hitPos.getX(), hitPos.getZ(), firstFreeY));
+        return Optional.of(new TargetColumn(
+            hitPos.getX(), hitPos.getZ(), hitPos.getY() + 1
+        ));
     }
 
     private static boolean isFinite(Vec3 value) {

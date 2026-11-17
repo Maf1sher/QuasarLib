@@ -76,12 +76,13 @@ class ContentOrbitalLaserSettingsTest {
     }
 
     @Test
-    void anchorsTheSessionAtTheColumnCentreAndLiftsTheMarker() {        TargetColumn target = new TargetColumn(10, -4, 71);
+    void anchorsTheSessionAtTheAimedBlockCentreAndLiftsTheMarker() {
+        TargetColumn target = new TargetColumn(10, -4, 71);
 
         assertEquals(new Vec3(10.5, 71.0, -3.5), target.center());
         assertEquals(71.0 + ContentOrbitalLaserSettings.MARKER_LIFT,
             target.markerPosition().y, 1.0E-9);
-        assertEquals(70, target.surfaceBlockY());
+        assertEquals(70, target.targetBlockY());
     }
 
     @Test

@@ -187,6 +187,6 @@ final class ContentOrbitalLaserCommands {
     }
 
     private static String describe(TargetColumn target) {
-        return target.x() + ", " + target.firstFreeY() + ", " + target.z();
+        return target.x() + ", " + target.anchorY() + ", " + target.z();
     }
 }
