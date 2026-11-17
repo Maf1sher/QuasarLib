@@ -17,7 +17,9 @@ import net.minecraft.client.renderer.ShaderInstance;
  * <p>The operation draws the whole sky-to-ground volume, the marker handoff contact glow, the
  * impact flash, the expanding shock ring, the collapse flash, and the aftermath rim glow in one
  * depth-tested pass. The standard {@link EmissiveComposite} owns bloom and the final scene re-add;
- * this layer only writes emission and the solid-core coverage in alpha.</p>
+ * this layer writes additive emission with zero coverage alpha, so the captured background is
+ * always preserved and no part of the beam replaces or darkens the scene. A depth-confirmed
+ * foreground layer only tints the emission.</p>
  */
 public final class ContentOrbitalLaserBeamOperation implements ScreenEffectOperationRenderer {
     private static final ContentOrbitalLaserBeamSettings SETTINGS =
@@ -41,7 +43,7 @@ public final class ContentOrbitalLaserBeamOperation implements ScreenEffectOpera
         .bloom(ContentOrbitalLaserBloom.SETTINGS)
         .bloomUniforms(ContentOrbitalLaserBloom::bind)
         .emissionFog(false)
-        .solidity(1.0F)
+        .solidity(0.0F)
         .compositionFloor(ContentOrbitalLaserSettings.BEAM_COMPOSITION_FLOOR)
         .build();
 

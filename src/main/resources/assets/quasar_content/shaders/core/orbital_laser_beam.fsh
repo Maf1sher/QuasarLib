@@ -61,20 +61,6 @@ bool foregroundColorDelta(vec2 uv) {
             texture(OpaqueColorSampler, uv).rgb) > 0.02;
 }
 
-vec3 foregroundTintAt(vec2 uv, float entryDistance) {
-    float foregroundDistance = quasarViewDistance(
-        texture(ForegroundDepthSampler, uv).r, uv
-    );
-    bool foreground = quasarForegroundLayer(
-        foregroundDistance, ForegroundDepthValid > 0.5,
-        entryDistance, 0.5, foregroundColorDelta(uv)
-    );
-    return quasarForegroundTint(
-        foreground, texture(RawSceneSampler, uv).rgb,
-        texture(OpaqueColorSampler, uv).rgb, OpaqueColorValid > 0.5
-    );
-}
-
 vec2 projectPoint(vec3 cameraRelative) {
     vec4 clip = WorldProjMat * vec4(mat3(ViewMat) * cameraRelative, 1.0);
     if (clip.w <= SURFACE_EPSILON) {
@@ -213,7 +199,6 @@ void main() {
 
     float nearestEntry = sceneDistance;
     vec3 emission = vec3(0.0);
-    float coreAlpha = 0.0;
 
     float tEnter;
     float tExit;
@@ -292,7 +277,6 @@ void main() {
                 * detail * beamStrength * transmittance;
             transmittance *= 1.0 - sampleAbsorption;
         }
-        coreAlpha = clamp(1.0 - transmittance, 0.0, 0.96) * beamStrength;
     }
 
     vec3 bottom = base + axis * bottomHeight;
@@ -394,12 +378,28 @@ void main() {
     float surfaceTransmission = quasarMediumSurfaceTransmittance(waterCosine);
     emission *= surfaceTransmission;
     emission = quasarMediumFog(emission, quasarMediumFogDistance(nearestEntry));
-    emission *= foregroundTintAt(texCoord, max(nearestEntry, 0.0));
+
+    // Only a depth-confirmed translucent layer in front may tint the emission.
+    // Background water, ice, clouds, or weather also differ from the opaque
+    // color; treating that delta as foreground prints them onto the beam.
+    float foregroundDistance = quasarViewDistance(
+        texture(ForegroundDepthSampler, texCoord).r, texCoord);
+    float foregroundEntry = max(nearestEntry, 0.0);
+    bool foreground = quasarForegroundLayer(
+        foregroundDistance, ForegroundDepthValid > 0.5, foregroundEntry, 0.5,
+        ForegroundDepthValid <= 0.5 && foregroundColorDelta(texCoord));
+    vec3 rawScene = texture(RawSceneSampler, texCoord).rgb;
+    emission *= quasarForegroundTint(
+        foreground, rawScene, texture(OpaqueColorSampler, texCoord).rgb,
+        OpaqueColorValid > 0.5);
     emission *= 1.0 - smoothstep(0.965, 1.0, Progress);
 
-    if (all(lessThan(emission, vec3(0.0001))) && coreAlpha < 0.001) {
+    if (all(lessThan(emission, vec3(0.0001)))) {
         fragColor = vec4(0.0);
         return;
     }
-    fragColor = vec4(emission, coreAlpha);
+    // The beam is additive light. It never writes coverage alpha, so the
+    // captured background is always preserved and a dim part of the beam cannot
+    // replace or darken it.
+    fragColor = vec4(emission, 0.0);
 }
