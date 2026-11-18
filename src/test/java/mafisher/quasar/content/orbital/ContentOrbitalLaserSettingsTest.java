@@ -67,6 +67,19 @@ class ContentOrbitalLaserSettingsTest {
     }
 
     @Test
+    void anchorsTheBeamTopAtThePlatformMuzzle() {
+        assertEquals(ContentOrbitalLaserPlatformSettings.PLATFORM_ALTITUDE
+            - ContentOrbitalLaserPlatformSettings.PLATFORM_MUZZLE_DROP,
+            ContentOrbitalLaserSettings.BEAM_TOP_HEIGHT, 0.0F);
+        assertEquals(494.0F, ContentOrbitalLaserSettings.BEAM_TOP_HEIGHT, 0.0F);
+        assertTrue(ContentOrbitalLaserPlatformSettings.PLATFORM_OUTER_RADIUS
+            > ContentOrbitalLaserPlatformSettings.PLATFORM_INNER_RADIUS);
+        assertTrue(ContentOrbitalLaserPlatformSettings.PLATFORM_INNER_RADIUS
+            > ContentOrbitalLaserSettings.MAX_RADIUS);
+        assertTrue(ContentOrbitalLaserPlatformSettings.PLATFORM_MUZZLE_DROP > 0.0F);
+    }
+
+    @Test
     void acceptsOnlyTheCommandRadiusRange() {
         assertDoesNotThrow(() -> ContentOrbitalLaserSettings.requireRadius(
             ContentOrbitalLaserSettings.MIN_RADIUS

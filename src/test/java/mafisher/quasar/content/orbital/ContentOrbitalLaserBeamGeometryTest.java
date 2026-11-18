@@ -58,10 +58,11 @@ class ContentOrbitalLaserBeamGeometryTest {
 
     @Test
     void footprintAndRadiusCoverEveryPhase() {
+        assertEquals(ContentOrbitalLaserSettings.BEAM_TOP_HEIGHT, SETTINGS.topHeight(), 0.0F);
         assertEquals(3.5F, SETTINGS.maximumFootprintFactor(), 0.0F);
         assertEquals(35.0, ContentOrbitalLaserBeamGeometry.maximumFootprint(SETTINGS, 10.0F),
             0.0F);
-        assertEquals(256.0 + 35.0 + 0.01,
+        assertEquals(SETTINGS.topHeight() + 35.0 + 0.01,
             ContentOrbitalLaserBeamGeometry.spatialRadius(SETTINGS, 10.0F), 1.0E-9);
         assertEquals(0.0,
             ContentOrbitalLaserBeamGeometry.maximumFootprint(SETTINGS, 0.0F), 0.0F);

@@ -80,9 +80,19 @@ final class ContentOrbitalLaserCinematics {
         return PARAMETERS;
     }
 
+    /** Returns whether the beam or impact emission has any visible work at this progress. */
+    static boolean beamVisible(float progress) {
+        return PARAMETERS.sampleFloat("Visible", progress) > 0.001F;
+    }
+
+    /** Returns whether the platform hull has any visible work at this progress. */
+    static boolean platformVisible(float progress) {
+        return PARAMETERS.sampleFloat(PLATFORM_VISIBLE, progress) > 0.001F;
+    }
+
     /** Returns whether the screen operation has any visible work at this progress. */
     static boolean screenVisible(float progress) {
-        return PARAMETERS.sampleFloat("Visible", progress) > 0.001F;
+        return beamVisible(progress) || platformVisible(progress);
     }
 
     /** Returns the marker alpha for the world pass at this progress. */

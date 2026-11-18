@@ -135,6 +135,12 @@ class ShaderModuleContractTest {
         modules.put(INCLUDE_PREFIX + "particle_field.glsl", Set.of());
         modules.put("quasar_content:shaders/include/black_hole_optics.glsl", Set.of());
         modules.put("quasar_content:shaders/include/orbital_laser_optics.glsl", Set.of());
+        modules.put("quasar_content:shaders/include/orbital_laser_platform.glsl", Set.of(
+            "PlatformAltitude",
+            "PlatformOuterRadius",
+            "PlatformInnerRadius",
+            "PlatformVisible"
+        ));
         return modules;
     }
 }

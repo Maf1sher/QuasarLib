@@ -82,7 +82,7 @@ class ContentOrbitalLaserRendererTest {
     }
 
     @Test
-    void exposesBeamOperationOnlyFromDescentOnward() {
+    void exposesTheScreenOperationFromArrivalThroughTheAftermath() {
         ScreenEffectSettings settings = this.renderer.screenEffectSettings(context(0.0F));
         assertSame(ContentScreenOperations.ORBITAL_LASER_BEAM, settings.operation());
         assertSame(ContentOrbitalLaserBeamSettings.DEFAULT,
@@ -96,9 +96,12 @@ class ContentOrbitalLaserRendererTest {
             .phaseStartTick(ContentOrbitalLaserSettings.PHASE_DESCENT);
 
         assertEquals(0.0F, this.renderer.screenEffectMask(context(0.0F)).strength(), 1.0E-6F);
-        assertEquals(0.0F, this.renderer.screenEffectMask(context(arrival)).strength(), 1.0E-6F);
-        assertEquals(0.0F, this.renderer.screenEffectMask(context(charge)).strength(), 1.0E-6F);
+        assertEquals(1.0F,
+            this.renderer.screenEffectMask(context(arrival + 1.0F)).strength(), 1.0E-6F);
+        assertEquals(1.0F, this.renderer.screenEffectMask(context(charge)).strength(), 1.0E-6F);
         assertEquals(1.0F, this.renderer.screenEffectMask(context(descent)).strength(), 1.0E-6F);
+        assertEquals(0.0F, this.renderer.screenEffectMask(
+            context(ContentOrbitalLaserSettings.TOTAL_TICKS)).strength(), 1.0E-6F);
         assertSame(ScreenEffectMasks.fullscreen(),
             this.renderer.screenMaskRenderType(context(descent)));
     }
@@ -116,6 +119,10 @@ class ContentOrbitalLaserRendererTest {
         mafisher.quasar.api.effect.EffectPoint base = context.transform().position();
 
         assertTrue(bounds.maxY >= base.y() + ContentOrbitalLaserSettings.BEAM_TOP_HEIGHT);
+        assertTrue(bounds.maxY >= base.y()
+            + ContentOrbitalLaserPlatformSettings.PLATFORM_ALTITUDE);
+        assertTrue(bounds.maxX >= base.x()
+            + ContentOrbitalLaserPlatformSettings.PLATFORM_OUTER_RADIUS);
         assertTrue(bounds.minX <= base.x() - footprint);
         assertTrue(bounds.maxX >= base.x() + footprint);
         assertTrue(bounds.minZ <= base.z() - footprint);

@@ -14,12 +14,12 @@ import net.minecraft.client.renderer.ShaderInstance;
 /**
  * Content-owned orbital-laser beam and impact screen operation.
  *
- * <p>The operation draws the whole sky-to-ground volume, the marker handoff contact glow, the
- * impact flash, the expanding shock ring, the collapse flash, and the aftermath rim glow in one
- * depth-tested pass. The standard {@link EmissiveComposite} owns bloom and the final scene re-add;
- * this layer writes additive emission with zero coverage alpha, so the captured background is
- * always preserved and no part of the beam replaces or darkens the scene. A depth-confirmed
- * foreground layer only tints the emission.</p>
+ * <p>The operation draws the static ring platform hull, the whole sky-to-ground volume, the marker
+ * handoff contact glow, the impact flash, the expanding shock ring, the collapse flash, and the
+ * aftermath rim glow in one depth-tested pass. The standard {@link EmissiveComposite} owns bloom
+ * and the final scene re-add. Only a depth-confirmed platform hull hit writes coverage alpha; the
+ * beam and impact layers stay additive with zero alpha, so the captured background is preserved.
+ * A depth-confirmed foreground layer only tints emission and forces the hull alpha to zero.</p>
  */
 public final class ContentOrbitalLaserBeamOperation implements ScreenEffectOperationRenderer {
     private static final ContentOrbitalLaserBeamSettings SETTINGS =
@@ -36,6 +36,7 @@ public final class ContentOrbitalLaserBeamOperation implements ScreenEffectOpera
         .uniform("ContactGlow", "ContactGlow")
         .uniform("RimGlow", "RimGlow")
         .uniform("TipDepth", "TipDepth")
+        .uniform(ContentOrbitalLaserCinematics.PLATFORM_VISIBLE, "PlatformVisible")
         .build();
     private static final EmissiveComposite COMPOSITE = EmissiveComposite
         .builder()
@@ -43,7 +44,7 @@ public final class ContentOrbitalLaserBeamOperation implements ScreenEffectOpera
         .bloom(ContentOrbitalLaserBloom.SETTINGS)
         .bloomUniforms(ContentOrbitalLaserBloom::bind)
         .emissionFog(false)
-        .solidity(0.0F)
+        .solidity(1.0F)
         .compositionFloor(ContentOrbitalLaserSettings.BEAM_COMPOSITION_FLOOR)
         .build();
 
@@ -93,6 +94,12 @@ public final class ContentOrbitalLaserBeamOperation implements ScreenEffectOpera
         );
         context.setUniform(shader, "BeamRadius", radius);
         context.setUniform(shader, "BeamTopHeight", SETTINGS.topHeight());
+        context.setUniform(shader, "PlatformAltitude",
+            ContentOrbitalLaserPlatformSettings.PLATFORM_ALTITUDE);
+        context.setUniform(shader, "PlatformOuterRadius",
+            ContentOrbitalLaserPlatformSettings.PLATFORM_OUTER_RADIUS);
+        context.setUniform(shader, "PlatformInnerRadius",
+            ContentOrbitalLaserPlatformSettings.PLATFORM_INNER_RADIUS);
         context.setUniform(shader, "BeamCoreRadius", radius * SETTINGS.coreRadiusFactor());
         context.setUniform(shader, "BeamGlowRadius", radius * SETTINGS.glowRadiusFactor());
         context.setUniform(shader, "ShockMaxRadius", radius * SETTINGS.shockMaxRadiusFactor());
@@ -101,6 +108,11 @@ public final class ContentOrbitalLaserBeamOperation implements ScreenEffectOpera
             context.effect().lod().level(), context.effectiveQuality()
         ));
         CURVES.bind(context, shader, context.effect().progress(), context.parameters());
+    }
+
+    /** Returns the solid-footprint factor used by the composite; hull alpha only is solid. */
+    static float compositeSolidity() {
+        return COMPOSITE.solidity();
     }
 
     private static ShaderInstance shader() {

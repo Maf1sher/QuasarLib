@@ -4,8 +4,9 @@ package mafisher.quasar.content.orbital;
  * Static geometry of the orbital-laser ring platform.
  *
  * <p>These values are shared by the platform curves, the screen operation, and the renderer. The
- * platform is content-only and draws no entity, block, or collision; stage 6.10 uses these
- * constants to place the screen-space SDF and raise the beam top to the muzzle.</p>
+ * platform is content-only and draws no entity, block, or collision. The screen-space SDF is
+ * centred at {@link #PLATFORM_ALTITUDE}; the beam top equals the muzzle at
+ * {@code PLATFORM_ALTITUDE - PLATFORM_MUZZLE_DROP}.</p>
  */
 public final class ContentOrbitalLaserPlatformSettings {
     /** Height of the platform hub above the effect origin. */

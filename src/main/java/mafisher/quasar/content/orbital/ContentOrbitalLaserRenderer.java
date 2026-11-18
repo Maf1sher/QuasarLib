@@ -272,14 +272,41 @@ public final class ContentOrbitalLaserRenderer
             ContentOrbitalLaserBeamGeometry.maximumFootprint(BEAM_SETTINGS, context.scale()),
             particleFootprint(context.scale())
         );
-        return new AABB(
+        double platformX = base.x()
+            + up.x() * ContentOrbitalLaserPlatformSettings.PLATFORM_ALTITUDE;
+        double platformY = base.y()
+            + up.y() * ContentOrbitalLaserPlatformSettings.PLATFORM_ALTITUDE;
+        double platformZ = base.z()
+            + up.z() * ContentOrbitalLaserPlatformSettings.PLATFORM_ALTITUDE;
+        // The platform is a disc perpendicular to the effect up axis; a sphere of the outer
+        // radius around its centre is a rotation-safe conservative bound. Its own footprint is
+        // already the outer radius, so the beam/particle footprint only expands the base extents.
+        double platformReach = ContentOrbitalLaserPlatformSettings.PLATFORM_OUTER_RADIUS;
+        double minX = Math.min(
             Math.min(base.x(), Math.min(topX, bottomX)) - footprint,
-            Math.min(base.y(), Math.min(topY, bottomY)) - footprint,
-            Math.min(base.z(), Math.min(topZ, bottomZ)) - footprint,
-            Math.max(base.x(), Math.max(topX, bottomX)) + footprint,
-            Math.max(base.y(), Math.max(topY, bottomY)) + footprint,
-            Math.max(base.z(), Math.max(topZ, bottomZ)) + footprint
+            platformX - platformReach
         );
+        double minY = Math.min(
+            Math.min(base.y(), Math.min(topY, bottomY)) - footprint,
+            platformY - platformReach
+        );
+        double minZ = Math.min(
+            Math.min(base.z(), Math.min(topZ, bottomZ)) - footprint,
+            platformZ - platformReach
+        );
+        double maxX = Math.max(
+            Math.max(base.x(), Math.max(topX, bottomX)) + footprint,
+            platformX + platformReach
+        );
+        double maxY = Math.max(
+            Math.max(base.y(), Math.max(topY, bottomY)) + footprint,
+            platformY + platformReach
+        );
+        double maxZ = Math.max(
+            Math.max(base.z(), Math.max(topZ, bottomZ)) + footprint,
+            platformZ + platformReach
+        );
+        return new AABB(minX, minY, minZ, maxX, maxY, maxZ);
     }
 
     @Override
@@ -289,7 +316,9 @@ public final class ContentOrbitalLaserRenderer
         );
         double particleRadius = BEAM_SETTINGS.topHeight()
             + particleFootprint(context.scale()) + 0.01;
-        return Math.max(beamRadius, particleRadius);
+        double platformRadius = ContentOrbitalLaserPlatformSettings.PLATFORM_ALTITUDE
+            + ContentOrbitalLaserPlatformSettings.PLATFORM_OUTER_RADIUS + 0.01;
+        return Math.max(Math.max(beamRadius, particleRadius), platformRadius);
     }
 
     private static double particleFootprint(float scale) {

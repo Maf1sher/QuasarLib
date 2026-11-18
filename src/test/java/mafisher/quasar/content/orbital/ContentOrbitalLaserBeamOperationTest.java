@@ -13,6 +13,7 @@ class ContentOrbitalLaserBeamOperationTest {
 
         assertEquals(ContentOrbitalLaserSettings.BEAM_COMPOSITION_FLOOR,
             operation.compositionScaleFloor(), 0.0F);
+        assertEquals(1.0F, ContentOrbitalLaserBeamOperation.compositeSolidity(), 0.0F);
         assertSame(ScreenEffectInputs.ALL, operation.requiredInputs());
     }
 }

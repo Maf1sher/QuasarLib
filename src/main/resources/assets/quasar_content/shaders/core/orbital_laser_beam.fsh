@@ -6,6 +6,7 @@
 #moj_import <quasar_lib:screen_visibility.glsl>
 #moj_import <quasar_lib:medium_optics.glsl>
 #moj_import <quasar_content:orbital_laser_optics.glsl>
+#moj_import <quasar_content:orbital_laser_platform.glsl>
 
 uniform sampler2D DepthSampler;
 uniform sampler2D ForegroundDepthSampler;
@@ -67,6 +68,40 @@ vec2 projectPoint(vec3 cameraRelative) {
         return vec2(-1.0);
     }
     return clip.xy / clip.w * 0.5 + 0.5;
+}
+
+vec3 platformShade(vec3 point, vec3 normal, float muzzleY, float daylight) {
+    vec3 hull = mix(vec3(0.16, 0.18, 0.21), vec3(0.38, 0.41, 0.45), daylight);
+    vec3 lightDirection = normalize(vec3(0.35, 0.82, 0.45));
+    float diffuse = max(dot(normal, lightDirection), 0.0);
+    float ambient = 0.38 + 0.18 * abs(normal.y);
+    vec3 color = hull * (ambient + 0.72 * diffuse);
+
+    float radial = length(point.xz);
+    float angle = atan(point.z, point.x);
+    float segmentPulse = 0.5 + 0.5 * cos(angle * float(QUASAR_PLATFORM_SIDES));
+    float underside = max(-normal.y, 0.0);
+    float ringLight = 1.0 - smoothstep(0.0, 1.8,
+        abs(radial - (PlatformOuterRadius - 1.2)));
+    float innerLight = 1.0 - smoothstep(0.0, 1.6,
+        abs(radial - PlatformInnerRadius));
+    float hubLight = 1.0 - smoothstep(0.0, 1.5,
+        abs(radial - (QUASAR_PLATFORM_HUB_RADIUS - 0.8)));
+    float aperture = 1.0 - smoothstep(0.0, 2.4,
+        length(vec2(radial - QUASAR_PLATFORM_BARREL_RADIUS, point.y - muzzleY)));
+    float eye = (1.0 - smoothstep(0.0, 2.2, radial))
+        * smoothstep(0.2, 1.0, underside);
+
+    vec3 cyan = mix(vec3(0.10, 0.55, 0.85), vec3(0.45, 0.95, 1.0),
+        daylight * 0.4);
+    vec3 hot = mix(vec3(1.0, 0.55, 0.25), vec3(1.0, 0.92, 0.75),
+        daylight * 0.3);
+    float runningLights = ringLight * (0.55 + 0.45 * segmentPulse)
+        * (0.35 + 0.65 * underside);
+    color += cyan * (runningLights * 0.9 + hubLight * 1.1 + innerLight * 1.4);
+    color = mix(color, vec3(1.0, 0.06, 0.03), eye * 0.85);
+    color += hot * aperture * 2.2;
+    return color;
 }
 
 float raySphereEntry(vec3 origin, vec3 direction, vec3 center, float radius) {
@@ -147,8 +182,18 @@ void main() {
     }
     direction = normalize(direction);
 
-    float sceneDistance = quasarViewDistance(texture(DepthSampler, texCoord).r, texCoord);
+    float rawSceneDepth = texture(DepthSampler, texCoord).r;
+    float sceneDistance = quasarViewDistance(rawSceneDepth, texCoord);
     float depthBias = max(0.05, sceneDistance * 0.001);
+    // The clear depth is the far plane, not infinity. The platform sits beyond the
+    // vanilla far plane at low render distances, so sky pixels must not occlude it.
+    bool skyPixel = rawSceneDepth >= 0.9999995;
+    float platformMaxDistance = skyPixel ? QUASAR_DEPTH_MAX_DISTANCE : sceneDistance;
+    float platformDepthBias = skyPixel ? 0.05 : depthBias;
+    float foregroundDistance = quasarViewDistance(
+        texture(ForegroundDepthSampler, texCoord).r, texCoord);
+    bool foregroundDepthValid = ForegroundDepthValid > 0.5;
+    bool foregroundDelta = !foregroundDepthValid && foregroundColorDelta(texCoord);
     vec3 base = EffectOrigin;
     vec3 axis = EffectUp;
     if (dot(axis, axis) < DIRECTION_EPSILON) {
@@ -170,8 +215,10 @@ void main() {
     float contact = clamp(ContactGlow, 0.0, 1.0);
     float ringStrength = clamp(ShockStrength, 0.0, 1.0);
     float rimGlow = clamp(RimGlow, 0.0, 1.0);
+    float platformVisible = clamp(PlatformVisible, 0.0, 1.0);
     if (beamStrength < 0.001 && flash < 0.001 && contact < 0.001
-        && ringStrength < 0.001 && rimGlow < 0.001) {
+        && ringStrength < 0.001 && rimGlow < 0.001
+        && platformVisible < 0.001) {
         fragColor = vec4(0.0);
         return;
     }
@@ -368,6 +415,60 @@ void main() {
         }
     }
 
+    vec3 platformEmission = vec3(0.0);
+    float platformEntry = sceneDistance;
+    float platformBlock = 0.0;
+    float hullAlpha = 0.0;
+    bool platformForeground = false;
+    if (platformVisible > 0.001) {
+        vec3 platformOrigin = -quasarWorldDirectionToEffect(EffectOrigin)
+            - vec3(0.0, PlatformAltitude, 0.0);
+        vec3 platformDirection = quasarWorldDirectionToEffect(direction);
+        if (dot(platformDirection, platformDirection) > DIRECTION_EPSILON) {
+            platformDirection = normalize(platformDirection);
+            float muzzleY = min(0.0, BeamTopHeight - PlatformAltitude);
+            float hitDistance;
+            float closestDistance;
+            vec3 hitPoint;
+            vec3 closestPoint;
+            bool hit = quasarOrbitalPlatformTrace(platformOrigin, platformDirection,
+                muzzleY, platformMaxDistance, int(clamp(MarchSteps, 8.0, float(MAX_STEPS))),
+                hitDistance, closestDistance, hitPoint, closestPoint);
+            float surfaceDistance = hit
+                ? hitDistance : length(closestPoint - platformOrigin);
+            float pixelWorld = max(2.0 * surfaceDistance
+                / max(abs(WorldProjMat[1][1]) * max(ViewportHeight, 1.0), 1.0), 0.02);
+            float coverage = hit ? 1.0
+                : 1.0 - smoothstep(0.0, pixelWorld, closestDistance);
+            if (coverage > 0.001) {
+                bool depthVisible = quasarLayerVisible(QUASAR_LAYER_FILL,
+                    surfaceDistance, platformMaxDistance, platformDepthBias)
+                    && (hit || surfaceDistance
+                        < platformMaxDistance - platformDepthBias);
+                bool foreground = quasarForegroundLayer(foregroundDistance,
+                    foregroundDepthValid, surfaceDistance, 0.5, foregroundDelta);
+                platformForeground = foreground;
+                if (depthVisible) {
+                    float visible = coverage * platformVisible;
+                    vec3 surfacePoint = hit ? hitPoint : closestPoint;
+                    vec3 normal = quasarOrbitalPlatformNormal(surfacePoint, muzzleY);
+                    vec3 shade = platformShade(surfacePoint, normal, muzzleY, daylight);
+                    platformBlock = visible;
+                    platformEntry = surfaceDistance;
+                    float additive = visible * (foreground
+                        ? QUASAR_ORBITAL_PLATFORM_FOREGROUND_EMISSION : 1.0);
+                    platformEmission = shade * additive;
+                    hullAlpha = foreground ? 0.0 : visible;
+                }
+            }
+        }
+    }
+
+    // A nearer solid hull blocks the additive beam and impact light from above.
+    if (platformBlock > 0.001 && platformEntry < nearestEntry) {
+        emission *= 1.0 - platformBlock;
+    }
+
     float waterCosine = abs(dot(direction, vec3(0.0, 1.0, 0.0)));
     if (MediumSurfaceActive > 0.5 && abs(direction.y) > DIRECTION_EPSILON) {
         float surfaceDistance = MediumSurfaceY / direction.y;
@@ -377,29 +478,32 @@ void main() {
     }
     float surfaceTransmission = quasarMediumSurfaceTransmittance(waterCosine);
     emission *= surfaceTransmission;
+    platformEmission *= surfaceTransmission;
     emission = quasarMediumFog(emission, quasarMediumFogDistance(nearestEntry));
+    platformEmission = quasarMediumFog(platformEmission,
+        quasarMediumFogDistance(platformEntry));
 
     // Only a depth-confirmed translucent layer in front may tint the emission.
     // Background water, ice, clouds, or weather also differ from the opaque
     // color; treating that delta as foreground prints them onto the beam.
-    float foregroundDistance = quasarViewDistance(
-        texture(ForegroundDepthSampler, texCoord).r, texCoord);
     float foregroundEntry = max(nearestEntry, 0.0);
     bool foreground = quasarForegroundLayer(
-        foregroundDistance, ForegroundDepthValid > 0.5, foregroundEntry, 0.5,
-        ForegroundDepthValid <= 0.5 && foregroundColorDelta(texCoord));
+        foregroundDistance, foregroundDepthValid, foregroundEntry, 0.5, foregroundDelta);
     vec3 rawScene = texture(RawSceneSampler, texCoord).rgb;
-    emission *= quasarForegroundTint(
-        foreground, rawScene, texture(OpaqueColorSampler, texCoord).rgb,
-        OpaqueColorValid > 0.5);
+    vec3 opaqueScene = texture(OpaqueColorSampler, texCoord).rgb;
+    bool opaqueValid = OpaqueColorValid > 0.5;
+    emission *= quasarForegroundTint(foreground, rawScene, opaqueScene, opaqueValid);
+    platformEmission *= quasarForegroundTint(platformForeground, rawScene, opaqueScene,
+        opaqueValid);
+    emission += platformEmission;
     emission *= 1.0 - smoothstep(0.965, 1.0, Progress);
 
-    if (all(lessThan(emission, vec3(0.0001)))) {
+    if (all(lessThan(emission, vec3(0.0001))) && hullAlpha < 0.0001) {
         fragColor = vec4(0.0);
         return;
     }
-    // The beam is additive light. It never writes coverage alpha, so the
-    // captured background is always preserved and a dim part of the beam cannot
-    // replace or darken it.
-    fragColor = vec4(emission, 0.0);
+    // The beam remains additive light with zero coverage alpha. Only a
+    // depth-confirmed platform hull hit writes coverage, so the solid layer
+    // cannot promote the fullscreen mask or replace a foreground surface.
+    fragColor = vec4(emission, hullAlpha);
 }

@@ -29,6 +29,7 @@ class ContentOrbitalLaserCinematicsTest {
     @Test
     void targetPhaseShowsOnlyTheMarker() {
         assertFalse(ContentOrbitalLaserCinematics.screenVisible(0.0F));
+        assertFalse(ContentOrbitalLaserCinematics.platformVisible(0.0F));
         assertEquals(1.0F, sample("BeamTip", 0.0F), 1.0E-6F);
         assertEquals(0.0F, sample("BeamStrength", 0.0F), 1.0E-6F);
         assertEquals(1.0F, sample("MarkerAlpha", 0.0F), 1.0E-6F);
@@ -39,8 +40,8 @@ class ContentOrbitalLaserCinematicsTest {
     void arrivalAndChargeKeepTheBeamOff() {
         for (int tick = 0; tick < DESCENT_TICK; tick++) {
             float progress = progress(tick);
-            assertFalse(ContentOrbitalLaserCinematics.screenVisible(progress),
-                "screen visible at tick " + tick);
+            assertFalse(ContentOrbitalLaserCinematics.beamVisible(progress),
+                "beam visible at tick " + tick);
             assertEquals(0.0F, sample("BeamStrength", progress), 1.0E-6F,
                 "beam strength at tick " + tick);
             assertEquals(0.0F, sample("BeamWidth", progress), 1.0E-6F,
@@ -48,8 +49,13 @@ class ContentOrbitalLaserCinematicsTest {
         }
         assertEquals(1.0F, sample("MarkerAlpha", ARRIVAL), 1.0E-6F);
         assertEquals(1.0F, sample("MarkerAlpha", CHARGE), 1.0E-6F);
-        assertEquals(0.0F, sample(ContentOrbitalLaserCinematics.PLATFORM_VISIBLE,
-            progress(TARGET_TICK)), 1.0E-6F);
+        assertFalse(ContentOrbitalLaserCinematics.platformVisible(
+            progress(TARGET_TICK)));
+        assertTrue(ContentOrbitalLaserCinematics.platformVisible(
+            progress(ARRIVAL_TICK + 1)));
+        assertTrue(ContentOrbitalLaserCinematics.platformVisible(CHARGE));
+        assertTrue(ContentOrbitalLaserCinematics.screenVisible(
+            progress(ARRIVAL_TICK + 1)));
         assertEquals(1.0F, sample(ContentOrbitalLaserCinematics.PLATFORM_VISIBLE, CHARGE),
             1.0E-6F);
     }

@@ -79,10 +79,12 @@ public final class ContentOrbitalLaserSettings {
     public static final EffectAudience AUDIENCE = EffectAudience.dimensionWide();
 
     /**
-     * Beam extent above the resolved column base. Stage 6.10 raises this to the platform muzzle
-     * ({@code 494}); 6.9 keeps 256 so the phase-only change has no visual impact.
+     * Beam extent above the resolved column base. The beam starts at the platform muzzle, which
+     * sits {@link ContentOrbitalLaserPlatformSettings#PLATFORM_MUZZLE_DROP} below the hub.
      */
-    public static final float BEAM_TOP_HEIGHT = 256.0F;
+    public static final float BEAM_TOP_HEIGHT =
+        ContentOrbitalLaserPlatformSettings.PLATFORM_ALTITUDE
+            - ContentOrbitalLaserPlatformSettings.PLATFORM_MUZZLE_DROP;
     /** Solid plasma core radius as a fraction of the requested radius. */
     public static final float BEAM_CORE_RADIUS_FACTOR = 0.62F;
     /** Additive plasma envelope radius as a fraction of the requested radius. */
