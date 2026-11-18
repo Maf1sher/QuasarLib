@@ -35,8 +35,11 @@ class ContentOrbitalLaserImpulsesTest {
     void impactFiresOnceAtTheImpactPhase() {
         UUID instanceId = UUID.randomUUID();
 
-        tickAt(instanceId, IMPACT - 1);
-        assertEquals(0, ClientEffectImpulses.activeShakeCount());
+        for (int age = 0; age < IMPACT; age++) {
+            tickAt(instanceId, age);
+            assertEquals(0, ClientEffectImpulses.activeShakeCount(),
+                "shake fired before impact at " + age);
+        }
 
         tickAt(instanceId, IMPACT);
         assertEquals(1, ClientEffectImpulses.activeShakeCount());

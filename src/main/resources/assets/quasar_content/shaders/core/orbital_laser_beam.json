@@ -44,6 +44,8 @@
     { "name": "ShockMaxRadius", "type": "float", "count": 1, "values": [ 21.0 ] },
     { "name": "FlashRadius", "type": "float", "count": 1, "values": [ 12.0 ] },
     { "name": "MarchSteps", "type": "float", "count": 1, "values": [ 36.0 ] },
+    { "name": "PlatformSteps", "type": "float", "count": 1, "values": [ 44.0 ] },
+    { "name": "PlatformDetail", "type": "float", "count": 1, "values": [ 1.0 ] },
     { "name": "TipDepth", "type": "float", "count": 1, "values": [ 0.0 ] },
     { "name": "BeamTip", "type": "float", "count": 1, "values": [ 0.0 ] },
     { "name": "BeamStrength", "type": "float", "count": 1, "values": [ 1.0 ] },

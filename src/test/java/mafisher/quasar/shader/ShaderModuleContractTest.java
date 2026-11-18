@@ -143,7 +143,8 @@ class ShaderModuleContractTest {
             "PlatformReveal",
             "PlatformSpin",
             "PlatformRecoil",
-            "PlatformExit"
+            "PlatformExit",
+            "PlatformDetail"
         ));
         return modules;
     }

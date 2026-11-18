@@ -24,29 +24,29 @@ public final class ContentOrbitalLaserImpulses {
     private static final double COLLAPSE_RADIUS = 384.0;
     private static final double AFTERMATH_RADIUS = 256.0;
 
-    private static final float IMPACT_INTENSITY = 0.45F;
+    private static final float IMPACT_INTENSITY = 0.42F;
     private static final int IMPACT_DURATION = 18;
     private static final float IMPACT_FREQUENCY = 1.6F;
     private static final float IMPACT_ANGLE = 1.2F;
 
-    private static final float BED_INTENSITY = 0.10F;
+    private static final float BED_INTENSITY = 0.08F;
     private static final int BED_DURATION = ContentOrbitalLaserSettings.SUSTAIN_TICKS;
     private static final float BED_FREQUENCY = 0.7F;
     private static final float BED_ANGLE = 0.25F;
 
     private static final int PULSE_INTERVAL = 16;
-    private static final float PULSE_INTENSITY = 0.06F;
+    private static final float PULSE_INTENSITY = 0.05F;
     private static final int PULSE_DURATION = 24;
     private static final float PULSE_ANGLE = 0.15F;
     private static final float PULSE_FREQUENCY_A = 0.9F;
     private static final float PULSE_FREQUENCY_B = 1.1F;
 
-    private static final float COLLAPSE_INTENSITY = 0.18F;
+    private static final float COLLAPSE_INTENSITY = 0.16F;
     private static final int COLLAPSE_DURATION = 36;
     private static final float COLLAPSE_FREQUENCY = 0.5F;
     private static final float COLLAPSE_ANGLE = 0.45F;
 
-    private static final float AFTERMATH_INTENSITY = 0.07F;
+    private static final float AFTERMATH_INTENSITY = 0.06F;
     private static final int AFTERMATH_DURATION = 30;
     private static final float AFTERMATH_FREQUENCY = 0.4F;
     private static final float AFTERMATH_ANGLE = 0.18F;

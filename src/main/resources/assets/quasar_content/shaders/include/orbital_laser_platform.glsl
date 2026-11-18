@@ -13,10 +13,14 @@ uniform float PlatformReveal;
 uniform float PlatformSpin;
 uniform float PlatformRecoil;
 uniform float PlatformExit;
+uniform float PlatformDetail;
 
 const int QUASAR_PLATFORM_MAX_STEPS = 56;
+const int QUASAR_PLATFORM_MIN_STEPS = 20;
 const int QUASAR_PLATFORM_SIDES = 12;
 const float QUASAR_PLATFORM_TAU = 6.283185307179586;
+const float QUASAR_PLATFORM_INNER_RING_DETAIL = 0.45;
+const float QUASAR_PLATFORM_TRUSS_DETAIL = 0.60;
 const float QUASAR_PLATFORM_HULL_HALF_THICKNESS = 2.5;
 const float QUASAR_PLATFORM_RING_BAND = 8.0;
 const float QUASAR_PLATFORM_INNER_TUBE = 2.2;
@@ -97,10 +101,13 @@ float quasarPlatformInnerRing(vec3 point, float innerRadius) {
         - QUASAR_PLATFORM_INNER_TUBE;
 }
 
-float quasarPlatformTrusses(vec3 point, float outerRadius) {
+float quasarPlatformTrusses(vec3 point, float outerRadius, int count) {
     float distance = 1000000.0;
     float spinAngle = quasarPlatformSpinAngle();
     for (int index = 0; index < 3; index++) {
+        if (index >= count) {
+            break;
+        }
         float angle = float(index) * 3.141592653589793 / 3.0 + spinAngle;
         vec2 local = quasarPlatformRotate(point.xz, -angle);
         float truss = quasarPlatformSdBox2D(local,
@@ -137,9 +144,13 @@ float quasarOrbitalPlatformSdf(vec3 point, float muzzleY, float hullLift) {
     // are sampled at the original point.
     vec3 hullPoint = point;
     hullPoint.y -= hullLift;
+    float detail = clamp(PlatformDetail, 0.0, 1.0);
     float distance = quasarPlatformOuterRing(hullPoint, PlatformOuterRadius);
-    distance = min(distance, quasarPlatformInnerRing(hullPoint, PlatformInnerRadius));
-    distance = min(distance, quasarPlatformTrusses(hullPoint, PlatformOuterRadius));
+    if (detail >= QUASAR_PLATFORM_INNER_RING_DETAIL) {
+        distance = min(distance, quasarPlatformInnerRing(hullPoint, PlatformInnerRadius));
+    }
+    int trussCount = detail >= QUASAR_PLATFORM_TRUSS_DETAIL ? 3 : 1;
+    distance = min(distance, quasarPlatformTrusses(hullPoint, PlatformOuterRadius, trussCount));
     distance = min(distance, quasarPlatformHub(hullPoint));
     distance = min(distance, quasarPlatformBarrel(point, muzzleY));
     distance = min(distance, quasarPlatformMuzzle(point, muzzleY));

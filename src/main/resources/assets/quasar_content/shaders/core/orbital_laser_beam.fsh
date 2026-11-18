@@ -33,6 +33,7 @@ uniform float BeamGlowRadius;
 uniform float ShockMaxRadius;
 uniform float FlashRadius;
 uniform float MarchSteps;
+uniform float PlatformSteps;
 uniform float TipDepth;
 
 uniform float PlatformCharge;
@@ -74,10 +75,10 @@ vec2 projectPoint(vec3 cameraRelative) {
 }
 
 vec3 platformShade(vec3 point, vec3 normal, float muzzleY, float daylight) {
-    vec3 hull = mix(vec3(0.16, 0.18, 0.21), vec3(0.38, 0.41, 0.45), daylight);
+    vec3 hull = mix(vec3(0.19, 0.21, 0.25), vec3(0.38, 0.41, 0.45), daylight);
     vec3 lightDirection = normalize(vec3(0.35, 0.82, 0.45));
     float diffuse = max(dot(normal, lightDirection), 0.0);
-    float ambient = 0.38 + 0.18 * abs(normal.y);
+    float ambient = mix(0.44, 0.38, daylight) + 0.18 * abs(normal.y);
     vec3 color = hull * (ambient + 0.72 * diffuse);
 
     float radial = length(point.xz);
@@ -89,6 +90,8 @@ vec3 platformShade(vec3 point, vec3 normal, float muzzleY, float daylight) {
     float reveal = clamp(PlatformReveal, 0.0, 1.0);
     float exit = clamp(PlatformExit, 0.0, 1.0);
     float muzzleFlash = clamp(PlatformMuzzleFlash, 0.0, 1.0);
+    float platformDetail = clamp(PlatformDetail, 0.0, 1.0);
+    float innerRing = step(QUASAR_PLATFORM_INNER_RING_DETAIL, platformDetail);
 
     float outerAngle = angle - spin;
     float segmentPulse = 0.5 + 0.5 * cos(outerAngle * float(QUASAR_PLATFORM_SIDES));
@@ -116,10 +119,12 @@ vec3 platformShade(vec3 point, vec3 normal, float muzzleY, float daylight) {
     float runningLights = ringLight * (0.55 + 0.45 * segmentPulse)
         * (0.35 + 0.65 * underside);
     float beacon = pow(max(0.0, cos(outerAngle - AgeTicks * 0.07)), 24.0);
-    runningLights += beacon * ringLight * 0.55;
-    float innerRunning = innerLight * (0.55 + 0.45 * innerPulse);
-    color += cyan * (runningLights * 0.9 + hubLight * 1.1 + innerRunning * 1.4);
-    color += cyan * hubLight * charge * (0.6 + 0.4 * innerPulse) * 0.9;
+    runningLights += beacon * ringLight * 0.55 * platformDetail;
+    float innerRunning = innerLight * (0.55 + 0.45 * innerPulse) * innerRing;
+    float lightGain = mix(1.35, 1.0, daylight);
+    color += cyan * (runningLights * 0.9 + hubLight * 1.1 + innerRunning * 1.4)
+        * lightGain;
+    color += cyan * hubLight * charge * (0.6 + 0.4 * innerPulse) * 0.9 * lightGain;
 
     float barrelBand = (1.0 - smoothstep(0.0, 1.4,
         abs(radial - (QUASAR_PLATFORM_BARREL_RADIUS + 1.1))))
@@ -127,7 +132,7 @@ vec3 platformShade(vec3 point, vec3 normal, float muzzleY, float daylight) {
         * (1.0 - smoothstep(-2.5, 0.5, point.y));
     float arcNoise = quasarValueNoise3(vec3(outerAngle * 5.0,
         point.y * 0.55 - AgeTicks * 0.35, charge * 4.0 + 3.0));
-    float arcs = smoothstep(0.62, 0.9, arcNoise) * charge * barrelBand;
+    float arcs = smoothstep(0.62, 0.9, arcNoise) * charge * barrelBand * platformDetail;
     color += mix(cyan, hot, 0.35) * arcs * 2.4;
 
     color = mix(color, vec3(1.0, 0.06, 0.03), eye * 0.85);
@@ -272,7 +277,8 @@ void main() {
     float contact = clamp(ContactGlow, 0.0, 1.0);
     float ringStrength = clamp(ShockStrength, 0.0, 1.0);
     float rimGlow = clamp(RimGlow, 0.0, 1.0);
-    float platformVisible = clamp(PlatformVisible, 0.0, 1.0);
+    float platformVisible = clamp(PlatformVisible, 0.0, 1.0)
+        * (1.0 - step(0.5, MediumCameraSubmerged));
     if (beamStrength < 0.001 && flash < 0.001 && contact < 0.001
         && ringStrength < 0.001 && rimGlow < 0.001
         && platformVisible < 0.001) {
@@ -472,11 +478,13 @@ void main() {
         }
     }
 
-    vec3 platformEmission = vec3(0.0);
-    float platformEntry = sceneDistance;
+    vec3 platformHullEmission = vec3(0.0);
+    vec3 platformMuzzleEmission = vec3(0.0);
+    float platformHullEntry = sceneDistance;
     float platformBlock = 0.0;
     float hullAlpha = 0.0;
-    bool platformForeground = false;
+    bool platformHullForeground = false;
+    bool platformMuzzleForeground = false;
     vec3 platformOrigin = -quasarWorldDirectionToEffect(EffectOrigin)
         - vec3(0.0, PlatformAltitude, 0.0);
     float muzzleY = min(0.0, BeamTopHeight - PlatformAltitude);
@@ -493,7 +501,8 @@ void main() {
             vec3 closestPoint;
             bool hit = quasarOrbitalPlatformTrace(platformOrigin, platformDirection,
                 muzzleY, hullLift, platformMaxDistance,
-                int(clamp(MarchSteps, 8.0, float(MAX_STEPS))),
+                int(clamp(PlatformSteps, float(QUASAR_PLATFORM_MIN_STEPS),
+                    float(MAX_STEPS))),
                 hitDistance, closestDistance, hitPoint, closestPoint);
             float surfaceDistance = hit
                 ? hitDistance : length(closestPoint - platformOrigin);
@@ -508,17 +517,15 @@ void main() {
                         < platformMaxDistance - platformDepthBias);
                 bool foreground = quasarForegroundLayer(foregroundDistance,
                     foregroundDepthValid, surfaceDistance, 0.5, foregroundDelta);
-                platformForeground = foreground;
+                platformHullForeground = foreground;
                 if (depthVisible) {
                     float visible = coverage * platformVisible;
                     vec3 surfacePoint = hit ? hitPoint : closestPoint;
                     vec3 normal = quasarOrbitalPlatformNormal(surfacePoint, muzzleY, hullLift);
                     vec3 shade = platformShade(surfacePoint, normal, muzzleY, daylight);
                     platformBlock = visible;
-                    platformEntry = surfaceDistance;
-                    float additive = visible * (foreground
-                        ? QUASAR_ORBITAL_PLATFORM_FOREGROUND_EMISSION : 1.0);
-                    platformEmission = shade * additive;
+                    platformHullEntry = surfaceDistance;
+                    platformHullEmission = shade * visible;
                     hullAlpha = foreground ? 0.0 : visible;
                 }
             }
@@ -538,17 +545,15 @@ void main() {
                 / max(2.0 * muzzleDistance, 0.001), pixelSize * 1.5);
             float offset = length(texCoord - muzzleUv) / width;
             float halo = exp(-offset * offset * 2.0) * muzzleFlash;
-            bool muzzleForeground = quasarForegroundLayer(foregroundDistance,
+            platformMuzzleForeground = quasarForegroundLayer(foregroundDistance,
                 foregroundDepthValid, muzzleDistance, 0.5, foregroundDelta);
-            platformEmission += mix(activeFlashColor, vec3(1.0), 0.55)
+            platformMuzzleEmission = mix(activeFlashColor, vec3(1.0), 0.55)
                 * halo * QUASAR_ORBITAL_MUZZLE_HALO;
-            platformEntry = min(platformEntry, muzzleDistance);
-            platformForeground = platformForeground || muzzleForeground;
         }
     }
 
     // A nearer solid hull blocks the additive beam and impact light from above.
-    if (platformBlock > 0.001 && platformEntry < nearestEntry) {
+    if (platformBlock > 0.001 && platformHullEntry < nearestEntry) {
         emission *= 1.0 - platformBlock;
     }
 
@@ -561,10 +566,9 @@ void main() {
     }
     float surfaceTransmission = quasarMediumSurfaceTransmittance(waterCosine);
     emission *= surfaceTransmission;
-    platformEmission *= surfaceTransmission;
     emission = quasarMediumFog(emission, quasarMediumFogDistance(nearestEntry));
-    platformEmission = quasarMediumFog(platformEmission,
-        quasarMediumFogDistance(platformEntry));
+    // The platform is above the water surface whenever it is drawn. The beam
+    // still crosses the medium; the platform keeps its own clear-weather look.
 
     // Only a depth-confirmed translucent layer in front may tint the emission.
     // Background water, ice, clouds, or weather also differ from the opaque
@@ -576,9 +580,11 @@ void main() {
     vec3 opaqueScene = texture(OpaqueColorSampler, texCoord).rgb;
     bool opaqueValid = OpaqueColorValid > 0.5;
     emission *= quasarForegroundTint(foreground, rawScene, opaqueScene, opaqueValid);
-    platformEmission *= quasarForegroundTint(platformForeground, rawScene, opaqueScene,
-        opaqueValid);
-    emission += platformEmission;
+    platformHullEmission *= quasarForegroundTint(platformHullForeground, rawScene,
+        opaqueScene, opaqueValid);
+    platformMuzzleEmission *= quasarForegroundTint(platformMuzzleForeground, rawScene,
+        opaqueScene, opaqueValid);
+    emission += platformHullEmission + platformMuzzleEmission;
     emission *= 1.0 - smoothstep(0.965, 1.0, Progress);
 
     if (all(lessThan(emission, vec3(0.0001))) && hullAlpha < 0.0001) {

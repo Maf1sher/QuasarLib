@@ -79,7 +79,7 @@ public final class ContentOrbitalLaserRenderer
     private static final int AFTERMATH_START_TICK = ContentOrbitalLaserSettings.phasePlan()
         .phaseStartTick(ContentOrbitalLaserSettings.PHASE_AFTERMATH);
     private static final EffectParticleField SPARKS_FIELD = particleField(
-        192,
+        160,
         26,
         new EffectParticleShape.Disk(
             new Vec3(0.0, 0.02, 0.0), new Vec3(0.0, 1.0, 0.0), 0.55, 1.0
@@ -98,7 +98,7 @@ public final class ContentOrbitalLaserRenderer
         0x9E3779B97F4A7C15L
     );
     private static final EffectParticleField EMBERS_FIELD = particleField(
-        320,
+        256,
         48,
         new EffectParticleShape.Disk(
             new Vec3(0.0, 0.03, 0.0), new Vec3(0.0, 1.0, 0.0), 0.70, 1.08
@@ -117,7 +117,7 @@ public final class ContentOrbitalLaserRenderer
         0xC2B2AE3D27D4EB4FL
     );
     private static final EffectParticleField SMOKE_FIELD = particleField(
-        256,
+        192,
         60,
         new EffectParticleShape.Disk(
             new Vec3(0.0, 0.03, 0.0), new Vec3(0.0, 1.0, 0.0), 0.55, 1.0

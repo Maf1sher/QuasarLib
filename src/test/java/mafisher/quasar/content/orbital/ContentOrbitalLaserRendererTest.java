@@ -239,6 +239,17 @@ class ContentOrbitalLaserRendererTest {
             this.renderer.particlePasses(reduced));
     }
 
+    @Test
+    void particleBudgetStaysWithinTheShowCap() {
+        int collapse = ContentOrbitalLaserSettings.phasePlan()
+            .phaseStartTick(ContentOrbitalLaserSettings.PHASE_COLLAPSE);
+        int total = this.renderer.particlePasses(context((float)collapse)).stream()
+            .mapToInt(pass -> pass.field().maxParticles())
+            .sum();
+
+        assertTrue(total <= 768, "orbital-laser particles exceed the show budget: " + total);
+    }
+
     private static List<String> ids(List<EffectParticlePass> passes) {
         return passes.stream().map(EffectParticlePass::id).toList();
     }

@@ -114,9 +114,16 @@ public final class ContentOrbitalLaserBeamOperation implements ScreenEffectOpera
         context.setUniform(shader, "BeamGlowRadius", radius * SETTINGS.glowRadiusFactor());
         context.setUniform(shader, "ShockMaxRadius", radius * SETTINGS.shockMaxRadiusFactor());
         context.setUniform(shader, "FlashRadius", radius * SETTINGS.flashRadiusFactor());
+        int lodLevel = context.effect().lod().level();
         context.setUniform(shader, "MarchSteps", (float)ContentOrbitalLaserBeamGeometry.marchSteps(
-            context.effect().lod().level(), context.effectiveQuality()
+            lodLevel, context.effectiveQuality()
         ));
+        context.setUniform(shader, "PlatformSteps",
+            (float)ContentOrbitalLaserPlatformGeometry.traceSteps(
+                lodLevel, context.effectiveQuality()
+            ));
+        context.setUniform(shader, "PlatformDetail",
+            ContentOrbitalLaserPlatformGeometry.detail(lodLevel, context.effectiveQuality()));
         CURVES.bind(context, shader, context.effect().progress(), context.parameters());
     }
 
