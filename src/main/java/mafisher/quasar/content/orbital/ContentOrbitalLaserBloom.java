@@ -37,9 +37,11 @@ final class ContentOrbitalLaserBloom {
         BloomSettings profile = profile(
             context.daylight(), context.effectiveQuality(), context.effect().lod().level()
         );
+        float waterScale = ContentOrbitalLaserWaterOptics.bloomScale(
+            ContentOrbitalLaserWaterOptics.pathLength(context.mediumPath()));
         context.setUniform(shader, "Threshold", profile.threshold());
         context.setUniform(shader, "RadiusPixels", profile.radiusPixels());
-        context.setUniform(shader, "Intensity", profile.intensity());
+        context.setUniform(shader, "Intensity", profile.intensity() * waterScale);
     }
 
     private static float lerp(float from, float to, float factor) {

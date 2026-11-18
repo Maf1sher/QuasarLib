@@ -47,6 +47,7 @@
     { "name": "PlatformSteps", "type": "float", "count": 1, "values": [ 44.0 ] },
     { "name": "PlatformDetail", "type": "float", "count": 1, "values": [ 1.0 ] },
     { "name": "TipDepth", "type": "float", "count": 1, "values": [ 0.0 ] },
+    { "name": "WaterPathLength", "type": "float", "count": 1, "values": [ 0.0 ] },
     { "name": "BeamTip", "type": "float", "count": 1, "values": [ 0.0 ] },
     { "name": "BeamStrength", "type": "float", "count": 1, "values": [ 1.0 ] },
     { "name": "BeamWidth", "type": "float", "count": 1, "values": [ 1.0 ] },

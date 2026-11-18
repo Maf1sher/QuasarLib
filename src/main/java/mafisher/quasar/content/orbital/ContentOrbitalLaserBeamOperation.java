@@ -10,6 +10,8 @@ import mafisher.quasar.api.client.screen.ScreenEffectOperationContext;
 import mafisher.quasar.api.client.screen.ScreenEffectOperationRenderer;
 import mafisher.quasar.content.ContentShaders;
 import net.minecraft.client.renderer.ShaderInstance;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Content-owned orbital-laser beam and impact screen operation.
@@ -19,9 +21,12 @@ import net.minecraft.client.renderer.ShaderInstance;
  * aftermath rim glow in one depth-tested pass. The standard {@link EmissiveComposite} owns bloom
  * and the final scene re-add. Only a depth-confirmed platform hull hit writes coverage alpha; the
  * beam and impact layers stay additive with zero alpha, so the captured background is preserved.
- * A depth-confirmed foreground layer only tints emission and forces the hull alpha to zero.</p>
+ * Water in front of a sample absorbs the beam and bloom; a depth-confirmed foreground layer also
+ * tints emission and forces the hull alpha to zero.</p>
  */
 public final class ContentOrbitalLaserBeamOperation implements ScreenEffectOperationRenderer {
+    private static final Logger LOGGER =
+        LoggerFactory.getLogger(ContentOrbitalLaserBeamOperation.class);
     private static final ContentOrbitalLaserBeamSettings SETTINGS =
         ContentOrbitalLaserBeamSettings.DEFAULT;
     private static final EffectParameterBinding CURVES = EffectParameterBinding
@@ -114,6 +119,9 @@ public final class ContentOrbitalLaserBeamOperation implements ScreenEffectOpera
         context.setUniform(shader, "BeamGlowRadius", radius * SETTINGS.glowRadiusFactor());
         context.setUniform(shader, "ShockMaxRadius", radius * SETTINGS.shockMaxRadiusFactor());
         context.setUniform(shader, "FlashRadius", radius * SETTINGS.flashRadiusFactor());
+        float waterPath = ContentOrbitalLaserWaterOptics.pathLength(context.mediumPath());
+        context.setUniform(shader, "WaterPathLength", waterPath);
+        logWaterDiagnostics(context, waterPath);
         int lodLevel = context.effect().lod().level();
         context.setUniform(shader, "MarchSteps", (float)ContentOrbitalLaserBeamGeometry.marchSteps(
             lodLevel, context.effectiveQuality()
@@ -125,6 +133,20 @@ public final class ContentOrbitalLaserBeamOperation implements ScreenEffectOpera
         context.setUniform(shader, "PlatformDetail",
             ContentOrbitalLaserPlatformGeometry.detail(lodLevel, context.effectiveQuality()));
         CURVES.bind(context, shader, context.effect().progress(), context.parameters());
+    }
+
+    private static void logWaterDiagnostics(ScreenEffectOperationContext context, float waterPath) {
+        long age = (long)context.effect().ageTicks();
+        if (age % 20L != 0L) {
+            return;
+        }
+        LOGGER.debug(
+            "Orbital water: path={} foregroundDepth={} opaqueColor={} cameraMedium={} "
+                + "effectMedium={} spans={}",
+            waterPath, context.hasForegroundDepth(), context.hasOpaqueColor(),
+            context.medium().cameraMedium(), context.medium().effectMedium(),
+            context.mediumPath().spans()
+        );
     }
 
     /** Returns the solid-footprint factor used by the composite; hull alpha only is solid. */

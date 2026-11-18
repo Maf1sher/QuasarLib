@@ -35,6 +35,7 @@ uniform float FlashRadius;
 uniform float MarchSteps;
 uniform float PlatformSteps;
 uniform float TipDepth;
+uniform float WaterPathLength;
 
 uniform float PlatformCharge;
 uniform float PlatformMuzzleFlash;
@@ -64,6 +65,52 @@ bool foregroundColorDelta(vec2 uv) {
     return OpaqueColorValid > 0.5
         && distance(texture(RawSceneSampler, uv).rgb,
             texture(OpaqueColorSampler, uv).rgb) > 0.02;
+}
+
+bool blueTranslucentDelta(vec3 seen, vec3 opaque) {
+    vec3 delta = seen - opaque;
+    float chroma = abs(delta.r) + abs(delta.g) + abs(delta.b);
+    return chroma > 0.008
+        && abs(delta.b) > abs(delta.r) * 1.05
+        && abs(delta.b) >= abs(delta.g) * 0.80;
+}
+
+vec3 waterTint(vec3 color, float transmission) {
+    float amount = (1.0 - clamp(transmission, 0.0, 1.0))
+        * QUASAR_ORBITAL_WATER_TINT_MIX;
+    return color * mix(vec3(1.0), QUASAR_ORBITAL_WATER_TINT, amount);
+}
+
+vec3 capLuminance(vec3 color, float limit) {
+    float peak = max(max(color.r, color.g), color.b);
+    return peak > limit ? color * (limit / peak) : color;
+}
+
+/**
+ * Absorbs one beam sample by the water volume in front of it. The medium trace
+ * supplies the submerged length; the post-translucent depth decides which
+ * samples are actually behind the water surface. A submerged camera has water
+ * in front of every sample even when the nearest depth is opaque terrain.
+ */
+float waterTransmission(float sampleDistance, float foregroundDistance,
+    bool foregroundDepthValid, bool foregroundFallback, float waterPathLength) {
+    if (waterPathLength <= 0.001) {
+        return 1.0;
+    }
+    bool behindForeground = MediumCameraSubmerged > 0.5
+        || (foregroundDepthValid
+            ? sampleDistance > foregroundDistance + 0.5
+            : foregroundFallback);
+    if (!behindForeground) {
+        return 1.0;
+    }
+    float path = clamp(waterPathLength, 0.0, QUASAR_ORBITAL_WATER_MAX_PATH);
+    float ripple = 1.0 - QUASAR_ORBITAL_WATER_RIPPLE_STRENGTH
+        * (0.5 + 0.5 * sin(AgeTicks * 0.35 + texCoord.y * 120.0
+            + texCoord.x * 40.0 + Seed * QUASAR_ORBITAL_TAU));
+    float volume = exp(-path * QUASAR_ORBITAL_WATER_ABSORPTION) * ripple;
+    return max(QUASAR_ORBITAL_WATER_MIN_TRANSMISSION,
+        volume * QUASAR_ORBITAL_WATER_SURFACE_TRANSMISSION);
 }
 
 vec2 projectPoint(vec3 cameraRelative) {
@@ -309,6 +356,7 @@ void main() {
 
     float nearestEntry = sceneDistance;
     vec3 emission = vec3(0.0);
+    bool beamWaterCovered = false;
 
     float tEnter;
     float tExit;
@@ -375,16 +423,21 @@ void main() {
             float rimOffset = (radial - coreRadius * 0.88)
                 / max(coreRadius * 0.22, 0.001);
             float rim = exp(-rimOffset * rimOffset) * body;
-            emission += plasmaColor * coreDensity * QUASAR_ORBITAL_CORE_EMISSION
+            float sampleWater = waterTransmission(distance, foregroundDistance,
+                foregroundDepthValid, foregroundDelta, WaterPathLength);
+            beamWaterCovered = beamWaterCovered || sampleWater < 0.999;
+            vec3 sampleEmission = vec3(0.0);
+            sampleEmission += plasmaColor * coreDensity * QUASAR_ORBITAL_CORE_EMISSION
                 * stepLength * transmittance;
-            emission += glowColor * glowDensity * QUASAR_ORBITAL_GLOW_EMISSION
+            sampleEmission += glowColor * glowDensity * QUASAR_ORBITAL_GLOW_EMISSION
                 * stepLength * transmittance;
-            emission += plasmaColor * filamentGlow
+            sampleEmission += plasmaColor * filamentGlow
                 * QUASAR_ORBITAL_FILAMENT_STRENGTH * stepLength * transmittance;
-            emission += plasmaColor * rim * QUASAR_ORBITAL_RIM_STRENGTH
+            sampleEmission += plasmaColor * rim * QUASAR_ORBITAL_RIM_STRENGTH
                 * stepLength * transmittance;
-            emission += flashColor * head * 0.004 * stepLength
+            sampleEmission += flashColor * head * 0.004 * stepLength
                 * detail * beamStrength * transmittance;
+            emission += waterTint(sampleEmission, sampleWater);
             transmittance *= 1.0 - sampleAbsorption;
         }
     }
@@ -404,8 +457,11 @@ void main() {
         float contactDisk = exp(-pow(radial / contactRadius, 2.0) * 2.5);
         if (quasarLayerVisible(QUASAR_LAYER_FILL, bottomPlaneDistance, sceneDistance,
             depthBias)) {
-            emission += contactColor * contactDisk * contact
-                * QUASAR_ORBITAL_CONTACT_EMISSION;
+            float planeWater = waterTransmission(bottomPlaneDistance, foregroundDistance,
+                foregroundDepthValid, foregroundDelta, WaterPathLength);
+            beamWaterCovered = beamWaterCovered || planeWater < 0.999;
+            emission += waterTint(contactColor * contactDisk * contact
+                * QUASAR_ORBITAL_CONTACT_EMISSION, planeWater);
             nearestEntry = min(nearestEntry, bottomPlaneDistance);
         }
     }
@@ -427,8 +483,11 @@ void main() {
         if (ringStrength > 0.001 && ringRadius > 0.001
             && quasarLayerVisible(QUASAR_LAYER_EDGE, basePlaneDistance, sceneDistance,
                 depthBias)) {
-            emission += ringColor * ring * ringStrength
-                * QUASAR_ORBITAL_RING_EMISSION;
+            float planeWater = waterTransmission(basePlaneDistance, foregroundDistance,
+                foregroundDepthValid, foregroundDelta, WaterPathLength);
+            beamWaterCovered = beamWaterCovered || planeWater < 0.999;
+            emission += waterTint(ringColor * ring * ringStrength
+                * QUASAR_ORBITAL_RING_EMISSION, planeWater);
             nearestEntry = min(nearestEntry, basePlaneDistance);
         }
     }
@@ -449,8 +508,11 @@ void main() {
         if (rim > 0.001
             && quasarLayerVisible(QUASAR_LAYER_EDGE, basePlaneDistance, sceneDistance,
                 depthBias)) {
-            emission += rimColor * rim * rimGlow * flicker
-                * QUASAR_ORBITAL_RIM_EMISSION;
+            float planeWater = waterTransmission(basePlaneDistance, foregroundDistance,
+                foregroundDepthValid, foregroundDelta, WaterPathLength);
+            beamWaterCovered = beamWaterCovered || planeWater < 0.999;
+            emission += waterTint(rimColor * rim * rimGlow * flicker
+                * QUASAR_ORBITAL_RIM_EMISSION, planeWater);
             nearestEntry = min(nearestEntry, basePlaneDistance);
         }
     }
@@ -462,7 +524,11 @@ void main() {
             vec3 hit = direction * flashEntry;
             float normalized = length(hit - base) / max(FlashRadius, 0.001);
             float sphereFlash = exp(-normalized * normalized * 2.5) * flash;
-            emission += activeFlashColor * sphereFlash * QUASAR_ORBITAL_FLASH_EMISSION;
+            float flashWater = waterTransmission(flashEntry, foregroundDistance,
+                foregroundDepthValid, foregroundDelta, WaterPathLength);
+            beamWaterCovered = beamWaterCovered || flashWater < 0.999;
+            emission += waterTint(activeFlashColor * sphereFlash
+                * QUASAR_ORBITAL_FLASH_EMISSION, flashWater);
             nearestEntry = min(nearestEntry, flashEntry);
         }
 
@@ -474,7 +540,11 @@ void main() {
                 / max(2.0 * baseDistance, 0.001), pixelSize * 1.5);
             float offset = length(texCoord - baseUv) / width;
             float halo = exp(-offset * offset * 2.0) * flash;
-            emission += activeFlashColor * halo * QUASAR_ORBITAL_SCREEN_HALO;
+            float haloWater = waterTransmission(baseDistance, foregroundDistance,
+                foregroundDepthValid, foregroundDelta, WaterPathLength);
+            beamWaterCovered = beamWaterCovered || haloWater < 0.999;
+            emission += waterTint(activeFlashColor * halo
+                * QUASAR_ORBITAL_SCREEN_HALO, haloWater);
         }
     }
 
@@ -523,10 +593,14 @@ void main() {
                     vec3 surfacePoint = hit ? hitPoint : closestPoint;
                     vec3 normal = quasarOrbitalPlatformNormal(surfacePoint, muzzleY, hullLift);
                     vec3 shade = platformShade(surfacePoint, normal, muzzleY, daylight);
+                    float hullWater = waterTransmission(surfaceDistance,
+                        foregroundDistance, foregroundDepthValid, foregroundDelta,
+                        WaterPathLength);
+                    bool waterInFront = hullWater < 0.999;
                     platformBlock = visible;
                     platformHullEntry = surfaceDistance;
-                    platformHullEmission = shade * visible;
-                    hullAlpha = foreground ? 0.0 : visible;
+                    platformHullEmission = waterTint(shade * visible, hullWater);
+                    hullAlpha = (foreground || waterInFront) ? 0.0 : visible;
                 }
             }
         }
@@ -547,8 +621,10 @@ void main() {
             float halo = exp(-offset * offset * 2.0) * muzzleFlash;
             platformMuzzleForeground = quasarForegroundLayer(foregroundDistance,
                 foregroundDepthValid, muzzleDistance, 0.5, foregroundDelta);
-            platformMuzzleEmission = mix(activeFlashColor, vec3(1.0), 0.55)
-                * halo * QUASAR_ORBITAL_MUZZLE_HALO;
+            float muzzleWater = waterTransmission(muzzleDistance, foregroundDistance,
+                foregroundDepthValid, foregroundDelta, WaterPathLength);
+            platformMuzzleEmission = waterTint(mix(activeFlashColor, vec3(1.0), 0.55)
+                * halo * QUASAR_ORBITAL_MUZZLE_HALO, muzzleWater);
         }
     }
 
@@ -567,8 +643,8 @@ void main() {
     float surfaceTransmission = quasarMediumSurfaceTransmittance(waterCosine);
     emission *= surfaceTransmission;
     emission = quasarMediumFog(emission, quasarMediumFogDistance(nearestEntry));
-    // The platform is above the water surface whenever it is drawn. The beam
-    // still crosses the medium; the platform keeps its own clear-weather look.
+    // The platform is above the water surface, but a tank or waterfall can sit
+    // between it and the camera; water in front still attenuates the platform.
 
     // Only a depth-confirmed translucent layer in front may tint the emission.
     // Background water, ice, clouds, or weather also differ from the opaque
@@ -579,7 +655,30 @@ void main() {
     vec3 rawScene = texture(RawSceneSampler, texCoord).rgb;
     vec3 opaqueScene = texture(OpaqueColorSampler, texCoord).rgb;
     bool opaqueValid = OpaqueColorValid > 0.5;
+
+    // A blue translucent delta catches bounded water that the single
+    // camera-to-impact medium trace missed. Red glass stays on the colour-only
+    // foreground path.
+    if (WaterPathLength <= 0.001 && opaqueValid
+        && blueTranslucentDelta(rawScene, opaqueScene)) {
+        float fallbackWater = waterTransmission(foregroundEntry, foregroundDistance,
+            foregroundDepthValid, foregroundDelta, QUASAR_ORBITAL_WATER_DEFAULT_PATH);
+        beamWaterCovered = beamWaterCovered || fallbackWater < 0.999;
+        emission = waterTint(emission, fallbackWater);
+        platformHullEmission = waterTint(platformHullEmission, fallbackWater);
+        platformMuzzleEmission = waterTint(platformMuzzleEmission, fallbackWater);
+        hullAlpha = fallbackWater < 0.999 ? 0.0 : hullAlpha;
+    }
+
     emission *= quasarForegroundTint(foreground, rawScene, opaqueScene, opaqueValid);
+    if (beamWaterCovered) {
+        // A multiplicative tint cannot hide a saturated HDR core. Cap what the
+        // water actually lets through so the surface keeps its own colour.
+        emission = capLuminance(emission, QUASAR_ORBITAL_WATER_MAX_LUMINANCE);
+    } else if (foreground) {
+        emission *= QUASAR_ORBITAL_FOREGROUND_EMISSION_SCALE;
+        emission = capLuminance(emission, QUASAR_ORBITAL_FOREGROUND_MAX_LUMINANCE);
+    }
     platformHullEmission *= quasarForegroundTint(platformHullForeground, rawScene,
         opaqueScene, opaqueValid);
     platformMuzzleEmission *= quasarForegroundTint(platformMuzzleForeground, rawScene,
