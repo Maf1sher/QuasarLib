@@ -42,8 +42,10 @@ final class ContentOrbitalLaserCinematics {
     private static final float SCREEN_VISIBLE_END = 22.0F * TICK;
     /** Time for the platform reveal scan to reach the hub. */
     private static final float PLATFORM_REVEAL_TIME = 20.0F * TICK;
-    /** Time for the platform warp-out to finish inside the collapse phase. */
-    private static final float PLATFORM_EXIT_TIME = 20.0F * TICK;
+    /** Ticks the platform stays fully present after the beam has snapped off. */
+    private static final float PLATFORM_EXIT_HOLD = 6.0F * TICK;
+    /** Time for the top-down platform warp-out after the hold, in the aftermath. */
+    private static final float PLATFORM_EXIT_TIME = 16.0F * TICK;
     /** Recoil decay after the muzzle fires. */
     private static final float PLATFORM_RECOIL_TIME = 8.0F * TICK;
     /** Muzzle-flash decay after the muzzle fires. */
@@ -299,7 +301,10 @@ final class ContentOrbitalLaserCinematics {
         builder.curve(PLATFORM_EXIT, curve(
             key(0.0F, 0.0F),
             key("collapse", 0.0F, 0.0F),
-            key("collapse", PLATFORM_EXIT_TIME, 1.0F, EffectEasing.EASE_IN),
+            key("collapse", COLLAPSE_SNAP_END + PLATFORM_EXIT_HOLD, 0.0F),
+            key("collapse",
+                COLLAPSE_SNAP_END + PLATFORM_EXIT_HOLD + PLATFORM_EXIT_TIME,
+                1.0F, EffectEasing.EASE_IN),
             key(1.0F, 1.0F)
         ));
     }

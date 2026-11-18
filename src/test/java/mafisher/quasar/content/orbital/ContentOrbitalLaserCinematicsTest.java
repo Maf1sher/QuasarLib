@@ -93,7 +93,8 @@ class ContentOrbitalLaserCinematicsTest {
         assertEquals(0.0F, sample(muzzleFlash, progress(DESCENT_TICK + 6)), 1.0E-5F);
 
         assertEquals(0.0F, sample(exit, COLLAPSE), 1.0E-6F);
-        assertEquals(1.0F, sample(exit, progress(COLLAPSE_TICK + 20)), 1.0E-6F);
+        assertEquals(0.0F,
+            sample(exit, ContentOrbitalLaserCinematics.collapseSnapEndProgress()), 1.0E-6F);
         assertEquals(1.0F, sample(visible, AFTERMATH), 1.0E-6F);
     }
 
@@ -142,21 +143,61 @@ class ContentOrbitalLaserCinematicsTest {
     }
 
     @Test
-    void platformExitStartsAtTheCollapseAndCompletesBeforeTheAftermath() {
+    void platformDoesNotExitWhileTheBeamHasStrength() {
         String exit = ContentOrbitalLaserCinematics.PLATFORM_EXIT;
-        float completed = progress(
-            COLLAPSE_TICK + ContentOrbitalLaserSettings.COLLAPSE_TICKS * 2 / 3
-        );
+
+        for (int tick = 0; tick <= ContentOrbitalLaserSettings.TOTAL_TICKS; tick++) {
+            float at = progress(tick);
+            if (sample("BeamStrength", at) > 0.001F) {
+                assertEquals(0.0F, sample(exit, at), 1.0E-6F,
+                    "platform exit at tick " + tick);
+            }
+        }
+    }
+
+    @Test
+    void platformExitStartsAfterTheBeamSnapsAndCompletesInTheAftermath() {
+        String exit = ContentOrbitalLaserCinematics.PLATFORM_EXIT;
+        float beamGone = ContentOrbitalLaserCinematics.collapseSnapEndProgress();
+        int beamGoneTick = Math.round(beamGone * ContentOrbitalLaserSettings.TOTAL_TICKS);
 
         assertEquals(0.0F, sample(exit, progress(COLLAPSE_TICK - 1)), 1.0E-6F);
         assertEquals(0.0F, sample(exit, COLLAPSE), 1.0E-6F);
-        assertEquals(1.0F, sample(exit, completed), 1.0E-6F);
-        assertEquals(1.0F, sample(exit, AFTERMATH), 1.0E-6F);
+        assertEquals(0.0F, sample(exit, beamGone), 1.0E-6F);
+        assertTrue(ContentOrbitalLaserCinematics.platformVisible(beamGone));
+        assertTrue(ContentOrbitalLaserCinematics.screenVisible(beamGone));
+
+        int firstExitTick = -1;
+        int completedTick = -1;
+        for (int tick = 0; tick <= ContentOrbitalLaserSettings.TOTAL_TICKS; tick++) {
+            float value = sample(exit, progress(tick));
+            if (firstExitTick < 0 && value > 0.001F) {
+                firstExitTick = tick;
+            }
+            if (value >= 1.0F - 1.0E-6F) {
+                completedTick = tick;
+                break;
+            }
+        }
+
+        assertTrue(firstExitTick > beamGoneTick,
+            "platform exit started at tick " + firstExitTick
+                + " before the beam was gone at tick " + beamGoneTick);
+        assertTrue(firstExitTick >= beamGoneTick + 2,
+            "platform exit needs a short beat after the beam, started at tick "
+                + firstExitTick);
+        assertTrue(completedTick > firstExitTick, "platform exit did not complete");
+        assertTrue(completedTick < ContentOrbitalLaserSettings.TOTAL_TICKS,
+            "platform exit completed at the end of the effect");
+        assertTrue(ContentOrbitalLaserCinematics.platformVisible(progress(completedTick)),
+            "platform visibility ended before the exit completed");
+        assertTrue(ContentOrbitalLaserCinematics.screenVisible(progress(completedTick)),
+            "screen operation stopped before the platform exit completed");
 
         float previous = 0.0F;
-        for (float progress = COLLAPSE; progress <= completed; progress += 0.002F) {
-            float value = sample(exit, progress);
-            assertTrue(value >= previous - 1.0E-6F, "exit reversed at " + progress);
+        for (float at = beamGone; at <= progress(completedTick); at += 0.002F) {
+            float value = sample(exit, at);
+            assertTrue(value >= previous - 1.0E-6F, "exit reversed at " + at);
             previous = value;
         }
     }
