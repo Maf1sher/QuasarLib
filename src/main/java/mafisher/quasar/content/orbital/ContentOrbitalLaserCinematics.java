@@ -90,6 +90,11 @@ final class ContentOrbitalLaserCinematics {
         return PARAMETERS.sampleFloat(PLATFORM_VISIBLE, progress) > 0.001F;
     }
 
+    /** Returns the normalized charge level; it peaks at the descent and releases over four ticks. */
+    static float platformCharge(float progress) {
+        return PARAMETERS.sampleFloat(PLATFORM_CHARGE, progress);
+    }
+
     /** Returns whether the screen operation has any visible work at this progress. */
     static boolean screenVisible(float progress) {
         return beamVisible(progress) || platformVisible(progress);

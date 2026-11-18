@@ -35,6 +35,9 @@ uniform float FlashRadius;
 uniform float MarchSteps;
 uniform float TipDepth;
 
+uniform float PlatformCharge;
+uniform float PlatformMuzzleFlash;
+
 uniform float BeamTip;
 uniform float BeamStrength;
 uniform float BeamWidth;
@@ -79,7 +82,17 @@ vec3 platformShade(vec3 point, vec3 normal, float muzzleY, float daylight) {
 
     float radial = length(point.xz);
     float angle = atan(point.z, point.x);
-    float segmentPulse = 0.5 + 0.5 * cos(angle * float(QUASAR_PLATFORM_SIDES));
+    float spin = quasarPlatformSpinAngle();
+    float counter = quasarPlatformCounterAngle();
+    float charge = clamp(PlatformCharge, 0.0, 1.0);
+    float recoil = clamp(PlatformRecoil, 0.0, 1.0);
+    float reveal = clamp(PlatformReveal, 0.0, 1.0);
+    float exit = clamp(PlatformExit, 0.0, 1.0);
+    float muzzleFlash = clamp(PlatformMuzzleFlash, 0.0, 1.0);
+
+    float outerAngle = angle - spin;
+    float segmentPulse = 0.5 + 0.5 * cos(outerAngle * float(QUASAR_PLATFORM_SIDES));
+    float innerPulse = 0.5 + 0.5 * cos(angle * 6.0 + counter);
     float underside = max(-normal.y, 0.0);
     float ringLight = 1.0 - smoothstep(0.0, 1.8,
         abs(radial - (PlatformOuterRadius - 1.2)));
@@ -87,7 +100,11 @@ vec3 platformShade(vec3 point, vec3 normal, float muzzleY, float daylight) {
         abs(radial - PlatformInnerRadius));
     float hubLight = 1.0 - smoothstep(0.0, 1.5,
         abs(radial - (QUASAR_PLATFORM_HUB_RADIUS - 0.8)));
-    float aperture = 1.0 - smoothstep(0.0, 2.4,
+    float lipRadius = QUASAR_PLATFORM_BARREL_RADIUS + 0.9;
+    float lip = 1.0 - smoothstep(0.0, 1.6,
+        length(vec2(radial - lipRadius, point.y - muzzleY)));
+    float aperture = 1.0 - smoothstep(0.0,
+        1.8 + charge * QUASAR_PLATFORM_APERTURE_GROWTH,
         length(vec2(radial - QUASAR_PLATFORM_BARREL_RADIUS, point.y - muzzleY)));
     float eye = (1.0 - smoothstep(0.0, 2.2, radial))
         * smoothstep(0.2, 1.0, underside);
@@ -98,9 +115,49 @@ vec3 platformShade(vec3 point, vec3 normal, float muzzleY, float daylight) {
         daylight * 0.3);
     float runningLights = ringLight * (0.55 + 0.45 * segmentPulse)
         * (0.35 + 0.65 * underside);
-    color += cyan * (runningLights * 0.9 + hubLight * 1.1 + innerLight * 1.4);
+    float beacon = pow(max(0.0, cos(outerAngle - AgeTicks * 0.07)), 24.0);
+    runningLights += beacon * ringLight * 0.55;
+    float innerRunning = innerLight * (0.55 + 0.45 * innerPulse);
+    color += cyan * (runningLights * 0.9 + hubLight * 1.1 + innerRunning * 1.4);
+    color += cyan * hubLight * charge * (0.6 + 0.4 * innerPulse) * 0.9;
+
+    float barrelBand = (1.0 - smoothstep(0.0, 1.4,
+        abs(radial - (QUASAR_PLATFORM_BARREL_RADIUS + 1.1))))
+        * smoothstep(muzzleY, muzzleY + 2.5, point.y)
+        * (1.0 - smoothstep(-2.5, 0.5, point.y));
+    float arcNoise = quasarValueNoise3(vec3(outerAngle * 5.0,
+        point.y * 0.55 - AgeTicks * 0.35, charge * 4.0 + 3.0));
+    float arcs = smoothstep(0.62, 0.9, arcNoise) * charge * barrelBand;
+    color += mix(cyan, hot, 0.35) * arcs * 2.4;
+
     color = mix(color, vec3(1.0, 0.06, 0.03), eye * 0.85);
-    color += hot * aperture * 2.2;
+    color += hot * aperture * (1.2 + charge * 2.6 + muzzleFlash * 2.0);
+    color += hot * lip * (0.5 + charge * 2.2 + muzzleFlash * 3.5);
+
+    float revealLimit = quasarPlatformRevealLimit(muzzleY);
+    float scan = 1.0 - smoothstep(0.0, QUASAR_PLATFORM_SCAN_WIDTH,
+        abs(point.y - revealLimit));
+    scan *= 1.0 - step(0.985, reveal);
+    float warpRadius = PlatformOuterRadius * reveal;
+    float warpRing = (1.0 - smoothstep(0.0, 3.0, abs(radial - warpRadius)))
+        * (1.0 - smoothstep(0.0, 6.0, abs(point.y - revealLimit)))
+        * (1.0 - smoothstep(0.72, 1.0, reveal));
+    float arrivalFlash = (1.0 - smoothstep(0.0, 0.22, reveal))
+        * (0.55 + 0.45 * segmentPulse);
+    color += cyan * (scan * 3.2 + warpRing * 1.6 + arrivalFlash * 0.8);
+
+    color += cyan * recoil * (0.25 + 0.2 * innerPulse) * (0.4 + underside);
+
+    float exitLimit = quasarPlatformExitLimit(muzzleY);
+    float exitEdge = (1.0 - smoothstep(0.0, QUASAR_PLATFORM_EXIT_WIDTH,
+        abs(point.y - exitLimit))) * smoothstep(0.001, 0.08, exit);
+    color += mix(cyan, vec3(1.0), 0.45) * exitEdge * 2.9;
+    color *= 1.0 - 0.22 * exit;
+
+    float muzzleDistance = length(vec3(point.x, point.y - muzzleY, point.z));
+    float muzzleGlow = exp(-pow(muzzleDistance * 0.55, 2.0)) * muzzleFlash;
+    color += mix(hot, vec3(1.0), 0.55) * muzzleGlow * 3.0;
+
     return color;
 }
 
@@ -420,19 +477,23 @@ void main() {
     float platformBlock = 0.0;
     float hullAlpha = 0.0;
     bool platformForeground = false;
-    if (platformVisible > 0.001) {
-        vec3 platformOrigin = -quasarWorldDirectionToEffect(EffectOrigin)
-            - vec3(0.0, PlatformAltitude, 0.0);
+    vec3 platformOrigin = -quasarWorldDirectionToEffect(EffectOrigin)
+        - vec3(0.0, PlatformAltitude, 0.0);
+    float muzzleY = min(0.0, BeamTopHeight - PlatformAltitude);
+    float hullLift = clamp(PlatformRecoil, 0.0, 1.0) * QUASAR_PLATFORM_RECOIL_LIFT
+        + sin(AgeTicks * QUASAR_PLATFORM_BOB_SPEED) * QUASAR_PLATFORM_BOB_HEIGHT
+            * (1.0 - clamp(PlatformExit, 0.0, 1.0));
+    if (platformVisible > 0.001 && PlatformExit < 0.999) {
         vec3 platformDirection = quasarWorldDirectionToEffect(direction);
         if (dot(platformDirection, platformDirection) > DIRECTION_EPSILON) {
             platformDirection = normalize(platformDirection);
-            float muzzleY = min(0.0, BeamTopHeight - PlatformAltitude);
             float hitDistance;
             float closestDistance;
             vec3 hitPoint;
             vec3 closestPoint;
             bool hit = quasarOrbitalPlatformTrace(platformOrigin, platformDirection,
-                muzzleY, platformMaxDistance, int(clamp(MarchSteps, 8.0, float(MAX_STEPS))),
+                muzzleY, hullLift, platformMaxDistance,
+                int(clamp(MarchSteps, 8.0, float(MAX_STEPS))),
                 hitDistance, closestDistance, hitPoint, closestPoint);
             float surfaceDistance = hit
                 ? hitDistance : length(closestPoint - platformOrigin);
@@ -451,7 +512,7 @@ void main() {
                 if (depthVisible) {
                     float visible = coverage * platformVisible;
                     vec3 surfacePoint = hit ? hitPoint : closestPoint;
-                    vec3 normal = quasarOrbitalPlatformNormal(surfacePoint, muzzleY);
+                    vec3 normal = quasarOrbitalPlatformNormal(surfacePoint, muzzleY, hullLift);
                     vec3 shade = platformShade(surfacePoint, normal, muzzleY, daylight);
                     platformBlock = visible;
                     platformEntry = surfaceDistance;
@@ -461,6 +522,28 @@ void main() {
                     hullAlpha = foreground ? 0.0 : visible;
                 }
             }
+        }
+    }
+
+    float muzzleFlash = clamp(PlatformMuzzleFlash, 0.0, 1.0);
+    if (platformVisible > 0.001 && muzzleFlash > 0.001) {
+        vec3 muzzleEffect = platformOrigin + vec3(0.0, muzzleY, 0.0);
+        float muzzleDistance = length(muzzleEffect);
+        vec2 muzzleUv = projectPoint(quasarEffectDirectionToWorld(muzzleEffect));
+        if (muzzleUv.x >= 0.0
+            && muzzleDistance < platformMaxDistance + platformDepthBias) {
+            float pixelSize = max(1.0 / max(ViewportWidth, 1.0),
+                1.0 / max(ViewportHeight, 1.0));
+            float width = max(abs(WorldProjMat[1][1]) * QUASAR_PLATFORM_MUZZLE_FLASH_RADIUS
+                / max(2.0 * muzzleDistance, 0.001), pixelSize * 1.5);
+            float offset = length(texCoord - muzzleUv) / width;
+            float halo = exp(-offset * offset * 2.0) * muzzleFlash;
+            bool muzzleForeground = quasarForegroundLayer(foregroundDistance,
+                foregroundDepthValid, muzzleDistance, 0.5, foregroundDelta);
+            platformEmission += mix(activeFlashColor, vec3(1.0), 0.55)
+                * halo * QUASAR_ORBITAL_MUZZLE_HALO;
+            platformEntry = min(platformEntry, muzzleDistance);
+            platformForeground = platformForeground || muzzleForeground;
         }
     }
 

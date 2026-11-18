@@ -98,6 +98,70 @@ class ContentOrbitalLaserCinematicsTest {
     }
 
     @Test
+    void platformRevealCompletesInsideTheArrivalAndHolds() {
+        String reveal = ContentOrbitalLaserCinematics.PLATFORM_REVEAL;
+        float completed = progress(
+            ARRIVAL_TICK + ContentOrbitalLaserSettings.ARRIVAL_TICKS / 2
+        );
+
+        assertEquals(0.0F, sample(reveal, ARRIVAL), 1.0E-6F);
+        assertEquals(1.0F, sample(reveal, completed), 1.0E-6F);
+        assertEquals(1.0F, sample(reveal, AFTERMATH), 1.0E-6F);
+        assertEquals(1.0F, sample(reveal, 1.0F), 1.0E-6F);
+
+        float previous = 0.0F;
+        for (float progress = ARRIVAL; progress <= completed; progress += 0.002F) {
+            float value = sample(reveal, progress);
+            assertTrue(value >= previous - 1.0E-6F, "reveal reversed at " + progress);
+            previous = value;
+        }
+    }
+
+    @Test
+    void platformChargePeaksAtTheShotAndReleasesWithTheBarrel() {
+        assertEquals(1.0F,
+            ContentOrbitalLaserCinematics.platformCharge(DESCENT), 1.0E-6F);
+        assertEquals(0.0F,
+            ContentOrbitalLaserCinematics.platformCharge(ARRIVAL), 1.0E-6F);
+        assertEquals(0.0F,
+            ContentOrbitalLaserCinematics.platformCharge(progress(DESCENT_TICK + 4)),
+            1.0E-5F);
+        assertEquals(ContentOrbitalLaserSettings.BEAM_TOP_HEIGHT,
+            ContentOrbitalLaserPlatformSettings.muzzleHeight(
+                ContentOrbitalLaserCinematics.platformCharge(ARRIVAL)), 0.0F);
+        assertTrue(ContentOrbitalLaserPlatformSettings.muzzleHeight(
+            ContentOrbitalLaserCinematics.platformCharge(DESCENT))
+            < ContentOrbitalLaserSettings.BEAM_TOP_HEIGHT);
+
+        float previous = sample(ContentOrbitalLaserCinematics.PLATFORM_CHARGE, CHARGE);
+        for (float progress = CHARGE; progress <= DESCENT; progress += 0.002F) {
+            float value = sample(ContentOrbitalLaserCinematics.PLATFORM_CHARGE, progress);
+            assertTrue(value >= previous - 1.0E-6F, "charge fell before the shot");
+            previous = value;
+        }
+    }
+
+    @Test
+    void platformExitStartsAtTheCollapseAndCompletesBeforeTheAftermath() {
+        String exit = ContentOrbitalLaserCinematics.PLATFORM_EXIT;
+        float completed = progress(
+            COLLAPSE_TICK + ContentOrbitalLaserSettings.COLLAPSE_TICKS * 2 / 3
+        );
+
+        assertEquals(0.0F, sample(exit, progress(COLLAPSE_TICK - 1)), 1.0E-6F);
+        assertEquals(0.0F, sample(exit, COLLAPSE), 1.0E-6F);
+        assertEquals(1.0F, sample(exit, completed), 1.0E-6F);
+        assertEquals(1.0F, sample(exit, AFTERMATH), 1.0E-6F);
+
+        float previous = 0.0F;
+        for (float progress = COLLAPSE; progress <= completed; progress += 0.002F) {
+            float value = sample(exit, progress);
+            assertTrue(value >= previous - 1.0E-6F, "exit reversed at " + progress);
+            previous = value;
+        }
+    }
+
+    @Test
     void descentMovesTheTipAndKeepsTheMarkerUntilLate() {
         assertEquals(1.0F, sample("BeamStrength", DESCENT), 1.0E-6F);
         assertEquals(1.0F, sample("BeamTip", DESCENT), 1.0E-6F);

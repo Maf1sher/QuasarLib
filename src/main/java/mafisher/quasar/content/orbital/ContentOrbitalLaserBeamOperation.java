@@ -37,6 +37,12 @@ public final class ContentOrbitalLaserBeamOperation implements ScreenEffectOpera
         .uniform("RimGlow", "RimGlow")
         .uniform("TipDepth", "TipDepth")
         .uniform(ContentOrbitalLaserCinematics.PLATFORM_VISIBLE, "PlatformVisible")
+        .uniform(ContentOrbitalLaserCinematics.PLATFORM_REVEAL, "PlatformReveal")
+        .uniform(ContentOrbitalLaserCinematics.PLATFORM_SPIN, "PlatformSpin")
+        .uniform(ContentOrbitalLaserCinematics.PLATFORM_CHARGE, "PlatformCharge")
+        .uniform(ContentOrbitalLaserCinematics.PLATFORM_RECOIL, "PlatformRecoil")
+        .uniform(ContentOrbitalLaserCinematics.PLATFORM_EXIT, "PlatformExit")
+        .uniform(ContentOrbitalLaserCinematics.MUZZLE_FLASH, "PlatformMuzzleFlash")
         .build();
     private static final EmissiveComposite COMPOSITE = EmissiveComposite
         .builder()
@@ -93,7 +99,11 @@ public final class ContentOrbitalLaserBeamOperation implements ScreenEffectOpera
             )
         );
         context.setUniform(shader, "BeamRadius", radius);
-        context.setUniform(shader, "BeamTopHeight", SETTINGS.topHeight());
+        float charge = ContentOrbitalLaserCinematics.platformCharge(
+            context.effect().progress()
+        );
+        context.setUniform(shader, "BeamTopHeight",
+            ContentOrbitalLaserPlatformSettings.muzzleHeight(charge));
         context.setUniform(shader, "PlatformAltitude",
             ContentOrbitalLaserPlatformSettings.PLATFORM_ALTITUDE);
         context.setUniform(shader, "PlatformOuterRadius",

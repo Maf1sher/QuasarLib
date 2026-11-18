@@ -9,6 +9,10 @@ uniform float PlatformAltitude;
 uniform float PlatformOuterRadius;
 uniform float PlatformInnerRadius;
 uniform float PlatformVisible;
+uniform float PlatformReveal;
+uniform float PlatformSpin;
+uniform float PlatformRecoil;
+uniform float PlatformExit;
 
 const int QUASAR_PLATFORM_MAX_STEPS = 56;
 const int QUASAR_PLATFORM_SIDES = 12;
@@ -25,12 +29,46 @@ const float QUASAR_PLATFORM_MUZZLE_LIP_RADIUS = 1.3;
 const float QUASAR_PLATFORM_BOUND_MARGIN = 2.5;
 const float QUASAR_PLATFORM_SURFACE_EPSILON = 0.02;
 const float QUASAR_PLATFORM_MIN_STEP = 0.02;
+const float QUASAR_PLATFORM_SPIN_TURNS = 1.15;
+const float QUASAR_PLATFORM_COUNTER_SPIN = 1.7;
+const float QUASAR_PLATFORM_RECOIL_LIFT = 1.4;
+const float QUASAR_PLATFORM_CLIP_MARGIN = 2.5;
+const float QUASAR_PLATFORM_SCAN_WIDTH = 2.4;
+const float QUASAR_PLATFORM_EXIT_WIDTH = 2.0;
+const float QUASAR_PLATFORM_BOB_SPEED = 0.045;
+const float QUASAR_PLATFORM_BOB_HEIGHT = 0.35;
+const float QUASAR_PLATFORM_APERTURE_GROWTH = 2.6;
+const float QUASAR_PLATFORM_MUZZLE_FLASH_RADIUS = 9.0;
 
 vec2 quasarPlatformRotate(vec2 point, float angle) {
     float cosine = cos(angle);
     float sine = sin(angle);
     return vec2(cosine * point.x - sine * point.y,
         sine * point.x + cosine * point.y);
+}
+
+float quasarPlatformSpinAngle() {
+    return PlatformSpin * QUASAR_PLATFORM_SPIN_TURNS * QUASAR_PLATFORM_TAU;
+}
+
+float quasarPlatformCounterAngle() {
+    return -quasarPlatformSpinAngle() * QUASAR_PLATFORM_COUNTER_SPIN;
+}
+
+float quasarPlatformRevealLimit(float muzzleY) {
+    float bottom = min(muzzleY, -QUASAR_PLATFORM_HULL_HALF_THICKNESS)
+        - QUASAR_PLATFORM_CLIP_MARGIN;
+    float top = QUASAR_PLATFORM_HULL_HALF_THICKNESS + QUASAR_PLATFORM_RECOIL_LIFT
+        + QUASAR_PLATFORM_CLIP_MARGIN;
+    return mix(bottom, top, clamp(PlatformReveal, 0.0, 1.0));
+}
+
+float quasarPlatformExitLimit(float muzzleY) {
+    float bottom = min(muzzleY, -QUASAR_PLATFORM_HULL_HALF_THICKNESS)
+        - QUASAR_PLATFORM_CLIP_MARGIN;
+    float top = QUASAR_PLATFORM_HULL_HALF_THICKNESS + QUASAR_PLATFORM_RECOIL_LIFT
+        + QUASAR_PLATFORM_CLIP_MARGIN;
+    return mix(top, bottom, clamp(PlatformExit, 0.0, 1.0));
 }
 
 float quasarPlatformSdBox2D(vec2 point, vec2 halfSize) {
@@ -42,7 +80,7 @@ float quasarPlatformOuterRing(vec3 point, float outerRadius) {
     float halfBand = QUASAR_PLATFORM_RING_BAND * 0.5;
     float midRadius = max(outerRadius - halfBand, 0.001);
     float sector = QUASAR_PLATFORM_TAU / float(QUASAR_PLATFORM_SIDES);
-    float angle = atan(point.z, point.x);
+    float angle = atan(point.z, point.x) - quasarPlatformSpinAngle();
     float localAngle = mod(angle + sector * 0.5, sector) - sector * 0.5;
     vec2 segment = quasarPlatformRotate(point.xz, -localAngle);
     segment.x -= midRadius;
@@ -61,8 +99,9 @@ float quasarPlatformInnerRing(vec3 point, float innerRadius) {
 
 float quasarPlatformTrusses(vec3 point, float outerRadius) {
     float distance = 1000000.0;
+    float spinAngle = quasarPlatformSpinAngle();
     for (int index = 0; index < 3; index++) {
-        float angle = float(index) * 3.141592653589793 / 3.0;
+        float angle = float(index) * 3.141592653589793 / 3.0 + spinAngle;
         vec2 local = quasarPlatformRotate(point.xz, -angle);
         float truss = quasarPlatformSdBox2D(local,
             vec2(outerRadius, QUASAR_PLATFORM_TRUSS_HALF_WIDTH));
@@ -92,24 +131,35 @@ float quasarPlatformMuzzle(vec3 point, float muzzleY) {
         - QUASAR_PLATFORM_MUZZLE_LIP_RADIUS;
 }
 
-float quasarOrbitalPlatformSdf(vec3 point, float muzzleY) {
-    float distance = quasarPlatformOuterRing(point, PlatformOuterRadius);
-    distance = min(distance, quasarPlatformInnerRing(point, PlatformInnerRadius));
-    distance = min(distance, quasarPlatformTrusses(point, PlatformOuterRadius));
-    distance = min(distance, quasarPlatformHub(point));
+float quasarOrbitalPlatformSdf(vec3 point, float muzzleY, float hullLift) {
+    // The stage passes the idle bob and recoil lift. They move the hull and
+    // trusses while the barrel stays locked on target; the barrel and muzzle
+    // are sampled at the original point.
+    vec3 hullPoint = point;
+    hullPoint.y -= hullLift;
+    float distance = quasarPlatformOuterRing(hullPoint, PlatformOuterRadius);
+    distance = min(distance, quasarPlatformInnerRing(hullPoint, PlatformInnerRadius));
+    distance = min(distance, quasarPlatformTrusses(hullPoint, PlatformOuterRadius));
+    distance = min(distance, quasarPlatformHub(hullPoint));
     distance = min(distance, quasarPlatformBarrel(point, muzzleY));
-    return min(distance, quasarPlatformMuzzle(point, muzzleY));
+    distance = min(distance, quasarPlatformMuzzle(point, muzzleY));
+
+    // Reveal and exit are half-space cuts. A horizontal cut keeps the distance
+    // field exact, so the raymarch cannot overstep the scan edge.
+    float limit = min(quasarPlatformRevealLimit(muzzleY),
+        quasarPlatformExitLimit(muzzleY));
+    return max(distance, point.y - limit);
 }
 
-vec3 quasarOrbitalPlatformNormal(vec3 point, float muzzleY) {
+vec3 quasarOrbitalPlatformNormal(vec3 point, float muzzleY, float hullLift) {
     float epsilon = 0.15;
     vec3 gradient = vec3(
-        quasarOrbitalPlatformSdf(point + vec3(epsilon, 0.0, 0.0), muzzleY)
-            - quasarOrbitalPlatformSdf(point - vec3(epsilon, 0.0, 0.0), muzzleY),
-        quasarOrbitalPlatformSdf(point + vec3(0.0, epsilon, 0.0), muzzleY)
-            - quasarOrbitalPlatformSdf(point - vec3(0.0, epsilon, 0.0), muzzleY),
-        quasarOrbitalPlatformSdf(point + vec3(0.0, 0.0, epsilon), muzzleY)
-            - quasarOrbitalPlatformSdf(point - vec3(0.0, 0.0, epsilon), muzzleY)
+        quasarOrbitalPlatformSdf(point + vec3(epsilon, 0.0, 0.0), muzzleY, hullLift)
+            - quasarOrbitalPlatformSdf(point - vec3(epsilon, 0.0, 0.0), muzzleY, hullLift),
+        quasarOrbitalPlatformSdf(point + vec3(0.0, epsilon, 0.0), muzzleY, hullLift)
+            - quasarOrbitalPlatformSdf(point - vec3(0.0, epsilon, 0.0), muzzleY, hullLift),
+        quasarOrbitalPlatformSdf(point + vec3(0.0, 0.0, epsilon), muzzleY, hullLift)
+            - quasarOrbitalPlatformSdf(point - vec3(0.0, 0.0, epsilon), muzzleY, hullLift)
     );
     float lengthSquared = dot(gradient, gradient);
     return lengthSquared > 0.00000001
@@ -139,8 +189,8 @@ bool quasarPlatformRayBox(vec3 origin, vec3 direction, vec3 minimum, vec3 maximu
 }
 
 bool quasarOrbitalPlatformTrace(vec3 origin, vec3 direction, float muzzleY,
-    float maxDistance, int maxSteps, out float hitDistance, out float closestDistance,
-    out vec3 hitPoint, out vec3 closestPoint) {
+    float hullLift, float maxDistance, int maxSteps, out float hitDistance,
+    out float closestDistance, out vec3 hitPoint, out vec3 closestPoint) {
     hitDistance = -1.0;
     closestDistance = 1000000.0;
     hitPoint = origin;
@@ -149,7 +199,8 @@ bool quasarOrbitalPlatformTrace(vec3 origin, vec3 direction, float muzzleY,
     float reach = PlatformOuterRadius + QUASAR_PLATFORM_BOUND_MARGIN;
     float bottom = min(muzzleY, -QUASAR_PLATFORM_HULL_HALF_THICKNESS)
         - QUASAR_PLATFORM_BOUND_MARGIN;
-    float top = QUASAR_PLATFORM_HULL_HALF_THICKNESS + QUASAR_PLATFORM_BOUND_MARGIN;
+    float top = QUASAR_PLATFORM_HULL_HALF_THICKNESS + QUASAR_PLATFORM_BOUND_MARGIN
+        + QUASAR_PLATFORM_RECOIL_LIFT;
     float enter;
     float exitDistance;
     if (!quasarPlatformRayBox(origin, direction, vec3(-reach, bottom, -reach),
@@ -164,14 +215,19 @@ bool quasarOrbitalPlatformTrace(vec3 origin, vec3 direction, float muzzleY,
     }
 
     int steps = max(1, min(maxSteps, QUASAR_PLATFORM_MAX_STEPS));
+    float limit = min(quasarPlatformRevealLimit(muzzleY),
+        quasarPlatformExitLimit(muzzleY));
     float distance = start;
     for (int index = 0; index < QUASAR_PLATFORM_MAX_STEPS; index++) {
         if (index >= steps) {
             break;
         }
         vec3 point = origin + direction * distance;
-        float field = quasarOrbitalPlatformSdf(point, muzzleY);
-        if (field < closestDistance) {
+        float field = quasarOrbitalPlatformSdf(point, muzzleY, hullLift);
+        // Only the visible half-space may seed edge coverage; the clipped part
+        // is still in the unclipped distance field and would ghost the scan.
+        if (point.y <= limit + QUASAR_PLATFORM_SURFACE_EPSILON
+            && field < closestDistance) {
             closestDistance = field;
             closestPoint = point;
         }

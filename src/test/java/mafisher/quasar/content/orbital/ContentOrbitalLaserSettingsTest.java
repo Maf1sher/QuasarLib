@@ -77,6 +77,32 @@ class ContentOrbitalLaserSettingsTest {
         assertTrue(ContentOrbitalLaserPlatformSettings.PLATFORM_INNER_RADIUS
             > ContentOrbitalLaserSettings.MAX_RADIUS);
         assertTrue(ContentOrbitalLaserPlatformSettings.PLATFORM_MUZZLE_DROP > 0.0F);
+        assertTrue(ContentOrbitalLaserPlatformSettings.PLATFORM_BARREL_EXTENSION > 0.0F);
+    }
+
+    @Test
+    void muzzleFollowsTheChargedBarrelExtension() {
+        float retracted = ContentOrbitalLaserPlatformSettings.muzzleHeight(0.0F);
+        float extended = ContentOrbitalLaserPlatformSettings.muzzleHeight(1.0F);
+
+        assertEquals(ContentOrbitalLaserSettings.BEAM_TOP_HEIGHT, retracted, 0.0F);
+        assertEquals(ContentOrbitalLaserSettings.BEAM_TOP_HEIGHT
+            - ContentOrbitalLaserPlatformSettings.PLATFORM_BARREL_EXTENSION, extended, 0.0F);
+        assertTrue(extended < retracted);
+        assertEquals(retracted,
+            ContentOrbitalLaserPlatformSettings.muzzleHeight(Float.NaN), 0.0F);
+        assertEquals(extended,
+            ContentOrbitalLaserPlatformSettings.muzzleHeight(4.0F), 0.0F);
+        assertEquals(retracted,
+            ContentOrbitalLaserPlatformSettings.muzzleHeight(-4.0F), 0.0F);
+
+        float previous = retracted;
+        for (int step = 0; step <= 20; step++) {
+            float height = ContentOrbitalLaserPlatformSettings.muzzleHeight(step / 20.0F);
+            assertTrue(height <= previous + 1.0E-6F);
+            assertTrue(height >= extended - 1.0E-6F && height <= retracted + 1.0E-6F);
+            previous = height;
+        }
     }
 
     @Test

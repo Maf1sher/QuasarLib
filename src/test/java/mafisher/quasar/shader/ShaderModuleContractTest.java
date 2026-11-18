@@ -139,7 +139,11 @@ class ShaderModuleContractTest {
             "PlatformAltitude",
             "PlatformOuterRadius",
             "PlatformInnerRadius",
-            "PlatformVisible"
+            "PlatformVisible",
+            "PlatformReveal",
+            "PlatformSpin",
+            "PlatformRecoil",
+            "PlatformExit"
         ));
         return modules;
     }
