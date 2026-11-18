@@ -10,23 +10,21 @@ import org.junit.jupiter.api.Test;
 
 class ContentOrbitalLaserCinematicsTest {
     private static final EffectParameterSet PARAMETERS = ContentOrbitalLaserCinematics.parameters();
-    private static final float DESCENT = progress(
-        ContentOrbitalLaserSettings.TARGET_TICKS
-    );
-    private static final float IMPACT = progress(
-        ContentOrbitalLaserSettings.TARGET_TICKS + ContentOrbitalLaserSettings.DESCENT_TICKS
-    );
-    private static final float SUSTAIN = progress(
-        ContentOrbitalLaserSettings.TARGET_TICKS + ContentOrbitalLaserSettings.DESCENT_TICKS
-            + ContentOrbitalLaserSettings.IMPACT_TICKS
-    );
-    private static final float COLLAPSE = progress(
-        ContentOrbitalLaserSettings.TARGET_TICKS + ContentOrbitalLaserSettings.DESCENT_TICKS
-            + ContentOrbitalLaserSettings.IMPACT_TICKS + ContentOrbitalLaserSettings.SUSTAIN_TICKS
-    );
-    private static final float AFTERMATH = progress(
-        ContentOrbitalLaserSettings.TOTAL_TICKS - ContentOrbitalLaserSettings.AFTERMATH_TICKS
-    );
+    private static final int TARGET_TICK = phaseStart(ContentOrbitalLaserSettings.PHASE_TARGET);
+    private static final int ARRIVAL_TICK = phaseStart(ContentOrbitalLaserSettings.PHASE_ARRIVAL);
+    private static final int CHARGE_TICK = phaseStart(ContentOrbitalLaserSettings.PHASE_CHARGE);
+    private static final int DESCENT_TICK = phaseStart(ContentOrbitalLaserSettings.PHASE_DESCENT);
+    private static final int IMPACT_TICK = phaseStart(ContentOrbitalLaserSettings.PHASE_IMPACT);
+    private static final int SUSTAIN_TICK = phaseStart(ContentOrbitalLaserSettings.PHASE_SUSTAIN);
+    private static final int COLLAPSE_TICK = phaseStart(ContentOrbitalLaserSettings.PHASE_COLLAPSE);
+    private static final int AFTERMATH_TICK = phaseStart(ContentOrbitalLaserSettings.PHASE_AFTERMATH);
+    private static final float ARRIVAL = progress(ARRIVAL_TICK);
+    private static final float CHARGE = progress(CHARGE_TICK);
+    private static final float DESCENT = progress(DESCENT_TICK);
+    private static final float IMPACT = progress(IMPACT_TICK);
+    private static final float SUSTAIN = progress(SUSTAIN_TICK);
+    private static final float COLLAPSE = progress(COLLAPSE_TICK);
+    private static final float AFTERMATH = progress(AFTERMATH_TICK);
 
     @Test
     void targetPhaseShowsOnlyTheMarker() {
@@ -35,6 +33,62 @@ class ContentOrbitalLaserCinematicsTest {
         assertEquals(0.0F, sample("BeamStrength", 0.0F), 1.0E-6F);
         assertEquals(1.0F, sample("MarkerAlpha", 0.0F), 1.0E-6F);
         assertEquals(0.0F, sample("ImpactFlash", 0.0F), 1.0E-6F);
+    }
+
+    @Test
+    void arrivalAndChargeKeepTheBeamOff() {
+        for (int tick = 0; tick < DESCENT_TICK; tick++) {
+            float progress = progress(tick);
+            assertFalse(ContentOrbitalLaserCinematics.screenVisible(progress),
+                "screen visible at tick " + tick);
+            assertEquals(0.0F, sample("BeamStrength", progress), 1.0E-6F,
+                "beam strength at tick " + tick);
+            assertEquals(0.0F, sample("BeamWidth", progress), 1.0E-6F,
+                "beam width at tick " + tick);
+        }
+        assertEquals(1.0F, sample("MarkerAlpha", ARRIVAL), 1.0E-6F);
+        assertEquals(1.0F, sample("MarkerAlpha", CHARGE), 1.0E-6F);
+        assertEquals(0.0F, sample(ContentOrbitalLaserCinematics.PLATFORM_VISIBLE,
+            progress(TARGET_TICK)), 1.0E-6F);
+        assertEquals(1.0F, sample(ContentOrbitalLaserCinematics.PLATFORM_VISIBLE, CHARGE),
+            1.0E-6F);
+    }
+
+    @Test
+    void platformCurvesRevealChargeFireAndExitInOrder() {
+        String visible = ContentOrbitalLaserCinematics.PLATFORM_VISIBLE;
+        String reveal = ContentOrbitalLaserCinematics.PLATFORM_REVEAL;
+        String spin = ContentOrbitalLaserCinematics.PLATFORM_SPIN;
+        String charge = ContentOrbitalLaserCinematics.PLATFORM_CHARGE;
+        String recoil = ContentOrbitalLaserCinematics.PLATFORM_RECOIL;
+        String muzzleFlash = ContentOrbitalLaserCinematics.MUZZLE_FLASH;
+        String exit = ContentOrbitalLaserCinematics.PLATFORM_EXIT;
+
+        assertEquals(0.0F, sample(reveal, ARRIVAL), 1.0E-6F);
+        assertEquals(1.0F, sample(reveal, CHARGE), 1.0E-6F);
+        assertEquals(0.0F, sample(spin, ARRIVAL), 1.0E-6F);
+        assertEquals(1.0F, sample(spin,
+            progress(COLLAPSE_TICK + ContentOrbitalLaserSettings.COLLAPSE_TICKS)), 1.0E-6F);
+        float previousSpin = sample(spin, ARRIVAL);
+        for (float progress = ARRIVAL; progress <= COLLAPSE; progress += 0.002F) {
+            float value = sample(spin, progress);
+            assertTrue(value >= previousSpin - 1.0E-6F, "platform spin reversed at " + progress);
+            previousSpin = value;
+        }
+
+        assertEquals(0.0F, sample(charge, ARRIVAL), 1.0E-6F);
+        assertEquals(1.0F, sample(charge, DESCENT), 1.0E-6F);
+        assertEquals(0.0F, sample(charge, progress(DESCENT_TICK + 4)), 1.0E-5F);
+
+        assertEquals(0.0F, sample(recoil, CHARGE), 1.0E-6F);
+        assertEquals(1.0F, sample(recoil, DESCENT), 1.0E-6F);
+        assertEquals(0.0F, sample(recoil, progress(DESCENT_TICK + 8)), 1.0E-5F);
+        assertEquals(1.0F, sample(muzzleFlash, DESCENT), 1.0E-6F);
+        assertEquals(0.0F, sample(muzzleFlash, progress(DESCENT_TICK + 6)), 1.0E-5F);
+
+        assertEquals(0.0F, sample(exit, COLLAPSE), 1.0E-6F);
+        assertEquals(1.0F, sample(exit, progress(COLLAPSE_TICK + 20)), 1.0E-6F);
+        assertEquals(1.0F, sample(visible, AFTERMATH), 1.0E-6F);
     }
 
     @Test
@@ -80,9 +134,7 @@ class ContentOrbitalLaserCinematicsTest {
 
     @Test
     void shockRingExpandsThenFades() {
-        float expanded = progress(ContentOrbitalLaserSettings.TARGET_TICKS
-            + ContentOrbitalLaserSettings.DESCENT_TICKS + ContentOrbitalLaserSettings.IMPACT_TICKS
-            + 16);
+        float expanded = progress(IMPACT_TICK + 16);
         float previous = sample("ShockRadiusScale", IMPACT);
         for (float progress = IMPACT; progress <= expanded; progress += 0.002F) {
             float radius = sample("ShockRadiusScale", progress);
@@ -198,5 +250,9 @@ class ContentOrbitalLaserCinematicsTest {
 
     private static float progress(int ticks) {
         return ticks / (float)ContentOrbitalLaserSettings.TOTAL_TICKS;
+    }
+
+    private static int phaseStart(int phaseIndex) {
+        return ContentOrbitalLaserSettings.phasePlan().phaseStartTick(phaseIndex);
     }
 }

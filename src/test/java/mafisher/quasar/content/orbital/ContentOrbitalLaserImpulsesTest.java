@@ -17,10 +17,12 @@ import org.junit.jupiter.api.Test;
 
 @GlobalStateTest
 class ContentOrbitalLaserImpulsesTest {
-    private static final int IMPACT = ContentOrbitalLaserSettings.TARGET_TICKS
-        + ContentOrbitalLaserSettings.DESCENT_TICKS;
-    private static final int SUSTAIN = IMPACT + ContentOrbitalLaserSettings.IMPACT_TICKS;
-    private static final int COLLAPSE = SUSTAIN + ContentOrbitalLaserSettings.SUSTAIN_TICKS;
+    private static final int IMPACT = ContentOrbitalLaserSettings.phasePlan()
+        .phaseStartTick(ContentOrbitalLaserSettings.PHASE_IMPACT);
+    private static final int SUSTAIN = ContentOrbitalLaserSettings.phasePlan()
+        .phaseStartTick(ContentOrbitalLaserSettings.PHASE_SUSTAIN);
+    private static final int COLLAPSE = ContentOrbitalLaserSettings.phasePlan()
+        .phaseStartTick(ContentOrbitalLaserSettings.PHASE_COLLAPSE);
 
     @BeforeEach
     @AfterEach

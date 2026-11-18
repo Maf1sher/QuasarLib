@@ -43,19 +43,20 @@ class ContentOrbitalLaserAudioTest {
     @Test
     void cueTicksFollowThePhasePlan() {
         EffectAudioSpec audio = ContentOrbitalLaserAudio.plan(CENTER);
-        int descent = ContentOrbitalLaserSettings.TARGET_TICKS;
-        int impact = descent + ContentOrbitalLaserSettings.DESCENT_TICKS;
-        int sustain = impact + ContentOrbitalLaserSettings.IMPACT_TICKS;
-        int collapse = sustain + ContentOrbitalLaserSettings.SUSTAIN_TICKS;
-        int aftermath = collapse + ContentOrbitalLaserSettings.COLLAPSE_TICKS;
 
         assertEquals(0, cue(audio, ContentSounds.ORBITAL_LASER_WARNING).tick());
-        assertEquals(descent, cue(audio, ContentSounds.ORBITAL_LASER_DESCENT).tick());
-        assertEquals(impact, cue(audio, ContentSounds.ORBITAL_LASER_IMPACT).tick());
-        assertEquals(impact, cue(audio, ContentSounds.ORBITAL_LASER_DRONE).tick());
-        assertEquals(sustain, cue(audio, ContentSounds.ORBITAL_LASER_CRACKLE).tick());
-        assertEquals(collapse, cue(audio, ContentSounds.ORBITAL_LASER_COLLAPSE).tick());
-        assertEquals(aftermath, cue(audio, ContentSounds.ORBITAL_LASER_AFTERMATH).tick());
+        assertEquals(phaseStart(ContentOrbitalLaserSettings.PHASE_DESCENT),
+            cue(audio, ContentSounds.ORBITAL_LASER_DESCENT).tick());
+        assertEquals(phaseStart(ContentOrbitalLaserSettings.PHASE_IMPACT),
+            cue(audio, ContentSounds.ORBITAL_LASER_IMPACT).tick());
+        assertEquals(phaseStart(ContentOrbitalLaserSettings.PHASE_IMPACT),
+            cue(audio, ContentSounds.ORBITAL_LASER_DRONE).tick());
+        assertEquals(phaseStart(ContentOrbitalLaserSettings.PHASE_SUSTAIN),
+            cue(audio, ContentSounds.ORBITAL_LASER_CRACKLE).tick());
+        assertEquals(phaseStart(ContentOrbitalLaserSettings.PHASE_COLLAPSE),
+            cue(audio, ContentSounds.ORBITAL_LASER_COLLAPSE).tick());
+        assertEquals(phaseStart(ContentOrbitalLaserSettings.PHASE_AFTERMATH),
+            cue(audio, ContentSounds.ORBITAL_LASER_AFTERMATH).tick());
     }
 
     @Test
@@ -67,9 +68,9 @@ class ContentOrbitalLaserAudioTest {
         assertTrue(descent.envelope().looping());
         assertTrue(descent.motion() instanceof EffectAudioMotion.Path);
         EffectAudioMotion.Path path = (EffectAudioMotion.Path)descent.motion();
-        assertEquals(ContentOrbitalLaserSettings.TARGET_TICKS, path.startTick());
+        assertEquals(phaseStart(ContentOrbitalLaserSettings.PHASE_DESCENT), path.startTick());
         assertEquals(
-            ContentOrbitalLaserSettings.TARGET_TICKS + ContentOrbitalLaserSettings.DESCENT_TICKS,
+            phaseStart(ContentOrbitalLaserSettings.PHASE_IMPACT),
             path.endTick()
         );
         assertEquals(CENTER.add(0.0, ContentOrbitalLaserSettings.BEAM_TOP_HEIGHT, 0.0),
@@ -84,8 +85,8 @@ class ContentOrbitalLaserAudioTest {
         );
         EffectAudioAttenuation.Distance attenuation =
             (EffectAudioAttenuation.Distance)descent.attenuation();
-        int start = ContentOrbitalLaserSettings.TARGET_TICKS;
-        int end = start + ContentOrbitalLaserSettings.DESCENT_TICKS;
+        int start = phaseStart(ContentOrbitalLaserSettings.PHASE_DESCENT);
+        int end = phaseStart(ContentOrbitalLaserSettings.PHASE_IMPACT);
         int middle = (start + end) / 2;
 
         for (Vec3 listener : List.of(
@@ -109,35 +110,30 @@ class ContentOrbitalLaserAudioTest {
     @Test
     void loopsStayInsideTheirPhaseWindowsAndUnderTheLoopCap() {
         EffectAudioSpec audio = ContentOrbitalLaserAudio.plan(CENTER);
+        int descent = phaseStart(ContentOrbitalLaserSettings.PHASE_DESCENT);
+        int impact = phaseStart(ContentOrbitalLaserSettings.PHASE_IMPACT);
+        int sustain = phaseStart(ContentOrbitalLaserSettings.PHASE_SUSTAIN);
+        int collapse = phaseStart(ContentOrbitalLaserSettings.PHASE_COLLAPSE);
 
         assertEquals(ContentOrbitalLaserSettings.TARGET_TICKS,
             loopStop(audio, ContentSounds.ORBITAL_LASER_WARNING));
-        assertEquals(ContentOrbitalLaserSettings.TARGET_TICKS
-            + ContentOrbitalLaserSettings.DESCENT_TICKS,
+        assertEquals(impact,
             loopStop(audio, ContentSounds.ORBITAL_LASER_DESCENT));
-        assertEquals(ContentOrbitalLaserSettings.TARGET_TICKS
-            + ContentOrbitalLaserSettings.DESCENT_TICKS
-            + ContentOrbitalLaserSettings.IMPACT_TICKS
-            + ContentOrbitalLaserSettings.SUSTAIN_TICKS,
+        assertEquals(collapse,
             loopStop(audio, ContentSounds.ORBITAL_LASER_DRONE));
-        assertEquals(ContentOrbitalLaserSettings.TARGET_TICKS
-            + ContentOrbitalLaserSettings.DESCENT_TICKS
-            + ContentOrbitalLaserSettings.IMPACT_TICKS
-            + ContentOrbitalLaserSettings.SUSTAIN_TICKS,
+        assertEquals(collapse,
             loopStop(audio, ContentSounds.ORBITAL_LASER_CRACKLE));
 
         assertEquals(1, activeLoops(audio, 0));
-        assertEquals(1, activeLoops(audio, ContentOrbitalLaserSettings.TARGET_TICKS));
-        assertEquals(1, activeLoops(audio,
-            ContentOrbitalLaserSettings.TARGET_TICKS + ContentOrbitalLaserSettings.DESCENT_TICKS));
-        assertEquals(2, activeLoops(audio, ContentOrbitalLaserSettings.TARGET_TICKS
-            + ContentOrbitalLaserSettings.DESCENT_TICKS
-            + ContentOrbitalLaserSettings.IMPACT_TICKS
-            + 1));
-        assertEquals(0, activeLoops(audio, ContentOrbitalLaserSettings.TARGET_TICKS
-            + ContentOrbitalLaserSettings.DESCENT_TICKS
-            + ContentOrbitalLaserSettings.IMPACT_TICKS
-            + ContentOrbitalLaserSettings.SUSTAIN_TICKS));
+        assertEquals(0, activeLoops(audio, ContentOrbitalLaserSettings.TARGET_TICKS));
+        assertEquals(0, activeLoops(audio,
+            phaseStart(ContentOrbitalLaserSettings.PHASE_ARRIVAL)));
+        assertEquals(0, activeLoops(audio,
+            phaseStart(ContentOrbitalLaserSettings.PHASE_CHARGE)));
+        assertEquals(1, activeLoops(audio, descent));
+        assertEquals(1, activeLoops(audio, impact + 1));
+        assertEquals(2, activeLoops(audio, sustain));
+        assertEquals(0, activeLoops(audio, collapse));
         for (int age = 0; age < ContentOrbitalLaserSettings.TOTAL_TICKS; age++) {
             assertTrue(activeLoops(audio, age) <= 4, "loop cap at " + age);
         }
@@ -155,14 +151,15 @@ class ContentOrbitalLaserAudioTest {
             audio
         );
 
-        assertCueAt(plan, ContentOrbitalLaserSettings.TARGET_TICKS + 5,
+        assertCueAt(plan, phaseStart(ContentOrbitalLaserSettings.PHASE_DESCENT) + 5,
             ContentSounds.ORBITAL_LASER_DESCENT);
-        assertCueAt(plan, ContentOrbitalLaserSettings.TARGET_TICKS
-            + ContentOrbitalLaserSettings.DESCENT_TICKS + 5,
+        assertCueAt(plan, phaseStart(ContentOrbitalLaserSettings.PHASE_IMPACT) + 5,
             ContentSounds.ORBITAL_LASER_DRONE);
         assertCueAt(plan, ContentOrbitalLaserSettings.TOTAL_TICKS - 25,
             ContentSounds.ORBITAL_LASER_AFTERMATH);
-        assertTrue(plan.hasPlayableCues(100, 2));
+        assertTrue(plan.hasPlayableCues(
+            phaseStart(ContentOrbitalLaserSettings.PHASE_DESCENT) + 5, 2
+        ));
         assertFalse(plan.hasPlayableCues(
             ContentOrbitalLaserSettings.TOTAL_TICKS - 5, 2
         ));
@@ -200,6 +197,10 @@ class ContentOrbitalLaserAudioTest {
         return EffectAudioGain.distanceGain(
             source.distanceTo(listener), attenuation.maxDistance()
         );
+    }
+
+    private static int phaseStart(int phaseIndex) {
+        return ContentOrbitalLaserSettings.phasePlan().phaseStartTick(phaseIndex);
     }
 
     private static int loopStop(EffectAudioSpec audio, Supplier<SoundEvent> sound) {

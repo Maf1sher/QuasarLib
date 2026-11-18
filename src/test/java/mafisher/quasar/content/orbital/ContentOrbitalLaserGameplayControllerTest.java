@@ -17,10 +17,14 @@ import mafisher.quasar.TestConfig;
 import mafisher.quasar.api.effect.EffectParameterState;
 import mafisher.quasar.api.effect.EffectPoint;
 import mafisher.quasar.api.effect.VisualEffectService;
+import mafisher.quasar.api.gameplay.EffectPhase;
+import mafisher.quasar.api.gameplay.EffectPhasePlan;
+import mafisher.quasar.api.gameplay.GameplayEffectContext;
 import mafisher.quasar.api.gameplay.GameplayEffectEndReason;
 import mafisher.quasar.api.gameplay.GameplayEffectHandle;
 import mafisher.quasar.api.gameplay.GameplayEffectService;
 import mafisher.quasar.api.gameplay.GameplayEffectSpec;
+import mafisher.quasar.api.gameplay.OwnerPolicy;
 import mafisher.quasar.api.persistence.EffectCapabilities;
 import mafisher.quasar.api.persistence.EffectDescriptor;
 import mafisher.quasar.api.persistence.EffectKind;
@@ -79,8 +83,7 @@ class ContentOrbitalLaserGameplayControllerTest {
         assertEquals(1, descriptors(EffectKind.VISUAL));
         assertTrue(this.world.blockState(block(8, 15, 8)).is(Blocks.STONE));
 
-        tick(ContentOrbitalLaserSettings.TARGET_TICKS
-            + ContentOrbitalLaserSettings.DESCENT_TICKS - 1);
+        tick(phaseStart(ContentOrbitalLaserSettings.PHASE_IMPACT) - 1);
         assertTrue(this.world.blockState(block(8, 15, 8)).is(Blocks.STONE));
 
         tick(2);
@@ -168,9 +171,7 @@ class ContentOrbitalLaserGameplayControllerTest {
         assertEquals(0.0F,
             initial.value(ContentOrbitalLaserCinematics.TIP_DEPTH).x(), 1.0E-6F);
 
-        tick(ContentOrbitalLaserSettings.TARGET_TICKS
-            + ContentOrbitalLaserSettings.DESCENT_TICKS
-            + ContentOrbitalLaserSettings.IMPACT_TICKS + 8);
+        tick(phaseStart(ContentOrbitalLaserSettings.PHASE_SUSTAIN) + 8);
 
         EffectParameterState synced = EffectParameterNbt.loadFrom(visualDescriptor());
         assertTrue(controller.frontDepth() > 0.0F);
@@ -187,8 +188,7 @@ class ContentOrbitalLaserGameplayControllerTest {
             new ContentOrbitalLaserGameplayController();
         start(controller);
 
-        tick(ContentOrbitalLaserSettings.TARGET_TICKS
-            + ContentOrbitalLaserSettings.DESCENT_TICKS + 2);
+        tick(phaseStart(ContentOrbitalLaserSettings.PHASE_IMPACT) + 2);
         verify(target, times(1)).push(any(Vec3.class));
 
         tick(20);
@@ -204,9 +204,7 @@ class ContentOrbitalLaserGameplayControllerTest {
             new ContentOrbitalLaserGameplayController();
         start(controller);
 
-        tick(ContentOrbitalLaserSettings.TARGET_TICKS
-            + ContentOrbitalLaserSettings.DESCENT_TICKS
-            + ContentOrbitalLaserSettings.IMPACT_TICKS - 1);
+        tick(phaseStart(ContentOrbitalLaserSettings.PHASE_SUSTAIN) - 1);
         verify(target, never()).hurt(any(), anyFloat());
 
         tick(1);
@@ -219,14 +217,48 @@ class ContentOrbitalLaserGameplayControllerTest {
     }
 
     @Test
+    void mapsLegacyResumePhaseIndicesByName() {
+        EffectPhasePlan legacy = EffectPhasePlan.of(
+            new EffectPhase("target", 40),
+            new EffectPhase("descent", 20),
+            new EffectPhase("impact", 4),
+            new EffectPhase("sustain", 100),
+            new EffectPhase("collapse", 30),
+            new EffectPhase("aftermath", 26)
+        );
+        GameplayEffectSpec legacySpec = new GameplayEffectSpec(
+            ContentEffectIds.ORBITAL_LASER,
+            null,
+            Vec3.ZERO,
+            legacy,
+            1L,
+            ContentOrbitalLaserSettings.gameplayBudget(),
+            OwnerPolicy.STOP_WHEN_UNAVAILABLE
+        );
+        GameplayEffectContext context = mock(GameplayEffectContext.class);
+        when(context.spec()).thenReturn(legacySpec);
+
+        when(context.phaseIndex()).thenReturn(3);
+        assertTrue(ContentOrbitalLaserDestruction.damageActive(context));
+        when(context.phaseIndex()).thenReturn(4);
+        assertFalse(ContentOrbitalLaserDestruction.damageActive(context));
+
+        assertTrue(ContentOrbitalLaserSettings.isInPhase(
+            legacy, 2, ContentOrbitalLaserSettings.PHASE_NAME_IMPACT
+        ));
+        assertFalse(ContentOrbitalLaserSettings.isInPhase(
+            legacy, 2, ContentOrbitalLaserSettings.PHASE_NAME_SUSTAIN
+        ));
+    }
+
+    @Test
     void cancellationBeforeImpactLeavesTerrainUntouched() {
         this.world.fillSection(Blocks.STONE.defaultBlockState());
         ContentOrbitalLaserGameplayController controller =
             new ContentOrbitalLaserGameplayController();
         GameplayEffectHandle handle = start(controller);
 
-        tick(ContentOrbitalLaserSettings.TARGET_TICKS
-            + ContentOrbitalLaserSettings.DESCENT_TICKS - 1);
+        tick(phaseStart(ContentOrbitalLaserSettings.PHASE_IMPACT) - 1);
         GameplayEffectService.stop(
             this.world.level(), handle, GameplayEffectEndReason.CANCELLED
         );
@@ -246,9 +278,7 @@ class ContentOrbitalLaserGameplayControllerTest {
             new ContentOrbitalLaserGameplayController();
         GameplayEffectHandle handle = start(controller);
 
-        tick(ContentOrbitalLaserSettings.TARGET_TICKS
-            + ContentOrbitalLaserSettings.DESCENT_TICKS
-            + ContentOrbitalLaserSettings.IMPACT_TICKS + 2);
+        tick(phaseStart(ContentOrbitalLaserSettings.PHASE_SUSTAIN) + 2);
         verify(target, times(1)).hurt(any(), anyFloat());
 
         GameplayEffectService.stop(
@@ -341,6 +371,10 @@ class ContentOrbitalLaserGameplayControllerTest {
                 EffectCapabilities.destructiveCapability()
             )
         );
+    }
+
+    private static int phaseStart(int phaseIndex) {
+        return ContentOrbitalLaserSettings.phasePlan().phaseStartTick(phaseIndex);
     }
 
     private void tick(int ticks) {

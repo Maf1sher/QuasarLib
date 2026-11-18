@@ -1,8 +1,11 @@
 package mafisher.quasar.content.orbital;
 
+import java.util.Objects;
+import mafisher.quasar.api.audio.EffectPhaseTiming;
 import mafisher.quasar.api.effect.EffectAudience;
 import mafisher.quasar.api.gameplay.EffectPhase;
 import mafisher.quasar.api.gameplay.EffectPhasePlan;
+import mafisher.quasar.api.gameplay.GameplayEffectContext;
 import mafisher.quasar.api.gameplay.tick.EffectTickBudget;
 
 /** Content-owned timing, target limits, and phase plan for the orbital-laser acceptance test. */
@@ -16,6 +19,10 @@ public final class ContentOrbitalLaserSettings {
 
     /** Duration of the target-lock phase. */
     public static final int TARGET_TICKS = 40;
+    /** Duration of the platform-arrival phase. */
+    public static final int ARRIVAL_TICKS = 40;
+    /** Duration of the platform-charge phase. */
+    public static final int CHARGE_TICKS = 40;
     /** Duration of the beam-descent phase. */
     public static final int DESCENT_TICKS = 20;
     /** Duration of the impact phase. */
@@ -26,22 +33,43 @@ public final class ContentOrbitalLaserSettings {
     public static final int COLLAPSE_TICKS = 30;
     /** Duration of the aftermath phase. */
     public static final int AFTERMATH_TICKS = 26;
-    /** Total show duration derived from the six phases. */
-    public static final int TOTAL_TICKS = TARGET_TICKS + DESCENT_TICKS + IMPACT_TICKS
-        + SUSTAIN_TICKS + COLLAPSE_TICKS + AFTERMATH_TICKS;
+    /** Total show duration derived from the eight phases. */
+    public static final int TOTAL_TICKS = TARGET_TICKS + ARRIVAL_TICKS + CHARGE_TICKS
+        + DESCENT_TICKS + IMPACT_TICKS + SUSTAIN_TICKS + COLLAPSE_TICKS + AFTERMATH_TICKS;
 
     /** Phase index of the target lock. */
     public static final int PHASE_TARGET = 0;
+    /** Phase index of the platform arrival. */
+    public static final int PHASE_ARRIVAL = 1;
+    /** Phase index of the platform charge. */
+    public static final int PHASE_CHARGE = 2;
     /** Phase index of the beam descent. */
-    public static final int PHASE_DESCENT = 1;
+    public static final int PHASE_DESCENT = 3;
     /** Phase index of the impact. */
-    public static final int PHASE_IMPACT = 2;
+    public static final int PHASE_IMPACT = 4;
     /** Phase index of the sustained beam. */
-    public static final int PHASE_SUSTAIN = 3;
+    public static final int PHASE_SUSTAIN = 5;
     /** Phase index of the collapse. */
-    public static final int PHASE_COLLAPSE = 4;
+    public static final int PHASE_COLLAPSE = 6;
     /** Phase index of the aftermath. */
-    public static final int PHASE_AFTERMATH = 5;
+    public static final int PHASE_AFTERMATH = 7;
+
+    /** Phase name of the target lock. */
+    static final String PHASE_NAME_TARGET = "target";
+    /** Phase name of the platform arrival. */
+    static final String PHASE_NAME_ARRIVAL = "arrival";
+    /** Phase name of the platform charge. */
+    static final String PHASE_NAME_CHARGE = "charge";
+    /** Phase name of the beam descent. */
+    static final String PHASE_NAME_DESCENT = "descent";
+    /** Phase name of the impact. */
+    static final String PHASE_NAME_IMPACT = "impact";
+    /** Phase name of the sustained beam. */
+    static final String PHASE_NAME_SUSTAIN = "sustain";
+    /** Phase name of the collapse. */
+    static final String PHASE_NAME_COLLAPSE = "collapse";
+    /** Phase name of the aftermath. */
+    static final String PHASE_NAME_AFTERMATH = "aftermath";
 
     /** Height above the first free column Y used to keep the marker clear of the surface. */
     public static final double MARKER_LIFT = 0.05;
@@ -50,7 +78,10 @@ public final class ContentOrbitalLaserSettings {
     /** Audience for the showpiece visual. */
     public static final EffectAudience AUDIENCE = EffectAudience.dimensionWide();
 
-    /** Beam extent above the resolved column base. */
+    /**
+     * Beam extent above the resolved column base. Stage 6.10 raises this to the platform muzzle
+     * ({@code 494}); 6.9 keeps 256 so the phase-only change has no visual impact.
+     */
     public static final float BEAM_TOP_HEIGHT = 256.0F;
     /** Solid plasma core radius as a fraction of the requested radius. */
     public static final float BEAM_CORE_RADIUS_FACTOR = 0.62F;
@@ -91,27 +122,50 @@ public final class ContentOrbitalLaserSettings {
     private ContentOrbitalLaserSettings() {
     }
 
-    /** Builds the six-phase plan shared by the session and its content tests. */
+    /** Builds the eight-phase plan shared by the session and its content tests. */
     public static EffectPhasePlan phasePlan() {
         return EffectPhasePlan.of(
-            new EffectPhase("target", TARGET_TICKS),
-            new EffectPhase("descent", DESCENT_TICKS),
-            new EffectPhase("impact", IMPACT_TICKS),
-            new EffectPhase("sustain", SUSTAIN_TICKS),
-            new EffectPhase("collapse", COLLAPSE_TICKS),
-            new EffectPhase("aftermath", AFTERMATH_TICKS)
+            new EffectPhase(PHASE_NAME_TARGET, TARGET_TICKS),
+            new EffectPhase(PHASE_NAME_ARRIVAL, ARRIVAL_TICKS),
+            new EffectPhase(PHASE_NAME_CHARGE, CHARGE_TICKS),
+            new EffectPhase(PHASE_NAME_DESCENT, DESCENT_TICKS),
+            new EffectPhase(PHASE_NAME_IMPACT, IMPACT_TICKS),
+            new EffectPhase(PHASE_NAME_SUSTAIN, SUSTAIN_TICKS),
+            new EffectPhase(PHASE_NAME_COLLAPSE, COLLAPSE_TICKS),
+            new EffectPhase(PHASE_NAME_AFTERMATH, AFTERMATH_TICKS)
         );
     }
 
     /** Progress at which the ground carve starts: the impact phase. */
     public static float carveWindowStart() {
-        return (TARGET_TICKS + DESCENT_TICKS) / (float)TOTAL_TICKS;
+        return (TARGET_TICKS + ARRIVAL_TICKS + CHARGE_TICKS + DESCENT_TICKS)
+            / (float)TOTAL_TICKS;
     }
 
     /** Progress at which ground edits stop: the collapse phase. */
     public static float carveWindowEnd() {
-        return (TARGET_TICKS + DESCENT_TICKS + IMPACT_TICKS + SUSTAIN_TICKS)
-            / (float)TOTAL_TICKS;
+        return (TARGET_TICKS + ARRIVAL_TICKS + CHARGE_TICKS + DESCENT_TICKS
+            + IMPACT_TICKS + SUSTAIN_TICKS) / (float)TOTAL_TICKS;
+    }
+
+    /**
+     * Returns whether the context's persisted phase plan names the current phase {@code phaseName}.
+     *
+     * <p>Restored sessions keep the phase list saved with their descriptor, so a legacy six-phase
+     * plan has different indices than the current eight-phase plan. Content control flow compares
+     * names so resume still opens the impact and sustain windows at the right point.</p>
+     */
+    static boolean isInPhase(GameplayEffectContext context, String phaseName) {
+        Objects.requireNonNull(context, "context");
+        return isInPhase(context.spec().phases(), context.phaseIndex(), phaseName);
+    }
+
+    /** Returns whether {@code phases} names the phase at {@code phaseIndex} {@code phaseName}. */
+    static boolean isInPhase(EffectPhaseTiming phases, int phaseIndex, String phaseName) {
+        Objects.requireNonNull(phases, "phases");
+        Objects.requireNonNull(phaseName, "phaseName");
+        return phaseIndex >= 0 && phaseIndex < phases.phaseCount()
+            && phaseName.equals(phases.phaseName(phaseIndex));
     }
 
     /** Per-tick budgets for the destructive orbital-laser session. */

@@ -35,14 +35,18 @@ public final class ContentOrbitalLaserGameplayController implements GameplayEffe
         this.destruction = ContentOrbitalLaserDestruction.restore(context);
         this.companion = EffectCompanion.restore(context, ContentOrbitalLaserSpecs.companion());
         this.syncVisual(true);
-        if (context.phaseIndex() == ContentOrbitalLaserSettings.PHASE_IMPACT) {
+        if (ContentOrbitalLaserSettings.isInPhase(
+            context, ContentOrbitalLaserSettings.PHASE_NAME_IMPACT
+        )) {
             this.destruction.applyImpact(context);
         }
     }
 
     @Override
     public void onPhaseEnter(GameplayEffectContext context, int phaseIndex) {
-        if (phaseIndex == ContentOrbitalLaserSettings.PHASE_IMPACT && this.destruction != null) {
+        if (this.destruction != null && ContentOrbitalLaserSettings.isInPhase(
+            context.spec().phases(), phaseIndex, ContentOrbitalLaserSettings.PHASE_NAME_IMPACT
+        )) {
             this.destruction.applyImpact(context);
         }
     }

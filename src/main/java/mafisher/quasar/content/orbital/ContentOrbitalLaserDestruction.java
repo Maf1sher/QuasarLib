@@ -143,7 +143,9 @@ final class ContentOrbitalLaserDestruction {
 
     /** Damage is limited to the sustained beam; collapse and aftermath never hurt targets. */
     static boolean damageActive(GameplayEffectContext context) {
-        return context.phaseIndex() == ContentOrbitalLaserSettings.PHASE_SUSTAIN;
+        return ContentOrbitalLaserSettings.isInPhase(
+            context, ContentOrbitalLaserSettings.PHASE_NAME_SUSTAIN
+        );
     }
 
     /** Applies the one-shot impact shockwave. Duplicate calls and resumes are ignored. */

@@ -40,6 +40,32 @@ final class ContentOrbitalLaserCinematics {
     private static final float RIM_GLOW_END = 20.0F * TICK;
     /** Aftermath progress at which the screen operation stops drawing. */
     private static final float SCREEN_VISIBLE_END = 22.0F * TICK;
+    /** Time for the platform reveal scan to reach the hub. */
+    private static final float PLATFORM_REVEAL_TIME = 20.0F * TICK;
+    /** Time for the platform warp-out to finish inside the collapse phase. */
+    private static final float PLATFORM_EXIT_TIME = 20.0F * TICK;
+    /** Recoil decay after the muzzle fires. */
+    private static final float PLATFORM_RECOIL_TIME = 8.0F * TICK;
+    /** Muzzle-flash decay after the muzzle fires. */
+    private static final float MUZZLE_FLASH_TIME = 6.0F * TICK;
+    /** Time over which the charge releases into the shot. */
+    private static final float PLATFORM_CHARGE_RELEASE = 4.0F * TICK;
+
+    /** Shared curve name for master platform visibility. */
+    static final String PLATFORM_VISIBLE = "PlatformVisible";
+    /** Shared curve name for the bottom-up arrival reveal. */
+    static final String PLATFORM_REVEAL = "PlatformReveal";
+    /** Shared curve name for the normalized idle and charge rotation. */
+    static final String PLATFORM_SPIN = "PlatformSpin";
+    /** Shared curve name for the charge build and release. */
+    static final String PLATFORM_CHARGE = "PlatformCharge";
+    /** Shared curve name for the recoil after the shot. */
+    static final String PLATFORM_RECOIL = "PlatformRecoil";
+    /** Shared curve name for the top-down warp-out. */
+    static final String PLATFORM_EXIT = "PlatformExit";
+    /** Shared curve name for the muzzle flash. */
+    static final String MUZZLE_FLASH = "MuzzleFlash";
+
     /** Server-authored multiplier for the effective beam and impact footprint. */
     static final String BEAM_RADIUS_SCALE = "BeamRadiusScale";
     /** Server-authored beam depth below the surface anchor. */
@@ -103,6 +129,7 @@ final class ContentOrbitalLaserCinematics {
         addMarkerCurve(builder);
         addImpactCurves(builder);
         addCollapseCurves(builder);
+        addPlatformCurves(builder);
         addServerParameters(builder);
         return builder.build();
     }
@@ -208,6 +235,57 @@ final class ContentOrbitalLaserCinematics {
             key("aftermath", RIM_GLOW_END * 0.5F, 0.45F),
             key("aftermath", RIM_GLOW_END, 0.0F, EffectEasing.EASE_OUT),
             key(1.0F, 0.0F)
+        ));
+    }
+
+    private static void addPlatformCurves(EffectParameterSet.Builder builder) {
+        builder.curve(PLATFORM_VISIBLE, curve(
+            key(0.0F, 0.0F),
+            key("arrival", 0.0F, 0.0F),
+            key("arrival", TICK, 1.0F, EffectEasing.EASE_OUT),
+            key("aftermath", SCREEN_VISIBLE_END, 1.0F),
+            key("aftermath", SCREEN_VISIBLE_END + 2.0F * TICK, 0.0F, EffectEasing.LINEAR),
+            key(1.0F, 0.0F)
+        ));
+        builder.curve(PLATFORM_REVEAL, curve(
+            key(0.0F, 0.0F),
+            key("arrival", 0.0F, 0.0F),
+            key("arrival", PLATFORM_REVEAL_TIME, 1.0F, EffectEasing.EASE_OUT),
+            key(1.0F, 1.0F)
+        ));
+        builder.curve(PLATFORM_SPIN, curve(
+            key(0.0F, 0.0F),
+            key("arrival", 0.0F, 0.0F),
+            key("collapse", ContentOrbitalLaserSettings.COLLAPSE_TICKS * TICK, 1.0F,
+                EffectEasing.LINEAR),
+            key(1.0F, 1.0F)
+        ));
+        builder.curve(PLATFORM_CHARGE, curve(
+            key(0.0F, 0.0F),
+            key("charge", 0.0F, 0.0F),
+            key("descent", 0.0F, 1.0F, EffectEasing.EASE_IN),
+            key("descent", PLATFORM_CHARGE_RELEASE, 0.0F, EffectEasing.LINEAR),
+            key(1.0F, 0.0F)
+        ));
+        builder.curve(PLATFORM_RECOIL, curve(
+            key(0.0F, 0.0F),
+            key("descent", -TICK, 0.0F, EffectEasing.LINEAR),
+            key("descent", 0.0F, 1.0F, EffectEasing.LINEAR),
+            key("descent", PLATFORM_RECOIL_TIME, 0.0F, EffectEasing.EASE_OUT),
+            key(1.0F, 0.0F)
+        ));
+        builder.curve(MUZZLE_FLASH, curve(
+            key(0.0F, 0.0F),
+            key("descent", -TICK, 0.0F, EffectEasing.LINEAR),
+            key("descent", 0.0F, 1.0F, EffectEasing.LINEAR),
+            key("descent", MUZZLE_FLASH_TIME, 0.0F, EffectEasing.EASE_OUT),
+            key(1.0F, 0.0F)
+        ));
+        builder.curve(PLATFORM_EXIT, curve(
+            key(0.0F, 0.0F),
+            key("collapse", 0.0F, 0.0F),
+            key("collapse", PLATFORM_EXIT_TIME, 1.0F, EffectEasing.EASE_IN),
+            key(1.0F, 1.0F)
         ));
     }
 

@@ -14,6 +14,7 @@ import mafisher.quasar.api.effect.EffectAudience;
 import mafisher.quasar.api.effect.EffectLifetimePolicy;
 import mafisher.quasar.api.effect.VisualEffectSpec;
 import mafisher.quasar.api.gameplay.CompanionSpec;
+import mafisher.quasar.api.gameplay.EffectPhase;
 import mafisher.quasar.api.gameplay.EffectPhasePlan;
 import mafisher.quasar.api.gameplay.GameplayEffectSpec;
 import mafisher.quasar.api.gameplay.OwnerPolicy;
@@ -25,21 +26,44 @@ import org.junit.jupiter.api.Test;
 
 class ContentOrbitalLaserSettingsTest {
     @Test
-    void keepsTheAuthoredSixPhaseTimeline() {
+    void keepsTheAuthoredEightPhaseTimeline() {
         EffectPhasePlan plan = ContentOrbitalLaserSettings.phasePlan();
 
-        assertEquals(6, plan.phaseCount());
-        assertEquals(220, plan.totalDurationTicks());
+        assertEquals(8, plan.phaseCount());
+        assertEquals(300, plan.totalDurationTicks());
         assertEquals(
-            List.of("target", "descent", "impact", "sustain", "collapse", "aftermath"),
+            List.of(
+                "target", "arrival", "charge", "descent", "impact", "sustain", "collapse",
+                "aftermath"
+            ),
             plan.phases().stream().map(phase -> phase.name()).toList()
         );
         assertEquals(0, plan.phaseStartTick(ContentOrbitalLaserSettings.PHASE_TARGET));
-        assertEquals(40, plan.phaseStartTick(ContentOrbitalLaserSettings.PHASE_DESCENT));
-        assertEquals(60, plan.phaseStartTick(ContentOrbitalLaserSettings.PHASE_IMPACT));
-        assertEquals(64, plan.phaseStartTick(ContentOrbitalLaserSettings.PHASE_SUSTAIN));
-        assertEquals(164, plan.phaseStartTick(ContentOrbitalLaserSettings.PHASE_COLLAPSE));
-        assertEquals(194, plan.phaseStartTick(ContentOrbitalLaserSettings.PHASE_AFTERMATH));
+        assertEquals(40, plan.phaseStartTick(ContentOrbitalLaserSettings.PHASE_ARRIVAL));
+        assertEquals(80, plan.phaseStartTick(ContentOrbitalLaserSettings.PHASE_CHARGE));
+        assertEquals(120, plan.phaseStartTick(ContentOrbitalLaserSettings.PHASE_DESCENT));
+        assertEquals(140, plan.phaseStartTick(ContentOrbitalLaserSettings.PHASE_IMPACT));
+        assertEquals(144, plan.phaseStartTick(ContentOrbitalLaserSettings.PHASE_SUSTAIN));
+        assertEquals(244, plan.phaseStartTick(ContentOrbitalLaserSettings.PHASE_COLLAPSE));
+        assertEquals(274, plan.phaseStartTick(ContentOrbitalLaserSettings.PHASE_AFTERMATH));
+    }
+
+    @Test
+    void resolvesPhaseNamesInLegacySixPhaseResumePlans() {
+        EffectPhasePlan legacy = EffectPhasePlan.of(
+            new EffectPhase("target", 40),
+            new EffectPhase("descent", 20),
+            new EffectPhase("impact", 4),
+            new EffectPhase("sustain", 100),
+            new EffectPhase("collapse", 30),
+            new EffectPhase("aftermath", 26)
+        );
+
+        assertTrue(ContentOrbitalLaserSettings.isInPhase(legacy, 2, "impact"));
+        assertTrue(ContentOrbitalLaserSettings.isInPhase(legacy, 3, "sustain"));
+        assertFalse(ContentOrbitalLaserSettings.isInPhase(legacy, 4, "sustain"));
+        assertFalse(ContentOrbitalLaserSettings.isInPhase(legacy, -1, "impact"));
+        assertFalse(ContentOrbitalLaserSettings.isInPhase(legacy, 6, "impact"));
     }
 
     @Test
@@ -60,9 +84,9 @@ class ContentOrbitalLaserSettingsTest {
 
     @Test
     void exposesTheCarveWindowAndDestructiveBudgets() {
-        assertEquals(60.0F / 220.0F,
+        assertEquals(140.0F / 300.0F,
             ContentOrbitalLaserSettings.carveWindowStart(), 1.0E-6F);
-        assertEquals(164.0F / 220.0F,
+        assertEquals(244.0F / 300.0F,
             ContentOrbitalLaserSettings.carveWindowEnd(), 1.0E-6F);
 
         EffectTickBudget budget = ContentOrbitalLaserSettings.gameplayBudget();
@@ -95,7 +119,7 @@ class ContentOrbitalLaserSettingsTest {
         assertEquals(owner, spec.ownerId());
         assertEquals(target.center(), spec.anchor());
         assertEquals(6.0F, spec.scale());
-        assertEquals(220, spec.phases().totalDurationTicks());
+        assertEquals(300, spec.phases().totalDurationTicks());
         assertEquals(OwnerPolicy.STOP_WHEN_UNAVAILABLE, spec.ownerPolicy());
         assertFalse(spec.audio().isEmpty());
         assertEquals(7, spec.audio().cueCount());
@@ -123,7 +147,7 @@ class ContentOrbitalLaserSettingsTest {
         assertEquals(ContentEffectIds.ORBITAL_LASER, preview.effectId());
         assertEquals(target.markerPosition(), preview.position());
         assertEquals(6.0F, preview.scale());
-        assertEquals(220, preview.durationTicks());
+        assertEquals(300, preview.durationTicks());
         assertEquals(42L, preview.seed());
         assertInstanceOf(EffectAudience.DimensionWide.class, preview.audience());
         assertFalse(preview.audio().isEmpty());

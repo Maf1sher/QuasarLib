@@ -27,6 +27,9 @@ import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 
 class ContentOrbitalLaserRendererTest {
+    private static final int AFTERMATH_START = ContentOrbitalLaserSettings.phasePlan()
+        .phaseStartTick(ContentOrbitalLaserSettings.PHASE_AFTERMATH);
+
     private final ContentOrbitalLaserRenderer renderer = new ContentOrbitalLaserRenderer();
 
     @Test
@@ -62,12 +65,20 @@ class ContentOrbitalLaserRendererTest {
 
     @Test
     void handsOffMarkerDuringDescentAndStopsBeforeImpact() {
-        EffectInstancedPass locked = this.renderer.instancedPasses(context(40.0F)).get(0);
-        EffectInstancedPass fading = this.renderer.instancedPasses(context(56.0F)).get(0);
+        int descent = ContentOrbitalLaserSettings.phasePlan()
+            .phaseStartTick(ContentOrbitalLaserSettings.PHASE_DESCENT);
+        int impact = ContentOrbitalLaserSettings.phasePlan()
+            .phaseStartTick(ContentOrbitalLaserSettings.PHASE_IMPACT);
+        EffectInstancedPass locked = this.renderer.instancedPasses(
+            context(descent + 1.0F)
+        ).get(0);
+        EffectInstancedPass fading = this.renderer.instancedPasses(
+            context(descent + 16.0F)
+        ).get(0);
 
         assertTrue(fading.alpha() < locked.alpha());
         assertTrue(fading.green() > locked.green());
-        assertTrue(this.renderer.instancedPasses(context(60.0F)).isEmpty());
+        assertTrue(this.renderer.instancedPasses(context(impact)).isEmpty());
     }
 
     @Test
@@ -77,15 +88,27 @@ class ContentOrbitalLaserRendererTest {
         assertSame(ContentOrbitalLaserBeamSettings.DEFAULT,
             settings.settings(ContentOrbitalLaserBeamSettings.class));
 
+        int arrival = ContentOrbitalLaserSettings.phasePlan()
+            .phaseStartTick(ContentOrbitalLaserSettings.PHASE_ARRIVAL);
+        int charge = ContentOrbitalLaserSettings.phasePlan()
+            .phaseStartTick(ContentOrbitalLaserSettings.PHASE_CHARGE);
+        int descent = ContentOrbitalLaserSettings.phasePlan()
+            .phaseStartTick(ContentOrbitalLaserSettings.PHASE_DESCENT);
+
         assertEquals(0.0F, this.renderer.screenEffectMask(context(0.0F)).strength(), 1.0E-6F);
-        assertEquals(1.0F, this.renderer.screenEffectMask(context(40.0F)).strength(), 1.0E-6F);
+        assertEquals(0.0F, this.renderer.screenEffectMask(context(arrival)).strength(), 1.0E-6F);
+        assertEquals(0.0F, this.renderer.screenEffectMask(context(charge)).strength(), 1.0E-6F);
+        assertEquals(1.0F, this.renderer.screenEffectMask(context(descent)).strength(), 1.0E-6F);
         assertSame(ScreenEffectMasks.fullscreen(),
-            this.renderer.screenMaskRenderType(context(40.0F)));
+            this.renderer.screenMaskRenderType(context(descent)));
     }
 
     @Test
     void cullingBoundsCoverTheBeamTopAndImpactFootprint() {
-        EffectRenderContext context = context(60.0F);
+        EffectRenderContext context = context(
+            ContentOrbitalLaserSettings.phasePlan()
+                .phaseStartTick(ContentOrbitalLaserSettings.PHASE_IMPACT)
+        );
         AABB bounds = this.renderer.cullingBounds(context);
         double footprint = ContentOrbitalLaserBeamGeometry.maximumFootprint(
             ContentOrbitalLaserBeamSettings.DEFAULT, context.scale()
@@ -144,21 +167,28 @@ class ContentOrbitalLaserRendererTest {
 
     @Test
     void particlePassesAppearOnlyInTheLatePhases() {
-        assertTrue(this.renderer.particlePasses(context(63.0F)).isEmpty());
+        int sustain = ContentOrbitalLaserSettings.phasePlan()
+            .phaseStartTick(ContentOrbitalLaserSettings.PHASE_SUSTAIN);
+        int collapse = ContentOrbitalLaserSettings.phasePlan()
+            .phaseStartTick(ContentOrbitalLaserSettings.PHASE_COLLAPSE);
+        int aftermath = ContentOrbitalLaserSettings.phasePlan()
+            .phaseStartTick(ContentOrbitalLaserSettings.PHASE_AFTERMATH);
 
-        List<EffectParticlePass> sparks = this.renderer.particlePasses(context(64.0F));
-        List<EffectParticlePass> collapse = this.renderer.particlePasses(context(164.0F));
-        List<EffectParticlePass> aftermath = this.renderer.particlePasses(context(194.0F));
+        assertTrue(this.renderer.particlePasses(context(sustain - 1.0F)).isEmpty());
+
+        List<EffectParticlePass> sparks = this.renderer.particlePasses(context(sustain));
+        List<EffectParticlePass> collapsePasses = this.renderer.particlePasses(context(collapse));
+        List<EffectParticlePass> aftermathPasses = this.renderer.particlePasses(context(aftermath));
 
         assertEquals(List.of("sustain_sparks", "sustain_smoke"), ids(sparks));
         assertEquals(List.of("collapse_sparks", "collapse_embers", "collapse_smoke"),
-            ids(collapse));
-        assertEquals(List.of("aftermath_embers", "aftermath_smoke"), ids(aftermath));
+            ids(collapsePasses));
+        assertEquals(List.of("aftermath_embers", "aftermath_smoke"), ids(aftermathPasses));
     }
 
     @Test
     void particlePassesAreCachedAndUseUniqueFieldsAndSalts() {
-        EffectRenderContext context = context(194.0F);
+        EffectRenderContext context = context((float)AFTERMATH_START);
         List<EffectParticlePass> first = this.renderer.particlePasses(context);
         List<EffectParticlePass> second = this.renderer.particlePasses(context);
 
@@ -174,7 +204,7 @@ class ContentOrbitalLaserRendererTest {
     @Test
     void particleExtentFitsInsideTheCullingBoundsAtEveryRadius() {
         for (float scale : List.of(2.0F, 6.0F, 32.0F)) {
-            EffectRenderContext context = context(194.0F, scale);
+            EffectRenderContext context = context(AFTERMATH_START, scale);
             AABB bounds = this.renderer.cullingBounds(context);
             EffectPoint base = context.transform().position();
             double localRadius = this.renderer.particlePasses(context).stream()
@@ -193,8 +223,8 @@ class ContentOrbitalLaserRendererTest {
 
     @Test
     void particlePassesDoNotDependOnLodOrQuality() {
-        EffectRenderContext full = context(194.0F);
-        EffectRenderContext reduced = context(194.0F)
+        EffectRenderContext full = context((float)AFTERMATH_START);
+        EffectRenderContext reduced = context((float)AFTERMATH_START)
             .withLod(new EffectLod(3, 400.0, 12.0))
             .withEffectiveQuality(EffectQualityTier.LOW);
 
