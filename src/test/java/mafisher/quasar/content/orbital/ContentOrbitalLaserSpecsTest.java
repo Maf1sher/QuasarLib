@@ -42,7 +42,7 @@ class ContentOrbitalLaserSpecsTest {
         );
 
         assertFalse(gameplay.audio().isEmpty());
-        assertEquals(7, gameplay.audio().cueCount());
+        assertEquals(10, gameplay.audio().cueCount());
         assertTrue(gameplay.audio().fitsWithin(ContentOrbitalLaserSettings.TOTAL_TICKS));
         assertEquals(
             gameplay.audio().cues(),

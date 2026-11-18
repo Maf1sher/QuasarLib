@@ -57,9 +57,24 @@
       { "name": "quasar_content:orbital_laser/warning" }
     ]
   },
+  "orbital_laser_arrival": {
+    "sounds": [
+      { "name": "quasar_content:orbital_laser/arrival" }
+    ]
+  },
+  "orbital_laser_charge": {
+    "sounds": [
+      { "name": "quasar_content:orbital_laser/charge" }
+    ]
+  },
   "orbital_laser_descent": {
     "sounds": [
       { "name": "quasar_content:orbital_laser/descent" }
+    ]
+  },
+  "orbital_laser_fire": {
+    "sounds": [
+      { "name": "quasar_content:orbital_laser/fire" }
     ]
   },
   "orbital_laser_impact": {

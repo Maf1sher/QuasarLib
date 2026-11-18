@@ -15,13 +15,17 @@ import net.minecraft.world.phys.Vec3;
  * Content-owned phase score for the orbital-laser show.
  *
  * <p>Every cue is anchored to {@link ContentOrbitalLaserSettings#phasePlan()}, so phase edits
- * move the score with the session. The descent source is a looping path from the beam top to the
- * target column; distance attenuation makes it louder as it approaches listeners near the impact.
- * The score never needs per-tick packets: the client resolves the path from the effect age.</p>
+ * move the score with the session. Platform cues sit on the hub at
+ * {@link ContentOrbitalLaserPlatformSettings#PLATFORM_ALTITUDE} with a wide radius, so the
+ * warp-in, charge, and shot carry to the ground below. The descent source is a looping path from
+ * the beam top to the target column; distance attenuation makes it louder as it approaches
+ * listeners near the impact. The score never needs per-tick packets: the client resolves the path
+ * from the effect age.</p>
  */
 public final class ContentOrbitalLaserAudio {
     private static final float WARNING_RADIUS = 512.0F;
-    private static final float DESCENT_RADIUS = 512.0F;
+    private static final float PLATFORM_CUE_RADIUS = 4096.0F;
+    private static final float DESCENT_RADIUS = 2048.0F;
     private static final float IMPACT_RADIUS = 1024.0F;
     private static final float DRONE_RADIUS = 512.0F;
     private static final float CRACKLE_RADIUS = 384.0F;
@@ -29,6 +33,9 @@ public final class ContentOrbitalLaserAudio {
     private static final float AFTERMATH_RADIUS = 384.0F;
 
     private static final float WARNING_VOLUME = 0.55F;
+    private static final float ARRIVAL_VOLUME = 0.60F;
+    private static final float CHARGE_VOLUME = 0.70F;
+    private static final float FIRE_VOLUME = 1.0F;
     private static final float DESCENT_VOLUME = 0.75F;
     private static final float IMPACT_VOLUME = 1.0F;
     private static final float DRONE_VOLUME = 0.55F;
@@ -47,17 +54,42 @@ public final class ContentOrbitalLaserAudio {
     private static final Vec3 DESCENT_START = new Vec3(
         0.0, ContentOrbitalLaserSettings.BEAM_TOP_HEIGHT, 0.0
     );
+    private static final Vec3 PLATFORM_OFFSET = new Vec3(
+        0.0, ContentOrbitalLaserPlatformSettings.PLATFORM_ALTITUDE, 0.0
+    );
 
     private ContentOrbitalLaserAudio() {
     }
 
-    /** Builds the seven-cue score for one target column centre. */
+    /** Builds the ten-cue score for one target column centre. */
     public static EffectAudioSpec plan(Vec3 targetCenter) {
         Objects.requireNonNull(targetCenter, "targetCenter");
         EffectAudioSpec.Builder builder = EffectAudioSpec.builder(
             ContentOrbitalLaserSettings.phasePlan()
         );
         addWarning(builder, targetCenter);
+        Vec3 platform = targetCenter.add(PLATFORM_OFFSET);
+        builder.phaseCue("arrival", 0, oneShot(
+            platform,
+            ContentSounds.ORBITAL_LASER_ARRIVAL.get(),
+            ARRIVAL_VOLUME,
+            1.0F,
+            PLATFORM_CUE_RADIUS
+        ));
+        builder.phaseCue("charge", 0, oneShot(
+            platform,
+            ContentSounds.ORBITAL_LASER_CHARGE.get(),
+            CHARGE_VOLUME,
+            1.0F,
+            PLATFORM_CUE_RADIUS
+        ));
+        builder.phaseCue("descent", 0, oneShot(
+            platform,
+            ContentSounds.ORBITAL_LASER_FIRE.get(),
+            FIRE_VOLUME,
+            1.0F,
+            PLATFORM_CUE_RADIUS
+        ));
         addDescent(builder, targetCenter);
         addImpactAndDrone(builder, targetCenter);
         addCrackle(builder, targetCenter);

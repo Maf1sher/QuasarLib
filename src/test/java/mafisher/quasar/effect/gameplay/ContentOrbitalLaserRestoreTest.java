@@ -123,7 +123,7 @@ class ContentOrbitalLaserRestoreTest {
             this.world.level(), handle.sessionId()
         );
         assertNotNull(before);
-        assertEquals(7, before.cueCount());
+        assertEquals(10, before.cueCount());
         long startGameTime = before.startGameTime();
 
         GameplayEffectService.stopAll(
@@ -138,7 +138,7 @@ class ContentOrbitalLaserRestoreTest {
             this.world.level(), handle.sessionId()
         );
         assertNotNull(restored);
-        assertEquals(7, restored.cueCount());
+        assertEquals(10, restored.cueCount());
         assertEquals(startGameTime, restored.startGameTime());
     }
 

@@ -25,8 +25,14 @@ public final class ContentSounds {
     public static final Supplier<SoundEvent> BLACK_HOLE_ECHO = register("black_hole_echo");
     public static final Supplier<SoundEvent> ORBITAL_LASER_WARNING =
         register("orbital_laser_warning");
+    public static final Supplier<SoundEvent> ORBITAL_LASER_ARRIVAL =
+        register("orbital_laser_arrival");
+    public static final Supplier<SoundEvent> ORBITAL_LASER_CHARGE =
+        register("orbital_laser_charge");
     public static final Supplier<SoundEvent> ORBITAL_LASER_DESCENT =
         register("orbital_laser_descent");
+    public static final Supplier<SoundEvent> ORBITAL_LASER_FIRE =
+        register("orbital_laser_fire");
     public static final Supplier<SoundEvent> ORBITAL_LASER_IMPACT =
         register("orbital_laser_impact");
     public static final Supplier<SoundEvent> ORBITAL_LASER_DRONE =

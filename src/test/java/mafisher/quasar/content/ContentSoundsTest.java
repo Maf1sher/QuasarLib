@@ -19,7 +19,8 @@ class ContentSoundsTest {
         "collapse", "implosion", "echo"
     );
     private static final List<String> ORBITAL_LASER_FILES = List.of(
-        "warning", "descent", "impact", "drone", "crackle", "collapse", "aftermath"
+        "warning", "arrival", "charge", "descent", "fire", "impact", "drone",
+        "crackle", "collapse", "aftermath"
     );
 
     @Test
@@ -28,11 +29,14 @@ class ContentSoundsTest {
             .map(holder -> holder.getId())
             .collect(Collectors.toSet());
 
-        assertEquals(17, ids.size());
+        assertEquals(20, ids.size());
         assertTrue(ids.contains(id("effect_test")));
         assertTrue(ids.contains(id("black_hole_drone")));
         assertTrue(ids.contains(id("black_hole_implosion")));
         assertTrue(ids.contains(id("orbital_laser_warning")));
+        assertTrue(ids.contains(id("orbital_laser_arrival")));
+        assertTrue(ids.contains(id("orbital_laser_charge")));
+        assertTrue(ids.contains(id("orbital_laser_fire")));
         assertTrue(ids.contains(id("orbital_laser_aftermath")));
     }
 

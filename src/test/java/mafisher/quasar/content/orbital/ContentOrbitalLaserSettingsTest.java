@@ -161,7 +161,7 @@ class ContentOrbitalLaserSettingsTest {
         assertEquals(300, spec.phases().totalDurationTicks());
         assertEquals(OwnerPolicy.STOP_WHEN_UNAVAILABLE, spec.ownerPolicy());
         assertFalse(spec.audio().isEmpty());
-        assertEquals(7, spec.audio().cueCount());
+        assertEquals(10, spec.audio().cueCount());
     }
 
     @Test
@@ -190,7 +190,7 @@ class ContentOrbitalLaserSettingsTest {
         assertEquals(42L, preview.seed());
         assertInstanceOf(EffectAudience.DimensionWide.class, preview.audience());
         assertFalse(preview.audio().isEmpty());
-        assertEquals(7, preview.audio().cueCount());
+        assertEquals(10, preview.audio().cueCount());
     }
 
     @Test

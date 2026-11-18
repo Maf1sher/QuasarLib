@@ -33,7 +33,7 @@ class ContentOrbitalLaserAudioTest {
 
         assertFalse(audio.isEmpty());
         assertTrue(audio.fitsWithin(ContentOrbitalLaserSettings.TOTAL_TICKS));
-        assertEquals(7, audio.cueCount());
+        assertEquals(10, audio.cueCount());
         for (EffectAudioCue cue : audio.cues()) {
             assertEquals(ContentBootstrap.NAMESPACE, cue.soundId().getNamespace(),
                 cue.soundId().toString());
@@ -45,6 +45,12 @@ class ContentOrbitalLaserAudioTest {
         EffectAudioSpec audio = ContentOrbitalLaserAudio.plan(CENTER);
 
         assertEquals(0, cue(audio, ContentSounds.ORBITAL_LASER_WARNING).tick());
+        assertEquals(phaseStart(ContentOrbitalLaserSettings.PHASE_ARRIVAL),
+            cue(audio, ContentSounds.ORBITAL_LASER_ARRIVAL).tick());
+        assertEquals(phaseStart(ContentOrbitalLaserSettings.PHASE_CHARGE),
+            cue(audio, ContentSounds.ORBITAL_LASER_CHARGE).tick());
+        assertEquals(phaseStart(ContentOrbitalLaserSettings.PHASE_DESCENT),
+            cue(audio, ContentSounds.ORBITAL_LASER_FIRE).tick());
         assertEquals(phaseStart(ContentOrbitalLaserSettings.PHASE_DESCENT),
             cue(audio, ContentSounds.ORBITAL_LASER_DESCENT).tick());
         assertEquals(phaseStart(ContentOrbitalLaserSettings.PHASE_IMPACT),
@@ -57,6 +63,48 @@ class ContentOrbitalLaserAudioTest {
             cue(audio, ContentSounds.ORBITAL_LASER_COLLAPSE).tick());
         assertEquals(phaseStart(ContentOrbitalLaserSettings.PHASE_AFTERMATH),
             cue(audio, ContentSounds.ORBITAL_LASER_AFTERMATH).tick());
+    }
+
+    @Test
+    void platformCuesSitOnTheHubAndCarryToTheGround() {
+        EffectAudioSpec audio = ContentOrbitalLaserAudio.plan(CENTER);
+        Vec3 platform = CENTER.add(
+            0.0, ContentOrbitalLaserPlatformSettings.PLATFORM_ALTITUDE, 0.0
+        );
+
+        for (Supplier<SoundEvent> sound : List.of(
+            ContentSounds.ORBITAL_LASER_ARRIVAL,
+            ContentSounds.ORBITAL_LASER_CHARGE,
+            ContentSounds.ORBITAL_LASER_FIRE
+        )) {
+            EffectAudioCue cue = cue(audio, sound);
+            assertEquals(platform, cue.position(), cue.soundId().toString());
+            EffectAudioAttenuation.Distance attenuation =
+                (EffectAudioAttenuation.Distance)cue.attenuation();
+            assertEquals(4096.0F, attenuation.maxDistance(), 1.0E-6F);
+            assertTrue(
+                EffectAudioGain.distanceGain(
+                    ContentOrbitalLaserPlatformSettings.PLATFORM_ALTITUDE,
+                    attenuation.maxDistance()
+                ) > 0.8F,
+                "ground listener at " + cue.soundId()
+            );
+            assertEquals(0.0F, EffectAudioGain.distanceGain(
+                4096.0, attenuation.maxDistance()
+            ), 1.0E-6F);
+        }
+    }
+
+    @Test
+    void theMechanicalChargeEndsAsTheShotStarts() {
+        EffectAudioSpec audio = ContentOrbitalLaserAudio.plan(CENTER);
+        int charge = cue(audio, ContentSounds.ORBITAL_LASER_CHARGE).tick();
+        int fire = cue(audio, ContentSounds.ORBITAL_LASER_FIRE).tick();
+
+        assertEquals(ContentOrbitalLaserSettings.CHARGE_TICKS, fire - charge);
+        assertEquals(phaseStart(ContentOrbitalLaserSettings.PHASE_DESCENT), fire);
+        assertEquals(phaseStart(ContentOrbitalLaserSettings.PHASE_DESCENT),
+            cue(audio, ContentSounds.ORBITAL_LASER_DESCENT).tick());
     }
 
     @Test
@@ -85,6 +133,7 @@ class ContentOrbitalLaserAudioTest {
         );
         EffectAudioAttenuation.Distance attenuation =
             (EffectAudioAttenuation.Distance)descent.attenuation();
+        assertEquals(2048.0F, attenuation.maxDistance(), 1.0E-6F);
         int start = phaseStart(ContentOrbitalLaserSettings.PHASE_DESCENT);
         int end = phaseStart(ContentOrbitalLaserSettings.PHASE_IMPACT);
         int middle = (start + end) / 2;
@@ -102,9 +151,9 @@ class ContentOrbitalLaserAudioTest {
             assertTrue(atMiddle < atEnd, "middle vs end at " + listener);
         }
         assertEquals(0.0F,
-            gain(descent, attenuation, CENTER.add(600.0, 0.0, 0.0), start), 1.0E-6F);
+            gain(descent, attenuation, CENTER.add(3000.0, 0.0, 0.0), start), 1.0E-6F);
         assertEquals(0.0F,
-            gain(descent, attenuation, CENTER.add(600.0, 0.0, 0.0), end), 1.0E-6F);
+            gain(descent, attenuation, CENTER.add(3000.0, 0.0, 0.0), end), 1.0E-6F);
     }
 
     @Test
@@ -151,6 +200,10 @@ class ContentOrbitalLaserAudioTest {
             audio
         );
 
+        assertCueAt(plan, phaseStart(ContentOrbitalLaserSettings.PHASE_ARRIVAL) + 1,
+            ContentSounds.ORBITAL_LASER_ARRIVAL);
+        assertCueAt(plan, phaseStart(ContentOrbitalLaserSettings.PHASE_CHARGE) + 1,
+            ContentSounds.ORBITAL_LASER_CHARGE);
         assertCueAt(plan, phaseStart(ContentOrbitalLaserSettings.PHASE_DESCENT) + 5,
             ContentSounds.ORBITAL_LASER_DESCENT);
         assertCueAt(plan, phaseStart(ContentOrbitalLaserSettings.PHASE_IMPACT) + 5,

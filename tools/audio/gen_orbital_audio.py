@@ -8,14 +8,17 @@ are original and remain content-owned under the ``quasar_content`` namespace.
 Run from the repository root with ``numpy`` and ``ffmpeg`` available:
 
     python3 tools/audio/gen_orbital_audio.py
+    python3 tools/audio/gen_orbital_audio.py --only arrival,charge,fire
 
 The script writes OGG Vorbis files under
 ``src/main/resources/assets/quasar_content/sounds/orbital_laser/`` and fails
-when a stem is too bright or too noisy for its role.
+when a stem is too bright or too noisy for its role. ``--only`` keeps an
+existing stem byte-identical when another encoder version is installed.
 """
 
 from __future__ import annotations
 
+import argparse
 import math
 import subprocess
 import tempfile
@@ -27,6 +30,7 @@ import numpy as np
 from gen_blackhole_audio import (
     RATE,
     TWO_PI,
+    add_at,
     exp_env,
     fft_filter,
     loop_crossfade,
@@ -45,12 +49,23 @@ OUTPUT = ROOT / "src/main/resources/assets/quasar_content/sounds/orbital_laser"
 
 TARGETS = {
     "warning": (900.0, 0.020, 0.20, 0.12),
+    "arrival": (1400.0, 0.060, 0.080, 0.18),
+    "charge": (1800.0, 0.100, 0.050, 0.30),
     "descent": (1400.0, 0.050, 0.10, 0.15),
+    "fire": (900.0, 0.040, 0.30, 0.10),
     "impact": (900.0, 0.060, 0.25, 0.08),
     "drone": (500.0, 0.005, 0.45, 0.05),
     "crackle": (2600.0, 0.150, 0.05, 0.25),
     "collapse": (1200.0, 0.040, 0.20, 0.12),
     "aftermath": (800.0, 0.020, 0.20, 0.10),
+}
+
+# Stems that must match a phase length exactly: arrival and charge are one-shot
+# cues that hand the show to the next phase, so their length is part of the timing.
+EXPECTED_SECONDS = {
+    "arrival": 2.0,
+    "charge": 2.0,
+    "fire": 2.5,
 }
 
 SEED = 0x0A11B
@@ -68,7 +83,9 @@ def report(name: str, signal: np.ndarray) -> bool:
     )
     centroid, low, high, flatness = spectral_stats(signal)
     max_centroid, max_high, min_low, max_flatness = TARGETS[name]
-    passed = (centroid <= max_centroid and high <= max_high
+    expected = EXPECTED_SECONDS.get(name)
+    length_ok = expected is None or abs(len(mono) / RATE - expected) < 1.0e-6
+    passed = (length_ok and centroid <= max_centroid and high <= max_high
               and low >= min_low and flatness <= max_flatness)
     status = "ok" if passed else "FAIL"
     print(f"{name:10s} {len(mono) / RATE:6.2f}s  peak {peak:6.2f}  rms {rms:6.2f}  "
@@ -112,6 +129,68 @@ def warning() -> np.ndarray:
     mix = reverb(mix, mix=0.24, decay=1.6, seed=SEED + 2)
     mix = loop_crossfade(mix, 0.4)
     return master(mix, -20.0, -4.0)
+
+
+def arrival() -> np.ndarray:
+    """Bottom-up warp-in: rising air, sub swell, metal body, and a lock click."""
+    seconds = EXPECTED_SECONDS["arrival"]
+    rng = np.random.default_rng(SEED + 15)
+    t = t_axis(seconds)
+    frequency = 140.0 * (640.0 / 140.0) ** (t / seconds)
+    whine = np.sin(np.cumsum(TWO_PI * frequency / RATE))
+    whine *= smoothstep(0.0, 0.7, t) * (1.0 - smoothstep(1.6, 2.0, t)) * 0.22
+    air = fft_filter(rng.standard_normal(len(t)), low=3200.0, high=200.0) * 0.16
+    air *= smoothstep(0.0, 0.7, t) * (0.65 + 0.35 * smoothstep(0.7, 1.5, t))
+    sub = sub_sweep(seconds, 36.0, 68.0, 0.6, 1.1, 0.8) * 0.55
+    bed = np.sin(TWO_PI * 31.0 * t) * smoothstep(0.0, 0.8, t) * 0.12
+    metal = metal_groan(seconds, rng, 54.0, 0.5, 0.30)
+    metal *= smoothstep(0.15, 1.1, t) * (1.0 - smoothstep(1.6, 2.0, t))
+    lock = np.zeros_like(t)
+    add_at(lock, metal_ring(0.45, 260.0, 0.30, 0.16), 1.45)
+    mix = fft_filter(whine + air + sub + bed + metal + lock, low=2600.0)
+    mix *= 1.0 - smoothstep(1.82, 2.0, t)
+    mix = reverb(mix, mix=0.28, decay=1.4, seed=SEED + 16)
+    return master(mix, -18.0, -3.0)
+
+
+def charge() -> np.ndarray:
+    """Mechanical transform: rising whine, accelerating ratchets, and a final lock."""
+    seconds = EXPECTED_SECONDS["charge"]
+    rng = np.random.default_rng(SEED + 17)
+    t = t_axis(seconds)
+    frequency = 90.0 * (900.0 / 90.0) ** (t / seconds)
+    whine = np.sin(np.cumsum(TWO_PI * frequency / RATE))
+    whine *= (0.15 + 0.85 * (t / seconds) ** 1.6) * 0.26
+    spin = fft_filter(rng.standard_normal(len(t)), low=2600.0, high=240.0)
+    spin *= (0.18 + 0.82 * (t / seconds) ** 1.4) * 0.16
+    ticks = np.zeros_like(t)
+    for index, start in enumerate(np.linspace(0.06, 1.62, 12)):
+        pitch = 120.0 + 11.0 * index
+        length = 0.06 + 0.03 * (index / 11.0)
+        add_at(ticks, metal_ring(length, pitch, 0.16, 0.16), float(start))
+    add_at(ticks, metal_ring(0.26, 320.0, 0.22, 0.24), 1.72)
+    sub = np.sin(TWO_PI * 33.0 * t) * (0.16 + 0.30 * (t / seconds))
+    sub += np.sin(TWO_PI * 44.0 * t + 0.5) * (0.06 + 0.10 * (t / seconds))
+    mix = fft_filter(whine + spin + ticks + sub, low=2600.0)
+    mix = reverb(mix, mix=0.22, decay=1.1, seed=SEED + 18)
+    return master(mix, -16.0, -2.5)
+
+
+def fire() -> np.ndarray:
+    """Cannon blast from the platform muzzle: crack, sub drop, and pressure tail."""
+    seconds = EXPECTED_SECONDS["fire"]
+    rng = np.random.default_rng(SEED + 19)
+    t = t_axis(seconds)
+    sub = sub_sweep(seconds, 120.0, 18.0, 0.008, 1.5) * 0.95
+    body = sub_sweep(seconds, 180.0, 46.0, 0.010, 0.9) * 0.45
+    crack = fft_filter(rng.standard_normal(len(t)), low=2600.0, high=90.0)
+    crack *= exp_env(seconds, 0.004, 0.07) * 0.55
+    pressure = fft_filter(rng.standard_normal(len(t)), low=700.0, high=30.0)
+    pressure *= exp_env(seconds, 0.010, 1.0) * 0.70
+    metal = metal_ring(seconds, 95.0, 1.4, 0.28)
+    thump = np.sin(TWO_PI * 70.0 * t) * exp_env(seconds, 0.010, 0.55) * 0.12
+    mix = fft_filter(sub + body + crack + pressure + metal + thump, low=1400.0)
+    return master(reverb(mix, mix=0.24, decay=2.2, seed=SEED + 20), -12.0)
 
 
 def descent() -> np.ndarray:
@@ -220,17 +299,37 @@ def aftermath() -> np.ndarray:
     return master(reverb(mix, mix=0.35, decay=0.8, seed=SEED + 14), -20.0)
 
 
-def main() -> None:
-    sounds = {
-        "warning": warning(),
-        "descent": descent(),
-        "impact": impact(),
-        "drone": drone(),
-        "crackle": crackle(),
-        "collapse": collapse(),
-        "aftermath": aftermath(),
-    }
-    failed = [name for name, signal in sounds.items() if not write_ogg(name, signal)]
+BUILDERS = {
+    "warning": warning,
+    "arrival": arrival,
+    "charge": charge,
+    "descent": descent,
+    "fire": fire,
+    "impact": impact,
+    "drone": drone,
+    "crackle": crackle,
+    "collapse": collapse,
+    "aftermath": aftermath,
+}
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Generate the orbital-laser sound set.")
+    parser.add_argument(
+        "--only",
+        help="comma-separated stems to render; omit to rebuild the whole set",
+    )
+    args = parser.parse_args(argv)
+
+    names = list(BUILDERS)
+    if args.only:
+        names = [name.strip() for name in args.only.split(",") if name.strip()]
+        unknown = [name for name in names if name not in BUILDERS]
+        if unknown:
+            parser.error("unknown stems: " + ", ".join(unknown))
+        if not names:
+            parser.error("--only needs at least one stem")
+    failed = [name for name in names if not write_ogg(name, BUILDERS[name]())]
     if failed:
         raise SystemExit("Bright or noisy stems: " + ", ".join(failed))
 
